@@ -6,7 +6,7 @@ from pathlib import Path
 
 from subscribe_flow.bootstrap import Core
 from subscribe_flow.channels.gateway import ChannelGateway
-from subscribe_flow.contracts import ChannelError, ContentItem, FetchPage, ItemError, Source
+from subscribe_flow.contracts import ChannelError, ContentItem, FetchPage, ItemError, Source, OperationCapability
 from tests.fakes import TestAdapter
 
 
@@ -129,3 +129,17 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
     def test_second_core_cannot_recover_an_active_database(self):
         with self.assertRaises(RuntimeError):
             Core(self.core.database.path, gateway=self.core.gateway)
+
+    async def test_detail_failure_does_not_revoke_list_or_subscription(self):
+        await self.run_scan()
+        descriptor = self.adapter.describe()
+        descriptor.operations["get_item_detail"] = OperationCapability(True)
+        self.adapter.describe = lambda: descriptor
+        async def detail(item_ref, context):
+            raise ChannelError("ACCESS_FAILED", "get_item_detail", "Navigation rejected")
+        self.adapter.get_item_detail = detail
+        item = self.core.queries.contents()["items"][0]
+        job = await self.run_scan(mode="detail", item_key=item["id"])
+        self.assertEqual(job["state"], "failed")
+        self.assertEqual(self.core.queries.contents()["total"], 1)
+        self.assertEqual(self.core.repository.get_subscription(self.sub["id"])["status"], "active")

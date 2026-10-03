@@ -25,6 +25,7 @@ htmlcov/
 *.sqlite*-*
 *.sqlite*.lock
 *.backup
-runtime/
-diagnostics/
+/runtime/
+/diagnostics/
+.runtime-paths.json
 coverage/

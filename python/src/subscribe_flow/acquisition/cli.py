@@ -12,8 +12,9 @@ from .resources import ResourceCoordinator
 
 def redact(text: str) -> str:
     text = re.sub(r"(?im)(cookie|authorization|set-cookie)\s*[:=][^\r\n]*", r"\1: [REDACTED]", text)
-    text = re.sub(r"(?i)(SESSDATA|bili_jct|access_token|refresh_token|api[_-]?key|token|password)\s*[=:]\s*[^\s;&\"']+",
-                  r"\1=[REDACTED]", text)
+    text = re.sub(r'''(?i)(["']?(?:SESSDATA|bili_jct|access_token|refresh_token|api[_-]?key|token|password)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s;&,}\]]+)''',
+                  r"\1[REDACTED]", text)
+    text = re.sub(r"(https?://)[^/@\s]+:[^/@\s]+@", r"\1[REDACTED]@", text)
     text = re.sub(r"(https?://[^\s?]+)\?[^\s]+", r"\1?[REDACTED]", text)
     return text[:2000]
 

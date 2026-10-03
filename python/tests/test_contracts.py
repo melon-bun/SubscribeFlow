@@ -47,6 +47,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         result = await self.transport.run([sys.executable, "-c", "import sys; print(sys.argv[1])", value], context(), "test")
         self.assertEqual(result.stdout.strip(), value)
         self.assertNotIn("secret", redact("Cookie: SESSDATA=secret\naccess_token=secret"))
+        self.assertNotIn("secret", redact('message: {"token": "secret", "password":"secret"} https://user:secret@example.com'))
 
     async def test_timeout_cancellation_and_output_limit_are_distinct(self):
         for expected in ("TIMEOUT", "CANCELLED", "OUTPUT_LIMIT"):

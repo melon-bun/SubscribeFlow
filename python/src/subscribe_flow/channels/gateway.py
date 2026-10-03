@@ -41,6 +41,8 @@ class ChannelGateway:
         return await self._adapter(context, "list_items").fetch_page(source, request, context)
 
     async def search_sources(self, query: str, request: FetchRequest, context: Context):
+        if type(request.limit) is not int or not 1 <= request.limit <= 100:
+            raise ChannelError("INVALID_INPUT", "search_sources", "搜索页大小必须在 1 到 100 之间")
         return await self._adapter(context, "search_sources").search_sources(query, request, context)
 
     async def get_item_detail(self, item_ref: str, context: Context):

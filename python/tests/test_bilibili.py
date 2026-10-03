@@ -48,6 +48,15 @@ class ParserTests(unittest.TestCase):
         with self.assertRaises(ChannelError):
             parse_detail([{"field": "bvid", "value": "BV1yEaJ6CEUk"}], "BV1hGaG6vEX2")
 
+    def test_real_second_page_and_detail_samples(self):
+        source = source_from_locator("946974")
+        first, _ = parse_videos(json.loads((FIXTURES / "list.json").read_text()), source)
+        second, _ = parse_videos(json.loads((FIXTURES / "page2.json").read_text()), source)
+        self.assertFalse({item.key for item in first} & {item.key for item in second})
+        detail = parse_detail(json.loads((FIXTURES / "detail.json").read_text()), "BV1yEaJ6CEUk")
+        self.assertEqual(detail.fields["published"].precision, "minute")
+        self.assertEqual(detail.fields["duration_seconds"], 1042)
+
     def test_access_rejection_is_not_assumed_login_failure(self):
         self.assertEqual(mapped_error("Navigation rejected", "get_item_detail", context()).code, "ACCESS_FAILED")
         cases = {"AUTH_REQUIRED": "AUTH_REQUIRED", "browser not connected": "DEPENDENCY_UNAVAILABLE",
