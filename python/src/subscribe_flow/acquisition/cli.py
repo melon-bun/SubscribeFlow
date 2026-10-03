@@ -59,16 +59,21 @@ class CLITransport:
                 return CommandResult(stdout, redact(stderr), code)
 
             output = asyncio.create_task(collect())
+            completed = False
             try:
                 while not output.done():
                     context.check(operation)
                     await asyncio.wait({output}, timeout=0.05)
                 context.check(operation)
-                return output.result()
+                result = output.result()
+                completed = True
+                return result
             finally:
-                # A tool may leave children behind after its own exit. Only this job's
-                # private process group is terminated, never the user's browser.
-                await self._stop(process)
+                # On interruption, clean the private job group. A normally exited
+                # CLI may have initialized a shared bridge daemon; its lifecycle
+                # belongs to the external tool, not to a completed acquisition.
+                if not completed:
+                    await self._stop(process)
                 if not output.done():
                     output.cancel()
                 await asyncio.gather(output, return_exceptions=True)

@@ -23,6 +23,7 @@ htmlcov/
 *.db
 *.db-*
 *.sqlite*-*
+*.sqlite*.lock
 *.backup
 runtime/
 diagnostics/
