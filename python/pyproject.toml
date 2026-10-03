@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "subscribe-flow-core"
+version = "0.1.0"
+description = "Local-first subscription core for Subscribe Flow"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+subscribe-flow = "subscribe_flow.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+subscribe_flow = ["storage/migrations/*.sql"]
