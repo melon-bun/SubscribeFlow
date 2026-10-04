@@ -84,7 +84,7 @@
     "mouseover",
     function (e) {
       var t = tipOf(e.target);
-      if (t === anchor) return; // 锚点内部移动，不必重来
+      if (t && t === anchor) return; // 无目标时仍需取消尚未显示的提示
       hide();
       if (t) {
         showTimer = setTimeout(function () {
