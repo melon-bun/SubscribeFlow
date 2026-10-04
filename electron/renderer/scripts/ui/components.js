@@ -200,6 +200,7 @@
     var card = h(
       "div.content-card",
       {
+        "data-content-id": item.id,
         role: "button", tabindex: "0",
         onkeydown: function (e) { if (e.target === e.currentTarget && ["Enter", " "].includes(e.key)) { e.preventDefault(); opts.onSelect(); } },
         "aria-pressed": opts.selected ? "true" : "false",

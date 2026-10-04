@@ -87,6 +87,23 @@ test('private browser RPC commits a large API page, details and repeated refresh
     assert.ok(progress.length>0 && progress.every(p=>p.compatible));
     const item=saved.items[0];
     await core.call('content.update',{item_id:item.id,patch:{read:true}});
+    // Inbox and its count share the same unprocessed scope; all-content queries
+    // still retain every record, including independently overlapping states.
+    const deferred=saved.items[1], archived=saved.items[2];
+    await callUI(core,'updateContent',[deferred.id,{state:{deferred:true}}]);
+    await callUI(core,'updateContent',[archived.id,{state:{archived:true}}]);
+    let inbox=await callUI(core,'listContents',[{state:'unread'}]);
+    assert.equal(inbox.total,17);
+    assert.ok(inbox.items.every(c=>![item.id,deferred.id,archived.id].includes(c.id)));
+    assert.deepEqual(await callUI(core,'getCounts',[]),{total:20,unread:17,read:1,deferred:1,archived:1});
+    assert.equal((await callUI(core,'listContents',[{}])).total,20);
+    // Clearing only one of two active flags must not return a record to inbox.
+    await callUI(core,'updateContent',[deferred.id,{state:{read:true}}]);
+    await callUI(core,'updateContent',[deferred.id,{state:{deferred:false}}]);
+    assert.equal((await callUI(core,'listContents',[{state:'unread'}])).total,17);
+    await callUI(core,'updateContent',[deferred.id,{state:{read:false}}]);
+    await callUI(core,'updateContent',[archived.id,{state:{archived:false}}]);
+    assert.equal((await callUI(core,'getCounts',[])).unread,19);
     job=await core.call('sync.start',{subscription_id:sub.id,mode:'detail',item_key:item.id});
     assert.equal((await wait(job.job_id)).state,'succeeded');
     assert.equal((await core.call('content.get',{item_id:item.id})).summary,'详情补充');

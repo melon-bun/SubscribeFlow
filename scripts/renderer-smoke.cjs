@@ -20,8 +20,9 @@ async function verify({window, core, root, mode}) {
   })()`);
   const screenshot = async name => {
     await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-    fs.mkdirSync(path.join(root,'docs/verification'),{recursive:true});
-    fs.writeFileSync(path.join(root,'docs/verification', name), (await window.webContents.capturePage()).toPNG());
+    const output=process.env.SUBSCRIBE_FLOW_VERIFY_OUTPUT || path.join(root,'docs/verification');
+    fs.mkdirSync(output,{recursive:true});
+    fs.writeFileSync(path.join(output, name), (await window.webContents.capturePage()).toPNG());
   };
   await until(`!!window.SF?.app.state.session && !!document.querySelector('[data-view="inbox"] .state')`);
   assert.equal(await evaluate(`SF.app.state.source`),'real');
@@ -88,14 +89,73 @@ async function verify({window, core, root, mode}) {
   }
   await screenshot(mode==='live'?'m5-live-inbox.png':'m5-offline-inbox.png');
   const firstId=await evaluate('SF.app.state.selectedId');
+  const total=(await core.call('content.list',{limit:1})).total;
+  const card=id=>'.content-card[data-content-id=' + JSON.stringify(id) + ']';
+  const absent=id=>`!document.querySelector(${JSON.stringify(card(id))})`;
+  const title=()=>evaluate(`document.querySelector('.view__title h1').textContent`);
+  assert.equal(await evaluate('SF.app.state.filters.quick'),'unread');
   await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b => b.textContent.trim()==='已读').click()`);
-  await until(`document.querySelector('.op-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
+  await until(`SF.app.state.counts.unread === ${total-1} && document.querySelectorAll('.content-card').length > 0 && ${absent(firstId)}`);
+  assert.equal(await evaluate(`document.querySelector('[data-nav="inbox"] .count-pill').textContent`),String(total-1));
   assert.equal((await core.call('content.get',{item_id:firstId})).state.read,true);
   // Invalidations and server-side filters must update the actual list, not just counts.
   await evaluate(`document.querySelector('[data-quick="read"]').click()`);
   await until(`document.querySelectorAll('.content-card').length === 1`);
+  assert.equal(await title(),'已读');
+  assert.equal(await evaluate(`!!document.querySelector('[data-nav="inbox"].is-active')`),false);
+  // Same hash, different scope: the inbox nav must actively reset the filter.
+  await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
+  await until(`SF.app.state.filters.quick === 'unread' && document.querySelectorAll('.content-card').length > 0 && ${absent(firstId)}`);
+  assert.equal(await title(),'收件箱');
+  if(mode === 'offline') {
+    // Each independent processing action leaves inbox, and undo returns it.
+    for(const [field,label,heading] of [['deferred','稍后处理','稍后处理'],['archived','归档','已归档']]) {
+      const id=await evaluate('SF.app.state.selectedId');
+      await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b => b.textContent.trim()===${JSON.stringify(label)}).click()`);
+      await until(`SF.app.state.counts.unread === 23 && document.querySelectorAll('.content-card').length > 0 && ${absent(id)}`);
+      assert.equal((await core.call('content.get',{item_id:id})).state[field],true);
+      await evaluate(`document.querySelector('[data-quick="${field}"]').click()`);
+      await until(`document.querySelectorAll('.content-card').length === 1 && !!document.querySelector(${JSON.stringify(card(id))})`);
+      assert.equal(await title(),heading);
+      await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b => b.textContent.trim()===${JSON.stringify(label)}).click()`);
+      await until(`SF.app.state.counts.unread === 24 && document.querySelectorAll('.content-card').length === 0 && !!document.querySelector('.view__body .state')`);
+      await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
+      await until(`document.querySelectorAll('.content-card').length === 20 && !!document.querySelector(${JSON.stringify(card(id))})`);
+    }
+    const menuId=await evaluate('SF.app.state.selectedId');
+    await evaluate(`document.querySelector(${JSON.stringify(card(menuId) + ' [aria-label="更多操作"]')}).click()`);
+    await click('标记为已读');
+    await until(`SF.app.state.counts.unread === 23 && document.querySelectorAll('.content-card').length > 0 && ${absent(menuId)}`);
+    await evaluate(`document.querySelector('[data-quick="read"]').click()`);
+    await until(`document.querySelectorAll('.content-card').length === 2`);
+    await evaluate(`document.querySelector(${JSON.stringify(card(menuId) + ' [aria-label="更多操作"]')}).click()`);
+    await click('标记为未读');
+    await until(`SF.app.state.counts.unread === 24 && document.querySelectorAll('.content-card').length === 1`);
+    await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
+    await until(`document.querySelectorAll('.content-card').length === 20`);
+    await click('下一页');
+    await until(`document.querySelectorAll('.content-card').length === 4`);
+    const lastPage=await evaluate(`Array.from(document.querySelectorAll('.content-card')).map(c=>c.dataset.contentId)`);
+    for(let i=0;i<4;i++) await evaluate(`document.querySelectorAll('.content-selection > [role="checkbox"]')[${i}].click()`);
+    await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='归档').click()`);
+    await until(`SF.app.state.counts.unread === 20 && document.querySelectorAll('.content-card').length === 20 && document.body.innerText.includes('第 1 页')`);
+    for(const id of lastPage) {
+      assert.ok(await evaluate(absent(id)));
+      assert.equal((await core.call('content.get',{item_id:id})).state.archived,true);
+    }
+    assert.equal(await evaluate(`document.querySelector('[data-nav="inbox"] .count-pill').textContent`),'20');
+    await screenshot('bug-001-inbox-after-processing.png');
+    // Clearing a search must preserve inbox scope instead of exposing processed items.
+    await evaluate(`const search=document.querySelector('.topbar__search input'); search.value='NO_MATCH_BUG_001'; search.dispatchEvent(new Event('input',{bubbles:true}));`);
+    await until(`document.querySelectorAll('.content-card').length === 0 && document.body.innerText.includes('当前没有待处理内容')`);
+    await click('清除筛选');
+    await until(`SF.app.state.search === '' && document.querySelectorAll('.content-card').length === 20`);
+    assert.equal(await evaluate('SF.app.state.filters.quick'),'unread');
+    assert.ok(await evaluate(absent(firstId)));
+  }
   await evaluate(`document.querySelector('[data-quick="all"]').click()`);
   await until(`document.querySelectorAll('.content-card').length > 1`);
+  assert.equal(await title(),'全部更新');
   if(mode === 'offline') {
     assert.equal(await evaluate(`document.querySelectorAll('.content-card').length`),20);
     await click('下一页');
@@ -123,6 +183,12 @@ async function verify({window, core, root, mode}) {
   await click('重启核心服务');
   await until(`SF.app.state.coreStatus.state === 'ready'`);
   assert.equal((await core.call('content.get',{item_id:firstId})).state.read,true);
+  if(mode === 'offline') {
+    await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
+    await until(`document.querySelectorAll('.content-card').length === 20 && SF.app.state.counts.unread === 20`);
+    assert.ok(await evaluate(absent(firstId)));
+    assert.equal((await core.call('content.list',{limit:1})).total,25);
+  }
   await window.reload();
   await until(`!!window.SF?.app.state.session && SF.app.state.counts.total > 0`);
   assert.equal((await core.call('subscription.list')).length,1);

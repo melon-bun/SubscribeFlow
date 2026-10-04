@@ -19,16 +19,23 @@
       var current = cache; current.loading = true;
       app.client.listContents(query(app)).then(function (r) {
         if (cache !== current) return;
-        if (!r.items.length && offset && r.total) { offset = 0; cache = {}; SF.app.renderContent(); return; }
+        if (!r.items.length && offset) {
+          offset = 0;
+          if (r.total) { cache = {}; SF.app.renderContent(); return; }
+        }
         Object.assign(cache, r, {loaded: true, loading: false});
         if (!r.items.some(function (c) { return c.id === app.selectedId; })) app.selectedId = r.items[0] && r.items[0].id;
         selected = new Set(Array.from(selected).filter(function (id) { return r.items.some(function (c) { return c.id === id; }); }));
         SF.app.renderContent();
       }).catch(function (err) { if (cache !== current) return; Object.assign(cache, {loaded: true, loading: false, error: err}); SF.app.renderContent(); });
     }
+    var isInbox = app.filters.quick === 'unread';
+    var titles = {unread:'收件箱',all:'全部更新',read:'已读',deferred:'稍后处理',archived:'已归档'};
+    var descriptions = {unread:'待处理的创作者更新；标记已读、稍后处理或归档后会移出收件箱。',
+      all:'查看所有已保存的内容，包括已读、稍后处理和已归档。',read:'已标记为已读的内容。',deferred:'已留待稍后处理的内容。',archived:'已归档的内容。'};
     var head = h('div.view__head', null,
-      h('div.view__head-text', null, h('div.view__title', null, h('h1.t-h1', {text:'收件箱'}), ui.countPill(cache.total == null ? '—' : cache.total, 'brand')),
-        h('p.view__desc', {text:'按发布时间查看创作者更新，标记已读、稍后处理或归档。'})),
+      h('div.view__head-text', null, h('div.view__title', null, h('h1.t-h1', {text:titles[app.filters.quick] || '内容'}), ui.countPill(cache.total == null ? '—' : cache.total, 'brand')),
+        h('p.view__desc', {text:descriptions[app.filters.quick] || '按发布时间查看创作者更新。'})),
       h('div.view__actions', null, h('span.muted', {text:'最新发布'}), ui.btn('重新查询', {icon:'refresh', onClick:function () { cache = {}; SF.app.refreshData(true); }})));
     var chips = h('div.inbox__toolbar', null,
       ui.btn('全部', {variant: !app.filters.platform ? 'primary' : 'ghost', onClick:function () { app.filters.platform = null; SF.app.render(); }}),
@@ -37,9 +44,10 @@
     var body;
     if (cache.error) body = ui.state({icon:'alert', title:'内容读取失败', desc:cache.error.message, actions:[{label:'重试', onClick:function () { cache = {}; SF.app.renderContent(); }}]});
     else if (!cache.loaded) body = ui.skeletonCards(4);
-    else if (!cache.items.length) body = ui.state({icon:'inbox', title:'当前没有内容', desc:'添加来源并手动刷新，或清除筛选后查看已保存的内容。', actions:[
+    else if (!cache.items.length) body = ui.state({icon:'inbox', title:isInbox ? '当前没有待处理内容' : '当前没有内容', desc:isInbox ? '添加来源并手动刷新，或在“全部更新”和对应分类中查看已处理内容。' : '添加来源并手动刷新，或清除筛选后查看已保存的内容。', actions:[
       {label:'添加来源', variant:'primary', onClick:function () { SF.app.navigate('channels'); }},
-      {label:'清除筛选', onClick:function () { app.filters = {quick:'all', platform:null, channelId:null}; app.search = ''; SF.app.render(); }}]});
+      {label:'清除筛选', onClick:function () { app.filters = {quick:app.filters.quick, platform:null, channelId:null}; app.search = ''; SF.app.render(); }}].concat(isInbox ? [
+      {label:'查看全部更新', onClick:function () { app.filters = {quick:'all', platform:null, channelId:null}; app.search = ''; SF.app.render(); }}] : [])});
     else body = h('div.inbox__grid.scroll-y', null, cache.items.map(function (item) {
       return h('div.content-selection', null, ui.check(selected.has(item.id), function () { if (selected.has(item.id)) selected.delete(item.id); else selected.add(item.id); SF.app.renderContent(); }, '选择 ' + item.title),
         ui.contentCard(item, {selected:app.selectedId === item.id, now:app.now,

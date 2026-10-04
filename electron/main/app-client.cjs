@@ -7,6 +7,8 @@ const UI_METHODS = new Set([
   'listCreators', 'getPrioritySettings', 'savePrioritySettings', 'listRules', 'createRule',
   'updateRule', 'removeRule', 'getSyncCoverage', 'resolveSource', 'searchSources', 'listConnections', 'checkConnection', 'retryRun', 'fetchDetail',
 ]);
+// F1's “未处理” / inbox means no processing state has been set.
+const INBOX_FILTER = Object.freeze({read: false, archived: false, deferred: false});
 function unsupported(message = '此功能属于后续模块，当前业务核心尚未支持') {
   const error = new Error(message); error.code = 'UNSUPPORTED_OPERATION'; throw error;
 }
@@ -65,7 +67,7 @@ async function callUI(core, name, args) {
           dependency: latest?.dependency, authentication: latest?.authentication, actions: latest?.actions || [] } };
     }
     case 'getCounts': {
-      const queries = [{}, {read: false, archived: false}, {read: true}, {deferred: true}, {archived: true}];
+      const queries = [{}, INBOX_FILTER, {read: true}, {deferred: true}, {archived: true}];
       const results = await Promise.all(queries.map(query => call('content.list', { ...query, limit: 1 })));
       return Object.fromEntries(['total', 'unread', 'read', 'deferred', 'archived'].map((key, i) => [key, results[i].total]));
     }
@@ -80,7 +82,7 @@ async function callUI(core, name, args) {
       for (const [front, back] of [['platform', 'channel'], ['keyword', 'query'], ['limit', 'limit'], ['offset', 'offset'], ['from', 'start'], ['to', 'end']]) {
         if (query[front] != null && query[front] !== '') params[back] = query[front];
       }
-      if (query.state === 'unread') Object.assign(params, {read: false, archived: false});
+      if (query.state === 'unread') Object.assign(params, INBOX_FILTER);
       else if (query.state) {
         if (!['read', 'archived', 'deferred'].includes(query.state)) unsupported('不支持此内容状态');
         params[query.state] = true;

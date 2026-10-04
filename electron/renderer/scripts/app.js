@@ -47,7 +47,7 @@
     runs: [],
     now: Date.now(),
     route: { name: "inbox", params: {} },
-    filters: { quick: "all", platform: null, channelId: null },
+    filters: { quick: "unread", platform: null, channelId: null },
     selectedId: null,
     selectedDate: null,
     overviewMode: "calendar",
@@ -105,8 +105,8 @@
       { "aria-label": "主导航" },
       NAV.map(function (n) {
         var badge =
-          n.id === "inbox" && app.counts.total
-            ? h("span.count-pill.count-pill--brand", { text: String(app.counts.total) })
+          n.id === "inbox"
+            ? h("span.count-pill.count-pill--brand", { text: String(app.counts.unread || 0) })
             : null;
         return h(
           "button.nav__item",
@@ -114,7 +114,14 @@
             type: "button",
             "data-nav": n.id,
             "aria-label": n.name, title: n.name,
-            onclick: function () { navigate(n.id); },
+            onclick: function () {
+              if (n.id === "inbox") {
+                app.filters = {quick:"unread", platform:null, channelId:null};
+                app.search = ""; app.selectedId = null;
+              }
+              navigate(n.id);
+              if (n.id === "inbox") render(); // The hash may already be #/inbox.
+            },
           },
           icon(n.icon, 18),
           h("span.nav__label", { text: n.name }),
@@ -372,10 +379,10 @@
 
   function syncNavState() {
     document.querySelectorAll("[data-nav]").forEach(function (b) {
-      b.classList.toggle("is-active", b.dataset.nav === app.route.name);
+      b.classList.toggle("is-active", b.dataset.nav === app.route.name && (b.dataset.nav !== "inbox" || app.filters.quick === "unread"));
     });
     document.querySelectorAll("[data-quick]").forEach(function (b) {
-      b.classList.toggle("is-active", b.dataset.quick === app.filters.quick && !app.filters.platform);
+      b.classList.toggle("is-active", app.route.name === "inbox" && b.dataset.quick === app.filters.quick && !app.filters.platform);
     });
     document.querySelectorAll("[data-platform]").forEach(function (b) {
       b.classList.toggle("is-active", b.dataset.platform === app.filters.platform);
