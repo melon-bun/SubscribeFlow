@@ -54,6 +54,12 @@ class Repository:
                       confirmed=MAX(sources.confirmed,excluded.confirmed),url=excluded.url""",
                    (source.key, source.channel, source.kind, source.external_id, source.name, source.url, int(source.confirmed)))
 
+    def remember_sources(self, sources):
+        with self.database.transaction() as db:
+            for source in sources:
+                if source.confirmed:
+                    self._save_source(db, source)
+
     def subscribe(self, source: Source, connection_id: str, interval_seconds=3600):
         connection = self.get_connection(connection_id)
         if source.channel != connection.channel:

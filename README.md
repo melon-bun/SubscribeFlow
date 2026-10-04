@@ -1,12 +1,9 @@
-# Subscribe Flow
+# Subscribe Flow · 知流
 
-本地优先订阅聚合桌面应用。工程位于本目录，架构和开发计划位于 `../doc/`。
-F1 界面由另一 Agent 在 `../Subscribe_Flow_F1/` 制作，本仓库不修改该工作区。
+本地优先订阅聚合桌面应用，Electron + 原生 HTML/CSS/JavaScript + Python + SQLite。
+默认启动已接入真实业务的 F1 界面；F1 独立交付目录 `../Subscribe_Flow_F1/` 保持不变。
 
-当前已实现 M0、M2、M3、M4；M1 已通过真实搜索、分页窗口、详情和 Core 入库，
-仍缺可靠全历史末页证据。M5 正式页面接入、M6 自动调度、M7 打包尚未完成。
-
-## 启动开发联调窗口
+## 启动
 
 ```sh
 npm install
@@ -14,37 +11,43 @@ npm run configure
 npm start
 ```
 
-本机已完成依赖安装和运行时路径配置，可直接 `npm start`。
-这是 M4 最小窗口，正式界面待 F1 交接后由 M5 集成。
-配置与真实数据不进 Git；业务数据存入 Electron 的应用用户目录。
+本机已完成依赖安装和路径配置，可以直接 `npm start`。请使用独立桌面窗口；
+普通浏览器打开 HTML 只会显示启动说明。业务数据存入 Electron 应用用户目录，不进入 Git。
 
-## Python 开发
+从“渠道管理”添加作者 UID/主页，核对身份后确认，再手动刷新。
+可以查看投稿、按日历浏览、标记已读/稍后处理/归档，查看任务、取消或重试。
+本轮首次真实采集已通过；后续搜索及再次采集复验均出现 OpenCLI 拒绝导航。页面会显示实际错误，
+不会伪装成功。搜索成功及详情的完整桌面验收待外部访问恢复后复验。
+列表未提供封面或摘要时，可尝试“补充详情”。
 
-需要 Python 3.12+；Core 当前仅使用标准库，依赖采用 `uv` 和 `python/uv.lock` 管理。
-
-```sh
-cd python
-uv sync
-uv run python -m unittest discover -s tests -t . -v
-# 已有 Python 3.12+ 时，也可无需安装直接运行：
-PYTHONPATH=src python3 -m unittest discover -s tests -t . -v
-```
-
-渠道独立入口（不依赖数据库和 Electron）：
+首期只有 B站；分页窗口不代表完整历史。优先级/规则/标签/收藏尚未接入。
+M6 自动调度与 M7 独立安装包未开始。M4 最小联调页仍可用：
 
 ```sh
-python3 python/tools/channel_probe.py describe
-python3 python/tools/channel_probe.py fetch 946974 --pages 2 --limit 5
-python3 python/tools/core_smoke.py 946974
+SUBSCRIBE_FLOW_DIAGNOSTICS=1 npm start
 ```
 
-最后两条会访问已有浏览器会话；core_smoke 使用临时数据库，不写入正式用户数据。
+## 开发验收
 
 ```sh
 npm test
 npm run smoke:desktop
+npm run smoke:renderer
+cd python
+PYTHONPATH=src python3 -m unittest discover -s tests -t . -v
 ```
 
-实际模块状态、验收证据和限制见 [实施记录](docs/PROGRESS.md)、
-[业务 API](docs/API.md)、[桌面说明](docs/DESKTOP.md) 和 [存储说明](docs/STORAGE.md)。
-仓库同时保留 [开发依据快照](docs/reference/README.md)，原始开发计划仍维护在同级 `../doc/`。
+显式真实平台验收（使用现有浏览器会话，业务数据仅写临时目录）：
+
+```sh
+npm run smoke:renderer:live
+# 搜索被平台阻塞时，只验证 UID 路径与详情，跳过搜索：
+npm run smoke:renderer:live -- --uid-only
+```
+
+Python 需要 3.12+。可在 `python/` 下使用 `uv sync` 安装开发入口；运行时仅用标准库。
+渠道独立入口：`python3 python/tools/channel_probe.py describe`。
+
+详见 [进度](docs/PROGRESS.md)、[交接](HANDOFF.md)、[F1 接入](docs/frontend/IMPLEMENTATION.md)、
+[桌面说明](docs/DESKTOP.md)、[业务 API](docs/API.md) 和 [存储约定](docs/STORAGE.md)。
+权威计划在 `../doc/DEVELOPMENT_PLAN.md`，仓库保留 [文档快照](docs/reference/README.md)。

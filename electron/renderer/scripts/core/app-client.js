@@ -1,0 +1,154 @@
+/* ==========================================================================
+   AppClient —— 页面与业务之间的唯一数据访问边界
+   --------------------------------------------------------------------------
+   页面只调用本接口，不直接读取演示数据、不拼接平台参数、不访问数据库。
+   F1 阶段由开发预览注入异步演示实现；M4/M5 由受限 Preload API 提供真实实现，
+   两种实现通过同一个 createClient() 工厂注入，页面代码不出现 mock / real 判断。
+   --------------------------------------------------------------------------
+   契约（全部返回 Promise；失败以 { ok:false, error } 语义或抛错约定为准）：
+
+     getSession()            → { user, capabilities, connection }
+     getCounts()             → Counts                      侧栏筛选计数
+     listPlatforms()         → PlatformCount[]            侧栏「按平台筛选」
+     listPriorities()        → PriorityMeta[]             优先级定义与计数
+     listContents(query)     → { items, total }            内容查询
+     getContent(id)          → ContentItem                 详情
+     updateContent(id, patch)→ ContentItem                 整理状态变更
+     bulkUpdate(ids, patch)  → { updated }                 批量操作
+     listChannels(query)     → { items, total }            渠道列表
+     createChannel(draft)    → Channel                     新增渠道/作者
+     updateChannel(id, patch)→ Channel
+     removeChannel(id)       → { removed }
+     setChannelEnabled(id,on)→ Channel
+     startChannelRun(id, opts)→ { runId }                  发起刷新/回溯
+     cancelRun(runId)        → { cancelled }
+     getRuns()               → Run[]                       任务与进度
+     listCreators(query)     → { items, total }            创作者管理
+     getPrioritySettings()   → PrioritySetting[]
+     savePrioritySettings()  → PrioritySetting[]
+     listRules()             → Rule[]
+     createRule(draft)       → Rule
+     updateRule(id, patch)   → Rule
+     removeRule(id)          → { removed }
+     getSyncCoverage(id)     → Coverage                    「最近窗口 / 历史完成」范围
+     on(event, handler)      → unsubscribe                 进度等事件
+   ========================================================================== */
+(function (global) {
+  "use strict";
+
+  var SF = (global.SF = global.SF || {});
+
+  /** 契约方法清单；开发预览用它校验实现是否完整，避免实现漂移。 */
+  var CONTRACT = [
+    "getSession",
+    "getCounts",
+    "listPlatforms",
+    "listPriorities",
+    "listContents",
+    "getContent",
+    "updateContent",
+    "bulkUpdate",
+    "listChannels",
+    "createChannel",
+    "updateChannel",
+    "removeChannel",
+    "setChannelEnabled",
+    "startChannelRun",
+    "cancelRun",
+    "getRuns",
+    "listCreators",
+    "getPrioritySettings",
+    "savePrioritySettings",
+    "listRules",
+    "createRule",
+    "updateRule",
+    "removeRule",
+    "getSyncCoverage",
+    "resolveSource", "searchSources", "listConnections", "checkConnection", "retryRun", "fetchDetail",
+    "on",
+  ];
+
+  /**
+   * 校验一个实现是否满足契约。返回缺失方法名数组。
+   * 只在开发环境使用；生产实现由 M5 验收。
+   */
+  function missingMethods(impl) {
+    if (!impl) return CONTRACT.slice();
+    return CONTRACT.filter(function (name) {
+      return typeof impl[name] !== "function";
+    });
+  }
+
+  /**
+   * 统一选择数据访问实现。这是全应用唯一一处区分 demo / real 的位置。
+   *
+   * 优先级：
+   *   1. 存在 Preload 业务桥（window.SubscribeFlow）→ 真实实现（M5 提供）
+   *   2. 启动配置显式传入 demoFactory（仅开发预览）→ 演示实现
+   *   3. 都没有 → 返回 null，页面展示「尚未接入」的真实状态，不伪造数据
+   *
+   * @param {object} [config]
+   * @param {string} [config.mode]        'auto' | 'demo' | 'real'
+   * @param {Function} [config.demoFactory] 返回 AppClient 演示实现
+   * @param {object} [config.bridge]      Preload 暴露的 window.SubscribeFlow
+   * @returns {{ client: object|null, source: 'real'|'demo'|'none' }}
+   */
+  function createClient(config) {
+    config = config || {};
+    var mode = config.mode || "auto";
+    var bridge = config.bridge !== undefined ? config.bridge : global.SubscribeFlow;
+
+    if (mode === "real") {
+      return wrap(realClientFactory(bridge), "real");
+    }
+    if (mode === "demo") {
+      if (!config.demoFactory) throw new Error("mode=demo 但未提供 demoFactory");
+      return wrap(config.demoFactory(), "demo");
+    }
+    if (bridge) {
+      return wrap(realClientFactory(bridge), "real");
+    }
+    if (config.demoFactory) {
+      return wrap(config.demoFactory(), "demo");
+    }
+    return { client: null, source: "none" };
+  }
+
+  /**
+   * 真实实现入口：M4/M5 在 Preload 暴露 window.SubscribeFlow 后由其转发。
+   * 这里只做方法转发与错误规整，不含任何业务判断。
+   */
+  function realClientFactory(bridge) {
+    if (!bridge || typeof bridge.call !== "function" || typeof bridge.on !== "function") {
+      throw new Error("SubscribeFlow 桥缺少 call()，请检查 Preload 白名单实现");
+    }
+    var client = {
+      on: function (event, handler) {
+        if (typeof bridge.on !== "function") return function () {};
+        return bridge.on(event, handler);
+      },
+    };
+    CONTRACT.forEach(function (name) {
+      if (name === "on") return;
+      client[name] = function () {
+        var args = Array.prototype.slice.call(arguments);
+        return bridge.call(name, args);
+      };
+    });
+    client.getCoreStatus = function () { return bridge.call('core.status'); };
+    client.restartCore = function () { return bridge.call('core.restart'); };
+    client.openContent = function (id) { return bridge.call('content.open', { item_id: id }); };
+    client.openChannel = function (id) { return bridge.call('source.open', { subscription_id: id }); };
+    return client;
+  }
+
+  function wrap(impl, source) {
+    return { client: impl, source: source };
+  }
+
+  SF.AppClient = {
+    CONTRACT: CONTRACT,
+    createClient: createClient,
+    missingMethods: missingMethods,
+  };
+})(window);

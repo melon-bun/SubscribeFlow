@@ -1,0 +1,142 @@
+/* 沿用 F1 渠道表格、弹层和底部双面板，接入真实订阅、连接与任务。 */
+(function (global) {
+  'use strict';
+  var SF = global.SF, h = SF.dom.h, ui = SF.ui, fmt = SF.fmt;
+  var cache = {}, keyword = '', searchTimer;
+  function reload() { cache = {}; SF.app.renderContent(); }
+  function render(app) {
+    if (!cache.loaded && !cache.loading) {
+      var current = cache; current.loading = true;
+      app.client.listChannels({keyword:keyword}).then(async function (result) {
+        var coverage = [];
+        // Keep bridge requests bounded even when many authors are subscribed.
+        for (var c of result.items) {
+          if (current !== cache) return;
+          try { coverage.push(await app.client.getSyncCoverage(c.id)); }
+          catch (err) { coverage.push({label:'覆盖读取失败', detail:err.message, complete:false}); }
+        }
+        if (current !== cache) return;
+        Object.assign(cache, {loaded:true, loading:false, items:result.items, coverage:coverage}); SF.app.renderContent();
+      }).catch(function (err) { if (current !== cache) return; Object.assign(cache,{loaded:true,loading:false,error:err}); SF.app.renderContent(); });
+    }
+    var body;
+    if (cache.error) body = ui.state({icon:'alert',title:'渠道读取失败',desc:cache.error.message,actions:[{label:'重试',onClick:reload}]});
+    else if (!cache.loaded) body = ui.state({icon:'clock', title:'正在载入渠道…'});
+    else body = h('div.col.grow.channels-content.scroll-y', {style:{gap:'20px'}}, channelList(app), bottomPanels(app));
+    return h('div.view', {'data-view':'channels'}, h('div.view__head', null,
+      h('div.view__head-text', null, h('h1.t-h1',{text:'渠道管理'}), h('p.view__desc',{text:'管理关注的创作者，手动获取更新并查看采集状态。'})),
+      h('div.view__actions', null, ui.btn('添加渠道或创作者',{variant:'primary',icon:'plus',disabled:!app.session.capabilities.canManageChannels,onClick:function () { addDialog(app); }}))),
+      h('div.view__body', null, body));
+  }
+  function channelList(app) {
+    var toolbar = h('div.channels__toolbar', null, h('h2.t-h2',{text:'全部渠道（' + cache.items.length + '）'}), h('div.spacer'),
+      ui.searchInput('搜索创作者或链接...', keyword, function (v) { keyword = v; clearTimeout(searchTimer); searchTimer = setTimeout(reload,240); }),
+      ui.btn('重新查询',{icon:'refresh',onClick:function () { SF.app.refreshData(true); }}));
+    if (!cache.items.length) return h('div',null,toolbar,h('div.panel',null,ui.state({icon:'folder-open',title:keyword ? '没有匹配的来源' : '还没有添加任何来源',desc:'使用作者 UID、主页链接或搜索结果添加来源，然后手动刷新。',actions:[{label:'添加来源',variant:'primary',onClick:function () { addDialog(app); }}]})));
+    return h('div',null,toolbar,h('div.panel.channels__table-wrap',null,h('table.table.live-channels',null,
+      h('thead',null,h('tr',null,['平台','创作者 / 频道名','主页','同步方式','状态','覆盖范围','最近任务','操作'].map(function (label) { return h('th',{text:label}); }))),
+      h('tbody',null,cache.items.map(function (c,i) {
+        var job = app.runs.find(function (r) { return r.channelId === c.id; }), cov = cache.coverage[i];
+        return h('tr',{'data-channel-id':c.id},
+          h('td',null,ui.platformIcon(c.platform)),
+          h('td',null,h('div.channel-cell',null,ui.avatar(c.name),h('div.channel-cell__text',null,h('div.channel-cell__name',{text:c.name}),h('div.channel-cell__desc',{text:'UID ' + c.externalId})))),
+          h('td',null,ui.btn('打开主页',{size:'sm',icon:'external',onClick:function () { SF.app.act('source:' + c.id,function () { return app.client.openChannel(c.id); }); }})),
+          h('td',{text:'手动刷新'}),
+          h('td',null,ui.toggle(c.enabled,function (enabled) { SF.app.act('subscription:' + c.id,async function () { await app.client.setChannelEnabled(c.id,enabled); await SF.app.refreshData(true); }); },{label:(c.enabled?'暂停 ':'恢复 ') + c.name})),
+          h('td',null,h('button.coverage-cell' + (cov.complete?'':'.coverage-cell--limited'),{type:'button',title:cov.detail,onclick:function () { ui.dialog({title:c.name + ' · 覆盖范围',body:ui.notice({tone:cov.complete?'info':'warn',text:cov.detail})}); }},SF.icon(cov.complete?'check':'clock',14),h('span',{text:cov.label}))),
+          h('td',null,job ? h('div.table__time',null,h('span',{text:fmt.runState(job.state)}),h('small',{text:fmt.relative(job.startedAt,app.now)})) : h('span.muted',{text:'尚未采集'})),
+          h('td',null,h('div.table__ops',null,
+            ui.iconBtn('refresh','刷新来源',function () { startRun(app,c,'recent'); },{disabled:!c.enabled || !c.capabilities.canRefresh}),
+            ui.iconBtn('clock','回溯历史',function () { ui.confirm({title:'分页回溯 ' + c.name,message:'最多读取 10 页。当前渠道没有可靠末页证据，回溯成功也不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
+            ui.iconBtn('file-text','查看来源内容',function () { app.filters = {quick:'all',platform:null,channelId:c.id}; app.search=''; SF.app.navigate('inbox'); }),
+            ui.iconBtn('trash','取消追踪',function () { ui.confirm({title:'取消追踪 ' + c.name + '？',message:'已保存的历史内容会保留。再次添加相同 UID 可以恢复订阅。',confirmText:'取消追踪',danger:true}).then(function(ok) { if(ok) SF.app.act('subscription:' + c.id,async function () { await app.client.removeChannel(c.id); await SF.app.refreshData(true); }); }); }))));
+      })))));
+  }
+  function startRun(app,c,kind) {
+    return SF.app.act('run:' + c.id,async function () { await app.client.startChannelRun(c.id,{kind:kind}); ui.toast('采集任务已创建'); await SF.app.refreshData(true); });
+  }
+  function bottomPanels(app) {
+    return h('div.channels__bottom',null,
+      h('section.panel.live-panel',null,h('h2.t-h2',{text:'渠道与连接'}),app.session.connections.map(function (c) {
+        var r = c.readiness;
+        return h('div.connection-card',null,h('h3',{text:SF.catalog.platform(c.channel).name}),
+          h('p',{text:r ? r.reason : '尚未检查采集环境'}),
+          h('p.muted',{text:'认证：' + ({unknown:'尚未确认',required:'需要登录',available:'已有可用会话',not_required:'无需登录'}[r && r.authentication] || '尚未确认')}),
+          r ? h('p.muted',{text:'检查时间：' + fmt.absolute(r.checked_at)}) : null,
+          ui.btn('检查连接',{onClick:function () { SF.app.act('check:' + c.id,async function () { await app.client.checkConnection(c.id); await SF.app.refreshData(true); }); }}));
+      }),h('p.field__hint',{text:'采集失败时仍可查看本地内容。自动调度、优先级和自动规则将在后续模块接入。'})),
+      h('section.panel.live-panel',null,h('h2.t-h2',{text:'最近任务（最多 100 条）'}),
+        app.runs.length ? h('div.run-list',null,app.runs.map(function (run) {
+          var canCancel = ['queued','running','waiting'].includes(run.state);
+          var canRetry = ['failed','partial','waiting','interrupted','cancelled'].includes(run.state);
+          return h('div.run-row',{'data-run-id':run.id},h('div.row',null,h('strong',{text:run.channelName}),h('div.spacer'),ui.tag(fmt.runState(run.state))),
+            h('p',{text:run.message}), h('p.muted',{text:({initial:'初次获取',refresh:'近期刷新',backfill:'历史回溯',detail:'详情补充'}[run.kind] || run.kind) + (run.kind === 'detail' ? ' · 更新已有内容' : ' · 已提交 ' + run.pages + ' 页 · ' + run.items + ' 条 · 新增 ' + run.newItems + ' 条')}),
+            run.kind !== 'detail' ? h('p.scope-note',{text:fmt.coverage(run.scope)}) : null,
+            ['queued','running'].includes(run.state) ? ui.progress(0,true) : null,
+            canCancel ? ui.btn('取消任务',{onClick:function () { SF.app.act('cancel:' + run.id,async function () { await app.client.cancelRun(run.id); await SF.app.refreshData(true); }); }}) : null,
+            canRetry ? ui.btn('重试任务',{onClick:function () { SF.app.act('retry:' + run.id,async function () { await app.client.retryRun(run.id); await SF.app.refreshData(true); }); }}) : null);
+        })) : h('p.muted',{text:'还没有采集任务'})));
+  }
+  function addDialog(app) {
+    var connections = app.session.connections.filter(function (c) { return c.enabled; });
+    if (!connections.length) { ui.toast('没有可用的渠道连接','error'); return; }
+    var connectionId = connections[0].id, chosen = null, requestId = 0, busy = false, closed = false;
+    var input = h('input.input',{id:'source-input',placeholder:'输入作者 UID、主页链接或搜索名称',autocomplete:'off'});
+    var results = h('div.source-results'), error = h('p.field__error',{'role':'alert'});
+    var confirm = h('input',{type:'checkbox',id:'source-confirm',disabled:true});
+    var add = ui.btn('确认添加',{variant:'primary',disabled:true,onClick:async function () {
+      if (busy || !chosen || !confirm.checked) return;
+      busy = true; setBusy(true); error.textContent = '';
+      try {
+        await app.client.createChannel({platform:chosen.channel,connectionId:connectionId,link:chosen.url,confirmed:true});
+        layer.close(); await SF.app.refreshData(true); ui.toast('已添加来源，可点击刷新获取内容');
+      } catch (err) { error.textContent = err.message; }
+      finally { busy = false; if (!closed) setBusy(false); }
+    }});
+    function clearChoice() { requestId++; chosen=null; confirm.checked=false; confirm.disabled=true; add.disabled=true; results.replaceChildren(); error.textContent=''; }
+    input.addEventListener('input',clearChoice);
+    confirm.addEventListener('change',function () { add.disabled = busy || !chosen || !confirm.checked; });
+    function setBusy(value) {
+      input.disabled=value; platform._input.disabled=value; resolve.disabled=value; search.disabled=value || !searchSupported();
+      confirm.disabled=value || !chosen; add.disabled=value || !chosen || !confirm.checked;
+    }
+    function searchSupported() {
+      var c = connections.find(function (v) { return v.id === connectionId; });
+      return app.session.channels.some(function (d) { return d.channel === c.channel && d.operations.search_sources && d.operations.search_sources.supported; });
+    }
+    function choose(source) {
+      chosen = source; confirm.checked=false; confirm.disabled=false; add.disabled=true;
+      results.replaceChildren(ui.notice({tone:'info',title:source.name + ' · UID ' + source.external_id,
+        text:source.url + (source.confirmed ? ' · 搜索结果已提供远程身份信息。' : ' · 仅完成地址解析，尚未验证账号存在，请核对 UID。')}));
+    }
+    async function locate(searching) {
+      if(busy) return;
+      clearChoice(); var ticket = requestId, text=input.value.trim();
+      if(!text) { error.textContent='请输入 UID、主页或名称'; return; }
+      busy=true; setBusy(true);
+      try {
+        var query={connectionId:connectionId,text:text};
+        var response=await app.client[searching?'searchSources':'resolveSource'](query);
+        if(closed || requestId!==ticket) return;
+        if(!searching) choose(response);
+        else if(!response.items.length) results.replaceChildren(h('p',{text:'没有匹配的作者，请修改关键词或使用 UID。'}));
+        else results.replaceChildren.apply(results,response.items.map(function(source) {
+          return ui.btn(source.name + ' · UID ' + source.external_id,{block:true,onClick:function () { choose(source); }});
+        }));
+      } catch(err) { if(!closed && requestId===ticket) error.textContent=err.message; }
+      finally { busy=false; if(!closed) setBusy(false); }
+    }
+    var platform=ui.select(connections.map(function(c) { return {value:c.id,label:SF.catalog.platform(c.channel).name}; }),connectionId,function(v) { connectionId=v; clearChoice(); setBusy(false); },{ariaLabel:'来源平台'});
+    var resolve=ui.btn('解析 UID / 主页',{onClick:function () { locate(false); }});
+    var search=ui.btn('搜索作者',{disabled:!searchSupported(),onClick:function () { locate(true); }});
+    var layer=ui.dialog({title:'添加渠道或创作者',wide:true,body:h('div.col',{style:{gap:'16px'}},
+      h('div.field',null,h('span.field__label',{text:'来源平台'}),platform),
+      h('div.field',null,h('label.field__label',{htmlFor:'source-input',text:'作者 UID、主页或名称'}),input),
+      h('div.row.row-gap-3',null,resolve,search),results,error,
+      h('label.row.row-gap-3',null,confirm,h('span',{text:'我已核对 UID，确认追踪此作者'}))),
+      footer:[h('p.field__hint',{text:'添加后手动刷新。相同 UID 不会重复订阅。'}),h('div.spacer'),ui.btn('取消',{onClick:function(){layer.close();}}),add],
+      onClose:function(){closed=true;requestId++;}});
+  }
+  SF.views = SF.views || {};
+  SF.views.channels = {render:render,reset:function(){cache={};}};
+})(window);

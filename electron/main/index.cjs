@@ -4,10 +4,13 @@ const path = require('node:path');
 const { CoreClient } = require('./core-client.cjs');
 const { CORE_METHODS, DESKTOP_METHODS } = require('./methods.cjs');
 const { UI_METHODS, callUI } = require('./app-client.cjs');
+const {openSavedLink} = require('./external-links.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const APP_URL = 'app://subscribe-flow/index.html';
 const smoke = process.env.SUBSCRIBE_FLOW_DESKTOP_SMOKE === '1';
+const rendererSmoke = process.env.SUBSCRIBE_FLOW_RENDERER_SMOKE;
+const diagnostics = smoke || process.env.SUBSCRIBE_FLOW_DIAGNOSTICS === '1';
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.setName('Subscribe Flow');
 if (process.env.SUBSCRIBE_FLOW_DATA_DIR) app.setPath('userData', process.env.SUBSCRIBE_FLOW_DATA_DIR);
@@ -26,7 +29,7 @@ async function start() {
   try { runtime = JSON.parse(readFileSync(path.join(root, '.runtime-paths.json'), 'utf8')); }
   catch { /* The window reports missing runtime configuration. */ }
   core = new CoreClient({ ...runtime, python: process.env.SUBSCRIBE_FLOW_PYTHON || runtime.python,
-    root, dataDir: app.getPath('userData'), opencli: smoke ? '/missing/opencli' : runtime.opencli });
+    root, dataDir: app.getPath('userData'), opencli: smoke || rendererSmoke === 'offline' ? '/missing/opencli' : runtime.opencli });
   core.on('status', status => { lastStatus = status; send('core.status', status); });
   core.on('notification', (event, data) => {
     if (!['sync.changed', 'content.changed', 'subscription.changed'].includes(event)) return;
@@ -35,12 +38,22 @@ async function start() {
     for (const alias of aliases[event]) send(alias, null); // Invalidation; consumers re-query durable state.
   });
 
-  const assets = {'/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css']};
+  const pageRoot = path.join(root, 'electron', diagnostics ? 'diagnostics' : 'renderer');
+  const assets = new Map();
+  const types = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.jpg':'image/jpeg', '.png':'image/png'};
+  async function registerAssets(folder, prefix = '') {
+    for (const entry of await fs.readdir(folder, {withFileTypes:true})) {
+      const relative = prefix + entry.name;
+      if (entry.isDirectory()) await registerAssets(path.join(folder, entry.name), relative + '/');
+      else if (entry.isFile() && types[path.extname(entry.name)]) assets.set('/' + relative, [path.join(folder,entry.name), types[path.extname(entry.name)]]);
+    }
+  }
+  await registerAssets(pageRoot);
   protocol.handle('app', async request => {
     const url = new URL(request.url);
-    const asset = url.hostname === 'subscribe-flow' && assets[url.pathname];
-    if (!asset) return new Response('Not found', {status: 404});
-    return new Response(await fs.readFile(path.join(root, 'electron', 'diagnostics', asset[0])), {headers: {'Content-Type': `${asset[1]}; charset=utf-8`}});
+    const asset = request.method === 'GET' && url.host === 'subscribe-flow' && assets.get(url.pathname);
+    if (!asset) return new Response('Not found', {status:404});
+    return new Response(await fs.readFile(asset[0]), {headers:{'Content-Type':asset[1], 'X-Content-Type-Options':'nosniff'}});
   });
   ipcMain.handle('subscribe-flow:call', async (event, name, params) => {
     try {
@@ -52,23 +65,18 @@ async function start() {
       let value;
       if (name === 'core.status') value = lastStatus;
       else if (name === 'core.restart') value = await core.restart();
-      else if (name === 'content.open') {
-        if (Object.keys(params).length !== 1 || typeof params.item_id !== 'string') throw new Error('需要已保存的内容 ID');
-        const item = await core.call('content.get', {item_id: params.item_id});
-        const url = new URL(item.url);
-        if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || item.url.length > 2000) throw new Error('原文链接无效');
-        await shell.openExternal(url.href);
-        value = {opened: true};
+      else if (name === 'content.open' || name === 'source.open') {
+        value = await openSavedLink(core, name, params, url => shell.openExternal(url));
       } else value = await core.call(name, params);
       return {ok: true, value};
     } catch (error) {
       return {ok: false, error: {code: error.code || 'DESKTOP_ERROR', message: error.message, ...(error.data || {})}};
     }
   });
-  window = new BrowserWindow({ width: 1000, height: 760, minWidth: 680, minHeight: 500, show: !smoke,
-    title: 'Subscribe Flow · 开发联调', webPreferences: {preload: path.join(root, 'electron', 'preload', 'index.cjs'),
+  window = new BrowserWindow({ width: diagnostics ? 1000 : 1440, height: diagnostics ? 760 : 1000, minWidth: diagnostics ? 680 : 800, minHeight: diagnostics ? 500 : 600, show: !smoke && !rendererSmoke,
+    title: diagnostics ? 'Subscribe Flow · 开发联调' : '知流 · Subscribe Flow', webPreferences: {preload: path.join(root, 'electron', 'preload', 'index.cjs'),
       contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, webviewTag: false,
-      backgroundThrottling: !smoke} });
+      backgroundThrottling: !smoke && !rendererSmoke} });
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   window.webContents.session.setPermissionCheckHandler(() => false);
   window.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
@@ -76,7 +84,14 @@ async function start() {
   window.webContents.on('will-attach-webview', event => event.preventDefault());
   await window.loadURL(APP_URL);
   try { await core.start(); }
-  catch (error) { lastStatus = {state: 'error', message: error.message}; send('core.status', lastStatus); if (smoke) throw error; }
+  catch (error) { lastStatus = {state: 'error', message: error.message}; send('core.status', lastStatus); if (smoke || rendererSmoke) throw error; }
+  if (rendererSmoke) {
+    try {
+      await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
+      await core.stop(); quitting = true; app.quit();
+    } catch (error) { console.error(error); await core.stop(); app.exit(1); }
+    return;
+  }
   if (smoke) {
     try {
       const result = await window.webContents.executeJavaScript(`(async () => {

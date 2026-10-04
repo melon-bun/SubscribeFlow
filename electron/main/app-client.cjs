@@ -5,7 +5,7 @@ const UI_METHODS = new Set([
   'updateContent', 'bulkUpdate', 'listChannels', 'createChannel', 'updateChannel',
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',
   'listCreators', 'getPrioritySettings', 'savePrioritySettings', 'listRules', 'createRule',
-  'updateRule', 'removeRule', 'getSyncCoverage',
+  'updateRule', 'removeRule', 'getSyncCoverage', 'resolveSource', 'searchSources', 'listConnections', 'checkConnection', 'retryRun', 'fetchDetail',
 ]);
 function unsupported(message = '此功能属于后续模块，当前业务核心尚未支持') {
   const error = new Error(message); error.code = 'UNSUPPORTED_OPERATION'; throw error;
@@ -23,24 +23,28 @@ function contentDTO(item, subscriptions) {
   const sub = subscriptions.find(row => row.source_id === sourceKey);
   return {
     id: item.id, title: item.title, summary: item.summary, platform: item.channel,
-    channelId: sub?.id ?? null, channelName: item.source.name, author: item.source.name,
+    channelId: sub?.id ?? null, channelName: sub?.name ?? item.source.name, author: sub?.name ?? item.source.name,
     publishedAt: item.published.value, publishedPrecision: item.published.precision,
-    publishedTimezone: item.published.timezone, url: item.url, thumb: item.thumbnail,
+    publishedTimezone: item.published.timezone, url: item.url, thumb: item.thumbnail, cover: item.thumbnail, publishedProvenance: item.published.provenance,
     state: item.state, priority: null, tags: [], contentHash: null,
   };
 }
-function channelDTO(sub) {
+function channelDTO(sub, descriptors = []) {
+  const operations = descriptors.find(c => c.channel === sub.channel)?.operations || {};
   return { id: sub.id, name: sub.name, platform: sub.channel, link: sub.url,
     enabled: sub.status === 'active', status: sub.status, connectionId: sub.connection_id,
-    intervalSeconds: sub.interval_seconds, frequency: null, lastSync: null };
+    externalId: sub.external_id, intervalSeconds: sub.interval_seconds, frequency: '手动刷新',
+    capabilities: { canRefresh: !!operations.list_items?.supported,
+      canBackfill: !!operations.list_items?.supported && operations.list_items.pagination !== 'none',
+      fullHistory: !!operations.list_items?.full_history, canFetchDetail: !!operations.get_item_detail?.supported } };
 }
 function runDTO(job, subscriptions) {
   return { id: job.id, channelId: job.subscription_id,
     channelName: subscriptions.find(sub => sub.id === job.subscription_id)?.name ?? '',
-    kind: job.mode === 'backfill' ? 'backfill' : 'recent', scope: job.coverage,
-    state: job.state, progress: null, pages: job.pages, items: job.items,
-    message: job.error?.message ?? `已提交 ${job.pages} 页、${job.items} 条记录`,
-    startedAt: Date.parse(job.created_at), error: job.error };
+    kind: job.mode, scope: job.coverage,
+    state: job.state, progress: null, pages: job.pages, items: job.items, newItems: job.new_items,
+    message: job.error?.message ?? (job.mode === 'detail' ? (job.state === 'succeeded' ? '详情补充完成' : '正在处理详情任务') : job.state === 'succeeded' && job.mode !== 'detail' && job.new_items === 0 ? `检查完成，没有新内容；本次读取 ${job.items} 条记录` : `已提交 ${job.pages} 页、${job.items} 条记录，新增 ${job.new_items} 条`),
+    startedAt: Date.parse(job.created_at), updatedAt: job.updated_at, error: job.error };
 }
 
 async function callUI(core, name, args) {
@@ -54,9 +58,11 @@ async function callUI(core, name, args) {
       const latest = connections.find(c => c.readiness?.state === 'blocked')?.readiness ?? connections.find(c => c.readiness)?.readiness;
       return { user: { name: '本地用户' }, now: Date.now(), isDemo: false,
         capabilities: { canRefresh: channels.some(c => c.operations.list_items?.supported),
-          canBackfill: channels.some(c => c.operations.list_items?.pagination !== 'none'),
-          canCancel: true, canManageChannels: true, canManagePriorities: false, canManageRules: false },
-        connection: { state: latest?.state ?? 'unknown', detail: latest?.reason ?? '尚未检查采集环境' } };
+          canBackfill: channels.some(c => c.operations.list_items?.supported && c.operations.list_items.pagination !== 'none'),
+          canCancel: true, canManageChannels: true, canManagePriorities: false, canManageRules: false, canBookmark: false, canManageTags: false, canSchedule: false },
+        channels, connections,
+        connection: { state: latest?.state ?? 'unknown', detail: latest?.reason ?? '尚未检查采集环境',
+          dependency: latest?.dependency, authentication: latest?.authentication, actions: latest?.actions || [] } };
     }
     case 'getCounts': {
       const queries = [{}, {read: false, archived: false}, {read: true}, {deferred: true}, {archived: true}];
@@ -101,7 +107,8 @@ async function callUI(core, name, args) {
     case 'listChannels':
     case 'listCreators': {
       const query = object(first); keys(query, ['platform', 'keyword']);
-      let items = (await call('subscription.list')).map(channelDTO);
+      const [subs, descriptors] = await Promise.all([call('subscription.list'), call('channel.list')]);
+      let items = subs.map(sub => channelDTO(sub, descriptors));
       if (query.platform) items = items.filter(item => item.platform === query.platform);
       if (query.keyword) items = items.filter(item => item.name.includes(query.keyword) || item.link.includes(query.keyword));
       return {items, total: items.length};
@@ -113,7 +120,7 @@ async function callUI(core, name, args) {
       if (!connection) unsupported('所选平台尚未接入');
       const params = {locator: draft.link, connection_id: connection.id, confirmed: draft.confirmed === true};
       if (draft.intervalSeconds !== undefined) params.interval_seconds = draft.intervalSeconds;
-      return channelDTO(await call('subscription.add', params));
+      return channelDTO(await call('subscription.add', params), await call('channel.list'));
     }
     case 'updateChannel': {
       const patch = object(second); keys(patch, ['enabled', 'connectionId', 'intervalSeconds']);
@@ -121,11 +128,11 @@ async function callUI(core, name, args) {
       if ('enabled' in patch) { if (typeof patch.enabled !== 'boolean') throw new Error('enabled 必须为布尔值'); params.status = patch.enabled ? 'active' : 'paused'; }
       if ('connectionId' in patch) params.connection_id = patch.connectionId;
       if ('intervalSeconds' in patch) params.interval_seconds = patch.intervalSeconds;
-      return channelDTO(await call('subscription.update', params));
+      return channelDTO(await call('subscription.update', params), await call('channel.list'));
     }
     case 'setChannelEnabled':
       if (typeof second !== 'boolean') throw new Error('enabled 必须为布尔值');
-      return channelDTO(await call('subscription.update', {subscription_id: first, status: second ? 'active' : 'paused'}));
+      return channelDTO(await call('subscription.update', {subscription_id: first, status: second ? 'active' : 'paused'}), await call('channel.list'));
     case 'removeChannel':
       await call('subscription.update', {subscription_id: first, status: 'cancelled'});
       return {removed: first};
@@ -142,11 +149,35 @@ async function callUI(core, name, args) {
       const [jobs, subs] = await Promise.all([call('sync.list'), subscriptions()]);
       return jobs.map(job => runDTO(job, subs));
     }
+    case 'resolveSource':
+    case 'searchSources': {
+      const query = object(first); keys(query, ['connectionId', 'text']);
+      return call(name === 'resolveSource' ? 'source.resolve' : 'source.search', {
+        connection_id: query.connectionId, [name === 'resolveSource' ? 'locator' : 'query']: query.text,
+      });
+    }
+    case 'listConnections': return call('connection.list');
+    case 'checkConnection': return call('connection.check', {connection_id: first});
+    case 'retryRun': return call('sync.retry', {job_id: first});
+    case 'fetchDetail': {
+      const item = await call('content.get', {item_id: first});
+      const sub = (await subscriptions()).find(row => row.source_id === `${item.source.channel}:${item.source.kind}:${item.source.external_id}` && row.status === 'active');
+      if (!sub) unsupported('请先恢复该来源的订阅再补充详情');
+      return call('sync.start', {subscription_id: sub.id, mode: 'detail', item_key: first});
+    }
     case 'getSyncCoverage': {
       const result = await call('sync.coverage', {subscription_id: first});
       const complete = result.progress.some(p => p.compatible && p.payload.complete && p.payload.coverage === 'history_end');
-      return {scope: complete ? 'full' : 'recent', complete, label: complete ? '历史遍历已完成' : '尚未证明历史完整',
-        detail: complete ? '已记录可靠末页证据' : '请查看任务的实际覆盖范围与错误信息', canBackfill: !complete, progress: result.progress};
+      const compatible = result.progress.filter(p => p.compatible);
+      const [subs, connections, jobs] = await Promise.all([subscriptions(), call('connection.list'), call('sync.list')]);
+      const sub = subs.find(s => s.id === first);
+      const connection = connections.find(c => c.id === sub.connection_id);
+      const hasWindow = jobs.some(j => j.subscription_id === first && j.mode !== 'detail' && j.pages > 0 &&
+        j.snapshot.subscription_version === sub.version && j.snapshot.connection_version === connection.version && j.snapshot.connection_id === connection.id);
+      return {scope: complete ? 'full' : 'recent', complete,
+        label: complete ? '历史遍历已完成' : compatible.length || hasWindow ? '仅已采集窗口' : '尚无有效覆盖记录',
+        detail: complete ? '已记录可靠末页证据' : '已保存的内容可正常阅读；未取得可靠末页证据，不代表全部历史。分页回溯也可能存在缺口。',
+        canBackfill: !complete, progress: result.progress};
     }
     default: unsupported();
   }

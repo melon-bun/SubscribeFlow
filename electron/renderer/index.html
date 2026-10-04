@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>知流 · Subscribe_Flow</title>
+
+    <link rel="stylesheet" href="styles/tokens.css" />
+    <link rel="stylesheet" href="styles/base.css" />
+    <link rel="stylesheet" href="styles/layout.css" />
+    <link rel="stylesheet" href="styles/components.css" />
+    <link rel="stylesheet" href="styles/views.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+    <div id="app"></div>
+
+    <!-- 基础层 -->
+    <script src="scripts/core/dom.js"></script>
+    <script src="scripts/core/icons.js"></script>
+    <script src="scripts/core/format.js"></script>
+    <script src="scripts/core/catalog.js"></script>
+    <script src="scripts/core/app-client.js"></script>
+    <!-- 组件层 -->
+    <script src="scripts/ui/components.js"></script>
+    <!-- 视图层 -->
+    <script src="scripts/views/inbox.js"></script>
+    <script src="scripts/views/overview.js"></script>
+    <script src="scripts/views/channels.js"></script>
+    <!-- 引导 -->
+    <script src="scripts/app.js"></script>
+  </body>
+</html>

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from subscribe_flow.bootstrap import Core
 from subscribe_flow.channels.gateway import ChannelGateway
-from subscribe_flow.contracts import ChannelError, ContentItem, FetchPage, ItemError, Source, OperationCapability
+from subscribe_flow.contracts import ChannelError, ContentItem, FetchPage, ItemError, Source, SourcePage, OperationCapability
 from tests.fakes import TestAdapter
 
 
@@ -42,6 +42,25 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.core.queries.contents()["total"], 1)
         await self.core.update_subscription(self.sub["id"], status="cancelled")
         self.assertEqual(self.core.queries.contents()["total"], 1)
+
+    async def test_search_preserves_verified_name_without_subscribing_candidates(self):
+        candidate = Source("test", "author", "new", "Named author", "https://example.com/new", True)
+        async def search(*args):
+            return SourcePage((candidate,))
+        async def resolve(locator, context):
+            return replace(candidate, name="UID new", confirmed=False)
+        self.core.gateway.search_sources = search
+        self.adapter.resolve_source = resolve
+        before = len(self.core.queries.subscriptions())
+        result = await self.core.subscriptions.search("Named", "test:default")
+        self.assertEqual(result.items[0].name, "Named author")
+        self.assertEqual(len(self.core.queries.subscriptions()), before)
+        with self.assertRaises(ChannelError):
+            await self.core.subscriptions.add("new", "test:default", confirmed=False)
+        sub = await self.core.subscriptions.add("new", "test:default", confirmed=True)
+        self.assertEqual(sub["name"], "Named author")
+        self.assertTrue(sub["confirmed"])
+        self.assertEqual(self.core.repository.source_for(sub["id"]).name, "Named author")
 
     async def test_duplicate_clicks_merge_and_cancel_stops_before_commit(self):
         self.adapter.delay = 1

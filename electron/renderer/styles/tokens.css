@@ -1,0 +1,162 @@
+/* ==========================================================================
+   知流 / Subscribe_Flow — 设计令牌
+   还原依据：doc/frontend/IMPLEMENTATION.md 所列 F1 设计稿（2026-04 版）
+   所有颜色、尺寸、字号均从设计稿取值，新增样式必须引用本文件的变量。
+   ========================================================================== */
+
+:root {
+  /* ---- 品牌与主色 ---- */
+  --c-brand: #2563eb;
+  --c-brand-hover: #1d4ed8;
+  --c-brand-active: #1e40af;
+  --c-brand-weak: #eef3ff;
+  --c-brand-weak-2: #f5f8ff;
+  --c-brand-border: #c3d4fd;
+
+  /* ---- 中性色 ---- */
+  --c-bg: #f4f5f7;
+  --c-surface: #ffffff;
+  --c-surface-2: #fafbfc;
+  --c-surface-3: #f2f3f5;
+  --c-border: #e6e8eb;
+  --c-border-strong: #d5d8dd;
+  --c-divider: #f0f1f3;
+
+  --c-text: #1d2129;
+  --c-text-2: #5c6270;
+  --c-text-3: #8a9099;
+  --c-text-4: #a8aeb8;
+  --c-text-inverse: #ffffff;
+
+  /* ---- 优先级语义色 ---- */
+  --c-high: #f53f3f;
+  --c-high-bg: #fff1f0;
+  --c-high-bg-2: #ffe8e6;
+  --c-mid: #ff8f1f;
+  --c-mid-bg: #fff7e8;
+  --c-mid-bg-2: #fff0d6;
+  --c-low: #00b42a;
+  --c-low-bg: #eafbee;
+  --c-low-bg-2: #d6f5de;
+
+  /* ---- 平台色 ---- */
+  --c-xhs: #ff2442;
+  --c-bili: #fb7299;
+  --c-wechat: #07c160;
+  --c-weibo: #ff8200;
+  --c-zhihu: #0066ff;
+  --c-other: #9aa0a8;
+
+  /* ---- 状态色 ---- */
+  --c-info: #2563eb;
+  --c-info-bg: #eef3ff;
+  --c-success: #00b42a;
+  --c-success-bg: #eafbee;
+  --c-warn: #ff8f1f;
+  --c-warn-bg: #fff7e8;
+  --c-danger: #f53f3f;
+  --c-danger-bg: #fff1f0;
+
+  /* ---- 圆角 ---- */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-full: 999px;
+
+  /* ---- 间距 ---- */
+  --s-1: 4px;
+  --s-2: 6px;
+  --s-3: 8px;
+  --s-4: 10px;
+  --s-5: 12px;
+  --s-6: 16px;
+  --s-7: 20px;
+  --s-8: 24px;
+  --s-9: 32px;
+  --s-10: 40px;
+
+  /* ---- 字号 ---- */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-cap: 13px;
+  --fs-base: 14px;
+  --fs-md: 15px;
+  --fs-lg: 16px;
+  --fs-xl: 18px;
+  --fs-2xl: 22px;
+  --fs-3xl: 28px;
+
+  /* ---- 字体 ---- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", "Segoe UI", Roboto, sans-serif;
+  --font-num: "SF Pro Display", -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* ---- 布局尺寸 ---- */
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 64px;
+  --topbar-h: 60px;
+  --detail-w: 400px;
+  --row-h: 44px;
+  --thumb-sm: 56px;
+  --thumb-md: 96px;
+  --thumb-lg: 120px;
+
+  /* ---- 阴影 ---- */
+  --sh-1: 0 1px 2px rgba(29, 33, 41, 0.04);
+  --sh-2: 0 2px 8px rgba(29, 33, 41, 0.08);
+  --sh-3: 0 8px 24px rgba(29, 33, 41, 0.1);
+  --sh-4: 0 16px 48px rgba(29, 33, 41, 0.14);
+
+  /* ---- 动效 ---- */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+
+  --z-drawer: 40;
+  --z-dialog: 60;
+  --z-toast: 80;
+  --z-preview: 100;
+}
+
+/* 深色模式：设计稿右上角有主题切换，色板在此集中定义。 */
+:root[data-theme="dark"] {
+  --c-bg: #16181d;
+  --c-surface: #1c1f26;
+  --c-surface-2: #22262e;
+  --c-surface-3: #2a2e37;
+  --c-border: #30353f;
+  --c-border-strong: #3d434e;
+  --c-divider: #272b33;
+
+  --c-text: #e8eaed;
+  --c-text-2: #a8aeb8;
+  --c-text-3: #7d838e;
+  --c-text-4: #5f656f;
+
+  --c-brand: #4d7cff;
+  --c-brand-hover: #6690ff;
+  --c-brand-weak: #1c2740;
+  --c-brand-weak-2: #192031;
+  --c-brand-border: #2f4478;
+
+  --c-high: #ff6369;
+  --c-high-bg: #2e1a1d;
+  --c-high-bg-2: #3a2124;
+  --c-mid: #ffa64d;
+  --c-mid-bg: #2f2416;
+  --c-mid-bg-2: #3b2d1b;
+  --c-low: #4fd46a;
+  --c-low-bg: #16281a;
+  --c-low-bg-2: #1c3322;
+
+  --c-info-bg: #1c2740;
+  --c-success-bg: #16281a;
+  --c-warn-bg: #2f2416;
+  --c-danger-bg: #2e1a1d;
+
+  --sh-2: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --sh-3: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --sh-4: 0 16px 48px rgba(0, 0, 0, 0.6);
+}

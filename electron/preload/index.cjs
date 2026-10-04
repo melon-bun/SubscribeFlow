@@ -9,7 +9,7 @@ const allowed = new Set([
   'updateContent', 'bulkUpdate', 'listChannels', 'createChannel', 'updateChannel',
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',
   'listCreators', 'getPrioritySettings', 'savePrioritySettings', 'listRules', 'createRule',
-  'updateRule', 'removeRule', 'getSyncCoverage',
+  'updateRule', 'removeRule', 'getSyncCoverage', 'resolveSource', 'searchSources', 'listConnections', 'checkConnection', 'retryRun', 'fetchDetail', 'source.open',
 ]);
 const events = new Set(['core.status', 'sync.changed', 'content.changed', 'subscription.changed', 'run', 'runs', 'content', 'channels']);
 contextBridge.exposeInMainWorld('SubscribeFlow', Object.freeze({

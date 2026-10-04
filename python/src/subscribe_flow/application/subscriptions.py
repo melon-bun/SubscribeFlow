@@ -15,7 +15,11 @@ class SubscriptionService:
         return await self.gateway.resolve_source(locator, self.context(connection_id))
 
     async def search(self, query, connection_id, limit=20):
-        return await self.gateway.search_sources(query, FetchRequest(limit=limit), self.context(connection_id))
+        result = await self.gateway.search_sources(query, FetchRequest(limit=limit), self.context(connection_id))
+        # Preserve verified identity metadata without creating a subscription.
+        # A later UID-only resolution must not erase a name returned by search.
+        self.repository.remember_sources(result.items)
+        return result
 
     async def add(self, locator, connection_id, *, confirmed=False, interval_seconds=3600):
         if confirmed is not True:
