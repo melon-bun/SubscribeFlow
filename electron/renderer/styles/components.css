@@ -1033,10 +1033,6 @@ textarea.input {
   opacity: 1;
 }
 
-.table__ops .icon-btn:hover {
-  color: var(--c-danger);
-}
-
 .table__time {
   line-height: 1.35;
 }
@@ -1377,6 +1373,55 @@ textarea.input {
   height: 1px;
   margin: var(--s-2) 0;
   background: var(--c-divider);
+}
+
+/* 悬浮提示：挂在 body 上，避免被表格与滚动容器的 overflow 裁掉 */
+.tooltip {
+  position: fixed;
+  z-index: var(--z-toast);
+  max-width: 240px;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  /* 随主题反色：浅色主题是深底浅字，深色主题是浅底深字 */
+  background: var(--c-text);
+  color: var(--c-bg);
+  font-size: var(--fs-cap);
+  line-height: 1.45;
+  text-align: center;
+  white-space: pre-line;
+  box-shadow: var(--sh-3);
+  pointer-events: none;
+  animation: sf-tip-in var(--dur-1) var(--ease);
+}
+
+.tooltip::after {
+  content: "";
+  position: absolute;
+  left: var(--tip-shift, 50%);
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  background: inherit;
+  transform: rotate(45deg);
+  top: -4px;
+}
+
+/* 气泡在锚点上方时，箭头改挂在下边缘 */
+.tooltip--top::after {
+  top: auto;
+  bottom: -4px;
+}
+
+@keyframes sf-tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+/* 禁用按钮的提示壳：不接管布局，只负责接住指针事件 */
+.icon-btn-tip {
+  display: inline-flex;
 }
 
 /* 详情面板内容块 */

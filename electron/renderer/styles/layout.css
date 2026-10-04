@@ -334,6 +334,10 @@
   color: var(--c-text);
 }
 
+.icon-btn--danger:hover {
+  color: var(--c-danger);
+}
+
 .icon-btn svg {
   width: 18px;
   height: 18px;

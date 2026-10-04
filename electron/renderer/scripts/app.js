@@ -361,6 +361,7 @@
   function renderContent() {
     var host = document.querySelector(".shell__body");
     if (!host) return;
+    SF.tooltip.hide(); // 锚点会被整体替换，旧提示要跟着收掉
     SF.dom.render(host, buildShellBody());
   }
 

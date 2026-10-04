@@ -37,19 +37,38 @@
     );
   };
 
+  /**
+   * 挂上悬浮提示。禁用控件不派发指针事件，套一层壳来承载提示。
+   * 图标按钮原本用原生 title，延迟一秒多且样式不受控，这里统一交给 SF.tooltip。
+   */
+  ui.tip = function (el, text, opts) {
+    if (!text) return el;
+    opts = opts || {};
+    if (opts.disabled) {
+      return h(
+        "span.icon-btn-tip",
+        { "data-tip": text, "data-tip-placement": opts.placement || null },
+        el
+      );
+    }
+    el.setAttribute("data-tip", text);
+    if (opts.placement) el.setAttribute("data-tip-placement", opts.placement);
+    return el;
+  };
+
   ui.iconBtn = function (iconName, title, onClick, opts) {
     opts = opts || {};
-    return h(
-      "button.icon-btn",
+    var btn = h(
+      "button.icon-btn" + (opts.danger ? ".icon-btn--danger" : ""),
       {
         type: "button",
-        title: title,
         "aria-label": opts.ariaLabel || title,
         onclick: onClick || null,
         disabled: !!opts.disabled,
       },
       icon(iconName, opts.size || 18)
     );
+    return ui.tip(btn, opts.tip || title, { disabled: !!opts.disabled, placement: opts.tipPlacement });
   };
 
   ui.select = function (options, value, onChange, opts) {
