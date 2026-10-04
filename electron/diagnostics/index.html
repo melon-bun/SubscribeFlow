@@ -12,14 +12,15 @@
     <p class="eyebrow">SUBSCRIBE FLOW · M4</p>
     <h1>核心服务联调</h1>
     <p class="hint">这是开发阶段的最小窗口。正式页面由 F1 提供，后续在 M5 接入。</p>
-    <section><h2>服务状态</h2><p id="status" role="status" aria-live="polite">正在连接…</p>
-      <div class="actions"><button id="refresh">重新查询</button><button id="restart">重启核心服务</button></div>
+    <section><h2>服务状态</h2><p id="status" role="status" aria-live="polite">正在检查运行环境…</p>
+      <p id="startup-help" class="hint" hidden>请在 Subscribe_Flow 项目目录运行 <code>npm start</code>，使用打开的独立桌面窗口。直接打开此 HTML 页面无法启动核心服务。</p>
+      <div class="actions"><button id="refresh" disabled>重新查询</button><button id="restart" disabled>重启核心服务</button></div>
     </section>
-    <section><h2>本地数据</h2><p id="summary">等待服务就绪</p><p class="hint">全部来自本地核心服务，无演示数据。采集依赖不可用时，历史仍可查询。</p></section>
+    <section><h2>本地数据</h2><p id="summary">尚未读取本地数据</p><p class="hint">全部来自本地核心服务，无演示数据。采集依赖不可用时，历史仍可查询。</p></section>
     <section><h2>作者订阅</h2>
-      <form id="subscribe"><label for="locator">B站 UID 或作者主页</label><input id="locator" autocomplete="off" placeholder="例如：946974" required>
-        <label class="check"><input type="checkbox" id="confirmed" required>我已确认这是要追踪的作者</label>
-        <button type="submit">添加订阅</button></form>
+      <form id="subscribe"><label for="locator">B站 UID 或作者主页</label><input id="locator" autocomplete="off" placeholder="例如：946974" required disabled>
+        <label class="check"><input type="checkbox" id="confirmed" required disabled>我已确认这是要追踪的作者</label>
+        <button type="submit" disabled>添加订阅</button></form>
       <ul id="subscriptions"></ul>
     </section>
     <p id="feedback" role="status" aria-live="polite"></p>

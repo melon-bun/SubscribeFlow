@@ -32,19 +32,30 @@ async function refreshDiagnostics() {
     byId('subscriptions').append(li);
   }
 }
-window.refreshDiagnostics = refreshDiagnostics;
-byId('refresh').addEventListener('click', () => action(refreshDiagnostics));
-byId('restart').addEventListener('click', () => action(async () => { await bridge.call('core.restart'); await refreshDiagnostics(); }));
-byId('subscribe').addEventListener('submit', event => {
-  event.preventDefault();
-  action(async () => {
-    await bridge.call('subscription.add', {locator: byId('locator').value.trim(), connection_id: 'bilibili:default', confirmed: byId('confirmed').checked});
-    byId('locator').value = ''; byId('confirmed').checked = false; await refreshDiagnostics();
+function initializeDiagnostics() {
+  // Check both bridge methods before registering events or issuing any requests.
+  if (!bridge || typeof bridge.call !== 'function' || typeof bridge.on !== 'function') {
+    byId('status').textContent = '请通过桌面应用启动';
+    byId('summary').textContent = '当前页面未连接桌面服务，本地数据尚未读取。';
+    byId('startup-help').hidden = false;
+    return;
+  }
+  document.querySelectorAll('button, input').forEach(control => { control.disabled = false; });
+  window.refreshDiagnostics = refreshDiagnostics;
+  byId('refresh').addEventListener('click', () => action(refreshDiagnostics));
+  byId('restart').addEventListener('click', () => action(async () => { await bridge.call('core.restart'); await refreshDiagnostics(); }));
+  byId('subscribe').addEventListener('submit', event => {
+    event.preventDefault();
+    action(async () => {
+      await bridge.call('subscription.add', {locator: byId('locator').value.trim(), connection_id: 'bilibili:default', confirmed: byId('confirmed').checked});
+      byId('locator').value = ''; byId('confirmed').checked = false; await refreshDiagnostics();
+    });
   });
-});
-const releaseStatus = bridge.on('core.status', status => { displayStatus(status); if (status.state === 'ready') action(refreshDiagnostics); });
-const releaseSync = bridge.on('sync.changed', job => {
-  byId('feedback').textContent = `任务 ${job.state} · 已保存 ${job.items} 条 · 覆盖：${job.coverage}${job.error ? ' · ' + job.error.message : ''}`;
-});
-window.addEventListener('beforeunload', () => {releaseStatus(); releaseSync();});
-action(refreshDiagnostics);
+  const releaseStatus = bridge.on('core.status', status => { displayStatus(status); if (status.state === 'ready') action(refreshDiagnostics); });
+  const releaseSync = bridge.on('sync.changed', job => {
+    byId('feedback').textContent = `任务 ${job.state} · 已保存 ${job.items} 条 · 覆盖：${job.coverage}${job.error ? ' · ' + job.error.message : ''}`;
+  });
+  window.addEventListener('beforeunload', () => {releaseStatus(); releaseSync();});
+  action(refreshDiagnostics);
+}
+initializeDiagnostics();
