@@ -27,6 +27,9 @@ M6 自动调度与 M7 独立安装包未开始。M4 最小联调页仍可用：
 SUBSCRIBE_FLOW_DIAGNOSTICS=1 npm start
 ```
 
+采集目前为间歇性失败：添加订阅和 UID 解析稳定可用，刷新采集首次常失败、
+重试即恢复，底层报 `Navigation rejected`。详见 [已知问题](docs/KNOWN_ISSUES.md)。
+
 ## 开发验收
 
 ```sh
@@ -48,6 +51,7 @@ npm run smoke:renderer:live -- --uid-only
 Python 需要 3.12+。可在 `python/` 下使用 `uv sync` 安装开发入口；运行时仅用标准库。
 渠道独立入口：`python3 python/tools/channel_probe.py describe`。
 
-详见 [进度](docs/PROGRESS.md)、[交接](HANDOFF.md)、[F1 接入](docs/frontend/IMPLEMENTATION.md)、
+详见 [进度](docs/PROGRESS.md)、[交接](HANDOFF.md)、[已知问题](docs/KNOWN_ISSUES.md)、
+[F1 接入](docs/frontend/IMPLEMENTATION.md)、
 [桌面说明](docs/DESKTOP.md)、[业务 API](docs/API.md) 和 [存储约定](docs/STORAGE.md)。
 权威计划在 `../doc/DEVELOPMENT_PLAN.md`，仓库保留 [文档快照](docs/reference/README.md)。
