@@ -132,8 +132,10 @@ class SyncService:
             self.emit("sync.changed", repository.get_job(job_id))
 
     def _record_success(self, context):
-        self.repository.set_readiness(context.connection.id, Readiness("ready", "list_items", "最近投稿请求成功；登录必要性仍由渠道声明",
-                                      "connection", context.connection.id, now(), dependency="available", authentication="unknown"))
+        previous = next((c["readiness"] for c in self.repository.list_connections() if c["id"] == context.connection.id), None)
+        authentication = (previous or {}).get("authentication", "unknown")
+        self.repository.set_readiness(context.connection.id, Readiness("ready", "list_items", "最近投稿请求成功；具体登录状态以连接检查为准",
+                                      "connection", context.connection.id, now(), dependency="available", authentication=authentication))
 
     def _record_failure(self, job, error):
         connection_id = job["snapshot"]["connection_id"]

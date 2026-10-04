@@ -3,6 +3,7 @@ from subscribe_flow.acquisition.resources import ResourceCoordinator
 from subscribe_flow.channels.gateway import ChannelGateway
 from subscribe_flow.channels.bilibili.adapter import BilibiliAdapter
 from subscribe_flow.channels.bilibili.backends.opencli import BilibiliOpenCLIBackend
+from subscribe_flow.channels.bilibili.electron import BilibiliElectronAdapter
 from subscribe_flow.application.subscriptions import SubscriptionService
 from subscribe_flow.application.sync import SyncService
 from subscribe_flow.application.content import ContentService
@@ -14,14 +15,17 @@ from subscribe_flow.storage.lease import CoreLease
 import logging
 
 
-def build_gateway(opencli_path: str = "opencli") -> ChannelGateway:
+def build_gateway(opencli_path: str = "opencli", browser_bridge=None) -> ChannelGateway:
     gateway = ChannelGateway()
-    gateway.register(BilibiliAdapter(BilibiliOpenCLIBackend(CLITransport(ResourceCoordinator()), opencli_path)))
+    if browser_bridge is not None:
+        gateway.register(BilibiliElectronAdapter(browser_bridge))
+    else:
+        gateway.register(BilibiliAdapter(BilibiliOpenCLIBackend(CLITransport(ResourceCoordinator()), opencli_path)))
     return gateway
 
 
 class Core:
-    def __init__(self, database_path, *, opencli_path="opencli", gateway=None):
+    def __init__(self, database_path, *, opencli_path="opencli", gateway=None, browser_bridge=None):
         self.lease = CoreLease(database_path)
         try:
             self.database = Database(database_path)
@@ -30,16 +34,23 @@ class Core:
             raise
         self.repository = Repository(self.database)
         self.repository.recover_interrupted()
-        self.gateway = gateway if gateway is not None else build_gateway(opencli_path)
+        self.browser_bridge = browser_bridge
+        self.gateway = gateway if gateway is not None else build_gateway(opencli_path, browser_bridge)
         self.listeners = []
         self.closed = False
         self.subscriptions = SubscriptionService(self.gateway, self.repository)
         self.sync = SyncService(self.gateway, self.repository, self.emit)
         self.content = ContentService(self.repository, self.emit)
-        self.queries = QueryService(self.repository)
+        self.queries = QueryService(self.repository, self.gateway)
         for descriptor in self.gateway.describe():
-            self.repository.add_connection(Connection(f"{descriptor.channel}:default", descriptor.channel, descriptor.backend,
-                                                      "browser:opencli-default"))
+            resource = "browser:electron-bilibili" if descriptor.backend == "electron-session" else "browser:opencli-default"
+            self.repository.add_connection(Connection(f"{descriptor.channel}:default", descriptor.channel, descriptor.backend, resource))
+            if descriptor.backend == "electron-session":
+                # One-way upgrade of known legacy connections. Version invalidates
+                # old cursors/checkpoints without deleting subscriptions or content.
+                for connection in self.repository.list_connections():
+                    if connection["channel"] == "bilibili" and connection["backend"] == "opencli":
+                        self.repository.update_connection(connection["id"], backend="electron-session", resource_key=resource)
 
     def emit(self, event, data):
         for listener in tuple(self.listeners):

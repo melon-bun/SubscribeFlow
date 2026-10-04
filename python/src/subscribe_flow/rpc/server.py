@@ -11,7 +11,8 @@ MAX_LINE_BYTES = 65536
 
 async def serve(core):
     loop = asyncio.get_running_loop()
-    reader = asyncio.StreamReader(limit=MAX_LINE_BYTES)
+    # Browser responses carry raw bounded API envelopes, ordinary requests stay 64 KiB.
+    reader = asyncio.StreamReader(limit=4 * 1024 * 1024)
     protocol = asyncio.StreamReaderProtocol(reader)
     transport, _ = await loop.connect_read_pipe(lambda: protocol, sys.stdin.buffer)
     stopping = asyncio.Event()
@@ -19,6 +20,9 @@ async def serve(core):
         loop.add_signal_handler(sig, stopping.set)
     dispatcher = Dispatcher(core, stopping.set)
     queue = asyncio.Queue(maxsize=256)
+    browser = getattr(core, "browser_bridge", None)
+    if browser:
+        browser.send = queue.put
     pending = set()
 
     def event(name, data):
@@ -66,7 +70,7 @@ async def serve(core):
             try:
                 line = read_wait.result()
             except ValueError:
-                await queue.put(Dispatcher.error(None, -32600, "Request line exceeds 64 KiB"))
+                await queue.put(Dispatcher.error(None, -32600, "Protocol line exceeds size limit"))
                 break
             if not line:
                 break
@@ -74,6 +78,11 @@ async def serve(core):
                 message = json.loads(line.decode("utf-8"), parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
             except (ValueError, UnicodeError):
                 await queue.put(Dispatcher.error(None, -32700, "Parse error"))
+                continue
+            if browser and browser.receive(message):
+                continue
+            if len(line) > MAX_LINE_BYTES:
+                await queue.put(Dispatcher.error(None, -32600, "Request line exceeds 64 KiB"))
                 continue
             if len(pending) >= 32:
                 await queue.put(Dispatcher.error(message.get("id") if isinstance(message, dict) else None, -32002, "Too many pending requests"))
@@ -93,6 +102,8 @@ async def serve(core):
             await asyncio.gather(*pending, return_exceptions=True)
         core.listeners.remove(event)
         await core.close()
+        if browser:
+            browser.send = None
         if not output.done():
             await queue.put(None)
         await output

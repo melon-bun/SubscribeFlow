@@ -1,6 +1,7 @@
 class QueryService:
-    def __init__(self, repository):
+    def __init__(self, repository, gateway=None):
         self.repository = repository
+        self.gateway = gateway
 
     def contents(self, **query):
         return self.repository.query_contents(**query)
@@ -20,6 +21,11 @@ class QueryService:
     def coverage(self, subscription_id):
         self.repository.get_subscription(subscription_id)
         snapshot = self.repository.snapshot(subscription_id)
+        if self.gateway is not None:
+            descriptors = self.gateway.describe()
+            connection = self.repository.get_connection(snapshot["connection_id"])
+            descriptor = next((d for d in descriptors if d.channel == connection.channel and d.backend == connection.backend), None)
+            snapshot["progress_version"] = descriptor.progress_version if descriptor else None
         rows = self.repository.get_progress(subscription_id)
         for row in rows:
             row["compatible"] = (row["backend"] == snapshot["backend"] and

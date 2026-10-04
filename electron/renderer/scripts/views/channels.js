@@ -60,10 +60,13 @@
       h('section.panel.live-panel',null,h('h2.t-h2',{text:'渠道与连接'}),app.session.connections.map(function (c) {
         var r = c.readiness;
         return h('div.connection-card',null,h('h3',{text:SF.catalog.platform(c.channel).name}),
+          c.backend === 'electron-session' ? h('p.muted',{text:'使用应用内独立会话，无需启动 Chrome。登录后关闭登录窗口，再检查连接。'}) : null,
           h('p',{text:r ? r.reason : '尚未检查采集环境'}),
           h('p.muted',{text:'认证：' + ({unknown:'尚未确认',required:'需要登录',available:'已有可用会话',not_required:'无需登录'}[r && r.authentication] || '尚未确认')}),
           r ? h('p.muted',{text:'检查时间：' + fmt.absolute(r.checked_at)}) : null,
-          ui.btn('检查连接',{onClick:function () { SF.app.act('check:' + c.id,async function () { await app.client.checkConnection(c.id); await SF.app.refreshData(true); }); }}));
+          h('div.row.row-gap-3',null,
+            c.backend === 'electron-session' ? ui.btn('应用内登录 B站',{onClick:function () { SF.app.act('login:' + c.id,function () { return app.client.loginConnection(c.id); }); }}) : null,
+            ui.btn('检查连接',{onClick:function () { SF.app.act('check:' + c.id,async function () { await app.client.checkConnection(c.id); await SF.app.refreshData(true); }); }})));
       }),h('p.field__hint',{text:'采集失败时仍可查看本地内容。自动调度、优先级和自动规则将在后续模块接入。'})),
       h('section.panel.live-panel',null,h('h2.t-h2',{text:'最近任务（最多 100 条）'}),
         app.runs.length ? h('div.run-list',null,app.runs.map(function (run) {

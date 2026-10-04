@@ -9,8 +9,7 @@ function find(name) {
 const config = {
   python: find('python3'),
   node: process.execPath,
-  opencli: find('opencli'),
 };
 if (!config.python) throw new Error('需要 Python 3.12+，安装后重新配置');
 writeFileSync(path.join(__dirname, '..', '.runtime-paths.json'), JSON.stringify(config, null, 2) + '\n');
-console.log('已保存本机 Python、Node 与 OpenCLI 路径；桌面启动使用这些绝对路径。');
+console.log('已保存本机 Python 与 Node 路径；B站由应用内会话采集，无需 OpenCLI 或外部 Chrome。');

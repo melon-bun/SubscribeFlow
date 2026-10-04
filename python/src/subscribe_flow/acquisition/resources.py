@@ -5,7 +5,7 @@ from subscribe_flow.contracts import Context
 
 
 class ResourceCoordinator:
-    """All connections using one external browser share the same resource key."""
+    """All connections using one browser session share the same resource key."""
 
     def __init__(self):
         self._locks: dict[str, asyncio.Lock] = {}

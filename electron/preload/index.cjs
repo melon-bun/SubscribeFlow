@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 // Sandboxed preload uses only Electron's restricted builtin modules.
 const allowed = new Set([
-  'channel.list', 'connection.list', 'connection.check', 'source.resolve', 'source.search',
+  'channel.list', 'connection.list', 'connection.check', 'connection.login', 'source.resolve', 'source.search',
   'subscription.list', 'subscription.add', 'subscription.update', 'sync.start', 'sync.cancel',
   'sync.retry', 'sync.get', 'sync.list', 'sync.coverage', 'content.list', 'content.get',
   'content.update', 'content.bulk_update', 'core.status', 'core.restart', 'content.open',

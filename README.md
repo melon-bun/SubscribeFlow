@@ -16,8 +16,9 @@ npm start
 
 从“渠道管理”添加作者 UID/主页，核对身份后确认，再手动刷新。
 可以查看投稿、按日历浏览、标记已读/稍后处理/归档，查看任务、取消或重试。
-本轮首次真实采集已通过；后续搜索及再次采集复验均出现 OpenCLI 拒绝导航。页面会显示实际错误，
-不会伪装成功。搜索成功及详情的完整桌面验收待外部访问恢复后复验。
+B站已改为应用内独立会话：在“渠道与连接”里登录，无需外部 Chrome、扩展或 OpenCLI。
+关闭登录窗口后仍可采集；登录信息保存在应用自己的 Chromium 分区中。
+新会话的匿名投稿请求收到 B站 -352 验证要求，登录后真实采集仍待验收，详见问题记录。
 列表未提供封面或摘要时，可尝试“补充详情”。
 
 首期只有 B站；分页窗口不代表完整历史。优先级/规则/标签/收藏尚未接入。
@@ -27,8 +28,8 @@ M6 自动调度与 M7 独立安装包未开始。M4 最小联调页仍可用：
 SUBSCRIBE_FLOW_DIAGNOSTICS=1 npm start
 ```
 
-采集目前为间歇性失败：添加订阅和 UID 解析稳定可用，刷新采集首次常失败、
-重试即恢复，底层报 `Navigation rejected`。详见 [已知问题](docs/KNOWN_ISSUES.md)。
+旧 OpenCLI 的间歇性 `Navigation rejected` 已移出桌面采集路径，旧根因未查明。
+M6 按用户要求暂缓，先完成应用内会话的真实采集验收。详见 [已知问题](docs/KNOWN_ISSUES.md)。
 
 ## 开发验收
 
@@ -40,16 +41,18 @@ cd python
 PYTHONPATH=src python3 -m unittest discover -s tests -t . -v
 ```
 
-显式真实平台验收（使用现有浏览器会话，业务数据仅写临时目录）：
+应用内会话与真实平台验收：
 
 ```sh
-npm run smoke:renderer:live
-# 搜索被平台阻塞时，只验证 UID 路径与详情，跳过搜索：
-npm run smoke:renderer:live -- --uid-only
+npm run smoke:session
+npm run bilibili:login
+npm run smoke:bilibili:live
 ```
 
+真实验收使用独立的应用会话和数据库，用户在官方页面登录；不读取 Chrome Cookie。
+
 Python 需要 3.12+。可在 `python/` 下使用 `uv sync` 安装开发入口；运行时仅用标准库。
-渠道独立入口：`python3 python/tools/channel_probe.py describe`。
+旧 OpenCLI 渠道独立入口（不代表当前桌面后端）：`python3 python/tools/channel_probe.py describe`。
 
 详见 [进度](docs/PROGRESS.md)、[交接](HANDOFF.md)、[已知问题](docs/KNOWN_ISSUES.md)、
 [F1 接入](docs/frontend/IMPLEMENTATION.md)、

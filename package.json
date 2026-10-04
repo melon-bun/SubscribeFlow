@@ -10,7 +10,10 @@
     "test": "node --test tests/*.test.cjs",
     "smoke:desktop": "node scripts/desktop-smoke.cjs",
     "smoke:renderer": "node scripts/renderer-smoke.cjs",
-    "smoke:renderer:live": "node scripts/renderer-smoke.cjs --live"
+    "smoke:renderer:live": "node scripts/renderer-smoke.cjs --live",
+    "smoke:session": "node scripts/bilibili-session-smoke.cjs",
+    "smoke:bilibili:live": "node scripts/bilibili-live.cjs",
+    "bilibili:login": "node scripts/bilibili-live.cjs --login"
   },
   "devDependencies": {
     "electron": "44.5.1"

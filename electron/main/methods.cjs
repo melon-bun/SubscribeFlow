@@ -4,5 +4,5 @@ const CORE_METHODS = new Set([
   'sync.retry', 'sync.get', 'sync.list', 'sync.coverage', 'content.list', 'content.get',
   'content.update', 'content.bulk_update',
 ]);
-const DESKTOP_METHODS = new Set(['core.status', 'core.restart', 'content.open', 'source.open']);
+const DESKTOP_METHODS = new Set(['core.status', 'core.restart', 'content.open', 'source.open', 'connection.login']);
 module.exports = { CORE_METHODS, DESKTOP_METHODS };

@@ -3,9 +3,10 @@ const { EventEmitter } = require('node:events');
 const path = require('node:path');
 
 class CoreClient extends EventEmitter {
-  constructor({ python, opencli, node, root, dataDir, timeout = 75000 }) {
+  constructor({ python, node, root, dataDir, acquisition, timeout = 75000 }) {
     super();
-    Object.assign(this, { python, opencli, node, root, dataDir, timeout });
+    Object.assign(this, { python, node, root, dataDir, acquisition, timeout });
+    this.acquiring = new Map();
     this.pending = new Map();
     this.nextId = 1;
     this.child = null;
@@ -23,7 +24,7 @@ class CoreClient extends EventEmitter {
 
   async _start() {
     if (!path.isAbsolute(this.python || '')) throw new Error('请运行 npm run configure 配置 Python 路径');
-    const args = ['-u', '-m', 'subscribe_flow', '--data-dir', this.dataDir, '--opencli', this.opencli || '/missing/opencli'];
+    const args = ['-u', '-m', 'subscribe_flow', '--data-dir', this.dataDir, '--backend', 'electron-session'];
     const env = { ...process.env, PYTHONPATH: path.join(this.root, 'python', 'src'), PYTHONUTF8: '1', PYTHONNOUSERSITE: '1' };
     if (this.node) env.PATH = path.dirname(this.node) + path.delimiter + '/usr/bin:/bin:/usr/sbin:/sbin';
     const child = spawn(this.python, args, { env, cwd: this.root, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
@@ -73,6 +74,13 @@ class CoreClient extends EventEmitter {
 
   _message(message) {
     if (!message || message.jsonrpc !== '2.0') throw new Error('Invalid protocol');
+    if (message.method === 'acquisition.request' && typeof message.id === 'string' && /^browser:\d+$/.test(message.id)) {
+      if (this.acquiring.size >= 32 || this.acquiring.has(message.id)) throw new Error('Invalid acquisition request');
+      void this._acquire(message); return;
+    }
+    if (message.method === 'acquisition.cancel' && !('id' in message)) {
+      this.acquiring.get(message.params?.id)?.abort(); return;
+    }
     if ('id' in message) {
       const pending = this.pending.get(message.id);
       if (!pending) return;
@@ -88,6 +96,21 @@ class CoreClient extends EventEmitter {
     } else if (typeof message.method === 'string') {
       this.emit('notification', message.method, message.params);
     }
+  }
+
+  async _acquire(message) {
+    const child = this.child;
+    const controller = new AbortController(); this.acquiring.set(message.id,controller);
+    let response;
+    try {
+      if (!this.acquisition) { const error = new Error('请从桌面应用打开 B站连接'); error.code = 'DEPENDENCY_UNAVAILABLE'; throw error; }
+      response = {result:await this.acquisition(message.params,controller.signal)};
+      if (Buffer.byteLength(JSON.stringify(response)) > 3 * 1024 * 1024) throw new Error('Oversized acquisition response');
+    } catch (error) {
+      const known = ['INVALID_INPUT','DEPENDENCY_UNAVAILABLE','AUTH_REQUIRED','INTERACTION_REQUIRED','RATE_LIMITED','SCHEMA_CHANGED','ACCESS_FAILED','TIMEOUT','CANCELLED'].includes(error.code);
+      response = {error:{code:-32000,message:known ? error.message : '应用内采集失败',data:{code:known ? error.code : 'ACCESS_FAILED',retryable:known && !!error.retryable,retry_after:error.retryAfter ?? null}}};
+    } finally { if (this.acquiring.get(message.id) === controller) this.acquiring.delete(message.id); }
+    if (this.child === child && child && !child.killed && !child.stdin.destroyed) child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:message.id,...response}) + '\n');
   }
 
   _request(method, params, timeout = this.timeout) {
@@ -114,6 +137,8 @@ class CoreClient extends EventEmitter {
 
   _fail(error) {
     this.ready = false;
+    for (const controller of this.acquiring.values()) controller.abort();
+    this.acquiring.clear();
     for (const { timer, reject } of this.pending.values()) { clearTimeout(timer); reject(error); }
     this.pending.clear();
   }

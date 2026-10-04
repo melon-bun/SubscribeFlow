@@ -9,11 +9,12 @@ from subscribe_flow.bootstrap import Core
 from subscribe_flow.contracts import ContentItem, FetchPage, PublishedTime, ChannelError
 
 async def seed(folder, day):
-    core = Core(Path(folder) / 'subscribe-flow.sqlite3', opencli_path='/missing/opencli')
+    from subscribe_flow.rpc.browser import BrowserBridge
+    core = Core(Path(folder) / 'subscribe-flow.sqlite3', browser_bridge=BrowserBridge())
     try:
         sub = core.repository.list_subscriptions()[0]
         source = core.repository.source_for(sub['id'])
-        job, _ = core.repository.create_job(sub['id'], 'refresh')
+        job, _ = core.repository.create_job(sub['id'], 'refresh', progress_version='electron-1')
         core.repository.set_job_state(job['id'], 'running')
         items = tuple(ContentItem('bilibili', 'video', f'offline-{i}', source,
             f'离线验收样本 {i:02d} · 长标题与真实存储分页验证', 'https://example.com/offline-fixture',
@@ -21,7 +22,7 @@ async def seed(folder, day):
             summary='仅用于隔离数据库的离线验收，不是平台采集结果。') for i in range(25))
         core.repository.commit_page(job['id'], FetchPage(items, None, 'window_only'))
         core.repository.finish_scan(job['id'], coverage='window_only')
-        partial, _ = core.repository.create_job(sub['id'], 'backfill')
+        partial, _ = core.repository.create_job(sub['id'], 'backfill', progress_version='electron-1')
         core.repository.set_job_state(partial['id'], 'running')
         core.repository.commit_page(partial['id'], FetchPage((items[1],), {'page': 2}, 'window_only'))
         core.repository.set_job_state(partial['id'], 'partial', coverage='possible_gaps',

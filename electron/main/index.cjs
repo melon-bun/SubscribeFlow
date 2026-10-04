@@ -5,6 +5,7 @@ const { CoreClient } = require('./core-client.cjs');
 const { CORE_METHODS, DESKTOP_METHODS } = require('./methods.cjs');
 const { UI_METHODS, callUI } = require('./app-client.cjs');
 const {openSavedLink} = require('./external-links.cjs');
+const {BilibiliSession} = require('./bilibili-session.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const APP_URL = 'app://subscribe-flow/index.html';
@@ -17,7 +18,7 @@ if (process.env.SUBSCRIBE_FLOW_DATA_DIR) app.setPath('userData', process.env.SUB
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.whenReady().then(start).catch(error => { console.error(error.message); app.exit(1); });
 
-let window, core;
+let window, core, bilibili;
 let lastStatus = {state: 'starting'};
 let quitting = false;
 
@@ -28,8 +29,13 @@ async function start() {
   let runtime = {};
   try { runtime = JSON.parse(readFileSync(path.join(root, '.runtime-paths.json'), 'utf8')); }
   catch { /* The window reports missing runtime configuration. */ }
+  bilibili = new BilibiliSession({offline:smoke || rendererSmoke === 'offline', onChanged:async () => {
+    if (quitting || !core?.ready) return;
+    try { await core.call('connection.check',{connection_id:'bilibili:default'}); send('channels',null); }
+    catch { /* The connection panel can retry a failed check. */ }
+  }});
   core = new CoreClient({ ...runtime, python: process.env.SUBSCRIBE_FLOW_PYTHON || runtime.python,
-    root, dataDir: app.getPath('userData'), opencli: smoke || rendererSmoke === 'offline' ? '/missing/opencli' : runtime.opencli });
+    root, dataDir: app.getPath('userData'), acquisition:(params,signal) => bilibili.request(params,signal) });
   core.on('status', status => { lastStatus = status; send('core.status', status); });
   core.on('notification', (event, data) => {
     if (!['sync.changed', 'content.changed', 'subscription.changed'].includes(event)) return;
@@ -65,6 +71,10 @@ async function start() {
       let value;
       if (name === 'core.status') value = lastStatus;
       else if (name === 'core.restart') value = await core.restart();
+      else if (name === 'connection.login') {
+        if (Object.keys(params).length !== 1 || params.connection_id !== 'bilibili:default') throw new Error('登录连接无效');
+        value = bilibili.openLogin(window);
+      }
       else if (name === 'content.open' || name === 'source.open') {
         value = await openSavedLink(core, name, params, url => shell.openExternal(url));
       } else value = await core.call(name, params);
@@ -132,5 +142,5 @@ app.on('before-quit', event => {
   if (quitting || !core) return;
   event.preventDefault();
   quitting = true;
-  core.stop().finally(() => app.quit());
+  Promise.allSettled([core.stop(), bilibili?.close()]).finally(() => app.quit());
 });

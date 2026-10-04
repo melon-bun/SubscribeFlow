@@ -139,6 +139,7 @@
     client.restartCore = function () { return bridge.call('core.restart'); };
     client.openContent = function (id) { return bridge.call('content.open', { item_id: id }); };
     client.openChannel = function (id) { return bridge.call('source.open', { subscription_id: id }); };
+    client.loginConnection = function (id) { return bridge.call('connection.login', { connection_id: id }); };
     return client;
   }
 
