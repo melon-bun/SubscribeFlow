@@ -3,18 +3,21 @@ const { EventEmitter } = require('node:events');
 const path = require('node:path');
 
 class CoreClient extends EventEmitter {
-  constructor({ python, node, root, dataDir, acquisition, timeout = 75000 }) {
+  constructor({ python, node, root, dataDir, acquisition, schedulePolicy, autoRestart = false, restartDelays = [5000,15000,45000], timeout = 75000 }) {
     super();
-    Object.assign(this, { python, node, root, dataDir, acquisition, timeout });
+    Object.assign(this, { python, node, root, dataDir, acquisition, schedulePolicy, autoRestart, restartDelays, timeout });
     this.acquiring = new Map();
     this.pending = new Map();
     this.nextId = 1;
     this.child = null;
     this.ready = false;
     this.starting = null;
+    this.stopping = false;
+    this.restartAttempts = 0;
   }
 
   async start() {
+    this.stopping = false;
     if (this.ready) return;
     if (this.starting) return this.starting;
     this.starting = this._start();
@@ -25,6 +28,7 @@ class CoreClient extends EventEmitter {
   async _start() {
     if (!path.isAbsolute(this.python || '')) throw new Error('请运行 npm run configure 配置 Python 路径');
     const args = ['-u', '-m', 'subscribe_flow', '--data-dir', this.dataDir, '--backend', 'electron-session'];
+    if (this.schedulePolicy) args.push('--schedule-policy', JSON.stringify(this.schedulePolicy));
     const env = { ...process.env, PYTHONPATH: path.join(this.root, 'python', 'src'), PYTHONUTF8: '1', PYTHONNOUSERSITE: '1' };
     if (this.node) env.PATH = path.dirname(this.node) + path.delimiter + '/usr/bin:/bin:/usr/sbin:/sbin';
     const child = spawn(this.python, args, { env, cwd: this.root, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
@@ -59,12 +63,16 @@ class CoreClient extends EventEmitter {
       this.child = null;
       this._fail(new Error(`Core 已退出（${code ?? 'signal'}）`));
       this.emit('status', { state: 'stopped', code });
+      clearTimeout(this.stableTimer);
+      this._scheduleRestart();
     });
     try {
       const hello = await this._request('core.hello', { protocol_version: '1.0' }, 15000);
       if (hello.protocol_version !== '1.0') throw new Error('Core 协议版本不兼容');
       this.ready = true;
       this.emit('status', { state: 'ready', version: hello.core_version });
+      this.stableTimer = setTimeout(() => { this.restartAttempts = 0; }, 60000);
+      this.stableTimer.unref();
     } catch (error) {
       child.kill('SIGTERM');
       await this.exited;
@@ -144,6 +152,9 @@ class CoreClient extends EventEmitter {
   }
 
   async stop() {
+    this.stopping = true;
+    clearTimeout(this.restartTimer);
+    clearTimeout(this.stableTimer);
     const child = this.child;
     if (!child) return;
     try { if (this.ready) await this._request('core.shutdown', {}, 3000); }
@@ -159,6 +170,16 @@ class CoreClient extends EventEmitter {
     this.restarting = (async () => { await this.stop(); await this.start(); return { state: 'ready' }; })();
     try { return await this.restarting; }
     finally { this.restarting = null; }
+  }
+
+  _scheduleRestart() {
+    if (!this.autoRestart || this.stopping || this.restartAttempts >= this.restartDelays.length) return;
+    const delay = this.restartDelays[this.restartAttempts++];
+    clearTimeout(this.restartTimer);
+    this.restartTimer = setTimeout(() => {
+      if (!this.stopping) this.start().catch(() => {}); // close schedules the next bounded attempt.
+    }, delay);
+    this.restartTimer.unref();
   }
 }
 

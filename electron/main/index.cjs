@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, protocol, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, shell, powerMonitor } = require('electron');
 const { readFileSync, promises: fs } = require('node:fs');
 const path = require('node:path');
 const { CoreClient } = require('./core-client.cjs');
@@ -21,6 +21,7 @@ else app.whenReady().then(start).catch(error => { console.error(error.message); 
 let window, core, bilibili;
 let lastStatus = {state: 'starting'};
 let quitting = false;
+let suspended = false, powerUpdate = Promise.resolve();
 
 function send(event, data) {
   if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('subscribe-flow:event', event, data);
@@ -35,12 +36,20 @@ async function start() {
     catch { /* The connection panel can retry a failed check. */ }
   }});
   core = new CoreClient({ ...runtime, python: process.env.SUBSCRIBE_FLOW_PYTHON || runtime.python,
-    root, dataDir: app.getPath('userData'), acquisition:(params,signal) => bilibili.request(params,signal) });
-  core.on('status', status => { lastStatus = status; send('core.status', status); });
+    root, dataDir: app.getPath('userData'), autoRestart:!smoke && !rendererSmoke,
+    acquisition:(params,signal) => bilibili.request(params,signal) });
+  const updatePower = () => {
+    const value = suspended;
+    powerUpdate = powerUpdate.catch(() => {}).then(() => core.ready && core.call('system.power',{suspended:value}));
+    powerUpdate.catch(() => {});
+  };
+  powerMonitor.on('suspend', () => { suspended = true; updatePower(); });
+  powerMonitor.on('resume', () => { suspended = false; updatePower(); });
+  core.on('status', status => { lastStatus = status; send('core.status', status); if (status.state === 'ready' && suspended) updatePower(); });
   core.on('notification', (event, data) => {
-    if (!['sync.changed', 'content.changed', 'subscription.changed'].includes(event)) return;
+    if (!['sync.changed', 'content.changed', 'subscription.changed', 'scheduler.changed'].includes(event)) return;
     send(event, data);
-    const aliases = {'sync.changed': ['run', 'runs'], 'content.changed': ['content'], 'subscription.changed': ['channels']};
+    const aliases = {'sync.changed': ['run', 'runs'], 'content.changed': ['content'], 'subscription.changed': ['channels'], 'scheduler.changed':['channels']};
     for (const alias of aliases[event]) send(alias, null); // Invalidation; consumers re-query durable state.
   });
 

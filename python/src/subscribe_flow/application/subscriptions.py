@@ -21,17 +21,22 @@ class SubscriptionService:
         self.repository.remember_sources(result.items)
         return result
 
-    async def add(self, locator, connection_id, *, confirmed=False, interval_seconds=3600):
+    @staticmethod
+    def validate_schedule(interval_seconds=None, sync_mode=None):
+        if interval_seconds is not None and (type(interval_seconds) is not int or not 300 <= interval_seconds <= 259200):
+            raise ChannelError('INVALID_INPUT', 'subscription', '自动刷新间隔需在 5 分钟到 72 小时之间')
+        if sync_mode is not None and sync_mode not in {'manual', 'automatic'}:
+            raise ChannelError('INVALID_INPUT', 'subscription', '请选择手动或自动模式')
+
+    async def add(self, locator, connection_id, *, confirmed=False, interval_seconds=86400, sync_mode='manual'):
         if confirmed is not True:
             raise ChannelError("CONFIRMATION_REQUIRED", "subscription.add", "请先确认作者 UID 或主页再添加订阅")
-        if type(interval_seconds) is not int or not 300 <= interval_seconds <= 604800:
-            raise ChannelError("INVALID_INPUT", "subscription.add", "刷新间隔需在 300 到 604800 秒之间")
+        self.validate_schedule(interval_seconds, sync_mode)
         source = await self.resolve(locator, connection_id)
-        return self.repository.subscribe(source, connection_id, interval_seconds)
+        return self.repository.subscribe(source, connection_id, interval_seconds, sync_mode)
 
     def update(self, subscription_id, **patch):
-        if "interval_seconds" in patch and (type(patch["interval_seconds"]) is not int or not 300 <= patch["interval_seconds"] <= 604800):
-            raise ChannelError("INVALID_INPUT", "subscription.update", "刷新间隔需在 300 到 604800 秒之间")
+        self.validate_schedule(patch.get('interval_seconds'), patch.get('sync_mode'))
         return self.repository.update_subscription(subscription_id, **patch)
 
     async def check_connection(self, connection_id, operation="list_items"):

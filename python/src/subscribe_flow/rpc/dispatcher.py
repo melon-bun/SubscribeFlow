@@ -37,12 +37,15 @@ class Dispatcher:
         return {
             "channel.list": (lambda: c.gateway.describe(), {}, {}),
             "connection.list": (repo.list_connections, {}, {}),
-            "connection.check": (c.subscriptions.check_connection, {"connection_id": str}, {"operation": str}),
+            "connection.check": (c.check_connection, {"connection_id": str}, {"operation": str}),
+            "schedule.list": (c.scheduler.list, {}, {}),
+            "schedule.status": (c.scheduler.status, {}, {}),
+            "system.power": (c.scheduler.power, {"suspended": bool}, {}),
             "source.resolve": (c.subscriptions.resolve, {"locator": str, "connection_id": str}, {}),
             "source.search": (c.subscriptions.search, {"query": str, "connection_id": str}, {"limit": int}),
             "subscription.list": (c.queries.subscriptions, {}, {"include_cancelled": bool}),
-            "subscription.add": (c.subscriptions.add, {"locator": str, "connection_id": str, "confirmed": bool}, {"interval_seconds": int}),
-            "subscription.update": (c.update_subscription, {"subscription_id": str}, {"status": str, "connection_id": str, "interval_seconds": int}),
+            "subscription.add": (c.subscriptions.add, {"locator": str, "connection_id": str, "confirmed": bool}, {"interval_seconds": int, "sync_mode": str}),
+            "subscription.update": (c.update_subscription, {"subscription_id": str}, {"status": str, "connection_id": str, "interval_seconds": int, "sync_mode": str}),
             "sync.start": (c.sync.start, {"subscription_id": str}, {"mode": str, "page_budget": int, "item_key": str}),
             "sync.cancel": (c.sync.cancel, {"job_id": str}, {}),
             "sync.retry": (c.sync.retry, {"job_id": str}, {"page_budget": int}),
@@ -70,6 +73,7 @@ class Dispatcher:
                 if params["protocol_version"] != PROTOCOL_VERSION:
                     raise RPCFault(-32001, "协议版本不兼容")
                 self.handshaken = True
+                self.core.start()
                 result = {"protocol_version": PROTOCOL_VERSION, "core_version": __version__, "methods": list(self.routes)}
             elif not self.handshaken:
                 raise RPCFault(-32001, "请先完成协议握手")

@@ -3,14 +3,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const {spawnSync} = require('node:child_process');
 const {CoreClient} = require('../electron/main/core-client.cjs');
 const {callUI} = require('../electron/main/app-client.cjs');
 
 const root = path.resolve(__dirname, '..');
 const runtime = JSON.parse(fs.readFileSync(path.join(root, '.runtime-paths.json'), 'utf8'));
-async function fixture(run, acquisition) {
+async function fixture(run, acquisition, options = {}) {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'subscribe-flow-test-'));
-  const core = new CoreClient({...runtime, opencli: '/missing/opencli', root, dataDir: folder, acquisition});
+  const core = new CoreClient({...runtime, opencli: '/missing/opencli', root, dataDir: folder, acquisition,
+    schedulePolicy:{resource_gap:0}, ...options});
   try { await core.start(); await run(core); }
   finally { await core.stop(); fs.rmSync(folder, {recursive: true, force: true}); }
 }
@@ -32,6 +34,62 @@ test('real sidecar handshake, persistent subscription, UI mapping and controlled
     await core.restart();
     assert.equal((await core.call('subscription.list'))[0].id, sub.id);
   });
+});
+
+test('automatic mode persists, dispatches an overdue plan through real RPC and stops in manual mode', async () => {
+  let calls=0;
+  await fixture(async core=>{
+    const sub=await callUI(core,'createChannel',[{platform:'bilibili',link:'946974',confirmed:true}]);
+    assert.equal(sub.syncMode,'manual');
+    assert.equal(sub.intervalSeconds,86400);
+    await assert.rejects(callUI(core,'updateChannel',[sub.id,{syncMode:'automatic',intervalSeconds:259201}]),e=>e.code==='INVALID_INPUT');
+    await callUI(core,'updateChannel',[sub.id,{syncMode:'automatic',intervalSeconds:259200}]);
+    assert.equal((await core.call('schedule.list'))[0].state,'scheduled');
+    await core.stop();
+    const seed=spawnSync(runtime.python,['-c',"import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); db.execute('UPDATE schedules SET next_due=0'); db.commit()",path.join(core.dataDir,'subscribe-flow.sqlite3')],{encoding:'utf8'});
+    assert.equal(seed.status,0,seed.stderr);
+    await core.start();
+    let job;
+    for(let i=0;i<100;i++) {
+      job=(await core.call('sync.list'))[0];
+      if(job?.state==='succeeded') break;
+      await new Promise(r=>setTimeout(r,20));
+    }
+    assert.equal(job?.state,'succeeded');
+    assert.equal(job.trigger,'automatic');
+    assert.equal(calls,1);
+    assert.equal((await core.call('content.list')).total,1);
+    await callUI(core,'updateChannel',[sub.id,{syncMode:'manual'}]);
+    const listed=(await callUI(core,'listChannels',[])).items[0];
+    assert.equal(listed.syncMode,'manual');
+    assert.equal(listed.intervalSeconds,259200);
+    assert.equal(listed.schedule.next_due,null);
+  }, async p=>{
+    assert.equal(p.operation,'list'); calls++;
+    return {code:0,data:{page:{pn:p.page,ps:p.limit,count:1},list:{vlist:[{bvid:'BV1xx411c700',mid:946974,title:'Automatic fixture',created:1700000000}]}}};
+  },{schedulePolicy:{startup_delay:0,tick_seconds:0.02,resource_gap:0}});
+});
+
+test('unexpected exit recovers automatically with a bounded restart policy', async () => {
+  await fixture(async core=>{
+    const sub=await core.call('subscription.add',{locator:'946974',connection_id:'bilibili:default',confirmed:true});
+    core.child.kill('SIGKILL');
+    await core.exited;
+    for(let i=0;i<100 && !core.ready;i++) await new Promise(r=>setTimeout(r,20));
+    assert.equal(core.ready,true);
+    assert.equal(core.restartAttempts,1);
+    assert.equal((await core.call('subscription.list'))[0].id,sub.id);
+    for(let attempt=2;attempt<=3;attempt++) {
+      core.child.kill('SIGKILL'); await core.exited;
+      for(let i=0;i<100 && !core.ready;i++) await new Promise(r=>setTimeout(r,20));
+      assert.equal(core.ready,true);
+      assert.equal(core.restartAttempts,attempt);
+    }
+    core.child.kill('SIGKILL'); await core.exited;
+    await new Promise(r=>setTimeout(r,150));
+    assert.equal(core.ready,false);
+    assert.equal(core.child,null);
+  },undefined,{autoRestart:true,restartDelays:[20,40,80]});
 });
 
 test('unexpected sidecar exit rejects pending requests and allows explicit restart', async () => {

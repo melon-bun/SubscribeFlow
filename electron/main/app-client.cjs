@@ -31,11 +31,12 @@ function contentDTO(item, subscriptions) {
     state: item.state, priority: null, tags: [], contentHash: null,
   };
 }
-function channelDTO(sub, descriptors = []) {
+function channelDTO(sub, descriptors = [], schedule = null) {
   const operations = descriptors.find(c => c.channel === sub.channel)?.operations || {};
   return { id: sub.id, name: sub.name, platform: sub.channel, link: sub.url,
     enabled: sub.status === 'active', status: sub.status, connectionId: sub.connection_id,
-    externalId: sub.external_id, intervalSeconds: sub.interval_seconds, frequency: '手动刷新',
+    externalId: sub.external_id, intervalSeconds: sub.interval_seconds, syncMode:sub.sync_mode,
+    frequency: sub.sync_mode === 'automatic' ? (sub.interval_seconds % 3600 ? `每 ${sub.interval_seconds/60} 分钟` : `每 ${sub.interval_seconds/3600} 小时`) : '手动刷新', schedule,
     capabilities: { canRefresh: !!operations.list_items?.supported,
       canBackfill: !!operations.list_items?.supported && operations.list_items.pagination !== 'none',
       fullHistory: !!operations.list_items?.full_history, canFetchDetail: !!operations.get_item_detail?.supported } };
@@ -43,7 +44,7 @@ function channelDTO(sub, descriptors = []) {
 function runDTO(job, subscriptions) {
   return { id: job.id, channelId: job.subscription_id,
     channelName: subscriptions.find(sub => sub.id === job.subscription_id)?.name ?? '',
-    kind: job.mode, scope: job.coverage,
+    kind: job.mode, scope: job.coverage, trigger:job.trigger,
     state: job.state, progress: null, pages: job.pages, items: job.items, newItems: job.new_items,
     message: job.error?.message ?? (job.mode === 'detail' ? (job.state === 'succeeded' ? '详情补充完成' : '正在处理详情任务') : job.state === 'succeeded' && job.mode !== 'detail' && job.new_items === 0 ? `检查完成，没有新内容；本次读取 ${job.items} 条记录` : `已提交 ${job.pages} 页、${job.items} 条记录，新增 ${job.new_items} 条`),
     startedAt: Date.parse(job.created_at), updatedAt: job.updated_at, error: job.error };
@@ -56,13 +57,13 @@ async function callUI(core, name, args) {
   const subscriptions = () => call('subscription.list', { include_cancelled: true });
   switch (name) {
     case 'getSession': {
-      const [channels, connections] = await Promise.all([call('channel.list'), call('connection.list')]);
+      const [channels, connections, scheduler] = await Promise.all([call('channel.list'), call('connection.list'), call('schedule.status')]);
       const latest = connections.find(c => c.readiness?.state === 'blocked')?.readiness ?? connections.find(c => c.readiness)?.readiness;
       return { user: { name: '本地用户' }, now: Date.now(), isDemo: false,
         capabilities: { canRefresh: channels.some(c => c.operations.list_items?.supported),
           canBackfill: channels.some(c => c.operations.list_items?.supported && c.operations.list_items.pagination !== 'none'),
-          canCancel: true, canManageChannels: true, canManagePriorities: false, canManageRules: false, canBookmark: false, canManageTags: false, canSchedule: false },
-        channels, connections,
+          canCancel: true, canManageChannels: true, canManagePriorities: false, canManageRules: false, canBookmark: false, canManageTags: false, canSchedule: true },
+        channels, connections, scheduler,
         connection: { state: latest?.state ?? 'unknown', detail: latest?.reason ?? '尚未检查采集环境',
           dependency: latest?.dependency, authentication: latest?.authentication, actions: latest?.actions || [] } };
     }
@@ -109,27 +110,29 @@ async function callUI(core, name, args) {
     case 'listChannels':
     case 'listCreators': {
       const query = object(first); keys(query, ['platform', 'keyword']);
-      const [subs, descriptors] = await Promise.all([call('subscription.list'), call('channel.list')]);
-      let items = subs.map(sub => channelDTO(sub, descriptors));
+      const [subs, descriptors, schedules] = await Promise.all([call('subscription.list'), call('channel.list'), call('schedule.list')]);
+      let items = subs.map(sub => channelDTO(sub, descriptors, schedules.find(s=>s.subscription_id===sub.id)));
       if (query.platform) items = items.filter(item => item.platform === query.platform);
       if (query.keyword) items = items.filter(item => item.name.includes(query.keyword) || item.link.includes(query.keyword));
       return {items, total: items.length};
     }
     case 'createChannel': {
-      const draft = object(first); keys(draft, ['platform', 'link', 'connectionId', 'confirmed', 'intervalSeconds']);
+      const draft = object(first); keys(draft, ['platform', 'link', 'connectionId', 'confirmed', 'intervalSeconds', 'syncMode']);
       const connections = await call('connection.list');
       const connection = connections.find(c => draft.connectionId ? c.id === draft.connectionId : c.channel === draft.platform);
       if (!connection) unsupported('所选平台尚未接入');
       const params = {locator: draft.link, connection_id: connection.id, confirmed: draft.confirmed === true};
       if (draft.intervalSeconds !== undefined) params.interval_seconds = draft.intervalSeconds;
+      if (draft.syncMode !== undefined) params.sync_mode = draft.syncMode;
       return channelDTO(await call('subscription.add', params), await call('channel.list'));
     }
     case 'updateChannel': {
-      const patch = object(second); keys(patch, ['enabled', 'connectionId', 'intervalSeconds']);
+      const patch = object(second); keys(patch, ['enabled', 'connectionId', 'intervalSeconds', 'syncMode']);
       const params = {subscription_id: first};
       if ('enabled' in patch) { if (typeof patch.enabled !== 'boolean') throw new Error('enabled 必须为布尔值'); params.status = patch.enabled ? 'active' : 'paused'; }
       if ('connectionId' in patch) params.connection_id = patch.connectionId;
       if ('intervalSeconds' in patch) params.interval_seconds = patch.intervalSeconds;
+      if ('syncMode' in patch) params.sync_mode = patch.syncMode;
       return channelDTO(await call('subscription.update', params), await call('channel.list'));
     }
     case 'setChannelEnabled':

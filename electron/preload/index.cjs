@@ -5,6 +5,7 @@ const allowed = new Set([
   'subscription.list', 'subscription.add', 'subscription.update', 'sync.start', 'sync.cancel',
   'sync.retry', 'sync.get', 'sync.list', 'sync.coverage', 'content.list', 'content.get',
   'content.update', 'content.bulk_update', 'core.status', 'core.restart', 'content.open',
+  'schedule.list', 'schedule.status',
   'getSession', 'getCounts', 'listPlatforms', 'listPriorities', 'listContents', 'getContent',
   'updateContent', 'bulkUpdate', 'listChannels', 'createChannel', 'updateChannel',
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',

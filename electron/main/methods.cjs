@@ -3,6 +3,7 @@ const CORE_METHODS = new Set([
   'subscription.list', 'subscription.add', 'subscription.update', 'sync.start', 'sync.cancel',
   'sync.retry', 'sync.get', 'sync.list', 'sync.coverage', 'content.list', 'content.get',
   'content.update', 'content.bulk_update',
+  'schedule.list', 'schedule.status',
 ]);
 const DESKTOP_METHODS = new Set(['core.status', 'core.restart', 'content.open', 'source.open', 'connection.login']);
 module.exports = { CORE_METHODS, DESKTOP_METHODS };

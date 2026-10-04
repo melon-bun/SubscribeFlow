@@ -5,7 +5,10 @@ const os = require('node:os');
 const assert = require('node:assert/strict');
 
 async function verify({window, core, root, mode}) {
-  const evaluate = code => window.webContents.executeJavaScript(code);
+  const evaluate = async code => {
+    try { return await window.webContents.executeJavaScript(code); }
+    catch (error) { throw new Error(error.message + '\nRenderer assertion: ' + code); }
+  };
   const until = async (expression, timeout = 15000) => {
     const start = Date.now();
     while (!(await evaluate(expression))) {
@@ -20,6 +23,7 @@ async function verify({window, core, root, mode}) {
   })()`);
   const screenshot = async name => {
     await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+    await evaluate(`Promise.all(document.getAnimations().filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})))`);
     const output=process.env.SUBSCRIBE_FLOW_VERIFY_OUTPUT || path.join(root,'docs/verification');
     fs.mkdirSync(output,{recursive:true});
     fs.writeFileSync(path.join(output, name), (await window.webContents.capturePage()).toPNG());
@@ -50,6 +54,30 @@ async function verify({window, core, root, mode}) {
   await click('确认添加');
   await until(`!document.querySelector('.dialog') && !!document.querySelector('[data-channel-id]')`);
   assert.equal((await core.call('subscription.list')).length,1);
+  if (mode === 'offline') {
+    assert.equal((await core.call('subscription.list'))[0].sync_mode,'manual');
+    await click('手动刷新');
+    await until(`!!document.querySelector('#refresh-interval')`);
+    assert.equal(await evaluate(`document.querySelector('#refresh-interval').value`),'24');
+    await evaluate(`(() => { const mode=document.querySelector('[aria-label="同步模式"]'); mode.value='automatic'; mode.dispatchEvent(new Event('change',{bubbles:true})); })()`);
+    await screenshot('m6-sync-settings.png');
+    await evaluate(`document.querySelector('#refresh-interval').value='73'`);
+    await click('保存同步设置');
+    assert.ok(await evaluate(`document.querySelector('.dialog .field__error').textContent.includes('72')`));
+    await evaluate(`document.querySelector('#refresh-interval').value='72'`);
+    await click('保存同步设置');
+    await until(`!document.querySelector('.dialog') && document.body.innerText.includes('每 72 小时')`);
+    assert.equal((await core.call('subscription.list'))[0].interval_seconds,259200);
+    await screenshot('m6-automatic-schedule.png');
+    await click('每 72 小时');
+    await until(`!!document.querySelector('#refresh-interval')`);
+    await evaluate(`(() => { const mode=document.querySelector('[aria-label="同步模式"]'); mode.value='manual'; mode.dispatchEvent(new Event('change',{bubbles:true})); })()`);
+    await click('保存同步设置');
+    await until(`!document.querySelector('.dialog') && document.body.innerText.includes('手动刷新')`);
+    assert.equal((await core.call('schedule.list'))[0].next_due,null);
+    assert.equal((await core.call('subscription.list'))[0].interval_seconds,259200);
+    assert.equal(await evaluate(`SubscribeFlow.call('system.power',{suspended:true}).then(()=>false,()=>true)`),true);
+  }
   await evaluate(`document.querySelector('[role="switch"]').click()`);
   await until(`document.querySelector('[role="switch"]')?.getAttribute('aria-checked') === 'false'`);
   await evaluate(`document.querySelector('[role="switch"]').click()`);

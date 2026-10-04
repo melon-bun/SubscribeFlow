@@ -60,7 +60,7 @@ class Repository:
                 if source.confirmed:
                     self._save_source(db, source)
 
-    def subscribe(self, source: Source, connection_id: str, interval_seconds=3600):
+    def subscribe(self, source: Source, connection_id: str, interval_seconds=86400, sync_mode='manual'):
         connection = self.get_connection(connection_id)
         if source.channel != connection.channel:
             raise ChannelError("INVALID_INPUT", "subscription.add", "来源与连接不属于同一渠道")
@@ -71,13 +71,13 @@ class Repository:
             if existing:
                 sub_id = existing["id"]
                 if existing["status"] == "cancelled":
-                    db.execute("UPDATE subscriptions SET status='active',connection_id=?,interval_seconds=?,version=version+1,updated_at=? WHERE id=?",
-                               (connection_id, interval_seconds, stamp, sub_id))
+                    db.execute("UPDATE subscriptions SET status='active',connection_id=?,interval_seconds=?,sync_mode=?,version=version+1,updated_at=? WHERE id=?",
+                               (connection_id, interval_seconds, sync_mode, stamp, sub_id))
                 # An accidental repeated add does not resume a user-paused subscription.
             else:
                 sub_id = uuid.uuid4().hex
-                db.execute("INSERT INTO subscriptions VALUES(?,?,?,'active',1,?,?,?)",
-                           (sub_id, source.key, connection_id, interval_seconds, stamp, stamp))
+                db.execute("INSERT INTO subscriptions(id,source_id,connection_id,status,version,interval_seconds,created_at,updated_at,sync_mode) VALUES(?,?,?,'active',1,?,?,?,?)",
+                           (sub_id, source.key, connection_id, interval_seconds, stamp, stamp, sync_mode))
         return self.get_subscription(sub_id)
 
     def get_subscription(self, sub_id):
@@ -95,7 +95,7 @@ class Repository:
         data = self.get_subscription(sub_id)
         return Source(data["channel"], data["kind"], data["external_id"], data["name"], data["url"], bool(data["confirmed"]))
 
-    def update_subscription(self, sub_id, *, status=None, connection_id=None, interval_seconds=None):
+    def update_subscription(self, sub_id, *, status=None, connection_id=None, interval_seconds=None, sync_mode=None):
         old = self.get_subscription(sub_id)
         conn_id = connection_id or old["connection_id"]
         if self.get_connection(conn_id).channel != old["channel"]:
@@ -103,8 +103,8 @@ class Repository:
         if status is not None and status not in {"active", "paused", "cancelled"}:
             raise ChannelError("INVALID_INPUT", "subscription.update", "无效订阅状态")
         with self.database.transaction() as db:
-            db.execute("UPDATE subscriptions SET status=?,connection_id=?,interval_seconds=?,version=version+1,updated_at=? WHERE id=?",
-                       (status or old["status"], conn_id, interval_seconds if interval_seconds is not None else old["interval_seconds"], now(), sub_id))
+            db.execute("UPDATE subscriptions SET status=?,connection_id=?,interval_seconds=?,sync_mode=?,version=version+1,updated_at=? WHERE id=?",
+                       (status or old["status"], conn_id, interval_seconds if interval_seconds is not None else old["interval_seconds"], sync_mode or old['sync_mode'], now(), sub_id))
         return self.get_subscription(sub_id)
 
     def snapshot(self, sub_id, progress_version="1"):
@@ -119,7 +119,7 @@ class Repository:
         if sub["status"] != "active" or current != job["snapshot"] or not self.get_connection(sub["connection_id"]).enabled:
             raise ChannelError("STALE_CONFIG", "sync", "订阅或连接配置已改变，本次任务停止提交", scope="job", scope_key=job["id"])
 
-    def create_job(self, sub_id, mode, *, item_key=None, progress_version="1"):
+    def create_job(self, sub_id, mode, *, item_key=None, progress_version="1", page_budget=1, trigger="manual"):
         if mode == "detail":
             existing = self.db.execute("SELECT id FROM jobs WHERE item_key=? AND mode='detail' AND state IN ('queued','running','waiting')", (item_key,)).fetchone()
         else:
@@ -129,8 +129,8 @@ class Repository:
         snapshot = self.snapshot(sub_id, progress_version)
         job_id, stamp = uuid.uuid4().hex, now()
         with self.database.transaction() as db:
-            db.execute("INSERT INTO jobs(id,subscription_id,mode,state,snapshot,item_key,created_at,updated_at) VALUES(?,?,?,'queued',?,?,?,?)",
-                       (job_id, sub_id, mode, encode(snapshot), item_key, stamp, stamp))
+            db.execute("INSERT INTO jobs(id,subscription_id,mode,state,snapshot,item_key,created_at,updated_at,page_budget,trigger) VALUES(?,?,?,'queued',?,?,?,?,?,?)",
+                       (job_id, sub_id, mode, encode(snapshot), item_key, stamp, stamp, page_budget, trigger))
         return self.get_job(job_id), True
 
     def get_job(self, job_id):
@@ -143,7 +143,7 @@ class Repository:
         return result
 
     def list_jobs(self, limit=100, offset=0):
-        return [self.get_job(row[0]) for row in self.db.execute("SELECT id FROM jobs ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?", (limit, offset))]
+        return [self.get_job(row[0]) for row in self.db.execute("SELECT id FROM jobs ORDER BY created_at DESC,rowid DESC LIMIT ? OFFSET ?", (limit, offset))]
 
     def set_job_state(self, job_id, state, *, error=None, coverage=None):
         self.db.execute("UPDATE jobs SET state=?,error=?,coverage=COALESCE(?,coverage),updated_at=? WHERE id=?",
@@ -151,7 +151,7 @@ class Repository:
         return self.get_job(job_id)
 
     def recover_interrupted(self):
-        self.db.execute("UPDATE jobs SET state='interrupted',updated_at=? WHERE state IN ('queued','running','waiting')", (now(),))
+        self.db.execute("UPDATE jobs SET state='interrupted',updated_at=? WHERE state IN ('queued','running')", (now(),))
 
     def _upsert_item(self, db, item):
         if not item.external_id or not item.title or not item.url or item.channel != item.source.channel:

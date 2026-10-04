@@ -24,7 +24,7 @@
     else if (!cache.loaded) body = ui.state({icon:'clock', title:'正在载入渠道…'});
     else body = h('div.col.grow.channels-content.scroll-y', {style:{gap:'20px'}}, channelList(app), bottomPanels(app));
     return h('div.view', {'data-view':'channels'}, h('div.view__head', null,
-      h('div.view__head-text', null, h('h1.t-h1',{text:'渠道管理'}), h('p.view__desc',{text:'管理关注的创作者，手动获取更新并查看采集状态。'})),
+      h('div.view__head-text', null, h('h1.t-h1',{text:'渠道管理'}), h('p.view__desc',{text:'管理关注的创作者，选择手动或自动刷新，并查看采集状态。'})),
       h('div.view__actions', null, ui.btn('添加渠道或创作者',{variant:'primary',icon:'plus',disabled:!app.session.capabilities.canManageChannels,onClick:function () { addDialog(app); }}))),
       h('div.view__body', null, body));
   }
@@ -41,7 +41,9 @@
           h('td',null,ui.platformIcon(c.platform)),
           h('td',null,h('div.channel-cell',null,ui.avatar(c.name),h('div.channel-cell__text',null,h('div.channel-cell__name',{text:c.name}),h('div.channel-cell__desc',{text:'UID ' + c.externalId})))),
           h('td',null,ui.btn('打开主页',{size:'sm',icon:'external',onClick:function () { SF.app.act('source:' + c.id,function () { return app.client.openChannel(c.id); }); }})),
-          h('td',{text:'手动刷新'}),
+          h('td',null,h('div.table__time',null,
+            ui.btn(c.frequency,{size:'sm',onClick:function () { scheduleDialog(app,c); },ariaLabel:'设置同步方式 ' + c.name}),
+            h('small',{text:scheduleText(c)}))),
           h('td',null,ui.toggle(c.enabled,function (enabled) { SF.app.act('subscription:' + c.id,async function () { await app.client.setChannelEnabled(c.id,enabled); await SF.app.refreshData(true); }); },{label:(c.enabled?'暂停 ':'恢复 ') + c.name})),
           h('td',null,h('button.coverage-cell' + (cov.complete?'':'.coverage-cell--limited'),{type:'button',title:cov.detail,onclick:function () { ui.dialog({title:c.name + ' · 覆盖范围',body:ui.notice({tone:cov.complete?'info':'warn',text:cov.detail})}); }},SF.icon(cov.complete?'check':'clock',14),h('span',{text:cov.label}))),
           h('td',null,job ? h('div.table__time',null,h('span',{text:fmt.runState(job.state)}),h('small',{text:fmt.relative(job.startedAt,app.now)})) : h('span.muted',{text:'尚未采集'})),
@@ -55,6 +57,41 @@
   function startRun(app,c,kind) {
     return SF.app.act('run:' + c.id,async function () { await app.client.startChannelRun(c.id,{kind:kind}); ui.toast('采集任务已创建'); await SF.app.refreshData(true); });
   }
+  function scheduleText(c) {
+    var s = c.schedule;
+    if (!s || s.state === 'manual') return '按需获取更新';
+    if (s.state === 'running') return '正在检查更新';
+    if (['blocked','paused','suspended'].includes(s.state)) return s.reason;
+    return s.next_due ? (s.state === 'retrying' ? '重试：' : '下次：') + fmt.absolute(s.next_due*1000) : s.reason;
+  }
+  function scheduleDialog(app,c) {
+    var mode = c.syncMode || 'manual', saving = false;
+    var interval = h('input.input',{id:'refresh-interval',type:'number',min:5/60,max:72,step:'any',value:String((c.intervalSeconds || 86400)/3600)});
+    var error = h('p.field__error',{role:'alert'});
+    var select = ui.select([{value:'manual',label:'手动刷新'},{value:'automatic',label:'自动刷新'}],mode,function(value) {
+      mode = value; interval.disabled = mode === 'manual'; error.textContent='';
+    },{ariaLabel:'同步模式'});
+    interval.disabled = mode === 'manual';
+    var save = ui.btn('保存同步设置',{variant:'primary',onClick:async function () {
+      if (saving) return;
+      var hours = Number(interval.value), minutes = Math.round(hours*60);
+      if (!Number.isFinite(hours) || minutes < 5 || minutes > 4320 || Math.abs(hours*60-minutes)>0.000001) {
+        error.textContent='请输入 5 分钟到 72 小时之间的间隔，精确到分钟；例如 0.5 小时'; return;
+      }
+      saving = true; save.disabled = true; select._input.disabled = true; interval.disabled = true;
+      try {
+        await app.client.updateChannel(c.id,{syncMode:mode,intervalSeconds:minutes*60});
+        layer.close(); await SF.app.refreshData(true); ui.toast(mode === 'manual' ? '已切换为手动刷新' : '已保存自动刷新计划');
+      } catch(err) { error.textContent=err.message; }
+      finally { saving = false; save.disabled = false; select._input.disabled = false; interval.disabled = mode === 'manual'; }
+    }});
+    var layer = ui.dialog({title:c.name + ' · 同步设置',body:h('div.col',{style:{gap:'16px'}},
+      h('div.field',null,h('span.field__label',{text:'同步模式'}),select),
+      h('div.field',null,h('label.field__label',{htmlFor:'refresh-interval',text:'自动刷新间隔（小时）'}),interval,
+        h('p.field__hint',{text:'默认 24 小时，最多 72 小时，最少 5 分钟。可输入小数，切回手动会保留此设置。'})),
+      h('p.muted',{text:'自动模式只在应用运行、电脑未休眠时检查。首次自动检查在设定间隔后执行，也可随时手动刷新。'}),error),
+      footer:[ui.btn('取消',{onClick:function () { layer.close(); }}),save]});
+  }
   function bottomPanels(app) {
     return h('div.channels__bottom',null,
       h('section.panel.live-panel',null,h('h2.t-h2',{text:'渠道与连接'}),app.session.connections.map(function (c) {
@@ -67,13 +104,13 @@
           h('div.row.row-gap-3',null,
             c.backend === 'electron-session' ? ui.btn('应用内登录 B站',{onClick:function () { SF.app.act('login:' + c.id,function () { return app.client.loginConnection(c.id); }); }}) : null,
             ui.btn('检查连接',{onClick:function () { SF.app.act('check:' + c.id,async function () { await app.client.checkConnection(c.id); await SF.app.refreshData(true); }); }})));
-      }),h('p.field__hint',{text:'采集失败时仍可查看本地内容。自动调度、优先级和自动规则将在后续模块接入。'})),
+      }),h('p.field__hint',{text:'自动采集遇到登录或访问验证会暂停，处理后检查连接即可恢复。采集失败时仍可查看本地内容。'})),
       h('section.panel.live-panel',null,h('h2.t-h2',{text:'最近任务（最多 100 条）'}),
         app.runs.length ? h('div.run-list',null,app.runs.map(function (run) {
           var canCancel = ['queued','running','waiting'].includes(run.state);
           var canRetry = ['failed','partial','waiting','interrupted','cancelled'].includes(run.state);
           return h('div.run-row',{'data-run-id':run.id},h('div.row',null,h('strong',{text:run.channelName}),h('div.spacer'),ui.tag(fmt.runState(run.state))),
-            h('p',{text:run.message}), h('p.muted',{text:({initial:'初次获取',refresh:'近期刷新',backfill:'历史回溯',detail:'详情补充'}[run.kind] || run.kind) + (run.kind === 'detail' ? ' · 更新已有内容' : ' · 已提交 ' + run.pages + ' 页 · ' + run.items + ' 条 · 新增 ' + run.newItems + ' 条')}),
+            h('p',{text:run.message}), h('p.muted',{text:({manual:'手动',automatic:'自动',recovery:'恢复'}[run.trigger] || '手动') + ' · ' + ({initial:'初次获取',refresh:'近期刷新',backfill:'历史回溯',detail:'详情补充'}[run.kind] || run.kind) + (run.kind === 'detail' ? ' · 更新已有内容' : ' · 已提交 ' + run.pages + ' 页 · ' + run.items + ' 条 · 新增 ' + run.newItems + ' 条')}),
             run.kind !== 'detail' ? h('p.scope-note',{text:fmt.coverage(run.scope)}) : null,
             ['queued','running'].includes(run.state) ? ui.progress(0,true) : null,
             canCancel ? ui.btn('取消任务',{onClick:function () { SF.app.act('cancel:' + run.id,async function () { await app.client.cancelRun(run.id); await SF.app.refreshData(true); }); }}) : null,

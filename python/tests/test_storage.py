@@ -1,10 +1,13 @@
 import tempfile
 import unittest
+import sqlite3
+from unittest.mock import patch
 from dataclasses import replace
 from pathlib import Path
 
 from subscribe_flow.contracts import ChannelError, Connection, ContentItem, FetchPage, ItemError, Source
 from subscribe_flow.storage.database import Database
+import subscribe_flow.storage.database as database_module
 from subscribe_flow.storage.repositories import Repository
 
 
@@ -85,7 +88,7 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(repo.query_contents()["total"], 1)
             repo.recover_interrupted()
             self.assertEqual(repo.get_job(job["id"])["state"], "interrupted")
-            self.assertEqual(restored.connection.execute("PRAGMA user_version").fetchone()[0], 1)
+            self.assertEqual(restored.connection.execute("PRAGMA user_version").fetchone()[0], 2)
         finally:
             restored.close()
 
@@ -96,3 +99,36 @@ class StorageTests(unittest.TestCase):
             self.repo.update_content_state([self.item.key, "missing"], {"read": True})
         self.assertFalse(self.repo.get_content(self.item.key)["state"]["read"])
         self.assertEqual(self.repo.query_contents(query="' OR 1=1 --")["total"], 0)
+
+    def test_same_millisecond_jobs_use_insertion_order_instead_of_random_ids(self):
+        with patch('subscribe_flow.storage.repositories.now', return_value='2026-10-05T00:00:00.000+00:00'):
+            with patch('subscribe_flow.storage.repositories.uuid.uuid4') as identifier:
+                identifier.return_value.hex = 'z-first'
+                first = self.job()
+                self.repo.set_job_state(first['id'], 'cancelled')
+                identifier.return_value.hex = 'a-second'
+                second = self.job()
+        self.assertEqual([row['id'] for row in self.repo.list_jobs()], [second['id'], first['id']])
+
+    def test_v1_migration_defaults_to_manual_and_preserves_data_and_backup(self):
+        legacy_path = Path(self.temp.name) / 'legacy.sqlite3'
+        schema = Path(database_module.__file__).parent/'migrations/001_initial.sql'
+        with sqlite3.connect(legacy_path) as legacy:
+            legacy.executescript(schema.read_text() + '\nPRAGMA user_version=1;')
+            legacy.execute("INSERT INTO connections VALUES('old','test','test','browser:old',1,1,NULL)")
+            legacy.execute("INSERT INTO sources VALUES('source','test','author','1','Author','https://example.com',1)")
+            legacy.execute("INSERT INTO subscriptions VALUES('sub','source','old','active',1,3600,'2026-10-05','2026-10-05')")
+            legacy.execute("INSERT INTO contents VALUES('item','test','video','1','Title',NULL,'{}','2026-10-05','2026-10-05')")
+            legacy.execute("INSERT INTO content_states VALUES('item',1,0,1,'2026-10-05')")
+        migrated = Database(legacy_path)
+        try:
+            repo = Repository(migrated)
+            sub = repo.get_subscription('sub')
+            self.assertEqual((sub['sync_mode'],sub['interval_seconds']), ('manual',86400))
+            self.assertTrue(repo.get_content('item')['state']['read'])
+            self.assertTrue(repo.get_content('item')['state']['deferred'])
+            with sqlite3.connect(legacy_path.with_suffix('.before-v2.backup')) as backup:
+                self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0],1)
+                self.assertEqual(backup.execute('SELECT interval_seconds FROM subscriptions').fetchone()[0],3600)
+        finally:
+            migrated.close()

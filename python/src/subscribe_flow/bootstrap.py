@@ -8,6 +8,7 @@ from subscribe_flow.application.subscriptions import SubscriptionService
 from subscribe_flow.application.sync import SyncService
 from subscribe_flow.application.content import ContentService
 from subscribe_flow.application.queries import QueryService
+from subscribe_flow.application.scheduler import Scheduler
 from subscribe_flow.contracts import Connection
 from subscribe_flow.storage.database import Database
 from subscribe_flow.storage.repositories import Repository
@@ -25,7 +26,7 @@ def build_gateway(opencli_path: str = "opencli", browser_bridge=None) -> Channel
 
 
 class Core:
-    def __init__(self, database_path, *, opencli_path="opencli", gateway=None, browser_bridge=None):
+    def __init__(self, database_path, *, opencli_path="opencli", gateway=None, browser_bridge=None, schedule_policy=None, clock=None):
         self.lease = CoreLease(database_path)
         try:
             self.database = Database(database_path)
@@ -51,6 +52,18 @@ class Core:
                 for connection in self.repository.list_connections():
                     if connection["channel"] == "bilibili" and connection["backend"] == "opencli":
                         self.repository.update_connection(connection["id"], backend="electron-session", resource_key=resource)
+        self.scheduler = Scheduler(self, policy=schedule_policy, **({'clock': clock} if clock else {}))
+        self.listeners.append(self.scheduler.observe)
+        self.sync.guard = self.scheduler.guard
+
+    def start(self):
+        self.sync.resource_gap = self.scheduler.policy.resource_gap
+        self.scheduler.start()
+
+    async def check_connection(self, connection_id, operation='list_items'):
+        readiness = await self.subscriptions.check_connection(connection_id, operation)
+        await self.scheduler.connection_checked(connection_id, readiness)
+        return readiness
 
     def emit(self, event, data):
         for listener in tuple(self.listeners):
@@ -63,10 +76,12 @@ class Core:
         result = self.subscriptions.update(subscription_id, **patch)
         await self.sync.cancel_subscription(subscription_id)
         self.emit("subscription.changed", {"id": subscription_id})
+        self.scheduler.store.ensure(result, self.scheduler.clock())
         return result
 
     async def close(self):
         if not self.closed:
+            await self.scheduler.close()
             await self.sync.close()
             self.database.close()
             self.lease.close()

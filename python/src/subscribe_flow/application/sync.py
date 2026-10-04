@@ -6,6 +6,7 @@ import time
 
 from subscribe_flow.contracts import ChannelError, Context, FetchRequest, Readiness
 from subscribe_flow.storage.repositories import now
+from subscribe_flow.acquisition.resources import ResourceCoordinator
 
 
 class SyncService:
@@ -15,10 +16,18 @@ class SyncService:
         self.tasks: dict[str, asyncio.Task] = {}
         self.signals: dict[str, asyncio.Event] = {}
         self.closing = False
+        self.suspended = False
+        self.interrupted = set()
+        self.resources = ResourceCoordinator()
+        self.resource_gap = 0
+        self.resource_ready = {}
+        self.guard = None
 
-    def start(self, subscription_id, *, mode="refresh", page_budget=None, item_key=None):
+    def start(self, subscription_id, *, mode="refresh", page_budget=None, item_key=None, _trigger="manual"):
         if self.closing:
             raise ChannelError("UNAVAILABLE", "sync.start", "应用正在关闭")
+        if self.suspended:
+            raise ChannelError("SUSPENDED", "sync.start", "电脑休眠，唤醒后再采集")
         if mode not in {"initial", "refresh", "backfill", "detail"}:
             raise ChannelError("INVALID_INPUT", "sync.start", "无效任务模式")
         budget = page_budget if page_budget is not None else (10 if mode == "backfill" else 1)
@@ -27,6 +36,8 @@ class SyncService:
         sub = self.repository.get_subscription(subscription_id)
         if sub["status"] != "active":
             raise ChannelError("SUBSCRIPTION_INACTIVE", "sync.start", "请先恢复订阅")
+        if _trigger != 'manual' and sub['sync_mode'] != 'automatic':
+            raise ChannelError('SUBSCRIPTION_INACTIVE', 'sync.start', '订阅已切换为手动模式')
         connection = self.repository.get_connection(sub["connection_id"])
         descriptor = next((d for d in self.gateway.describe() if d.channel == connection.channel and d.backend == connection.backend), None)
         operation = "get_item_detail" if mode == "detail" else "list_items"
@@ -40,7 +51,8 @@ class SyncService:
             source = item["source"]
             if f'{source["channel"]}:{source["kind"]}:{source["external_id"]}' != sub["source_id"]:
                 raise ChannelError("INVALID_INPUT", "sync.start", "内容不属于该订阅")
-        job, created = self.repository.create_job(subscription_id, mode, item_key=item_key, progress_version=descriptor.progress_version)
+        job, created = self.repository.create_job(subscription_id, mode, item_key=item_key, progress_version=descriptor.progress_version,
+                                                  page_budget=budget, trigger=_trigger)
         if created:
             self._launch(job, budget)
         return {"job_id": job["id"], "created": created, "mode": job["mode"]}
@@ -61,6 +73,23 @@ class SyncService:
         connection = self.repository.get_connection(job["snapshot"]["connection_id"])
         return Context(connection, job["id"], time.monotonic() + self.page_timeout, self.signals[job["id"]])
 
+    async def _request(self, job, operation, function):
+        context = self._context(job)
+        async with self.resources.acquire(context, operation):
+            key = context.connection.resource_key
+            delay = self.resource_ready.get(key, 0) - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            context = self._context(job)
+            if self.guard:
+                self.guard(job, operation)
+            try:
+                value = await function(context)
+                context.check(operation)
+                return value
+            finally:
+                self.resource_ready[key] = time.monotonic() + self.resource_gap
+
     async def _run(self, job_id, budget):
         repository = self.repository
         try:
@@ -68,7 +97,7 @@ class SyncService:
             repository.assert_current(job)
             self.emit("sync.changed", job)
             if job["mode"] == "detail":
-                patch = await self.gateway.get_item_detail(job["item_key"], self._context(job))
+                patch = await self._request(job, 'get_item_detail', lambda ctx: self.gateway.get_item_detail(job["item_key"], ctx))
                 repository.apply_detail(job_id, patch)
                 self.emit("content.changed", {"ids": [patch.item_key]})
                 return
@@ -80,8 +109,7 @@ class SyncService:
                 job = repository.get_job(job_id)
                 repository.assert_current(job)
                 context = self._context(job)
-                page = await self.gateway.fetch_page(source, FetchRequest(mode=job["mode"], cursor=cursor), context)
-                context.check("list_items")
+                page = await self._request(job, 'list_items', lambda ctx: self.gateway.fetch_page(source, FetchRequest(mode=job["mode"], cursor=cursor), ctx))
                 keys = {item.key for item in page.items}
                 if index == 0:
                     first_keys = keys
@@ -97,9 +125,7 @@ class SyncService:
                     # Recheck the head after a multi-page traversal. If new entries
                     # appeared, save them but require another scan before completion.
                     if complete and index > 0 and job["mode"] == "backfill":
-                        head_context = self._context(job)
-                        head = await self.gateway.fetch_page(source, FetchRequest(mode="refresh"), head_context)
-                        head_context.check("list_items")
+                        head = await self._request(job, 'list_items', lambda ctx: self.gateway.fetch_page(source, FetchRequest(mode="refresh"), ctx))
                         if {item.key for item in head.items} != first_keys or head.item_errors:
                             repository.commit_page(job_id, head)
                             complete, coverage = False, "possible_gaps"
@@ -115,11 +141,11 @@ class SyncService:
             job = repository.get_job(job_id)
             repository.finish_scan(job_id, coverage="possible_gaps" if job["item_errors"] else "window_only")
         except asyncio.CancelledError:
-            repository.set_job_state(job_id, "cancelled")
+            repository.set_job_state(job_id, "interrupted" if job_id in self.interrupted else "cancelled")
         except ChannelError as error:
             job = repository.get_job(job_id)
             waiting = error.code in {"AUTH_REQUIRED", "AUTH_EXPIRED", "DEPENDENCY_UNAVAILABLE", "INTERACTION_REQUIRED", "RATE_LIMITED"}
-            state = "cancelled" if error.code in {"CANCELLED", "STALE_CONFIG"} else "waiting" if waiting else "partial" if job["pages"] else "failed"
+            state = "interrupted" if error.code == 'SUSPENDED' else "cancelled" if error.code in {"CANCELLED", "STALE_CONFIG"} else "waiting" if waiting else "partial" if job["pages"] else "failed"
             repository.set_job_state(job_id, state, error=error.to_dict(), coverage="possible_gaps" if job["pages"] else None)
             if error.scope in {"connection", "resource", "backend"}:
                 self._record_failure(job, error)
@@ -166,13 +192,29 @@ class SyncService:
             if job["subscription_id"] == subscription_id and job["state"] in {"queued", "running", "waiting"}:
                 await self.cancel(job["id"])
 
-    async def retry(self, job_id, *, page_budget=None):
+    async def retry(self, job_id, *, page_budget=None, _trigger="manual"):
         job = self.repository.get_job(job_id)
         if job["state"] in {"queued", "running"}:
             return {"job_id": job_id, "created": False, "mode": job["mode"]}
         if job["state"] == "waiting":
             await self.cancel(job_id)
-        return self.start(job["subscription_id"], mode=job["mode"], item_key=job["item_key"], page_budget=page_budget)
+        return self.start(job["subscription_id"], mode=job["mode"], item_key=job["item_key"],
+                          page_budget=job['page_budget'] if page_budget is None else page_budget, _trigger=_trigger)
+
+    async def interrupt(self, job_id):
+        if self.repository.get_job(job_id)['state'] not in {'queued', 'running'}:
+            return
+        self.interrupted.add(job_id)
+        try:
+            if signal := self.signals.get(job_id):
+                signal.set()
+            if task := self.tasks.get(job_id):
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            self.repository.set_job_state(job_id, 'interrupted')
+            self.emit('sync.changed', self.repository.get_job(job_id))
+        finally:
+            self.interrupted.discard(job_id)
 
     async def wait(self, job_id):
         if task := self.tasks.get(job_id):
@@ -182,4 +224,4 @@ class SyncService:
     async def close(self):
         self.closing = True
         for job_id in list(self.tasks):
-            await self.cancel(job_id)
+            await self.interrupt(job_id)
