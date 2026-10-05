@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs><linearGradient id="blue" x2="1" y2="1"><stop stop-color="#4f7cff"/><stop offset="1" stop-color="#2563eb"/></linearGradient></defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#blue)"/>
+  <!-- Existing F1 brand mark, centered in the desktop icon. -->
+  <g transform="translate(132 172) scale(32)" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.2c3.4 0 6.2 2.4 6.2 5.6 0 2-1.1 3.7-2.7 4.7.3.4.5.9.5 1.5 0 1.5-1.3 2.6-3 2.6-1.2 0-2.2-.5-2.6-1.3-.3.1-.6.1-1 .1-3.4 0-6.1-2.4-6.1-5.6S8.6 3.2 12 3.2Z"/>
+    <path d="M9.6 9.4c.6-.9 1.6-1.4 2.7-1.4 1.4 0 2.5.8 2.5 2 0 .9-.5 1.5-1.3 1.9"/>
+  </g>
+</svg>

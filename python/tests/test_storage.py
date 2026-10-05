@@ -175,3 +175,29 @@ class StorageTests(unittest.TestCase):
                 self.assertEqual(backup.execute('SELECT read,archived,deferred FROM content_states ORDER BY CAST(content_id AS INTEGER)').fetchall(),combinations)
         finally:
             migrated.close()
+
+    def test_failed_multi_version_upgrade_rolls_back_and_retry_preserves_first_backup(self):
+        legacy_path = Path(self.temp.name) / 'failed-upgrade.sqlite3'
+        schema = Path(database_module.__file__).parent/'migrations/001_initial.sql'
+        with sqlite3.connect(legacy_path) as legacy:
+            legacy.executescript(schema.read_text() + '\nPRAGMA user_version=1;')
+            legacy.execute("INSERT INTO contents VALUES('one','test','video','one','Original',NULL,'{}','old','old')")
+            legacy.execute("INSERT INTO content_states VALUES('one',1,1,1,'old')")
+        original_read = Path.read_text
+        def broken_migration(path, *args, **kwargs):
+            text = original_read(path, *args, **kwargs)
+            return text + '\nINSERT INTO missing_table VALUES(1);' if path.name.startswith('003_') else text
+        with patch.object(Path, 'read_text', broken_migration):
+            with self.assertRaises(sqlite3.OperationalError):
+                Database(legacy_path)
+        with sqlite3.connect(legacy_path) as unchanged:
+            self.assertEqual(unchanged.execute('PRAGMA user_version').fetchone()[0], 1)
+            self.assertEqual(unchanged.execute('SELECT read,archived,deferred FROM content_states').fetchone(), (1,1,1))
+            self.assertIsNone(unchanged.execute("SELECT 1 FROM sqlite_master WHERE name='schedules'").fetchone())
+            unchanged.execute("UPDATE contents SET title='After failed upgrade'")
+        migrated = Database(legacy_path)
+        migrated.close()
+        with sqlite3.connect(legacy_path.with_suffix('.before-v3.backup')) as backup:
+            self.assertEqual(backup.execute('SELECT title FROM contents').fetchone()[0], 'Original')
+            self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0], 1)
+        self.assertEqual(len(list(legacy_path.parent.glob('failed-upgrade.before-v3.*.backup'))), 1)

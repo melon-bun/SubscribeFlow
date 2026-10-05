@@ -1,11 +1,11 @@
 const { spawn } = require('node:child_process');
 const { EventEmitter } = require('node:events');
-const path = require('node:path');
+const {coreLaunch, startupHint} = require('./runtime.cjs');
 
 class CoreClient extends EventEmitter {
-  constructor({ python, node, root, dataDir, acquisition, schedulePolicy, autoRestart = false, restartDelays = [5000,15000,45000], timeout = 75000 }) {
+  constructor({ python, node, coreExecutable, root, dataDir, acquisition, schedulePolicy, autoRestart = false, restartDelays = [5000,15000,45000], timeout = 75000 }) {
     super();
-    Object.assign(this, { python, node, root, dataDir, acquisition, schedulePolicy, autoRestart, restartDelays, timeout });
+    Object.assign(this, { python, node, coreExecutable, root, dataDir, acquisition, schedulePolicy, autoRestart, restartDelays, timeout });
     this.acquiring = new Map();
     this.pending = new Map();
     this.nextId = 1;
@@ -26,12 +26,9 @@ class CoreClient extends EventEmitter {
   }
 
   async _start() {
-    if (!path.isAbsolute(this.python || '')) throw new Error('请运行 npm run configure 配置 Python 路径');
-    const args = ['-u', '-m', 'subscribe_flow', '--data-dir', this.dataDir, '--backend', 'electron-session'];
-    if (this.schedulePolicy) args.push('--schedule-policy', JSON.stringify(this.schedulePolicy));
-    const env = { ...process.env, PYTHONPATH: path.join(this.root, 'python', 'src'), PYTHONUTF8: '1', PYTHONNOUSERSITE: '1' };
-    if (this.node) env.PATH = path.dirname(this.node) + path.delimiter + '/usr/bin:/bin:/usr/sbin:/sbin';
-    const child = spawn(this.python, args, { env, cwd: this.root, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const launch = coreLaunch(this);
+    const child = spawn(launch.executable, launch.args, launch.options);
+    let stderr = '', failureHint = null;
     this.child = child;
     this.exited = new Promise(resolve => child.once('close', resolve));
     this.emit('status', { state: 'starting' });
@@ -53,16 +50,17 @@ class CoreClient extends EventEmitter {
         catch { this._fail(new Error('Core 返回了无效协议数据')); child.kill('SIGTERM'); }
       }
     });
-    // Raw diagnostics stay out of Renderer. Python already redacts tool errors.
+    // Keep a bounded in-memory buffer solely to recognize fixed startup hints.
+    // Raw Python/OS errors can contain paths and are never forwarded or persisted.
     child.stderr.setEncoding('utf8');
-    child.stderr.on('data', chunk => process.stderr.write(chunk));
+    child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-8192); failureHint = startupHint(stderr); });
     child.stdin.on('error', () => this._fail(new Error('Core 通信已断开')));
-    child.on('error', () => this._fail(new Error('无法启动 Python Core，请检查配置路径')));
+    child.on('error', () => this._fail(new Error(this.coreExecutable ? '无法启动内置核心服务，请重新解压完整应用。' : '无法启动 Python Core，请检查配置路径')));
     child.on('close', code => {
       if (this.child !== child) return;
       this.child = null;
-      this._fail(new Error(`Core 已退出（${code ?? 'signal'}）`));
-      this.emit('status', { state: 'stopped', code });
+      this._fail(new Error(failureHint || `Core 已退出（${code ?? 'signal'}）`));
+      this.emit('status', { state: 'stopped', code, ...(failureHint ? {message: failureHint} : {}) });
       clearTimeout(this.stableTimer);
       this._scheduleRestart();
     });

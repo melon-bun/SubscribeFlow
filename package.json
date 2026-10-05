@@ -13,9 +13,12 @@
     "smoke:renderer:live": "node scripts/renderer-smoke.cjs --live",
     "smoke:session": "node scripts/bilibili-session-smoke.cjs",
     "smoke:bilibili:live": "node scripts/bilibili-live.cjs",
-    "bilibili:login": "node scripts/bilibili-live.cjs --login"
+    "bilibili:login": "node scripts/bilibili-live.cjs --login",
+    "package:mac": "node scripts/package-macos.cjs",
+    "smoke:packaged": "node scripts/packaged-smoke.cjs"
   },
   "devDependencies": {
+    "@electron/packager": "20.3.0",
     "electron": "44.5.1"
   }
 }

@@ -29,7 +29,8 @@ if (!process.versions.electron) {
       };
       service.openLogin(); return;
     }
-    const core = new CoreClient({...runtime,root,dataDir:app.getPath('userData'),acquisition:(p,s) => service.request(p,s)});
+    const core = new CoreClient({...runtime,coreExecutable:process.env.SUBSCRIBE_FLOW_ACCEPTANCE_CORE,
+      root,dataDir:app.getPath('userData'),acquisition:(p,s) => service.request(p,s)});
     const timer = setTimeout(() => app.exit(1),180000);
     try {
       await core.start();

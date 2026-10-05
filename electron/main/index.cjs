@@ -1,22 +1,29 @@
-const { app, BrowserWindow, ipcMain, protocol, shell, powerMonitor } = require('electron');
-const { readFileSync, promises: fs } = require('node:fs');
+const { app, BrowserWindow, ipcMain, protocol, shell, powerMonitor, Menu, dialog } = require('electron');
+const { promises: fs } = require('node:fs');
 const path = require('node:path');
 const { CoreClient } = require('./core-client.cjs');
 const { CORE_METHODS, DESKTOP_METHODS } = require('./methods.cjs');
 const { UI_METHODS, callUI } = require('./app-client.cjs');
 const {openSavedLink} = require('./external-links.cjs');
 const {BilibiliSession} = require('./bilibili-session.cjs');
+const {resolveRuntime} = require('./runtime.cjs');
+const {createDiagnostics} = require('./diagnostics.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const APP_URL = 'app://subscribe-flow/index.html';
-const smoke = process.env.SUBSCRIBE_FLOW_DESKTOP_SMOKE === '1';
-const rendererSmoke = process.env.SUBSCRIBE_FLOW_RENDERER_SMOKE;
-const diagnostics = smoke || process.env.SUBSCRIBE_FLOW_DIAGNOSTICS === '1';
+const smoke = !app.isPackaged && process.env.SUBSCRIBE_FLOW_DESKTOP_SMOKE === '1';
+const rendererSmoke = !app.isPackaged && process.env.SUBSCRIBE_FLOW_RENDERER_SMOKE;
+const diagnostics = smoke || (!app.isPackaged && process.env.SUBSCRIBE_FLOW_DIAGNOSTICS === '1');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.setName('Subscribe Flow');
 if (process.env.SUBSCRIBE_FLOW_DATA_DIR) app.setPath('userData', process.env.SUBSCRIBE_FLOW_DATA_DIR);
+const diagnostic = createDiagnostics(app.getPath('userData'));
 if (!app.requestSingleInstanceLock()) app.quit();
-else app.whenReady().then(start).catch(error => { console.error(error.message); app.exit(1); });
+else app.whenReady().then(start).catch(() => {
+  diagnostic('app.error');
+  dialog.showErrorBox('知流无法启动', '应用资源无法读取，请重新解压完整应用。应用数据目录中的订阅与内容会保留。');
+  app.exit(1);
+});
 
 let window, core, bilibili;
 let lastStatus = {state: 'starting'};
@@ -27,15 +34,24 @@ function send(event, data) {
   if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('subscribe-flow:event', event, data);
 }
 async function start() {
-  let runtime = {};
-  try { runtime = JSON.parse(readFileSync(path.join(root, '.runtime-paths.json'), 'utf8')); }
-  catch { /* The window reports missing runtime configuration. */ }
+  const runtime = resolveRuntime({packaged: app.isPackaged, resourcesPath: process.resourcesPath, root});
+  diagnostic('app.start', {version: app.getVersion(), electron: process.versions.electron, platform: process.platform, arch: process.arch, packaged: app.isPackaged});
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {label: '知流', submenu: [{role:'about'}, {type:'separator'}, {role:'hide'}, {role:'hideOthers'}, {role:'unhide'}, {type:'separator'}, {role:'quit'}]},
+    {role:'editMenu'}, {role:'viewMenu'}, {role:'windowMenu'},
+    {label:'帮助', submenu:[
+      {label:'打开应用数据目录', click:()=>void shell.openPath(app.getPath('userData'))},
+      {label:'打开诊断记录', click:async()=>{const folder=path.join(app.getPath('userData'),'diagnostics'); await fs.mkdir(folder,{recursive:true}); await shell.openPath(folder);}},
+      {label:'使用与备份说明', click:()=>void dialog.showMessageBox(window,{type:'info',title:'知流使用说明',message:'订阅、同步与备份',detail:'在渠道管理中登录 B站、添加作者并刷新。默认手动，可切换自动；间隔默认 24 小时，最大 72 小时。自动采集需要应用保持运行。\n\n备份：退出所有知流窗口后，复制整个应用数据目录。升级前会自动备份数据库。恢复前先退出应用并另存当前目录，再还原备份。不要把旧版数据库文件与当前 WAL 文件混用。\n\n登录会话独立于 Chrome。登录过期时在应用内重新登录。优先级、规则及完整历史覆盖仍未交付。'})},
+    ]},
+  ]));
+  app.setAboutPanelOptions({applicationName:'知流 · Subscribe Flow', applicationVersion:app.getVersion()});
   bilibili = new BilibiliSession({offline:smoke || rendererSmoke === 'offline', onChanged:async () => {
     if (quitting || !core?.ready) return;
     try { await core.call('connection.check',{connection_id:'bilibili:default'}); send('channels',null); }
     catch { /* The connection panel can retry a failed check. */ }
   }});
-  core = new CoreClient({ ...runtime, python: process.env.SUBSCRIBE_FLOW_PYTHON || runtime.python,
+  core = new CoreClient({ ...runtime,
     root, dataDir: app.getPath('userData'), autoRestart:!smoke && !rendererSmoke,
     acquisition:(params,signal) => bilibili.request(params,signal) });
   const updatePower = () => {
@@ -45,7 +61,7 @@ async function start() {
   };
   powerMonitor.on('suspend', () => { suspended = true; updatePower(); });
   powerMonitor.on('resume', () => { suspended = false; updatePower(); });
-  core.on('status', status => { lastStatus = status; send('core.status', status); if (status.state === 'ready' && suspended) updatePower(); });
+  core.on('status', status => { diagnostic('core.status', status); lastStatus = status; send('core.status', status); if (status.state === 'ready' && suspended) updatePower(); });
   core.on('notification', (event, data) => {
     if (!['sync.changed', 'content.changed', 'subscription.changed', 'scheduler.changed'].includes(event)) return;
     send(event, data);
@@ -103,7 +119,7 @@ async function start() {
   window.webContents.on('will-attach-webview', event => event.preventDefault());
   await window.loadURL(APP_URL);
   try { await core.start(); }
-  catch (error) { lastStatus = {state: 'error', message: error.message}; send('core.status', lastStatus); if (smoke || rendererSmoke) throw error; }
+  catch (error) { lastStatus = {state: 'error', message: error.message}; diagnostic('core.status', lastStatus); send('core.status', lastStatus); if (smoke || rendererSmoke) throw error; }
   if (rendererSmoke) {
     try {
       await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
@@ -151,5 +167,6 @@ app.on('before-quit', event => {
   if (quitting || !core) return;
   event.preventDefault();
   quitting = true;
+  diagnostic('app.quit');
   Promise.allSettled([core.stop(), bilibili?.close()]).finally(() => app.quit());
 });

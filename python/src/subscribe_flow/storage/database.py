@@ -1,4 +1,5 @@
 import sqlite3
+from uuid import uuid4
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -27,13 +28,17 @@ class Database:
         if current > latest:
             raise RuntimeError("Database schema is newer than this application")
         if current < latest and self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").fetchone():
-            self.backup(self.path.with_suffix(f".before-v{latest}.backup"))
-        for path in migrations:
-            version = int(path.name.split("_")[0])
-            if version <= current:
-                continue
+            destination = self.path.with_suffix(f".before-v{latest}.backup")
+            if destination.exists():
+                destination = self.path.with_suffix(f".before-v{latest}.{uuid4().hex[:12]}.backup")
+            self.backup(destination)
+        pending = [path for path in migrations if int(path.name.split("_")[0]) > current]
+        if pending:
+            # Treat a multi-version upgrade as one transaction. If a later migration
+            # fails, neither an intermediate schema nor partial data can be committed.
+            script = "\n".join(path.read_text() for path in pending)
             try:
-                self.connection.executescript("BEGIN IMMEDIATE;\n" + path.read_text() + f"\nPRAGMA user_version={version};\nCOMMIT;")
+                self.connection.executescript("BEGIN IMMEDIATE;\n" + script + f"\nPRAGMA user_version={latest};\nCOMMIT;")
             except BaseException:
                 if self.connection.in_transaction:
                     self.connection.rollback()
