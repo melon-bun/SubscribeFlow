@@ -83,7 +83,7 @@ async function verify({window, core, root, mode}) {
     await click('保存采集条数');
     assert.ok(await evaluate(`document.querySelector('.dialog .field__error').textContent.includes('50')`));
     await evaluate(`document.querySelector('#collect-items').value='35'`);
-    await screenshot('m8-collect-items.png');
+    await screenshot('collect-items.png');
     await click('保存采集条数');
     await until(`!document.querySelector('.dialog') && !!document.querySelector('[aria-label="设置采集条数"]')`);
     assert.equal((await core.call('subscription.list'))[0].collect_items,35);
