@@ -35,12 +35,12 @@ class StorageTests(unittest.TestCase):
     def test_idempotence_state_separation_and_unsubscribe_retention(self):
         job = self.job()
         self.repo.commit_page(job["id"], self.page())
-        self.repo.update_content_state([self.item.key], {"read": True, "archived": True})
+        self.repo.update_content_state([self.item.key], {"archived": True})
         self.repo.commit_page(job["id"], self.page(replace(self.item, title="Updated")))
         result = self.repo.query_contents()
         self.assertEqual(result["total"], 1)
         self.assertEqual(result["items"][0]["title"], "Updated")
-        self.assertTrue(result["items"][0]["state"]["read"])
+        self.assertEqual(result["items"][0]["state"], {"read":False,"archived":True,"deferred":False})
         self.assertEqual(self.repo.get_job(job["id"])["new_items"], 1)
         self.repo.update_subscription(self.sub["id"], status="cancelled")
         self.assertEqual(self.repo.query_contents()["total"], 1)
@@ -88,7 +88,7 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(repo.query_contents()["total"], 1)
             repo.recover_interrupted()
             self.assertEqual(repo.get_job(job["id"])["state"], "interrupted")
-            self.assertEqual(restored.connection.execute("PRAGMA user_version").fetchone()[0], 2)
+            self.assertEqual(restored.connection.execute("PRAGMA user_version").fetchone()[0], 3)
         finally:
             restored.close()
 
@@ -125,10 +125,53 @@ class StorageTests(unittest.TestCase):
             repo = Repository(migrated)
             sub = repo.get_subscription('sub')
             self.assertEqual((sub['sync_mode'],sub['interval_seconds']), ('manual',86400))
-            self.assertTrue(repo.get_content('item')['state']['read'])
+            self.assertFalse(repo.get_content('item')['state']['read'])
             self.assertTrue(repo.get_content('item')['state']['deferred'])
-            with sqlite3.connect(legacy_path.with_suffix('.before-v2.backup')) as backup:
+            with sqlite3.connect(legacy_path.with_suffix('.before-v3.backup')) as backup:
                 self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0],1)
                 self.assertEqual(backup.execute('SELECT interval_seconds FROM subscriptions').fetchone()[0],3600)
+        finally:
+            migrated.close()
+
+    def test_processing_states_replace_each_other_atomically_for_single_and_bulk(self):
+        job = self.job()
+        second = replace(self.item, external_id='2')
+        self.repo.commit_page(job['id'], self.page(self.item, second))
+        for field in ('read', 'deferred', 'archived', 'read'):
+            self.repo.update_content_state([self.item.key, second.key], {field:True})
+            expected = {key:key == field for key in ('read','archived','deferred')}
+            for item in (self.item, second):
+                self.assertEqual(self.repo.get_content(item.key)['state'], expected)
+        with self.assertRaises(ChannelError):
+            self.repo.update_content_state([self.item.key, second.key], {'read':True,'archived':True})
+        with self.assertRaises(ChannelError):
+            self.repo.update_content_state([self.item.key, 'missing'], {'archived':True})
+        self.assertTrue(self.repo.get_content(self.item.key)['state']['read'])
+        self.repo.update_content_state([self.item.key], {'archived':False})
+        self.assertTrue(self.repo.get_content(self.item.key)['state']['read'])
+        self.repo.update_content_state([self.item.key], {'read':False})
+        self.assertFalse(any(self.repo.get_content(self.item.key)['state'].values()))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.connection.execute('UPDATE content_states SET read=1,archived=1 WHERE content_id=?', (self.item.key,))
+
+    def test_v2_migration_normalizes_all_combinations_and_keeps_original_in_backup(self):
+        legacy_path = Path(self.temp.name) / 'legacy-v2.sqlite3'
+        migrations = Path(database_module.__file__).parent/'migrations'
+        combinations = [(r,a,d) for r in (0,1) for a in (0,1) for d in (0,1)]
+        with sqlite3.connect(legacy_path) as legacy:
+            legacy.executescript((migrations/'001_initial.sql').read_text() + (migrations/'002_scheduling.sql').read_text() + '\nPRAGMA user_version=2;')
+            for i, (read, archived, deferred) in enumerate(combinations):
+                legacy.execute("INSERT INTO contents VALUES(?,?,?,?,?,NULL,'{}','2026-10-05','2026-10-05')", (str(i),'test','video',str(i),'Title'))
+                legacy.execute('INSERT INTO content_states VALUES(?,?,?,?,?)', (str(i),read,archived,deferred,'2026-10-05'))
+        migrated = Database(legacy_path)
+        try:
+            repo = Repository(migrated)
+            self.assertEqual(repo.query_contents()['total'],8)
+            for i, (read, archived, deferred) in enumerate(combinations):
+                self.assertEqual(repo.get_content(str(i))['state'], {
+                    'read':bool(read and not archived and not deferred), 'archived':bool(archived), 'deferred':bool(deferred and not archived)})
+            with sqlite3.connect(legacy_path.with_suffix('.before-v3.backup')) as backup:
+                self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0],2)
+                self.assertEqual(backup.execute('SELECT read,archived,deferred FROM content_states ORDER BY CAST(content_id AS INTEGER)').fetchall(),combinations)
         finally:
             migrated.close()

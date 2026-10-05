@@ -83,7 +83,9 @@
       h('div.detail__byline', null, ui.avatar(item.channelName, null, 'md'), h('div.detail__byline-text', null,
         h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform)), h('div.detail__byline-time', {text:fmt.publication(item)}))),
       h('div.detail__section', null, h('div.detail__section-title', {text:'内容摘要'}), h('p.detail__summary', {text:item.summary || '此内容尚未提供摘要，可补充详情或打开原文。'})),
-      h('div.detail__section', null, h('div.detail__section-title', {text:'整理内容'}), h('div.op-grid', null,
+      h('div.detail__section', null, h('div.detail__section-title', {text:'整理内容（单选）'}),
+        h('p.field__hint', {text:'选择一项会取消其他状态，再次点击可取消。'}),
+        h('div.op-grid', {role:'group','aria-label':'整理内容（单选）'},
         [['read','已读','check'],['deferred','稍后处理','clock'],['archived','归档','archive']].map(function (entry) {
           return h('button.op-btn', {type:'button', 'aria-pressed':String(item.state[entry[0]]), onclick:function () {
             var state = {}; state[entry[0]] = !item.state[entry[0]];

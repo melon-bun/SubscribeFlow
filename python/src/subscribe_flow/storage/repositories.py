@@ -225,6 +225,11 @@ class Repository:
     def update_content_state(self, keys, patch):
         if not patch or set(patch) - {"read", "archived", "deferred"} or any(type(v) is not bool for v in patch.values()):
             raise ChannelError("INVALID_INPUT", "content.update", "只支持布尔值的 read、archived、deferred 状态")
+        chosen = [field for field, value in patch.items() if value]
+        if len(chosen) > 1:
+            raise ChannelError("INVALID_INPUT", "content.update", "已读、稍后处理和归档只能选择一项")
+        if chosen:
+            patch = {field: field == chosen[0] for field in ("read", "archived", "deferred")}
         fields = ",".join(f"{key}=?" for key in patch)
         with self.database.transaction() as db:
             for key in keys:

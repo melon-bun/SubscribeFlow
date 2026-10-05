@@ -146,7 +146,7 @@ test('private browser RPC commits a large API page, details and repeated refresh
     const item=saved.items[0];
     await core.call('content.update',{item_id:item.id,patch:{read:true}});
     // Inbox and its count share the same unprocessed scope; all-content queries
-    // still retain every record, including independently overlapping states.
+    // still retain every record; processing states are mutually exclusive.
     const deferred=saved.items[1], archived=saved.items[2];
     await callUI(core,'updateContent',[deferred.id,{state:{deferred:true}}]);
     await callUI(core,'updateContent',[archived.id,{state:{archived:true}}]);
@@ -155,8 +155,11 @@ test('private browser RPC commits a large API page, details and repeated refresh
     assert.ok(inbox.items.every(c=>![item.id,deferred.id,archived.id].includes(c.id)));
     assert.deepEqual(await callUI(core,'getCounts',[]),{total:20,unread:17,read:1,deferred:1,archived:1});
     assert.equal((await callUI(core,'listContents',[{}])).total,20);
-    // Clearing only one of two active flags must not return a record to inbox.
+    // Selecting a new state clears the old one; clearing an inactive flag is harmless.
     await callUI(core,'updateContent',[deferred.id,{state:{read:true}}]);
+    assert.deepEqual((await core.call('content.get',{item_id:deferred.id})).state,{read:true,archived:false,deferred:false});
+    assert.deepEqual(await callUI(core,'getCounts',[]),{total:20,unread:17,read:2,deferred:0,archived:1});
+    await assert.rejects(callUI(core,'updateContent',[deferred.id,{state:{read:true,deferred:true}}]),e=>e.code==='INVALID_INPUT');
     await callUI(core,'updateContent',[deferred.id,{state:{deferred:false}}]);
     assert.equal((await callUI(core,'listContents',[{state:'unread'}])).total,17);
     await callUI(core,'updateContent',[deferred.id,{state:{read:false}}]);

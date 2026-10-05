@@ -185,6 +185,24 @@ async function verify({window, core, root, mode}) {
   await until(`document.querySelectorAll('.content-card').length > 1`);
   assert.equal(await title(),'全部更新');
   if(mode === 'offline') {
+    // BUG-005: processing choices replace one another on the same note.
+    await evaluate(`document.querySelector(${JSON.stringify(card(firstId))}).click()`);
+    for(const [field,label] of [['deferred','稍后处理'],['archived','归档']]) {
+      await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()===${JSON.stringify(label)}).click()`);
+      await until(`SF.app.state.selectedId === ${JSON.stringify(firstId)} && document.querySelectorAll('.detail .op-btn[aria-pressed="true"]').length === 1 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === ${JSON.stringify(label)}`);
+      assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:false,archived:field==='archived',deferred:field==='deferred'});
+    }
+    await screenshot('bug-005-single-processing-state.png');
+    // The card menu must use the same exclusive write path as the detail panel.
+    await evaluate(`document.querySelector(${JSON.stringify(card(firstId) + ' [aria-label="更多操作"]')}).click()`);
+    await click('标记为已读');
+    await until(`SF.app.state.counts.read === 1 && SF.app.state.counts.archived === 4 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
+    assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:true,archived:false,deferred:false});
+    await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()==='已读').click()`);
+    await until(`SF.app.state.counts.unread === 21 && document.querySelectorAll('.detail .op-btn[aria-pressed="true"]').length === 0`);
+    assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:false,archived:false,deferred:false});
+    await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()==='已读').click()`);
+    await until(`SF.app.state.counts.unread === 20 && SF.app.state.counts.read === 1 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
     assert.equal(await evaluate(`document.querySelectorAll('.content-card').length`),20);
     await click('下一页');
     await until(`document.querySelectorAll('.content-card').length === 5`);
