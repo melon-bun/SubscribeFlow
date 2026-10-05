@@ -49,12 +49,42 @@
           h('td',null,job ? h('div.table__time',null,h('span',{text:fmt.runState(job.state)}),h('small',{text:fmt.relative(job.startedAt,app.now)})) : h('span.muted',{text:'尚未采集'})),
           h('td',null,h('div.table__ops',null,
             ui.iconBtn('refresh','刷新来源',function () { startRun(app,c,'recent'); },{disabled:!c.enabled || !c.capabilities.canRefresh}),
-            ui.iconBtn('clock','回溯历史',function () { ui.confirm({title:'分页回溯 ' + c.name,message:'最多读取 10 页。当前渠道没有可靠末页证据，回溯成功也不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
+            ui.iconBtn('clock','回溯历史',function () { var pages = collectPages(c,10); ui.confirm({title:'分页回溯 ' + c.name,message:'本次最多读取 ' + pages + ' 页（约 ' + pages*20 + ' 条）。当前渠道没有可靠末页证据，回溯成功也不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
+            ui.iconBtn('sliders',(c.collectItems ? '采集条数（当前 '+c.collectItems+' 条）' : '采集条数（默认）'),function () { collectDialog(app,c); },{disabled:!c.enabled,ariaLabel:'设置采集条数'}),
             ui.iconBtn('trash','取消追踪',function () { ui.confirm({title:'取消追踪 ' + c.name + '？',message:'已保存的历史内容会保留。再次添加相同 UID 可以恢复订阅。',confirmText:'取消追踪',danger:true}).then(function(ok) { if(ok) SF.app.act('subscription:' + c.id,async function () { await app.client.removeChannel(c.id); await SF.app.refreshData(true); }); }); },{danger:true}))));
       })))));
   }
   function startRun(app,c,kind) {
     return SF.app.act('run:' + c.id,async function () { await app.client.startChannelRun(c.id,{kind:kind}); ui.toast('采集任务已创建'); await SF.app.refreshData(true); });
+  }
+  // 界面按“条”表述，后端按整页请求换算；两处保持一致，确认框里的数字才不会骗人。
+  var PAGE_ITEMS = 20;
+  function collectPages(c,fallback) { var n = c.collectItems || 0; return n ? Math.ceil(n / PAGE_ITEMS) : fallback; }
+  function collectDialog(app,c) {
+    var saving = false, current = c.collectItems || 0;
+    var error = h('p.field__error',{role:'alert'});
+    var input = h('input.input',{id:'collect-items',type:'number',min:1,max:50,step:1,value:String(current || ''),placeholder:'留空使用默认',oninput:function () { error.textContent=''; }});
+    var save = ui.btn('保存采集条数',{variant:'primary',onClick:async function () {
+      if (saving) return;
+      var raw = String(input.value).trim();
+      var items = 0;
+      if (raw !== '') {
+        items = Number(raw);
+        if (!Number.isInteger(items) || items < 1 || items > 50) { error.textContent = '请输入 1 到 50 之间的整数，或留空使用默认'; return; }
+      }
+      saving = true; save.disabled = true; input.disabled = true;
+      try {
+        await app.client.updateChannel(c.id,{collectItems:items});
+        layer.close(); await SF.app.refreshData(true);
+        ui.toast(items ? '刷新与回溯每次最多采集 ' + items + ' 条' : '已恢复默认采集条数');
+      } catch(err) { error.textContent = err.message; }
+      finally { saving = false; save.disabled = false; input.disabled = false; }
+    }});
+    var layer = ui.dialog({title:c.name + ' · 采集条数',body:h('div.col',{style:{gap:'16px'}},
+      h('div.field',null,h('label.field__label',{htmlFor:'collect-items',text:'每次采集条数（1-50）'}),input,
+        h('p.field__hint',{text: current ? '当前 ' + current + ' 条，约 ' + Math.ceil(current/PAGE_ITEMS) + ' 页。同时作用于“刷新来源”和“回溯历史”。' : '当前使用默认：刷新来源 1 页，回溯历史 10 页。留空并保存可恢复默认。'})),
+      h('p.muted',{text:'平台每页约 20 条，条数会向上取整成整页请求；例如填 35 实际读取 2 页约 40 条。'}),error),
+      footer:[ui.btn('取消',{onClick:function () { layer.close(); }}),save]});
   }
   function scheduleText(c) {
     var s = c.schedule;

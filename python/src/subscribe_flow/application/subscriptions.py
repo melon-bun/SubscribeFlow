@@ -22,11 +22,13 @@ class SubscriptionService:
         return result
 
     @staticmethod
-    def validate_schedule(interval_seconds=None, sync_mode=None):
+    def validate_schedule(interval_seconds=None, sync_mode=None, collect_items=None):
         if interval_seconds is not None and (type(interval_seconds) is not int or not 300 <= interval_seconds <= 259200):
             raise ChannelError('INVALID_INPUT', 'subscription', '自动刷新间隔需在 5 分钟到 72 小时之间')
         if sync_mode is not None and sync_mode not in {'manual', 'automatic'}:
             raise ChannelError('INVALID_INPUT', 'subscription', '请选择手动或自动模式')
+        if collect_items is not None and (type(collect_items) is not int or not 0 <= collect_items <= 50):
+            raise ChannelError('INVALID_INPUT', 'subscription', '采集条数需在 1 到 50 之间，或留空使用默认')
 
     async def add(self, locator, connection_id, *, confirmed=False, interval_seconds=86400, sync_mode='manual'):
         if confirmed is not True:
@@ -36,7 +38,7 @@ class SubscriptionService:
         return self.repository.subscribe(source, connection_id, interval_seconds, sync_mode)
 
     def update(self, subscription_id, **patch):
-        self.validate_schedule(patch.get('interval_seconds'), patch.get('sync_mode'))
+        self.validate_schedule(patch.get('interval_seconds'), patch.get('sync_mode'), patch.get('collect_items'))
         return self.repository.update_subscription(subscription_id, **patch)
 
     async def check_connection(self, connection_id, operation="list_items"):

@@ -74,6 +74,30 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.adapter.calls, 1)
         self.assertEqual(self.core.repository.get_subscription(sub['id'])['interval_seconds'], 259200)
 
+    async def test_collect_items_persists_converts_to_whole_pages_and_defaults_are_unchanged(self):
+        sub = await self.add()
+        self.assertEqual(self.core.repository.get_subscription(sub['id'])['collect_items'], 0)
+        for bad in (-1, 51, True, 1.5):
+            with self.assertRaises(ChannelError):
+                await self.core.update_subscription(sub['id'], collect_items=bad)
+        # 20 items per page, so 1-20 -> 1 page, 21-40 -> 2, 41-50 -> 3.
+        for items, pages in ((1, 1), (20, 1), (21, 2), (35, 2), (50, 3)):
+            await self.core.update_subscription(sub['id'], collect_items=items)
+            self.core.sync.start(sub['id'])
+            await self.finish()
+            latest = self.core.repository.list_jobs()[0]
+            self.assertEqual((latest['page_budget'], latest['mode']), (pages, 'refresh'), f'{items} 条应为 {pages} 页')
+        await self.core.update_subscription(sub['id'], collect_items=0)
+        self.assertEqual(self.core.sync.page_budget_for(self.core.repository.get_subscription(sub['id']), 'backfill'), 10)
+        self.assertEqual(self.core.sync.page_budget_for(self.core.repository.get_subscription(sub['id']), 'refresh'), 1)
+
+    async def test_explicit_page_budget_still_overrides_the_collect_item_ceiling(self):
+        sub = await self.add()
+        await self.core.update_subscription(sub['id'], collect_items=25)
+        self.core.sync.start(sub['id'], mode='backfill', page_budget=7)
+        await self.finish()
+        self.assertEqual(self.core.repository.list_jobs()[0]['page_budget'], 7)
+
     async def test_manual_and_automatic_requests_merge_and_switching_mode_cancels_pending_work(self):
         sub = await self.add(sync_mode='automatic')
         self.adapter.delay = 1

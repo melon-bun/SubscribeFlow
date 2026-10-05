@@ -35,7 +35,7 @@ function channelDTO(sub, descriptors = [], schedule = null) {
   const operations = descriptors.find(c => c.channel === sub.channel)?.operations || {};
   return { id: sub.id, name: sub.name, platform: sub.channel, link: sub.url,
     enabled: sub.status === 'active', status: sub.status, connectionId: sub.connection_id,
-    externalId: sub.external_id, intervalSeconds: sub.interval_seconds, syncMode:sub.sync_mode,
+    externalId: sub.external_id, intervalSeconds: sub.interval_seconds, syncMode:sub.sync_mode, collectItems: sub.collect_items || 0,
     frequency: sub.sync_mode === 'automatic' ? (sub.interval_seconds % 3600 ? `每 ${sub.interval_seconds/60} 分钟` : `每 ${sub.interval_seconds/3600} 小时`) : '手动刷新', schedule,
     capabilities: { canRefresh: !!operations.list_items?.supported,
       canBackfill: !!operations.list_items?.supported && operations.list_items.pagination !== 'none',
@@ -127,12 +127,17 @@ async function callUI(core, name, args) {
       return channelDTO(await call('subscription.add', params), await call('channel.list'));
     }
     case 'updateChannel': {
-      const patch = object(second); keys(patch, ['enabled', 'connectionId', 'intervalSeconds', 'syncMode']);
+      const patch = object(second); keys(patch, ['enabled', 'connectionId', 'intervalSeconds', 'syncMode', 'collectItems']);
       const params = {subscription_id: first};
       if ('enabled' in patch) { if (typeof patch.enabled !== 'boolean') throw new Error('enabled 必须为布尔值'); params.status = patch.enabled ? 'active' : 'paused'; }
       if ('connectionId' in patch) params.connection_id = patch.connectionId;
       if ('intervalSeconds' in patch) params.interval_seconds = patch.intervalSeconds;
       if ('syncMode' in patch) params.sync_mode = patch.syncMode;
+      if ('collectItems' in patch) {
+        const items = patch.collectItems;
+        if (typeof items === 'number' ? (!Number.isInteger(items) || items < 0 || items > 50) : items !== null) throw new Error('collectItems 必须是 0 到 50 的整数，0 表示使用默认');
+        params.collect_items = items === null ? 0 : items;
+      }
       return channelDTO(await call('subscription.update', params), await call('channel.list'));
     }
     case 'setChannelEnabled':
@@ -144,7 +149,9 @@ async function callUI(core, name, args) {
     case 'startChannelRun': {
       const opts = object(second); keys(opts, ['kind', 'pageBudget']);
       if (opts.kind && !['recent', 'backfill'].includes(opts.kind)) unsupported('不支持此任务类型');
+      if (opts.pageBudget !== undefined && (!Number.isInteger(opts.pageBudget) || opts.pageBudget < 1 || opts.pageBudget > 100)) throw new Error('分页预算必须在 1 到 100 之间');
       const params = {subscription_id: first, mode: opts.kind === 'backfill' ? 'backfill' : 'refresh'};
+      // Omitting pageBudget lets the core derive it from the channel's item ceiling.
       if (opts.pageBudget !== undefined) params.page_budget = opts.pageBudget;
       const result = await call('sync.start', params);
       return {runId: result.job_id};

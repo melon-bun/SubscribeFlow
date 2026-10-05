@@ -23,6 +23,19 @@ class SyncService:
         self.resource_ready = {}
         self.guard = None
 
+    # The per-subscription ceiling is expressed in items. A page is one whole
+    # FetchRequest.limit request, so a short final page still costs a full round trip.
+    PAGE_ITEMS = 20
+
+    @classmethod
+    def page_budget_for(cls, sub, mode, page_budget=None):
+        if page_budget is not None:
+            return page_budget
+        collect_items = sub.get("collect_items") or 0
+        if collect_items:
+            return -(-collect_items // cls.PAGE_ITEMS)
+        return 10 if mode == "backfill" else 1
+
     def start(self, subscription_id, *, mode="refresh", page_budget=None, item_key=None, _trigger="manual"):
         if self.closing:
             raise ChannelError("UNAVAILABLE", "sync.start", "应用正在关闭")
@@ -30,10 +43,10 @@ class SyncService:
             raise ChannelError("SUSPENDED", "sync.start", "电脑休眠，唤醒后再采集")
         if mode not in {"initial", "refresh", "backfill", "detail"}:
             raise ChannelError("INVALID_INPUT", "sync.start", "无效任务模式")
-        budget = page_budget if page_budget is not None else (10 if mode == "backfill" else 1)
+        sub = self.repository.get_subscription(subscription_id)
+        budget = self.page_budget_for(sub, mode, page_budget)
         if type(budget) is not int or not 1 <= budget <= 100:
             raise ChannelError("INVALID_INPUT", "sync.start", "分页预算必须在 1 到 100 之间")
-        sub = self.repository.get_subscription(subscription_id)
         if sub["status"] != "active":
             raise ChannelError("SUBSCRIPTION_INACTIVE", "sync.start", "请先恢复订阅")
         if _trigger != 'manual' and sub['sync_mode'] != 'automatic':

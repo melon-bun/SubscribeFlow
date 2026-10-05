@@ -95,7 +95,7 @@ class Repository:
         data = self.get_subscription(sub_id)
         return Source(data["channel"], data["kind"], data["external_id"], data["name"], data["url"], bool(data["confirmed"]))
 
-    def update_subscription(self, sub_id, *, status=None, connection_id=None, interval_seconds=None, sync_mode=None):
+    def update_subscription(self, sub_id, *, status=None, connection_id=None, interval_seconds=None, sync_mode=None, collect_items=None):
         old = self.get_subscription(sub_id)
         conn_id = connection_id or old["connection_id"]
         if self.get_connection(conn_id).channel != old["channel"]:
@@ -103,8 +103,9 @@ class Repository:
         if status is not None and status not in {"active", "paused", "cancelled"}:
             raise ChannelError("INVALID_INPUT", "subscription.update", "无效订阅状态")
         with self.database.transaction() as db:
-            db.execute("UPDATE subscriptions SET status=?,connection_id=?,interval_seconds=?,sync_mode=?,version=version+1,updated_at=? WHERE id=?",
-                       (status or old["status"], conn_id, interval_seconds if interval_seconds is not None else old["interval_seconds"], sync_mode or old['sync_mode'], now(), sub_id))
+            db.execute("UPDATE subscriptions SET status=?,connection_id=?,interval_seconds=?,sync_mode=?,collect_items=?,version=version+1,updated_at=? WHERE id=?",
+                       (status or old["status"], conn_id, interval_seconds if interval_seconds is not None else old["interval_seconds"], sync_mode or old['sync_mode'],
+                        collect_items if collect_items is not None else old['collect_items'], now(), sub_id))
         return self.get_subscription(sub_id)
 
     def snapshot(self, sub_id, progress_version="1"):

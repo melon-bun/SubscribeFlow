@@ -74,3 +74,35 @@ test('coverage requires compatible terminal evidence; committed windows never cl
   progress[0].compatible=true;
   assert.equal((await callUI(core,'getSyncCoverage',['s'])).complete,true);
 });
+
+test('collection ceiling round-trips through the bridge and rejects out-of-range input', async () => {
+  const sub={id:'s',channel:'test',name:'A',url:'https://example.com',source:{external_id:'1'},status:'active',version:1,connection_id:'c',interval_seconds:86400,sync_mode:'manual',collect_items:25};
+  const calls=[];
+  const core={call:async (name,params)=>{
+    calls.push([name,params]);
+    if(name==='channel.list') return [];
+    return {...sub};
+  }};
+  const updateOf=()=>calls.filter(c=>c[0]==='subscription.update').at(-1)[1];
+  const updated=await callUI(core,'updateChannel',['s',{collectItems:25}]);
+  assert.deepEqual(updateOf(),{subscription_id:'s',collect_items:25});
+  assert.equal(updated.collectItems,25);
+  // A null clears the ceiling back to the Core defaults instead of failing the round trip.
+  await callUI(core,'updateChannel',['s',{collectItems:null}]);
+  assert.deepEqual(updateOf(),{subscription_id:'s',collect_items:0});
+  for(const bad of [-1,51,1.5,'25',true]){
+    await assert.rejects(callUI(core,'updateChannel',['s',{collectItems:bad}]),/collectItems/);
+  }
+});
+
+test('omitting pageBudget lets the Core derive it; an explicit one is range checked', async () => {
+  const seen=[];
+  const core={call:async (name,params)=>{ seen.push([name,params]); return {job_id:'j'}; }};
+  await callUI(core,'startChannelRun',['s',{kind:'backfill'}]);
+  assert.deepEqual(seen.at(-1)[1],{subscription_id:'s',mode:'backfill'});
+  await callUI(core,'startChannelRun',['s',{kind:'recent',pageBudget:3}]);
+  assert.deepEqual(seen.at(-1)[1],{subscription_id:'s',mode:'refresh',page_budget:3});
+  for(const bad of [0,101,2.5,'3',true]){
+    await assert.rejects(callUI(core,'startChannelRun',['s',{pageBudget:bad}]),/分页预算/);
+  }
+});

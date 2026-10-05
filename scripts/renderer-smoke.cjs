@@ -71,10 +71,25 @@ async function verify({window, core, root, mode}) {
   await click('确认添加');
   await until(`!document.querySelector('.dialog') && !!document.querySelector('[data-channel-id]')`);
   assert.equal((await core.call('subscription.list')).length,1);
-  assert.equal(await evaluate(`document.querySelectorAll('.table__ops button').length`),3);
+  assert.equal(await evaluate(`document.querySelectorAll('.table__ops button').length`),4);
+  assert.equal(await evaluate(`!!document.querySelector('[aria-label="设置采集条数"]')`),true);
   assert.equal(await evaluate(`!!document.querySelector('[aria-label="查看来源内容"]')`),false);
   if (mode === 'offline') {
     assert.equal((await core.call('subscription.list'))[0].sync_mode,'manual');
+    // The collection ceiling is edited in items and stored on the subscription.
+    await click('设置采集条数');
+    await until(`!!document.querySelector('#collect-items')`);
+    await evaluate(`document.querySelector('#collect-items').value='51'`);
+    await click('保存采集条数');
+    assert.ok(await evaluate(`document.querySelector('.dialog .field__error').textContent.includes('50')`));
+    await evaluate(`document.querySelector('#collect-items').value='35'`);
+    await screenshot('m8-collect-items.png');
+    await click('保存采集条数');
+    await until(`!document.querySelector('.dialog') && !!document.querySelector('[aria-label="设置采集条数"]')`);
+    assert.equal((await core.call('subscription.list'))[0].collect_items,35);
+    // 35 items is two whole pages of 20, so the Core derives the job budget.
+    await core.call('sync.start',{subscription_id:(await core.call('subscription.list'))[0].id,mode:'refresh'});
+    assert.equal((await core.call('sync.list'))[0].page_budget,2);
     await click('手动刷新');
     await until(`!!document.querySelector('#refresh-interval')`);
     assert.equal(await evaluate(`document.querySelector('#refresh-interval').value`),'24');
