@@ -9,6 +9,7 @@
 安装、数据备份、恢复和适用范围见 [M7 交付说明](docs/M7_DELIVERY.md)。
 
 在“渠道管理”中完成应用内 B站登录，添加作者 UID/主页并确认后刷新。收件箱支持已读 / 稍后处理 / 归档单选，处理后移出，全部更新保留记录。
+每个订阅的操作区可用滑块按钮设定“每次采集条数”（1-50，留空为默认），同时作用于“刷新来源”和“回溯历史”。平台每页约 20 条，条数会向上取整成整页请求，填 35 实际读取 2 页约 40 条；未设定时沿用刷新 1 页、回溯 10 页。
 默认手动刷新，可切自动；间隔默认 24 小时、最大 72 小时。自动检查需要应用运行。
 优先级、规则、标签与完整历史覆盖尚未交付。
 
@@ -25,7 +26,9 @@ npm run package:mac
 ```
 
 开发需要 Node >=22.12、Python 3.12+；打包另需 uv。`.runtime-paths.json` 仅供开发，不进入安装包。
-数据位于 `~/Library/Application Support/Subscribe Flow/`；打包版和开发版共用默认目录，不应同时运行。
+`npm start` 用 `.runtime-paths.json` 里的解释器从 `python/src` 直接跑源码，不是打包后的冻结 Core；改动 Python 后重启即可生效。
+应用图标源文件是 `assets/logo.png`，`npm run package:mac` 时由 `scripts/package-icon.cjs` 裁边并生成 `.icns`。
+数据位于 `~/Library/Application Support/Subscribe Flow/`；打包版和开发版共用默认目录，不应同时运行。开发版启动时会对该目录执行 schema 迁移并留下 `.before-v*.backup`。
 独立 F1 工作区 `../Subscribe_Flow_F1/` 未修改。
 
 ## 验收
