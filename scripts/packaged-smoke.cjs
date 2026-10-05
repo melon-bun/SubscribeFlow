@@ -34,10 +34,10 @@ async function launch(bundle,dataDir,work,expected='ready') {
   args.push('--args','--remote-debugging-address=127.0.0.1',`--remote-debugging-port=${number}`);
   const opener=spawn('/usr/bin/open',args,{cwd:work,env:{...process.env,PATH:'/usr/bin:/bin:/usr/sbin:/sbin'},stdio:'ignore'});
   let closed=false;opener.once('close',()=>{closed=true;});
-  const targets=await until(async()=>{if(closed)throw new Error('Desktop launcher exited');const rows=await(await fetch(`http://127.0.0.1:${number}/json/list`)).json();return rows.some(t=>t.url==='app://subscribe-flow/index.html')&&rows;});
+  const targets=await until(async()=>{if(closed)throw new Error('Desktop launcher exited');const rows=await(await fetch(`http://127.0.0.1:${number}/json/list`)).json();return rows.some(t=>t.url.split('#')[0]==='app://subscribe-flow/index.html')&&rows;});
   const version=await(await fetch(`http://127.0.0.1:${number}/json/version`)).json();
   const browser=await connect(version.webSocketDebuggerUrl);
-  const page=await connect(targets.find(t=>t.url==='app://subscribe-flow/index.html').webSocketDebuggerUrl);
+  const page=await connect(targets.find(t=>t.url.split('#')[0]==='app://subscribe-flow/index.html').webSocketDebuggerUrl);
   const evaluate=async expression=>{
     const response=await page.send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});
     if(response.exceptionDetails) throw new Error(response.exceptionDetails.text+': '+response.exceptionDetails.exception?.description);

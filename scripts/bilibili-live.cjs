@@ -2,6 +2,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const root = path.resolve(__dirname,'..');
+const {startFreshJob, jobEvidence} = require('./live-job.cjs');
 if (!process.versions.electron) {
   const {spawn} = require('node:child_process');
   const profile = path.join(root,'runtime','bilibili-acceptance');
@@ -39,23 +40,22 @@ if (!process.versions.electron) {
       const wait = async id => {
         let job;
         do { await new Promise(r=>setTimeout(r,100)); job=await core.call('sync.get',{job_id:id}); } while(['running','queued'].includes(job.state));
-        if (job.state !== 'succeeded') throw Object.assign(new Error(job.error?.message || job.state),{code:job.error?.code});
-        return {state:job.state,pages:job.pages,items:job.items,newItems:job.new_items,coverage:job.coverage};
+        return jobEvidence(job);
       };
-      const list = await core.call('sync.start',{subscription_id:sub.id,mode:'backfill',page_budget:2});
+      const list = await startFreshJob(core,{subscription_id:sub.id,mode:'backfill',page_budget:2});
       console.log(JSON.stringify({list:await wait(list.job_id)}));
       const items=await core.call('content.list',{limit:1});
-      const detail=await core.call('sync.start',{subscription_id:sub.id,mode:'detail',item_key:items.items[0].id});
+      const detail=await startFreshJob(core,{subscription_id:sub.id,mode:'detail',item_key:items.items[0].id});
       console.log(JSON.stringify({detail:await wait(detail.job_id)}));
       const search=await core.call('source.search',{connection_id:'bilibili:default',query:'影视飓风'});
       console.log(JSON.stringify({searchCandidates:search.items.length,matched:search.items.some(s=>s.external_id==='946974')}));
       for(let i=0;i<3;i++) {
-        const job=await core.call('sync.start',{subscription_id:sub.id});
+        const job=await startFreshJob(core,{subscription_id:sub.id});
         console.log(JSON.stringify({repeat:i+1,...await wait(job.job_id)}));
       }
       await core.restart();
       console.log(JSON.stringify({restartContentCount:(await core.call('content.list',{limit:1})).total,live:'passed'}));
-    } catch (error) { console.error(JSON.stringify({live:'blocked',code:error.code,message:error.message})); process.exitCode=1; }
+    } catch (error) { console.error(JSON.stringify({live:'blocked',code:error.code,message:error.message,evidence:error.evidence})); process.exitCode=1; }
     finally { clearTimeout(timer); await core.stop(); await service.close(); app.exit(process.exitCode || 0); }
   }).catch(e=>{console.error(e.message); app.exit(1);});
 }

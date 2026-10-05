@@ -6,6 +6,7 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {CoreClient} = require('../electron/main/core-client.cjs');
 const {callUI} = require('../electron/main/app-client.cjs');
+const {startFreshJob, jobEvidence} = require('../scripts/live-job.cjs');
 
 const root = path.resolve(__dirname, '..');
 const runtime = JSON.parse(fs.readFileSync(path.join(root, '.runtime-paths.json'), 'utf8'));
@@ -109,6 +110,38 @@ test('malformed protocol input does not contaminate subsequent JSON Lines', asyn
     core.child.stdin.write('this is not json\n');
     assert.equal((await core.call('content.list')).total, 0);
   });
+});
+
+test('live acceptance retries a persisted waiting job and proves a new acquisition occurred', async () => {
+  let blocked=true, requests=0;
+  await fixture(async core=>{
+    const sub=await core.call('subscription.add',{locator:'946974',connection_id:'bilibili:default',confirmed:true});
+    const wait=async id=>{
+      for(let i=0;i<100;i++) {const job=await core.call('sync.get',{job_id:id});if(!['queued','running'].includes(job.state))return job;await new Promise(r=>setTimeout(r,20));}
+      throw new Error('Test job did not settle');
+    };
+    const first=await startFreshJob(core,{subscription_id:sub.id});
+    assert.equal((await wait(first.job_id)).state,'waiting');
+    await core.restart();blocked=false;
+    const reused=await core.call('sync.start',{subscription_id:sub.id});
+    assert.equal(reused.created,false);assert.equal(reused.job_id,first.job_id);assert.equal(requests,1);
+    const fresh=await startFreshJob(core,{subscription_id:sub.id});
+    assert.notEqual(fresh.job_id,first.job_id);assert.equal(fresh.created,true);
+    assert.equal((await wait(fresh.job_id)).state,'succeeded');
+    assert.equal(requests,2);assert.equal((await core.call('sync.get',{job_id:first.job_id})).state,'cancelled');
+    assert.equal((await core.call('content.list')).total,1);
+  },async p=>{requests++;return blocked?{code:-352}:{code:0,data:{page:{pn:p.page,ps:p.limit,count:1},list:{vlist:[{bvid:'BV1xx411c700',mid:946974,title:'Live acceptance regression fixture',created:1700000000}]}}};});
+});
+
+test('bounded acceptance preserves coverage and reports item failures independently of login', () => {
+  const window={id:'new-window',mode:'backfill',page_budget:10,state:'succeeded',pages:10,items:200,new_items:200,
+    item_errors:0,error:null,coverage:'window_only',created_at:'2026-10-05T09:20:47Z',updated_at:'2026-10-05T09:21:16Z'};
+  const evidence=jobEvidence(window);
+  assert.equal(evidence.state,'succeeded');assert.equal(evidence.coverage,'window_only');assert.equal(evidence.pageBudget,10);
+  assert.throws(()=>jobEvidence({...window,error:{code:'INTERACTION_REQUIRED',message:'challenge'}}),e=>e.code==='INTERACTION_REQUIRED');
+  assert.throws(()=>jobEvidence({...window,state:'partial',coverage:'possible_gaps',items:193,new_items:193,item_errors:7}),
+    e=>e.evidence.itemErrors===7 && e.evidence.error===null && e.evidence.items===193);
+  assert.throws(()=>jobEvidence({...window,state:'partial',coverage:'possible_gaps'}));
 });
 
 test('private browser RPC commits a large API page, details and repeated refresh without losing read state',async () => {
