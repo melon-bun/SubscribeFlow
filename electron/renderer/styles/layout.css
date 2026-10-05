@@ -428,6 +428,14 @@
   align-items: center;
 }
 
+/* 状态栏里的关闭按钮：比通用图标按钮更收敛，避免抢走提示本身的注意力 */
+.status-bar .notice .icon-btn {
+  width: 28px;
+  height: 28px;
+  margin-left: var(--s-1);
+  color: var(--c-text-3);
+}
+
 /* ---------------- 主区域 ---------------- */
 
 .workspace {

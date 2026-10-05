@@ -50,7 +50,6 @@
           h('td',null,h('div.table__ops',null,
             ui.iconBtn('refresh','刷新来源',function () { startRun(app,c,'recent'); },{disabled:!c.enabled || !c.capabilities.canRefresh}),
             ui.iconBtn('clock','回溯历史',function () { ui.confirm({title:'分页回溯 ' + c.name,message:'最多读取 10 页。当前渠道没有可靠末页证据，回溯成功也不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
-            ui.iconBtn('file-text','查看来源内容',function () { app.filters = {quick:'all',platform:null,channelId:c.id}; app.search=''; SF.app.navigate('inbox'); }),
             ui.iconBtn('trash','取消追踪',function () { ui.confirm({title:'取消追踪 ' + c.name + '？',message:'已保存的历史内容会保留。再次添加相同 UID 可以恢复订阅。',confirmText:'取消追踪',danger:true}).then(function(ok) { if(ok) SF.app.act('subscription:' + c.id,async function () { await app.client.removeChannel(c.id); await SF.app.refreshData(true); }); }); },{danger:true}))));
       })))));
   }

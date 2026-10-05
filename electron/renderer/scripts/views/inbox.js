@@ -38,9 +38,14 @@
         h('p.view__desc', {text:descriptions[app.filters.quick] || '按发布时间查看创作者更新。'})),
       h('div.view__actions', null, h('span.muted', {text:'最新发布'}), ui.btn('重新查询', {icon:'refresh', onClick:function () { cache = {}; SF.app.refreshData(true); }})));
     var chips = h('div.inbox__toolbar', null,
-      ui.btn('全部', {variant: !app.filters.platform ? 'primary' : 'ghost', onClick:function () { app.filters.platform = null; SF.app.render(); }}),
-      app.platforms.map(function (p) { return ui.btn(SF.catalog.platform(p.id).name + ' ' + p.count, {variant: app.filters.platform === p.id ? 'primary' : 'ghost', onClick:function () { app.filters.platform = p.id; SF.app.render(); }}); }),
-      app.filters.channelId || app.filters.day ? ui.btn('清除来源 / 日期筛选', {onClick:function () { app.filters.channelId = null; delete app.filters.day; SF.app.render(); }}) : null);
+      h('div.chips', null,
+        h('button.chip' + (!app.filters.platform ? '.is-active' : ''), {type:'button', onclick:function () { app.filters.platform = null; SF.app.render(); }},
+          h('span', {text:'全部'}), h('span.chip__count', {text:String(app.counts.total || 0)})),
+        app.platforms.map(function (p) {
+          return h('button.chip' + (app.filters.platform === p.id ? '.is-active' : ''), {type:'button', onclick:function () { app.filters.platform = p.id; SF.app.render(); }},
+            h('span', {text:SF.catalog.platform(p.id).name}), h('span.chip__count', {text:String(p.count || 0)}));
+        }),
+        app.filters.channelId || app.filters.day ? ui.btn('清除来源 / 日期筛选', {onClick:function () { app.filters.channelId = null; delete app.filters.day; SF.app.render(); }}) : null));
     var body;
     if (cache.error) body = ui.state({icon:'alert', title:'内容读取失败', desc:cache.error.message, actions:[{label:'重试', onClick:function () { cache = {}; SF.app.renderContent(); }}]});
     else if (!cache.loaded) body = ui.skeletonCards(4);

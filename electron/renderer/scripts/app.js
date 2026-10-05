@@ -43,6 +43,7 @@
     priorities: [],
     coreStatus: { state: "starting" },
     notice: null,
+    dismissedStatus: null, // 已被手动关闭的状态栏签名；状态一变即失效
     counts: {},
     runs: [],
     now: Date.now(),
@@ -293,21 +294,27 @@
   function buildStatusBar() {
     var conn = app.session && app.session.connection;
     var active = app.runs.find(function (r) { return ["queued", "running"].includes(r.state); });
-    var title, detail, tone = "info", actions = [];
+    var title, detail, tone = "info", actions = [], key, closable = true;
     if (app.coreStatus.state !== "ready") {
       title = "核心服务" + (app.coreStatus.state === "starting" ? "正在启动" : "已断开");
       detail = app.coreStatus.message || "已显示的内容是上次读取的结果，请重启服务后重新查询。";
       tone = "danger";
+      key = "core:" + app.coreStatus.state;
+      closable = false; // 阻塞态且带重启入口，藏起来会丢掉唯一的恢复操作
       actions.push(ui.btn("重启核心服务", { onClick: restart }));
     } else if (app.notice) {
       title = "状态读取失败"; detail = app.notice; tone = "danger";
+      key = "notice:" + app.notice;
       actions.push(ui.btn("重新查询", { onClick: function () { refreshData(true); } }));
     } else if (active) {
       title = "正在同步 " + active.channelName; detail = active.message;
+      key = "active:" + active.id + ":" + active.state;
+      closable = false; // 实时进度，关掉就看不到采集在推进
       actions.push(ui.btn("取消任务", { onClick: function () { act("cancel:" + active.id, async function () { await app.client.cancelRun(active.id); await refreshData(true); }); } }));
     } else if (conn && conn.state !== "ready" && (conn.state !== "unknown" || !app.runs.length)) {
       title = conn.state === "unknown" ? "采集环境尚未检查" : conn.dependency === "unavailable" ? "采集依赖不可用" : "采集连接需要处理";
       detail = conn.detail; tone = "warn";
+      key = "conn:" + conn.state + ":" + (conn.dependency || "");
       actions.push(ui.btn("查看连接与任务", { onClick: function () { navigate("channels"); } }));
     } else {
       var latest = app.runs[0];
@@ -315,11 +322,17 @@
       title = SF.fmt.runState(latest.state) + " · " + latest.channelName;
       detail = latest.message + (latest.kind === "detail" ? "" : " · " + SF.fmt.coverage(latest.scope));
       tone = ["failed", "partial", "waiting", "interrupted"].includes(latest.state) ? "warn" : "info";
+      // 带上 run id 和状态：新任务或状态推进后签名自然变化，关闭过的旧提示会重新出现
+      key = "run:" + latest.id + ":" + latest.state;
       actions.push(ui.btn("查看任务", { onClick: function () { navigate("channels"); } }));
     }
+    // 只压住同一条提示；签名一变就重新出现，不会把后续新结果一起藏掉
+    if (app.dismissedStatus === key) return null;
     return h("div.status-bar", { role: "status", "aria-live": "polite" },
       h("div.notice.notice--" + tone, null, icon("info", 16),
-        h("div.notice__body", null, h("div.notice__title", { text: title }), h("div.notice__text", { text: detail })), actions));
+        h("div.notice__body", null, h("div.notice__title", { text: title }), h("div.notice__text", { text: detail })),
+        actions,
+        closable ? ui.iconBtn("close", "关闭提示", function () { app.dismissedStatus = key; renderContent(); }) : null));
   }
 
   function invalidate() {
