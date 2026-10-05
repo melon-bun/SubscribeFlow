@@ -29,3 +29,13 @@ htmlcov/
 /diagnostics/
 .runtime-paths.json
 coverage/
+
+# local documentation & handoff notes
+/docs/
+/doc/
+/HANDOFF.md
+/handoff.md
+*_HANDOFF.md
+*_handoff.md
+*HANDOFF*.md
+*handoff*.md
