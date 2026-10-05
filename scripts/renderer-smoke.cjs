@@ -31,6 +31,23 @@ async function verify({window, core, root, mode}) {
   await until(`!!window.SF?.app.state.session && !!document.querySelector('[data-view="inbox"] .state')`);
   assert.equal(await evaluate(`SF.app.state.source`),'real');
   assert.equal(await evaluate(`typeof require`),'undefined');
+  if (mode === 'offline') {
+    // Review regression for the Minimax enhancement: a dismissed connection
+    // warning must not hide a changed reason or a later task result.
+    await evaluate(`window.savedConnection = SF.app.state.session.connection; SF.app.state.session.connection = {state:'blocked',dependency:'unknown',authentication:'required',detail:'验收：请登录'}; SF.app.renderContent()`);
+    await click('关闭提示');
+    assert.equal(await evaluate(`!!document.querySelector('.status-bar')`),false);
+    await evaluate(`SF.app.renderContent()`);
+    assert.equal(await evaluate(`!!document.querySelector('.status-bar')`),false);
+    await evaluate(`SF.app.state.session.connection.detail='验收：网络中断'; SF.app.renderContent()`);
+    assert.equal(await evaluate(`!!document.querySelector('.status-bar')`),true);
+    await click('关闭提示');
+    await evaluate(`SF.app.state.runs=[{id:'minimax-review',state:'waiting'}]; SF.app.renderContent()`);
+    assert.equal(await evaluate(`!!document.querySelector('.status-bar')`),true);
+    await evaluate(`SF.app.state.runs=[{id:'minimax-review',state:'running',channelName:'验收',message:'验收'}]; SF.app.renderContent()`);
+    assert.equal(await evaluate(`!!document.querySelector('.status-bar [aria-label="关闭提示"]')`),false);
+    await evaluate(`SF.app.state.runs=[]; SF.app.state.session.connection=window.savedConnection; delete window.savedConnection; SF.app.renderContent()`);
+  }
   if (mode === 'offline') await screenshot('m5-empty.png');
   await evaluate(`document.querySelector('[data-nav="channels"]').click()`);
   await until(`!!document.querySelector('[data-view="channels"] .channels__toolbar')`);
@@ -54,6 +71,8 @@ async function verify({window, core, root, mode}) {
   await click('确认添加');
   await until(`!document.querySelector('.dialog') && !!document.querySelector('[data-channel-id]')`);
   assert.equal((await core.call('subscription.list')).length,1);
+  assert.equal(await evaluate(`document.querySelectorAll('.table__ops button').length`),3);
+  assert.equal(await evaluate(`!!document.querySelector('[aria-label="查看来源内容"]')`),false);
   if (mode === 'offline') {
     assert.equal((await core.call('subscription.list'))[0].sync_mode,'manual');
     await click('手动刷新');
@@ -109,6 +128,8 @@ async function verify({window, core, root, mode}) {
   }
   await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
   await until(`document.querySelectorAll('.content-card').length > 0`);
+  assert.equal(await evaluate(`document.querySelectorAll('.chips .chip').length`),2);
+  assert.equal(await evaluate(`document.querySelectorAll('.chips .chip__count').length`),2);
   if (mode === 'live') {
     await click('补充详情');
     await until(`SF.app.state.runs[0]?.kind === 'detail' && ['succeeded','failed','partial','waiting'].includes(SF.app.state.runs[0].state)`,75000);

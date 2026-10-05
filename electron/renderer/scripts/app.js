@@ -314,7 +314,8 @@
     } else if (conn && conn.state !== "ready" && (conn.state !== "unknown" || !app.runs.length)) {
       title = conn.state === "unknown" ? "采集环境尚未检查" : conn.dependency === "unavailable" ? "采集依赖不可用" : "采集连接需要处理";
       detail = conn.detail; tone = "warn";
-      key = "conn:" + conn.state + ":" + (conn.dependency || "");
+      key = "conn:" + JSON.stringify([conn.state, conn.dependency, conn.authentication, conn.detail,
+        app.runs[0] && app.runs[0].id, app.runs[0] && app.runs[0].state]);
       actions.push(ui.btn("查看连接与任务", { onClick: function () { navigate("channels"); } }));
     } else {
       var latest = app.runs[0];
