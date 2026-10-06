@@ -502,11 +502,31 @@
   /* ---------------- 下拉菜单 ---------------- */
 
   var openMenu = null;
+  // 同一时刻只允许一个浮层：菜单和标签浮层都登记在这里，后开的先关掉旧的。
+  var openOverlay = null;
+  function claimOverlay(dismiss) { ui.closeMenu(); openOverlay = dismiss; }
 
   ui.closeMenu = function () {
     if (openMenu && openMenu.parentNode) openMenu.parentNode.removeChild(openMenu);
     openMenu = null;
+    if (openOverlay) { const dismiss = openOverlay; openOverlay = null; dismiss(); }
   };
+
+  /**
+   * 浮层相对锚点定位：默认在下方，空间不够翻到上方，并夹在视口内。
+   * 菜单和标签浮层共用，翻转规则不会各写一份而漂移。
+   */
+  function positionOverlay(el, anchor, align) {
+    var rect = anchor.getBoundingClientRect();
+    var w = el.offsetWidth;
+    var left = align === "left" ? rect.left : Math.min(rect.left, window.innerWidth - w - 8);
+    var top = rect.bottom + 4;
+    if (top + el.offsetHeight > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - el.offsetHeight - 4);
+    }
+    el.style.left = Math.max(8, left) + "px";
+    el.style.top = top + "px";
+  }
 
   /**
    * items: [{ label, icon, danger, onClick }] 或 '-' 分隔线
@@ -536,18 +556,11 @@
     );
 
     document.body.appendChild(el);
-    var rect = anchor.getBoundingClientRect();
-    var w = el.offsetWidth;
-    var left = Math.min(rect.right - w, window.innerWidth - w - 8);
-    var top = rect.bottom + 4;
-    if (top + el.offsetHeight > window.innerHeight - 8) {
-      top = Math.max(8, rect.top - el.offsetHeight - 4);
-    }
-    el.style.left = Math.max(8, left) + "px";
-    el.style.top = top + "px";
+    positionOverlay(el, anchor, "right");
     var firstItem = el.querySelector("button"); if (firstItem) firstItem.focus();
     el.addEventListener("keydown", function (e) { if (e.key === "Escape") { ui.closeMenu(); if (anchor.isConnected) anchor.focus(); } });
     openMenu = el;
+    claimOverlay(function () { if (el.parentNode) el.parentNode.removeChild(el); openMenu = null; });
 
     setTimeout(function () {
       document.addEventListener("mousedown", onDocDown, { once: true });
@@ -557,6 +570,145 @@
       if (!el.contains(e.target)) ui.closeMenu();
     }
     return el;
+  };
+
+  /**
+   * 标签多选浮层，挂在 body 上定位在触发按钮下方，空间不足时翻到上方。
+   *
+   * 用它而不是原生下拉：标签一多，原生下拉会被拉得很长把页面撑开，
+   * 且无法同时看到已选与未选。这里列表内部滚动，高度有上限，
+   * 选中后浮层保持打开，便于连续勾选。
+   *
+   * tags:     [{id, name, color}]
+   * selected: 已选 ID 数组
+   * onToggle: (id) => void，由调用方决定写入还是撤销
+   * reanchor: 可选。锚点被上层重绘换掉时，用这个选择器找回新锚点继续开着
+   */
+  ui.tagPicker = function (anchorEl, opts) {
+    opts = opts || {};
+    var anchor = anchorEl;
+    var tags = opts.tags || [];
+    var selected = {};
+    (opts.selected || []).forEach(function (id) { selected[id] = true; });
+    var keyword = "";
+
+    var list = h("div.tag-picker__list", { role: "group", "aria-label": opts.ariaLabel || "选择标签" });
+    var search = null;
+    var el = h("div.tag-picker", { role: "dialog", "aria-modal": "false", "aria-label": opts.ariaLabel || "选择标签" });
+
+    function visible() {
+      var q = keyword.trim().toLowerCase();
+      if (!q) return tags;
+      return tags.filter(function (t) {
+        return (t.name || "").toLowerCase().indexOf(q) >= 0 ||
+          (t.synonyms || []).some(function (s) { return s.toLowerCase().indexOf(q) >= 0; });
+      });
+    }
+
+    function paint() {
+      SF.dom.render(list);
+      var rows = visible();
+      if (!rows.length) {
+        SF.dom.append(list, h("p.field__hint", { text: keyword ? "没有匹配的标签" : "没有可用标签" }));
+      }
+      rows.forEach(function (tag) {
+        var on = !!selected[tag.id];
+        list.appendChild(
+          h("button.tag-picker__item" + (on ? ".is-on" : ""), {
+            type: "button",
+            role: "checkbox",
+            "aria-checked": on ? "true" : "false",
+            // 行内只有色点和名称，读屏与自动化都需要一个稳定标识。
+            "data-tag-option": tag.id,
+            "aria-label": tag.name,
+            onclick: function () {
+              selected[tag.id] = !on;
+              paint();
+              opts.onToggle && opts.onToggle(tag.id, selected[tag.id]);
+            },
+          },
+          SF.tagUi ? SF.tagUi.colorDot(tag.color) : h("span.tag-chip__dot", { "aria-hidden": "true" }),
+          h("span.tag-picker__name", { text: tag.name }),
+          tag.enabled === false ? h("span.tag-picker__flag", { text: "已停用" }) : null,
+          on ? icon("check", 13) : null)
+        );
+      });
+    }
+
+    // 标签多到一定程度才给搜索框，否则是为不存在的问题增加一步操作。
+    if (tags.length > 8) {
+      search = ui.searchInput(opts.searchPlaceholder || "搜索标签", "", function (value) {
+        keyword = value; paint();
+      }, { ariaLabel: "搜索标签" });
+    }
+    SF.dom.append(el, [
+      search,
+      list,
+      h("div.tag-picker__foot", null,
+        h("span.muted", { text: "可多选" }),
+        ui.btn(opts.doneText || "完成", { size: "sm", variant: "primary", onClick: close }))
+    ]);
+    paint();
+
+    document.body.appendChild(el);
+    positionOverlay(el, anchor, "left");
+
+    function onDocDown(e) {
+      if (!el.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) close();
+    }
+    function onKey(e) {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      close();
+      if (anchor.isConnected) anchor.focus();
+    }
+    document.addEventListener("mousedown", onDocDown, true);
+    document.addEventListener("keydown", onKey, true);
+    /* 锚点会被上层重绘换掉：打标后详情整块重绘，原来的按钮节点就没了。
+       所以这里不是「锚点没了就关浮层」，而是转挂到新按钮上继续开着——
+       否则每勾一个标签浮层就自己关掉，连续多选没法做。
+       重绘途中详情会短暂消失（清缓存→渲染→数据回来），那一刻找不到新锚点，
+       所以找不到时先缓一下再决定关不关，别在中间态就把浮层收了。
+       换成另一条内容不会走到这里：那之前先有 mousedown，浮层已被点外部关掉了。 */
+    var reanchorTimer = null;
+    var detach = new MutationObserver(function () {
+      if (anchor.isConnected) return;
+      var next = opts.reanchor && document.querySelector(opts.reanchor);
+      if (next && next !== anchor) {
+        anchor = next;
+        positionOverlay(el, anchor, "left");
+        return;
+      }
+      if (reanchorTimer) clearTimeout(reanchorTimer);
+      reanchorTimer = setTimeout(function () {
+        reanchorTimer = null;
+        if (anchor.isConnected) return;
+        var again = opts.reanchor && document.querySelector(opts.reanchor);
+        if (again) { anchor = again; positionOverlay(el, anchor, "left"); return; }
+        close();
+      }, 400);
+    });
+    detach.observe(document.body, { childList: true, subtree: true });
+
+    var closed = false;
+    function close() {
+      // 关闭可能来自多个路径：完成按钮、Esc、外部点击、锚点被重绘移除。
+      // 不加闩会让 onClose 触发多次，调用方多存一次就白存了。
+      if (closed) return;
+      closed = true;
+      if (reanchorTimer) { clearTimeout(reanchorTimer); reanchorTimer = null; }
+      if (openOverlay === close) openOverlay = null;
+      document.removeEventListener("mousedown", onDocDown, true);
+      document.removeEventListener("keydown", onKey, true);
+      detach.disconnect();
+      if (el.parentNode) el.parentNode.removeChild(el);
+      opts.onClose && opts.onClose();
+    }
+
+    claimOverlay(close);
+    var input = search && search.querySelector("input");
+    (input || el.querySelector(".tag-picker__item") || el).focus({ preventScroll: true });
+    return { el: el, close: close };
   };
 
   /* ---------------- 统计卡 ---------------- */

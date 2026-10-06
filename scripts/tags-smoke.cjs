@@ -111,25 +111,32 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   await evaluate(`document.querySelector('[data-quick="all"]').click()`);
   await until(`document.querySelectorAll('.content-card').length > 0`);
   const itemId = await evaluate(`document.querySelector('.content-card').dataset.contentId`);
-  const addPicker = `.detail [aria-label="为这条内容添加标签"]`;
+  const addTrigger = `.detail [data-tag-add]`;
+  const openPicker = async () => {
+    await until(`!!document.querySelector(${JSON.stringify(addTrigger)}) && !document.querySelector('.tag-picker')`);
+    await evaluate(`document.querySelector(${JSON.stringify(addTrigger)}).click()`);
+    await until(`!!document.querySelector('.tag-picker')`);
+  };
+  const pickTag = async (id) => {
+    const sel = `.tag-picker [data-tag-option="${id}"]`;
+    await until(`!!document.querySelector(${JSON.stringify(sel)})`);
+    await evaluate(`document.querySelector(${JSON.stringify(sel)}).click()`);
+  };
   await evaluate(`document.querySelector('[data-content-id=${JSON.stringify(itemId)}]').click()`);
   await until(`!!document.querySelector('.detail')`);
-  await until(`!!document.querySelector(${JSON.stringify(addPicker)})`);
-  await until(`['${travel.id}','${food.id}'].every(id => !!document.querySelector('.detail [aria-label="为这条内容添加标签"] option[value="' + id + '"]'))`);
-  await setValue(addPicker, travel.id);
+  await openPicker();
+  await pickTag(travel.id);
   await until(`document.querySelector('.detail')?.textContent.includes('出行')`);
   assert.deepEqual((await core.call('content.get', {item_id: itemId})).tags.map(t => [t.name, t.origin]),
     [['出行', 'manual']], '人工写入的关联来源必须是 manual');
 
-  await until(`!!document.querySelector('.detail [aria-label="为这条内容添加标签"] option[value="${food.id}"]')`);
-  await setValue(addPicker, food.id);
+  await pickTag(food.id);
   await until(`document.querySelectorAll('.detail .tag-chip').length === 2`);
   await evaluate(`document.querySelector('.detail [aria-label="关闭对话框"]')?.click()`);
   await until(`document.querySelectorAll('[data-content-id=${JSON.stringify(itemId)}] .tag-chip').length === 2`);
 
   // 重复写入同一组标签是幂等的，不产生重复关系
   await evaluate(`document.querySelector('[data-content-id=${JSON.stringify(itemId)}]').click()`);
-  await until(`!!document.querySelector(${JSON.stringify(addPicker)})`);
   await evaluate(`SF.app.state.client.setContentTags(${JSON.stringify(itemId)}, ${JSON.stringify([travel.id, food.id])})`);
   await evaluate(`document.querySelector('.detail [aria-label="关闭对话框"]')?.click()`);
   await until(`!!document.querySelector('[data-view="inbox"]')`);

@@ -1780,7 +1780,8 @@ textarea.input {
   gap: var(--s-3);
 }
 
-.tag-editor__chips .select--sm {
+/* 旧的下拉是这个位置，换成浮层触发按钮后要跟着改，否则按钮不再靠右 */
+.tag-editor__chips .btn--sm {
   margin-left: auto;
 }
 
@@ -1874,4 +1875,87 @@ textarea.input {
   max-width: 160px;
   height: 22px;
   font-size: var(--fs-cap);
+}
+
+/* ---------------- 标签选择浮层 ----------------
+   用它取代原生下拉：标签一多，下拉会被拉得很长把详情面板顶出视口。
+   列表高度封顶并内部滚动，浮层整体跟着锚点定位，位置在下方、放不下翻上方。 */
+.tag-picker {
+  position: absolute;
+  z-index: var(--z-drawer);
+  display: flex;
+  flex-direction: column;
+  width: 264px;
+  max-width: calc(100vw - 16px);
+  padding: var(--s-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  box-shadow: var(--sh-3);
+  animation: sf-rise var(--dur-1) var(--ease);
+}
+
+.tag-picker .search-input {
+  margin-bottom: var(--s-2);
+}
+
+.tag-picker__list {
+  /* 关键约束：超过这个高度就在列表内部滚动，浮层本身不再变长。 */
+  max-height: 264px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tag-picker__list .field__hint {
+  padding: var(--s-3);
+  text-align: center;
+}
+
+.tag-picker__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-cap);
+  color: var(--c-text-2);
+  text-align: left;
+}
+
+.tag-picker__item:hover {
+  background: var(--c-surface-3);
+  color: var(--c-text);
+}
+
+.tag-picker__item.is-on {
+  background: var(--c-brand-weak);
+  color: var(--c-text);
+}
+
+.tag-picker__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-picker__flag {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--c-text-4);
+}
+
+.tag-picker__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-top: var(--s-2);
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--c-divider);
 }

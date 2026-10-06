@@ -127,7 +127,10 @@
   /* ---------------- 内容侧打标 ---------------- */
 
   /**
-   * 一条内容上的标签编辑器：已选标签可逐个移除，未选的启用标签从下拉里添加。
+   * 一条内容上的标签编辑器：已选标签可逐个移除，其余从悬浮浮层里勾选。
+   *
+   * 用浮层而不是下拉：标签一多，原生下拉会被撑得很长，把详情面板顶出视口。
+   * 浮层高度有上限并在内部滚动，位置在触发按钮下方，空间不足时翻到上方。
    * 不直接发请求，由调用方在 onChange 里调用 setContentTags / bulkSetTags。
    */
   controls.tagEditor = function (opts) {
@@ -139,13 +142,61 @@
     var wrap = h("div.tag-editor", null);
     var chips = h("div.tag-editor__chips");
 
+    /* 停用标签不再参与新归类，但已有归类仍要能显示和移除，所以浮层里照列并标注。 */
+    function pool() {
+      return (opts.allTags || []).filter(function (t) {
+        return t.enabled !== false;
+      });
+    }
+
+    /* 触发按钮只建一次、常驻容器末尾。
+       重绘若把它换掉，浮层的锚点就指向了已移除的节点，
+       勾选第一个标签时锚点观察器会立刻把浮层关掉，连续多选就没法做了。 */
+    var trigger = ui.btn(opts.addLabel || "添加标签", {
+      icon: "plus",
+      size: "sm",
+      onClick: function () {
+        var available = pool();
+        ui.tagPicker(trigger, {
+          tags: available,
+          selected: selected.map(function (t) {
+            return t.id;
+          }),
+          ariaLabel: opts.selectLabel || "添加标签",
+          // 打标后详情会被整块重绘，按钮节点会换新，浮层要能转挂过去继续开着
+          reanchor: "[data-tag-add]",
+          onToggle: function (id, on) {
+            if (on) {
+              var tag = available.filter(function (t) {
+                return t.id === id;
+              })[0];
+              if (!tag || chosen[id]) return;
+              chosen[id] = true;
+              selected.push({ id: tag.id, name: tag.name, color: tag.color });
+            } else {
+              selected = selected.filter(function (t) {
+                return t.id !== id;
+              });
+              delete chosen[id];
+            }
+            paint();
+            opts.onChange(selected.slice());
+          },
+        });
+      },
+    });
+    trigger.setAttribute("data-tag-add", "");
+    trigger.setAttribute("aria-label", opts.selectLabel || "添加标签");
+    chips.appendChild(trigger);
+
     function paint() {
-      while (chips.firstChild) chips.removeChild(chips.firstChild);
+      // 只换掉 trigger 前面的标签节点，trigger 本身保持同一个实例。
+      while (chips.firstChild !== trigger) chips.removeChild(chips.firstChild);
       if (!selected.length) {
-        chips.appendChild(h("span.muted", { text: opts.emptyHint || "还没有标签" }));
+        chips.insertBefore(h("span.muted", { text: opts.emptyHint || "还没有标签" }), trigger);
       }
       selected.forEach(function (tag) {
-        chips.appendChild(
+        chips.insertBefore(
           controls.tagChip(tag, {
             removable: true,
             onRemove: function () {
@@ -156,36 +207,11 @@
               paint();
               opts.onChange(selected.slice());
             }
-          })
+          }),
+          trigger
         );
       });
-      /* 停用标签不再参与新归类，但已有归类仍要能显示和移除。 */
-      var available = (opts.allTags || []).filter(function (t) {
-        return !chosen[t.id] && t.enabled !== false;
-      });
-      var picker = ui.select(
-        [{ value: "", label: available.length ? "添加标签" : "没有更多标签" }].concat(
-          available.map(function (t) {
-            return { value: t.id, label: t.name };
-          })
-        ),
-        "",
-        function (value) {
-          if (!value) return;
-          var tag = available.filter(function (t) {
-            return t.id === value;
-          })[0];
-          if (!tag) return;
-          chosen[value] = true;
-          selected.push({ id: tag.id, name: tag.name, color: tag.color });
-          paint();
-          opts.onChange(selected.slice());
-        },
-        { ariaLabel: opts.selectLabel || "添加标签", small: true }
-      );
-      picker.setAttribute("data-tag-add", "");
-      picker.disabled = !available.length;
-      chips.appendChild(picker);
+      trigger.disabled = !pool().length;
     }
 
     paint();
