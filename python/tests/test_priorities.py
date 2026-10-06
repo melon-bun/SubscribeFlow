@@ -94,6 +94,48 @@ class PriorityTests(unittest.TestCase):
         self.repo.update_content_state([self.item.key],{'priority':'medium'})
         self.assertEqual(self.repo.query_contents(priority='medium')['total'],1)
 
+    def test_calendar_full_counts_previews_filters_and_priority_changes(self):
+        # Unknown timestamps stay outside the calendar. An older day must not
+        # disappear when a newer day alone exceeds the former 100-row limit.
+        items = tuple(replace(self.item, external_id=str(i),
+            published=PublishedTime('2026-10-06' if i < 124 else '2026-10-01', 'date')) for i in range(125))
+        self.repo.commit_page(self.job['id'], FetchPage(items, None, 'window_only'))
+        self.repo.set_source_priority(self.sub['id'], 'high')
+        self.repo.update_content_state([items[0].key], {'priority':'low', 'read':True})
+        self.repo.update_content_state([items[1].key], {'priority':'medium'})
+        summary = self.repo.calendar_summary('2026-10')
+        self.assertEqual(summary['total'], 125)
+        self.assertEqual(summary['priorities'], {'high':123, 'medium':1, 'low':1, 'none':0})
+        self.assertEqual([d['total'] for d in summary['days']], [1, 124])
+        self.assertEqual([len(d['items']) for d in summary['days']], [1, 3])
+        self.assertEqual(len({i['id'] for d in summary['days'] for i in d['items']}), 4)
+        filtered = self.repo.calendar_summary('2026-10', priority='low', read=True,
+            channel='test', source_id=self.source.key, query='Title')
+        self.assertEqual(filtered['total'], 1)
+        self.assertEqual(filtered['days'][0]['items'][0]['id'], items[0].key)
+        self.assertEqual(self.repo.calendar_summary('2026-10', priority='low', read=False)['total'], 0)
+        self.repo.set_source_priority(self.sub['id'], None)
+        self.assertEqual(self.repo.calendar_summary('2026-10')['priorities']['none'], 123)
+        self.repo.update_content_state([items[0].key], {'priority':None})
+        self.assertEqual(self.repo.calendar_summary('2026-10', priority='none')['total'], 124)
+
+    def test_calendar_month_boundaries_validation_and_multiple_sources(self):
+        dates = ['2024-02-01', '2024-02-29T23:59:59.999Z', '2024-03-01', '2024-01-31', '2024-02-29T23:59:59Z']
+        items = tuple(replace(self.item, external_id=str(i), published=PublishedTime(day, 'datetime')) for i, day in enumerate(dates))
+        self.repo.commit_page(self.job['id'], FetchPage(items, None, 'window_only'))
+        other = replace(self.source, external_id='b')
+        sub = self.repo.subscribe(other, 'c')
+        self.repo.set_source_priority(sub['id'], 'high')
+        self.db.connection.execute('INSERT INTO content_sources VALUES(?,?)', (items[0].key, other.key))
+        summary = self.repo.calendar_summary('2024-02')
+        self.assertEqual(summary['total'], 3)
+        self.assertEqual(summary['priorities'], {'high':1, 'medium':0, 'low':0, 'none':2})
+        self.assertEqual(self.repo.calendar_summary('2024-03')['total'], 1)
+        self.assertEqual(self.repo.calendar_summary('2024-04')['days'], [])
+        for month in ('2026-00', '2026-13', '2026-1', '0000-01', '2026-10-01', None):
+            with self.assertRaises(ChannelError):
+                self.repo.calendar_summary(month)
+
     def test_v4_upgrade_preserves_collection_and_processing_with_backup(self):
         old = Path(self.temp.name)/'v4.sqlite3'
         migrations = Path(database_module.__file__).parent/'migrations'

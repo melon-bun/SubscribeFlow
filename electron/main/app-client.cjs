@@ -1,7 +1,7 @@
 // F1's call(name, args[]) boundary maps here. Display-only projections do not
 // implement a second store. M5 owns page-level integration and missing controls.
 const UI_METHODS = new Set([
-  'getSession', 'getCounts', 'listPlatforms', 'listPriorities', 'listContents', 'getContent',
+  'getSession', 'getCounts', 'listPlatforms', 'listPriorities', 'getCalendar', 'listContents', 'getContent',
   'updateContent', 'bulkUpdate', 'listChannels', 'createChannel', 'updateChannel',
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',
   'listCreators', 'getPrioritySettings', 'savePrioritySettings', 'listRules', 'createRule',
@@ -95,9 +95,10 @@ async function callUI(core, name, args) {
       if (!('priority' in setting)) throw new Error('缺少优先级');
       return channelDTO(await call('priority.set_source', {subscription_id:setting.id, priority:setting.priority}), await call('channel.list'));
     }
+    case 'getCalendar':
     case 'listContents': {
       const query = object(first);
-      keys(query, ['platform', 'channelId', 'state', 'keyword', 'limit', 'offset', 'from', 'to', 'priority']);
+      keys(query, ['platform', 'channelId', 'state', 'keyword', 'priority', ...(name === 'getCalendar' ? ['month'] : ['limit','offset','from','to'])]);
       const params = {};
       for (const [front, back] of [['platform', 'channel'], ['keyword', 'query'], ['limit', 'limit'], ['offset', 'offset'], ['from', 'start'], ['to', 'end'], ['priority', 'priority']]) {
         if (query[front] != null && query[front] !== '') params[back] = query[front];
@@ -113,6 +114,7 @@ async function callUI(core, name, args) {
         if (!sub) throw new Error('订阅不存在');
         params.source_id = sub.source_id;
       }
+      if (name === 'getCalendar') return call('content.calendar', {...params, month:query.month});
       const result = await call('content.list', params);
       return {...result, items: result.items.map(item => contentDTO(item, subs))};
     }

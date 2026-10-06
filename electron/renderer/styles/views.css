@@ -1268,3 +1268,13 @@
 .priority-body .kanban__item { flex-shrink:0; text-align:left; }
 .source-priority-row .select { flex-shrink:0; }
 @media (max-width:1180px) { .priority-body .kanban__col { min-height:280px; max-height:420px; } }
+
+/* M8 calendar uses the same priority semantics as the board and detail view. */
+.calendar-filters, .calendar-legend { flex-wrap:wrap; }
+.cal-pill--none { background:var(--c-surface-3); color:var(--c-text-2); }
+.cal-pill--none .cal-pill__dot { background:var(--c-text-3); }
+.cal-day__heading { display:flex; align-items:center; gap:4px; width:100%; }
+.cal-day__heading .cal-day__today-tag { position:static; flex:none; }
+.cal-day__count { margin-left:auto; font-size:var(--fs-xs); color:var(--c-text-2); }
+.calendar-legend .muted { font-size:var(--fs-sm); }
+.day-panel__foot p { margin-bottom:var(--s-2); }

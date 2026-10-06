@@ -43,6 +43,18 @@ test('source search and resolution stay separate from confirmed creation', async
   await assert.rejects(callUI(core,'createChannel',[{platform:'test',link:'1'}]),/confirmation required/);
 });
 
+test('calendar maps shared filters to a full monthly summary without pagination', async () => {
+  let received;
+  const summary={month:'2026-10',total:125,priorities:{high:125,medium:0,low:0,none:0},days:[]};
+  const core={call:async (name,params)=>{
+    if(name==='subscription.list') return [{id:'sub',source_id:'source'}];
+    assert.equal(name,'content.calendar'); received=params; return summary;
+  }};
+  assert.deepEqual(await callUI(core,'getCalendar',[{month:'2026-10',platform:'test',channelId:'sub',priority:'high',state:'unread',keyword:'Title'}]),summary);
+  assert.deepEqual(received,{month:'2026-10',channel:'test',source_id:'source',priority:'high',query:'Title',read:false,archived:false,deferred:false});
+  await assert.rejects(callUI(core,'getCalendar',[{month:'2026-10',limit:100}]),{code:'UNSUPPORTED_OPERATION'});
+});
+
 test('external opening resolves a saved ID and rejects schemes, credentials and arbitrary URLs', async () => {
   let url='https://example.com/video', opened;
   const core={call:async name=>name==='content.get'?{url}:[{id:'s',url}]};

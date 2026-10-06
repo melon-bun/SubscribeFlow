@@ -55,6 +55,7 @@ class Dispatcher:
             "content.list": (c.queries.contents, {}, {"limit": int, "offset": int, "channel": str, "source_id": str, "query": str, "start": str, "end": str,
                                                       "read": bool, "archived": bool, "deferred": bool, "priority": str}),
             "priority.set_source": (c.priorities.set_source, {"subscription_id": str, "priority": (str, type(None))}, {}),
+            "content.calendar": (c.queries.calendar, {"month": str}, {"channel": str, "source_id": str, "query": str, "read": bool, "archived": bool, "deferred": bool, "priority": str}),
             "content.get": (c.queries.content, {"item_id": str}, {}),
             "content.update": (c.content.update, {"item_id": str, "patch": dict}, {}),
             "content.bulk_update": (c.content.bulk_update, {"item_ids": list, "patch": dict}, {}),

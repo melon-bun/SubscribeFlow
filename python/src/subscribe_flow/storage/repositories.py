@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import calendar
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -295,9 +297,8 @@ class Repository:
             raise ChannelError("NOT_FOUND", "content.get", "内容不存在")
         return self._content(row)
 
-    def query_contents(self, *, limit=50, offset=0, channel=None, source_id=None, query=None, start=None, end=None, read=None, archived=None, deferred=None, priority=None):
-        if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 1000000:
-            raise ChannelError("INVALID_INPUT", "content.list", "分页参数无效")
+    def _content_filter(self, *, channel=None, source_id=None, query=None, start=None, end=None,
+                        read=None, archived=None, deferred=None, priority=None):
         clauses, args = ["1=1"], []
         if priority == 'none':
             clauses.append(f"{self.EFFECTIVE_PRIORITY} IS NULL")
@@ -320,7 +321,48 @@ class Repository:
                 clauses.append(f"c.published_at {operator} ?")
                 args.append(value)
         base = "FROM contents c JOIN content_states s ON s.content_id=c.id WHERE " + " AND ".join(clauses)
+        return base, args
+
+    def query_contents(self, *, limit=50, offset=0, **filters):
+        if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 1000000:
+            raise ChannelError("INVALID_INPUT", "content.list", "分页参数无效")
+        base, args = self._content_filter(**filters)
         total = self.db.execute("SELECT count(*) " + base, args).fetchone()[0]
         records = self.db.execute(f"SELECT {self.CONTENT_COLUMNS} " + base + " ORDER BY c.published_at DESC,c.id DESC LIMIT ? OFFSET ?", (*args, limit, offset))
         return {"items": [self._content(row) for row in records], "total": total, "limit": limit, "offset": offset,
                 "next_offset": offset + limit if offset + limit < total else None}
+
+
+    def calendar_summary(self, month, **filters):
+        if not isinstance(month, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}", month):
+            raise ChannelError('INVALID_INPUT', 'content.calendar', '月份格式应为 YYYY-MM')
+        year, number = map(int, month.split('-'))
+        if not 1 <= year <= 9999 or not 1 <= number <= 12:
+            raise ChannelError('INVALID_INPUT', 'content.calendar', '月份无效')
+        end = f"{month}-{calendar.monthrange(year, number)[1]:02d}T23:59:59Z"
+        base, args = self._content_filter(start=month+'-01', end=end, **filters)
+        levels = ('high', 'medium', 'low', 'none')
+        counts = dict.fromkeys(levels, 0)
+        days = {}
+        # Group the entire filtered month, not an arbitrary page of content.
+        rows = self.db.execute(f"SELECT substr(c.published_at,1,10) AS day, "
+                               f"{self.EFFECTIVE_PRIORITY} AS priority,count(*) AS count "
+                               + base + " GROUP BY day,priority ORDER BY day", args)
+        for row in rows:
+            day = days.setdefault(row['day'], {'date':row['day'], 'total':0,
+                                               'priorities':dict.fromkeys(levels, 0), 'items':[]})
+            level = row['priority'] or 'none'
+            day['total'] += row['count']
+            day['priorities'][level] += row['count']
+            counts[level] += row['count']
+        # Only three small previews per day cross RPC; full day lists paginate
+        # via content.list with identical filters and stable ordering.
+        previews = self.db.execute(f"""SELECT id,title,day,priority FROM (
+            SELECT c.id,c.title,substr(c.published_at,1,10) AS day,
+                   {self.EFFECTIVE_PRIORITY} AS priority,
+                   ROW_NUMBER() OVER (PARTITION BY substr(c.published_at,1,10)
+                                      ORDER BY c.published_at DESC,c.id DESC) AS position
+            """ + base + ") WHERE position<=3 ORDER BY day,position", args)
+        for row in previews:
+            days[row['day']]['items'].append({'id':row['id'], 'title':row['title'], 'priority':row['priority']})
+        return {'month':month, 'total':sum(counts.values()), 'priorities':counts, 'days':list(days.values())}

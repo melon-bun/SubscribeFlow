@@ -11,6 +11,7 @@
      getCounts()             → Counts                      侧栏筛选计数
      listPlatforms()         → PlatformCount[]            侧栏「按平台筛选」
      listPriorities()        → PriorityMeta[]             优先级定义与计数
+     getCalendar(query)     → { month, total, priorities, days } 日历汇总
      listContents(query)     → { items, total }            内容查询
      getContent(id)          → ContentItem                 详情
      updateContent(id, patch)→ ContentItem                 整理状态变更
@@ -45,6 +46,7 @@
     "listPlatforms",
     "listPriorities",
     "listContents",
+    "getCalendar",
     "getContent",
     "updateContent",
     "bulkUpdate",
