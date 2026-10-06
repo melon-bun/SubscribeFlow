@@ -24,14 +24,18 @@
     <script src="scripts/core/icons.js"></script>
     <script src="scripts/core/format.js"></script>
     <script src="scripts/core/catalog.js"></script>
+    <!-- 标签色板必须在标签控件之前：控件在加载时就取走 SF.tagCatalog 的引用 -->
+    <script src="scripts/core/tag-catalog.js"></script>
     <script src="scripts/core/app-client.js"></script>
     <!-- 组件层 -->
     <script src="scripts/ui/tooltip.js"></script>
     <script src="scripts/ui/components.js"></script>
+    <script src="scripts/ui/tag-controls.js"></script>
     <!-- 视图层 -->
     <script src="scripts/views/inbox.js"></script>
     <script src="scripts/views/overview.js"></script>
     <script src="scripts/views/channels.js"></script>
+    <script src="scripts/views/tags.js"></script>
     <!-- 引导 -->
     <script src="scripts/app.js"></script>
   </body>

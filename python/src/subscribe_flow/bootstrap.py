@@ -9,6 +9,7 @@ from subscribe_flow.application.sync import SyncService
 from subscribe_flow.application.content import ContentService
 from subscribe_flow.application.queries import QueryService
 from subscribe_flow.application.priorities import PriorityService
+from subscribe_flow.application.tags import TagService
 from subscribe_flow.application.scheduler import Scheduler
 from subscribe_flow.contracts import Connection
 from subscribe_flow.storage.database import Database
@@ -27,7 +28,7 @@ def build_gateway(opencli_path: str = "opencli", browser_bridge=None) -> Channel
 
 
 class Core:
-    def __init__(self, database_path, *, opencli_path="opencli", gateway=None, browser_bridge=None, schedule_policy=None, clock=None):
+    def __init__(self, database_path, *, opencli_path="opencli", gateway=None, browser_bridge=None, schedule_policy=None, clock=None, recognition_provider=None):
         self.lease = CoreLease(database_path)
         try:
             self.database = Database(database_path)
@@ -44,6 +45,8 @@ class Core:
         self.sync = SyncService(self.gateway, self.repository, self.emit)
         self.content = ContentService(self.repository, self.emit)
         self.priorities = PriorityService(self.repository, self.emit)
+        # 默认不注入识别提供者：人工标签完整可用，识别接口明确返回未接入。
+        self.tags = TagService(self.repository, self.emit, recognition_provider)
         self.queries = QueryService(self.repository, self.gateway)
         for descriptor in self.gateway.describe():
             resource = "browser:electron-bilibili" if descriptor.backend == "electron-session" else "browser:opencli-default"

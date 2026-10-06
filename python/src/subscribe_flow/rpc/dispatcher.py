@@ -53,12 +53,23 @@ class Dispatcher:
             "sync.list": (c.queries.jobs, {}, {"limit": int, "offset": int}),
             "sync.coverage": (c.queries.coverage, {"subscription_id": str}, {}),
             "content.list": (c.queries.contents, {}, {"limit": int, "offset": int, "channel": str, "source_id": str, "query": str, "start": str, "end": str,
-                                                      "read": bool, "archived": bool, "deferred": bool, "priority": str}),
+                                                      "read": bool, "archived": bool, "deferred": bool, "priority": str,
+                                                      "tags": list, "tag_mode": str}),
             "priority.set_source": (c.priorities.set_source, {"subscription_id": str, "priority": (str, type(None))}, {}),
-            "content.calendar": (c.queries.calendar, {"month": str}, {"channel": str, "source_id": str, "query": str, "read": bool, "archived": bool, "deferred": bool, "priority": str}),
+            "content.calendar": (c.queries.calendar, {"month": str}, {"channel": str, "source_id": str, "query": str, "read": bool, "archived": bool, "deferred": bool, "priority": str,
+                                                              "tags": list, "tag_mode": str}),
             "content.get": (c.queries.content, {"item_id": str}, {}),
             "content.update": (c.content.update, {"item_id": str, "patch": dict}, {}),
             "content.bulk_update": (c.content.bulk_update, {"item_ids": list, "patch": dict}, {}),
+            "tag.list": (c.tags.list_tags, {}, {"query": str, "enabled": bool}),
+            "tag.get": (c.tags.get, {"tag_id": str}, {}),
+            "tag.create": (c.tags.create, {"name": str}, {"description": str, "color": str, "enabled": bool, "synonyms": list}),
+            "tag.update": (c.tags.update, {"tag_id": str}, {"name": str, "description": str, "color": str, "synonyms": list}),
+            "tag.set_enabled": (c.tags.set_enabled, {"tag_id": str, "enabled": bool}, {}),
+            "tag.remove": (c.tags.remove, {"tag_id": str}, {}),
+            "tag.contents": (c.tags.contents, {"tag_id": str}, {"limit": int, "offset": int}),
+            "content.set_tags": (c.tags.set_content, {"item_id": str, "tag_ids": list}, {}),
+            "content.bulk_set_tags": (c.tags.bulk_set, {"item_ids": list, "tag_ids": list}, {}),
         }
 
     async def handle(self, message):
@@ -90,6 +101,10 @@ class Dispatcher:
                 validate(params, required, optional)
                 if "item_ids" in params and (len(params["item_ids"]) > 100 or any(type(item) is not str or not item or len(item) > 2000 for item in params["item_ids"])):
                     raise RPCFault(-32602, "内容 ID 列表无效")
+                if "tag_ids" in params and (len(params["tag_ids"]) > 100 or any(type(t) is not str or not t or len(t) > 2000 for t in params["tag_ids"])):
+                    raise RPCFault(-32602, "标签 ID 列表无效")
+                if "tags" in params and (len(params["tags"]) > 20 or any(type(t) is not str or not t or len(t) > 2000 for t in params["tags"])):
+                    raise RPCFault(-32602, "标签筛选列表无效")
                 result = function(**params)
                 if inspect.isawaitable(result):
                     result = await result

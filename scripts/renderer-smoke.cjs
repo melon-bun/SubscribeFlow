@@ -12,7 +12,7 @@ async function verify({window, core, root, mode}) {
   const until = async (expression, timeout = 15000) => {
     const start = Date.now();
     while (!(await evaluate(expression))) {
-      if (Date.now() - start > timeout) throw new Error('Timed out: ' + expression + '\n' + await evaluate('document.body.innerText'));
+      if (Date.now() - start > timeout) throw new Error('Timed out: ' + expression +  + '\n' + await evaluate('document.body.innerText'));
       await new Promise(resolve => setTimeout(resolve, 70));
     }
   };
@@ -175,7 +175,9 @@ async function verify({window, core, root, mode}) {
     // Each independent processing action leaves inbox, and undo returns it.
     for(const [field,label,heading] of [['deferred','稍后处理','稍后处理'],['archived','归档','已归档']]) {
       const id=await evaluate('SF.app.state.selectedId');
-      await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b => b.textContent.trim()===${JSON.stringify(label)}).click()`);
+      // 检查与点击必须在同一次求值里完成：处理后该内容离开列表，详情会随之关闭。
+      await until(`(() => { const b = Array.from(document.querySelectorAll('.detail .op-btn'))
+        .find(b => b.textContent.trim()===${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`);
       await until(`SF.app.state.counts.unread === 23 && document.querySelectorAll('.content-card').length > 0 && ${absent(id)}`);
       assert.equal((await core.call('content.get',{item_id:id})).state[field],true);
       await evaluate(`document.querySelector('[data-quick="${field}"]').click()`);
@@ -200,7 +202,12 @@ async function verify({window, core, root, mode}) {
     await click('下一页');
     await until(`document.querySelectorAll('.content-card').length === 4`);
     const lastPage=await evaluate(`Array.from(document.querySelectorAll('.content-card')).map(c=>c.dataset.contentId)`);
-    for(let i=0;i<4;i++) await evaluate(`document.querySelectorAll('.content-selection > [role="checkbox"]')[${i}].click()`);
+    // 勾选逐个进行：每次点击都会重绘列表，下标要在点击前确认存在。
+    for(let i=0;i<4;i++) {
+      await until(`!!document.querySelectorAll('.content-selection > [role="checkbox"]')[${i}]`);
+      await evaluate(`document.querySelectorAll('.content-selection > [role="checkbox"]')[${i}].click()`);
+      await until(`document.querySelectorAll('.content-selection > [role="checkbox"][aria-checked="true"]').length===${i+1}`);
+    }
     await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='归档').click()`);
     await until(`SF.app.state.counts.unread === 20 && document.querySelectorAll('.content-card').length === 20 && document.body.innerText.includes('第 1 页')`);
     for(const id of lastPage) {
@@ -224,6 +231,7 @@ async function verify({window, core, root, mode}) {
     // BUG-005: processing choices replace one another on the same note.
     await evaluate(`document.querySelector(${JSON.stringify(card(firstId))}).click()`);
     for(const [field,label] of [['deferred','稍后处理'],['archived','归档']]) {
+      await until(`Array.from(document.querySelectorAll('.detail .op-btn')).some(b=>b.textContent.trim()===${JSON.stringify(label)})`);
       await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()===${JSON.stringify(label)}).click()`);
       await until(`SF.app.state.selectedId === ${JSON.stringify(firstId)} && document.querySelectorAll('.detail .op-btn[aria-pressed="true"]').length === 1 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === ${JSON.stringify(label)}`);
       assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:false,archived:field==='archived',deferred:field==='deferred'});
@@ -234,9 +242,11 @@ async function verify({window, core, root, mode}) {
     await click('标记为已读');
     await until(`SF.app.state.counts.read === 1 && SF.app.state.counts.archived === 4 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
     assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:true,archived:false,deferred:false});
+    await until(`Array.from(document.querySelectorAll('.detail .op-btn')).some(b=>b.textContent.trim()==='已读')`);
     await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()==='已读').click()`);
     await until(`SF.app.state.counts.unread === 21 && document.querySelectorAll('.detail .op-btn[aria-pressed="true"]').length === 0`);
     assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:false,archived:false,deferred:false});
+    await until(`Array.from(document.querySelectorAll('.detail .op-btn')).some(b=>b.textContent.trim()==='已读')`);
     await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()==='已读').click()`);
     await until(`SF.app.state.counts.unread === 20 && SF.app.state.counts.read === 1 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
     assert.equal(await evaluate(`document.querySelectorAll('.content-card').length`),20);
@@ -260,6 +270,7 @@ async function verify({window, core, root, mode}) {
   await until(`!!document.querySelector('.calendar-grid') && SF.app.state.calendarMonth === ${JSON.stringify(month)}`);
   if(mode==='offline') await require('./priority-smoke.cjs').verifyPriorities({evaluate,until,click,screenshot,core,window,firstId});
   if(mode==='offline') await require('./calendar-smoke.cjs').verifyCalendar({evaluate,until,click,screenshot,core,window,firstId});
+  if(mode==='offline') await require('./tags-smoke.cjs').verifyTags({evaluate,until,click,screenshot,core,window,firstId});
   // An actual sidecar crash must show the recovery action without fabricating empty data.
   core.child.kill('SIGKILL');
   await core.exited;

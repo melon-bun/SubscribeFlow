@@ -118,6 +118,22 @@
   --z-dialog: 60;
   --z-toast: 80;
   --z-preview: 100;
+  /* ---- 标签色板（M9）----
+   * 11 档受控色板，键名即标签数据里的 color 值。solid/soft/ink 三个角色驱动
+   * 同一标签在色块、表格色条、使用量条和编辑器里的全部呈现——颜色是身份，
+   * 不是贴上去的装饰。未知色值由 tag-catalog.js 收敛到 slate。 */
+  --tag-violet: #7c4dff;   --tag-violet-soft: #f0eaff;  --tag-violet-ink: #5a2fd6;
+  --tag-blue:   #2f6bff;   --tag-blue-soft:   #e9f0ff;  --tag-blue-ink:   #1d4fd0;
+  --tag-cyan:   #0ea5c6;   --tag-cyan-soft:   #e2f6fb;  --tag-cyan-ink:   #067a94;
+  --tag-green:  #12a150;   --tag-green-soft:  #e4f7ec;  --tag-green-ink:  #0a7a3c;
+  --tag-lime:   #6c9c17;   --tag-lime-soft:   #eff6e0;  --tag-lime-ink:   #4e7410;
+  --tag-yellow: #d99400;   --tag-yellow-soft: #fdf4e0;  --tag-yellow-ink: #a86e00;
+  --tag-amber:  #f5761a;   --tag-amber-soft:  #fef0e4;  --tag-amber-ink:  #c2560c;
+  --tag-red:    #e5484d;   --tag-red-soft:    #fdeced;  --tag-red-ink:    #c22c31;
+  --tag-pink:   #e93d82;   --tag-pink-soft:   #fdeaf2;  --tag-pink-ink:   #c21c60;
+  --tag-plum:   #9333ea;   --tag-plum-soft:   #f6ecfe;  --tag-plum-ink:   #6f21b8;
+  --tag-slate:  #64748b;   --tag-slate-soft:  #eef1f5;  --tag-slate-ink:  #475569;
+
 }
 
 /* 深色模式：设计稿右上角有主题切换，色板在此集中定义。 */
@@ -159,4 +175,17 @@
   --sh-2: 0 2px 8px rgba(0, 0, 0, 0.4);
   --sh-3: 0 8px 24px rgba(0, 0, 0, 0.5);
   --sh-4: 0 16px 48px rgba(0, 0, 0, 0.6);
+  /* ---- 标签色板：深色模式覆盖 ---- */
+  --tag-violet: #a684ff;   --tag-violet-soft: #2a2145;  --tag-violet-ink: #c3adff;
+  --tag-blue:   #6b9bff;   --tag-blue-soft:   #1c2942;  --tag-blue-ink:   #93b7ff;
+  --tag-cyan:   #38bedd;   --tag-cyan-soft:   #13333b;  --tag-cyan-ink:   #6bd3ec;
+  --tag-green:  #3fc477;   --tag-green-soft:  #14321f;  --tag-green-ink:  #6bd894;
+  --tag-lime:   #9ac43a;   --tag-lime-soft:   #22300f;  --tag-lime-ink:   #b3d667;
+  --tag-yellow: #ecab26;   --tag-yellow-soft: #33280d;  --tag-yellow-ink: #f2c563;
+  --tag-amber:  #ff9450;   --tag-amber-soft:  #35210f;  --tag-amber-ink:  #ffb07d;
+  --tag-red:    #ff6b70;   --tag-red-soft:    #351c1e;  --tag-red-ink:    #ff9094;
+  --tag-pink:   #ff6ba4;   --tag-pink-soft:   #351c28;  --tag-pink-ink:   #ff92bd;
+  --tag-plum:   #b47bf5;   --tag-plum-soft:   #2b1c3c;  --tag-plum-ink:   #cba6f8;
+  --tag-slate:  #94a3b8;   --tag-slate-soft:  #21262e;  --tag-slate-ink:  #b3bfcd;
+
 }

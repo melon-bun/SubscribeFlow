@@ -37,6 +37,8 @@ async function verifyCalendar({evaluate,until,click,screenshot,core,window,first
   await until(`${stats}==='1,0,0,1'`);
   // Editing within calendar detail refreshes its summary and removes it from
   // the active low filter, while leaving the processing state untouched.
+  // 统计先于当日列表刷新，点击前要等条目真的在 DOM 里。
+  await until(`document.querySelectorAll('[data-calendar-item]').length===1`);
   await evaluate(`document.querySelector('[data-calendar-item]').click()`);
   await until(`!!document.querySelector('.dialog .priority-opt--high')`);
   await evaluate(`document.querySelector('.dialog .priority-opt--high').click()`);

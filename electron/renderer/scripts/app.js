@@ -31,6 +31,7 @@
     { id: "inbox", name: "收件箱", icon: "inbox" },
     { id: "overview", name: "内容总览", icon: "calendar" },
     { id: "channels", name: "渠道管理", icon: "sliders" },
+    { id: "tags", name: "标签", icon: "tag" },
   ];
 
   /* ---------------- 应用状态 ---------------- */
@@ -53,6 +54,9 @@
     selectedDate: null,
     overviewMode: "calendar",
     channelTab: "list",
+    tagTab: "list",
+    // 标签总数由标签视图读到后回填；null 表示还没读过，不显示 0 冒充「没有标签」
+    tagCount: null,
     theme: "light",
     search: "",
     contentEl: null,
@@ -108,6 +112,8 @@
         var badge =
           n.id === "inbox"
             ? h("span.count-pill.count-pill--brand", { text: String(app.counts.unread || 0) })
+            : n.id === "tags" && app.tagCount != null
+            ? h("span.count-pill", { text: String(app.tagCount) })
             : null;
         return h(
           "button.nav__item",
@@ -369,6 +375,7 @@
     var view;
     if (app.route.name === "overview") view = SF.views.overview;
     else if (app.route.name === "channels") view = SF.views.channels;
+    else if (app.route.name === "tags") view = SF.views.tags;
     else view = SF.views.inbox;
 
     var result = view.render(app);
@@ -446,6 +453,13 @@
     }
     refreshRoute();
     ["content", "run", "channels"].forEach(function (event) { app.unsubscribe.push(app.client.on(event, scheduleRefresh)); });
+    /* 标签只在 tags.changed 时失效。跟着内容刷新一起重取没有意义，
+       只会多一轮异步往返，并把用户正在点的 DOM 整块换掉。 */
+    app.unsubscribe.push(app.client.on("tags.changed", function () {
+      if (SF.views.inbox) SF.views.inbox.invalidateTags();
+      app.tagCount = null;
+      refreshData(true);
+    }));
     app.unsubscribe.push(app.client.on("core.status", function (status) {
       app.coreStatus = status;
       if (status.state === "ready") refreshData(true);
@@ -474,6 +488,10 @@
     }
     if (app.route.name === "channels" && app.route.params.tab) {
       app.channelTab = app.route.params.tab;
+    }
+    // 页签值只认白名单里的两个：哈希是用户可改的，未知值静默回落到列表页
+    if (app.route.name === "tags") {
+      app.tagTab = app.route.params.tab === "ai" ? "ai" : "list";
     }
     return Promise.resolve();
   }

@@ -3,6 +3,8 @@ const CORE_METHODS = new Set([
   'subscription.list', 'subscription.add', 'subscription.update', 'sync.start', 'sync.cancel',
   'sync.retry', 'sync.get', 'sync.list', 'sync.coverage', 'content.list', 'content.calendar', 'content.get',
   'content.update', 'content.bulk_update', 'priority.set_source',
+  'tag.list', 'tag.get', 'tag.create', 'tag.update', 'tag.set_enabled', 'tag.remove', 'tag.contents',
+  'content.set_tags', 'content.bulk_set_tags',
   'schedule.list', 'schedule.status',
 ]);
 const DESKTOP_METHODS = new Set(['core.status', 'core.restart', 'content.open', 'source.open', 'connection.login']);

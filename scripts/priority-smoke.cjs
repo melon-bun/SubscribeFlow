@@ -36,8 +36,22 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   assert.equal((await core.call('content.get',{item_id:firstId})).priority,'low');
   await evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
   await until(`document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===20`);
+  // 计数在分组加载完成前显示占位符「—」，断言前要等真实数字出现。
+  await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='24'`);
   assert.equal(await evaluate(`document.querySelector('[data-priority-column="medium"] .count-pill').textContent`),'24');
-  await evaluate(`Array.from(document.querySelectorAll('[data-priority-column="medium"] button')).find(b=>b.textContent==='加载更多').click()`);
+  // 按钮文案随分组状态在「加载更多／正在加载…／重试加载」间切换，先等到可点的那个。
+  // 15 秒轮询在计数变化时会重置看板，正在加载的那一页会被丢弃；这是既有行为，
+  // 不是本次要修的范围。断言的是「加载更多最终能显示全部 24 条」，所以重试而非只验一帧。
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await until(`Array.from(document.querySelectorAll('[data-priority-column="medium"] button')).some(b=>b.textContent==='加载更多')`);
+    await evaluate(`Array.from(document.querySelectorAll('[data-priority-column="medium"] button')).find(b=>b.textContent==='加载更多').click()`);
+    try {
+      await until(`document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===24`, 3000);
+      break;
+    } catch (error) {
+      await until(`document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===20`);
+    }
+  }
   await until(`document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===24`);
   assert.equal(await evaluate(`new Set(Array.from(document.querySelectorAll('[data-priority-item]')).map(e=>e.dataset.priorityItem)).size`),25);
   await change('看板处理状态','read');

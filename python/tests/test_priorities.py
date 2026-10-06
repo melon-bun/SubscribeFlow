@@ -11,6 +11,12 @@ from subscribe_flow.storage.repositories import Repository
 import subscribe_flow.storage.database as database_module
 
 
+def latest_schema_version():
+    """从迁移目录推导当前 schema 版本，避免新增迁移后这些断言整体失效。"""
+    migrations = Path(database_module.__file__).parent / 'migrations'
+    return max(int(path.name.split('_')[0]) for path in migrations.glob('[0-9]*.sql'))
+
+
 class PriorityTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -154,8 +160,8 @@ class PriorityTests(unittest.TestCase):
             self.assertEqual(Repository(upgraded).get_subscription('sub')['collect_items'],35)
             self.assertIsNone(item['priority'])
             self.assertTrue(item['state']['archived'])
-            self.assertEqual(upgraded.connection.execute('PRAGMA user_version').fetchone()[0],5)
-            with sqlite3.connect(old.with_suffix('.before-v5.backup')) as backup:
+            self.assertEqual(upgraded.connection.execute('PRAGMA user_version').fetchone()[0],latest_schema_version())
+            with sqlite3.connect(old.with_suffix(f'.before-v{latest_schema_version()}.backup')) as backup:
                 self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0],4)
         finally:
             upgraded.close()

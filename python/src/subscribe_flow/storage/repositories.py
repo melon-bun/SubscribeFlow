@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import calendar
 import re
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 
 from subscribe_flow.contracts import ChannelError, Connection, ContentPatch, Source, jsonable
 from subscribe_flow.contracts.priorities import validate_priority
+from subscribe_flow.contracts.tags import validate_tag_filter
 
 
 def now() -> str:
@@ -278,6 +280,8 @@ class Repository:
     @staticmethod
     def _content(row):
         return {"id": row["id"], **json.loads(row["payload"]),
+                # 采集侧的更新时间：识别建议据此判断内容是否已经变化。
+                "updated_at": row["updated_at"],
                 "state": {field: bool(row[field]) for field in ("read", "archived", "deferred")},
                 "priority": row["effective_priority"], "priority_override": row["priority_override"],
                 "source_priority": row["source_priority"]}
@@ -295,10 +299,10 @@ class Repository:
         row = self.db.execute(f"SELECT {self.CONTENT_COLUMNS} FROM contents c JOIN content_states s ON s.content_id=c.id WHERE c.id=?", (key,)).fetchone()
         if not row:
             raise ChannelError("NOT_FOUND", "content.get", "内容不存在")
-        return self._content(row)
+        return self._with_tags([self._content(row)])[0]
 
     def _content_filter(self, *, channel=None, source_id=None, query=None, start=None, end=None,
-                        read=None, archived=None, deferred=None, priority=None):
+                        read=None, archived=None, deferred=None, priority=None, tags=None, tag_mode=None):
         clauses, args = ["1=1"], []
         if priority == 'none':
             clauses.append(f"{self.EFFECTIVE_PRIORITY} IS NULL")
@@ -306,6 +310,18 @@ class Repository:
             validate_priority(priority)
             clauses.append(f"{self.EFFECTIVE_PRIORITY}=?")
             args.append(priority)
+        tag_ids, mode = validate_tag_filter(tags, tag_mode)
+        if tag_ids:
+            marks = ",".join("?" * len(tag_ids))
+            # 任一符合用 EXISTS，全部符合用计数相等；两种写法都让同一条内容
+            # 只出现一次，统计不会因为多对多而被放大。
+            if mode == 'any':
+                clauses.append(f"EXISTS(SELECT 1 FROM content_tags ct WHERE ct.content_id=c.id AND ct.tag_id IN ({marks}))")
+                args += tag_ids
+            else:
+                clauses.append(f"(SELECT count(DISTINCT ct.tag_id) FROM content_tags ct"
+                               f" WHERE ct.content_id=c.id AND ct.tag_id IN ({marks}))=?")
+                args += [*tag_ids, len(tag_ids)]
         for field, value in (("c.channel", channel), ("s.read", read), ("s.archived", archived), ("s.deferred", deferred)):
             if value is not None:
                 clauses.append(f"{field}=?")
@@ -329,7 +345,7 @@ class Repository:
         base, args = self._content_filter(**filters)
         total = self.db.execute("SELECT count(*) " + base, args).fetchone()[0]
         records = self.db.execute(f"SELECT {self.CONTENT_COLUMNS} " + base + " ORDER BY c.published_at DESC,c.id DESC LIMIT ? OFFSET ?", (*args, limit, offset))
-        return {"items": [self._content(row) for row in records], "total": total, "limit": limit, "offset": offset,
+        return {"items": self._with_tags([self._content(row) for row in records]), "total": total, "limit": limit, "offset": offset,
                 "next_offset": offset + limit if offset + limit < total else None}
 
 
@@ -366,3 +382,183 @@ class Repository:
         for row in previews:
             days[row['day']]['items'].append({'id':row['id'], 'title':row['title'], 'priority':row['priority']})
         return {'month':month, 'total':sum(counts.values()), 'priorities':counts, 'days':list(days.values())}
+
+    # ---------------------------------------------------------------- 标签 M9
+    #
+    # 标签存在独立表里，采集只写 contents/content_states，因此重新采集在结构上
+    # 就无法覆盖人工标签；平台原生话题也不会被采集写进 content_tags。
+
+    @staticmethod
+    def _tag(row, content_count=0):
+        return {"id": row["id"], "name": row["name"], "description": row["description"],
+                "color": row["color"], "enabled": bool(row["enabled"]),
+                "synonyms": json.loads(row["synonyms"]), "contentCount": content_count,
+                "createdAt": row["created_at"], "updatedAt": row["updated_at"]}
+
+    def list_tags(self, query=None, enabled=None):
+        clauses, args = ["1=1"], []
+        if query:
+            clauses.append("(instr(lower(name),lower(?))>0 OR instr(lower(synonyms),lower(?))>0)")
+            args += [query, query]
+        if enabled is not None:
+            clauses.append("enabled=?")
+            args.append(int(enabled))
+        rows = self.db.execute(
+            "SELECT t.*,(SELECT count(*) FROM content_tags ct WHERE ct.tag_id=t.id) AS usage "
+            f"FROM tags t WHERE {' AND '.join(clauses)} ORDER BY t.name COLLATE NOCASE", args)
+        return [self._tag(row, row["usage"]) for row in rows]
+
+    def get_tag(self, tag_id):
+        row = self.db.execute(
+            "SELECT t.*,(SELECT count(*) FROM content_tags ct WHERE ct.tag_id=t.id) AS usage "
+            "FROM tags t WHERE t.id=?", (tag_id,)).fetchone()
+        if not row:
+            raise ChannelError("NOT_FOUND", "tag", "标签不存在")
+        return self._tag(row, row["usage"])
+
+    def find_tag_by_name(self, name):
+        row = self.db.execute("SELECT id FROM tags WHERE name=? COLLATE NOCASE", (name,)).fetchone()
+        return row["id"] if row else None
+
+    def create_tag(self, tag_id, name, description, color, enabled, synonyms):
+        if self.find_tag_by_name(name):
+            raise ChannelError("CONFLICT", "tag.create", "已存在同名标签")
+        stamp = now()
+        try:
+            with self.database.transaction() as db:
+                db.execute("INSERT INTO tags(id,name,description,color,enabled,synonyms,created_at,updated_at)"
+                           " VALUES(?,?,?,?,?,?,?,?)",
+                           (tag_id, name, description, color, int(enabled), encode(synonyms), stamp, stamp))
+        except sqlite3.IntegrityError as error:
+            # 唯一的第二道防线：大小写不同的重名由索引拦下，而不是静默合并。
+            if "tags_name_unique" in str(error):
+                raise ChannelError("CONFLICT", "tag.create", "已存在同名标签") from error
+            raise
+        return self.get_tag(tag_id)
+
+    def update_tag(self, tag_id, **patch):
+        current = self.get_tag(tag_id)
+        values = {field: current[field] for field in ("name", "description", "color", "synonyms")}
+        if "name" in patch and patch["name"] != current["name"]:
+            clash = self.find_tag_by_name(patch["name"])
+            if clash and clash != tag_id:
+                raise ChannelError("CONFLICT", "tag.update", "已存在同名标签")
+        values.update({k: v for k, v in patch.items() if k in values})
+        fields = ",".join(f"{key}=?" for key in values)
+        args = [encode(values["synonyms"]) if key == "synonyms" else values[key] for key in values]
+        try:
+            with self.database.transaction() as db:
+                db.execute(f"UPDATE tags SET {fields},updated_at=? WHERE id=?", (*args, now(), tag_id))
+        except sqlite3.IntegrityError as error:
+            if "tags_name_unique" in str(error):
+                raise ChannelError("CONFLICT", "tag.update", "已存在同名标签") from error
+            raise
+        return self.get_tag(tag_id)
+
+    def set_tag_enabled(self, tag_id, enabled):
+        self.get_tag(tag_id)
+        with self.database.transaction() as db:
+            db.execute("UPDATE tags SET enabled=?,updated_at=? WHERE id=?", (int(enabled), now(), tag_id))
+        return self.get_tag(tag_id)
+
+    def delete_tag(self, tag_id):
+        tag = self.get_tag(tag_id)
+        # 先记下受影响的条数再删：界面需要如实告知「这个标签正在 N 条内容上」。
+        with self.database.transaction() as db:
+            db.execute("DELETE FROM tags WHERE id=?", (tag_id,))
+        return {"removed": True, "id": tag["id"], "detachedContents": tag["contentCount"]}
+
+    def tags_for_contents(self, item_ids):
+        """一次取回多条内容的标签，避免列表渲染逐条查询。"""
+        grouped = {item_id: [] for item_id in item_ids}
+        if not item_ids:
+            return grouped
+        marks = ",".join("?" * len(item_ids))
+        rows = self.db.execute(
+            f"SELECT ct.content_id,ct.origin,t.id,t.name,t.color FROM content_tags ct "
+            f"JOIN tags t ON t.id=ct.tag_id WHERE ct.content_id IN ({marks}) ORDER BY t.name COLLATE NOCASE",
+            tuple(item_ids))
+        for row in rows:
+            grouped[row["content_id"]].append(
+                {"id": row["id"], "name": row["name"], "color": row["color"], "origin": row["origin"]})
+        return grouped
+
+    def _require_tags(self, tag_ids, method):
+        if not tag_ids:
+            return
+        marks = ",".join("?" * len(tag_ids))
+        found = {row["id"] for row in self.db.execute(f"SELECT id FROM tags WHERE id IN ({marks})", tuple(tag_ids))}
+        missing = [tag_id for tag_id in tag_ids if tag_id not in found]
+        if missing:
+            raise ChannelError("NOT_FOUND", method, f"标签不存在：{missing[0]}")
+
+    def set_content_tags(self, item_ids, tag_ids, origin="manual"):
+        """人工打标：以给定列表为准替换。重复调用同一列表是幂等的。"""
+        self._require_tags(tag_ids, "content.set_tags")
+        stamp = now()
+        kept = set(tag_ids)
+        with self.database.transaction() as db:
+            for item_id in dict.fromkeys(item_ids):
+                if not db.execute("SELECT 1 FROM contents WHERE id=?", (item_id,)).fetchone():
+                    raise ChannelError("NOT_FOUND", "content.set_tags", "内容不存在")
+                current = {row["tag_id"] for row in
+                           db.execute("SELECT tag_id FROM content_tags WHERE content_id=?", (item_id,))}
+                # 被摘掉的标签记为人工屏蔽；仍在列表里的解除屏蔽，因为重新添加也是一次决定。
+                for removed in current - kept:
+                    db.execute("INSERT INTO content_tag_blocks(content_id,tag_id,created_at) VALUES(?,?,?)"
+                               " ON CONFLICT(content_id,tag_id) DO NOTHING", (item_id, removed, stamp))
+                for restored in kept:
+                    db.execute("DELETE FROM content_tag_blocks WHERE content_id=? AND tag_id=?", (item_id, restored))
+                # 人工设置即最终结果：无论原来的关联是人工还是识别建议，都一并替换。
+                db.execute("DELETE FROM content_tags WHERE content_id=?", (item_id,))
+                for tag_id in tag_ids:
+                    # 人工指定的关联总是升格为 manual，此后自动识别不会移除它。
+                    db.execute("INSERT INTO content_tags(content_id,tag_id,origin,created_at) VALUES(?,?,'manual',?)"
+                               " ON CONFLICT(content_id,tag_id) DO UPDATE SET origin='manual'",
+                               (item_id, tag_id, stamp))
+        return {"updated": len(set(item_ids)), "tags": list(tag_ids)}
+
+    def add_suggested_tags(self, item_id, tag_ids):
+        """应用识别建议：只增不删，且不越过人工屏蔽。
+
+        这是「旧建议不能静默撤销人工修改」的结构性保证——本方法没有任何
+        DELETE，人工移除过的标签既不会被删，也不会被后续建议悄悄加回来。
+        """
+        self._require_tags(tag_ids, "tag.suggestion")
+        stamp = now()
+        added, blocked = 0, []
+        with self.database.transaction() as db:
+            if not db.execute("SELECT 1 FROM contents WHERE id=?", (item_id,)).fetchone():
+                raise ChannelError("NOT_FOUND", "tag.suggestion", "内容不存在")
+            for tag_id in dict.fromkeys(tag_ids):
+                if db.execute("SELECT 1 FROM content_tag_blocks WHERE content_id=? AND tag_id=?",
+                              (item_id, tag_id)).fetchone():
+                    blocked.append(tag_id)
+                    continue
+                # 冲突即忽略：重复建议不产生重复关联，也不覆盖既有的 manual 来源。
+                cursor = db.execute("INSERT INTO content_tags(content_id,tag_id,origin,created_at)"
+                                    " VALUES(?,?,'suggested',?) ON CONFLICT(content_id,tag_id) DO NOTHING",
+                                    (item_id, tag_id, stamp))
+                added += cursor.rowcount if cursor.rowcount > 0 else 0
+        return added, blocked
+
+    def tag_contents(self, tag_id, limit=50, offset=0, **filters):
+        self.get_tag(tag_id)
+        if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 1000000:
+            raise ChannelError("INVALID_INPUT", "tag.contents", "分页参数无效")
+        base, args = self._content_filter(**filters)
+        clause = base.replace("WHERE 1=1", f"WHERE 1=1 AND EXISTS(SELECT 1 FROM content_tags ct "
+                                            f"WHERE ct.content_id=c.id AND ct.tag_id=?)", 1)
+        args = [tag_id, *args]
+        total = self.db.execute("SELECT count(*) " + clause, args).fetchone()[0]
+        records = self.db.execute(f"SELECT {self.CONTENT_COLUMNS} " + clause +
+                                  " ORDER BY c.published_at DESC,c.id DESC LIMIT ? OFFSET ?", (*args, limit, offset))
+        return {"items": self._with_tags([self._content(row) for row in records]),
+                "total": total, "limit": limit, "offset": offset,
+                "next_offset": offset + limit if offset + limit < total else None}
+
+    def _with_tags(self, contents):
+        by_id = self.tags_for_contents([item["id"] for item in contents])
+        for item in contents:
+            item["tags"] = by_id.get(item["id"], [])
+        return contents

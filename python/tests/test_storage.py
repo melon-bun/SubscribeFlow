@@ -11,6 +11,16 @@ import subscribe_flow.storage.database as database_module
 from subscribe_flow.storage.repositories import Repository
 
 
+def latest_schema_version():
+    """从迁移目录推导当前 schema 版本，避免新增迁移后这些断言整体失效。"""
+    migrations = Path(database_module.__file__).parent / 'migrations'
+    return max(int(path.name.split('_')[0]) for path in migrations.glob('[0-9]*.sql'))
+
+
+LATEST_VERSION = latest_schema_version()
+UPGRADE_BACKUP = f'.before-v{LATEST_VERSION}.backup'
+
+
 class StorageTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -88,7 +98,7 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(repo.query_contents()["total"], 1)
             repo.recover_interrupted()
             self.assertEqual(repo.get_job(job["id"])["state"], "interrupted")
-            self.assertEqual(restored.connection.execute("PRAGMA user_version").fetchone()[0], 5)
+            self.assertEqual(restored.connection.execute("PRAGMA user_version").fetchone()[0], LATEST_VERSION)
         finally:
             restored.close()
 
@@ -127,7 +137,7 @@ class StorageTests(unittest.TestCase):
             self.assertEqual((sub['sync_mode'],sub['interval_seconds']), ('manual',86400))
             self.assertFalse(repo.get_content('item')['state']['read'])
             self.assertTrue(repo.get_content('item')['state']['deferred'])
-            with sqlite3.connect(legacy_path.with_suffix('.before-v5.backup')) as backup:
+            with sqlite3.connect(legacy_path.with_suffix(UPGRADE_BACKUP)) as backup:
                 self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0],1)
                 self.assertEqual(backup.execute('SELECT interval_seconds FROM subscriptions').fetchone()[0],3600)
         finally:
@@ -170,7 +180,7 @@ class StorageTests(unittest.TestCase):
             for i, (read, archived, deferred) in enumerate(combinations):
                 self.assertEqual(repo.get_content(str(i))['state'], {
                     'read':bool(read and not archived and not deferred), 'archived':bool(archived), 'deferred':bool(deferred and not archived)})
-            with sqlite3.connect(legacy_path.with_suffix('.before-v5.backup')) as backup:
+            with sqlite3.connect(legacy_path.with_suffix(UPGRADE_BACKUP)) as backup:
                 self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0],2)
                 self.assertEqual(backup.execute('SELECT read,archived,deferred FROM content_states ORDER BY CAST(content_id AS INTEGER)').fetchall(),combinations)
         finally:
@@ -197,7 +207,7 @@ class StorageTests(unittest.TestCase):
             unchanged.execute("UPDATE contents SET title='After failed upgrade'")
         migrated = Database(legacy_path)
         migrated.close()
-        with sqlite3.connect(legacy_path.with_suffix('.before-v5.backup')) as backup:
+        with sqlite3.connect(legacy_path.with_suffix(UPGRADE_BACKUP)) as backup:
             self.assertEqual(backup.execute('SELECT title FROM contents').fetchone()[0], 'Original')
             self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0], 1)
-        self.assertEqual(len(list(legacy_path.parent.glob('failed-upgrade.before-v5.*.backup'))), 1)
+        self.assertEqual(len(list(legacy_path.parent.glob(f'failed-upgrade.before-v{LATEST_VERSION}.*.backup'))), 1)

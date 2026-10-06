@@ -3,6 +3,8 @@
 const UI_METHODS = new Set([
   'getSession', 'getCounts', 'listPlatforms', 'listPriorities', 'getCalendar', 'listContents', 'getContent',
   'updateContent', 'bulkUpdate', 'listChannels', 'createChannel', 'updateChannel',
+  'listTags', 'getTag', 'createTag', 'updateTag', 'setTagEnabled', 'removeTag', 'listTagContents',
+  'setContentTags', 'bulkSetTags',
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',
   'listCreators', 'getPrioritySettings', 'savePrioritySettings', 'listRules', 'createRule',
   'updateRule', 'removeRule', 'getSyncCoverage', 'resolveSource', 'searchSources', 'listConnections', 'checkConnection', 'retryRun', 'fetchDetail',
@@ -27,6 +29,12 @@ function contentPatch(value) {
   if ('priority' in patch) result.priority = patch.priority;
   return result;
 }
+function tagIds(value) {
+  const list = Array.isArray(value) ? value : (value && Array.isArray(value.tagIds) ? value.tagIds : value);
+  if (!Array.isArray(list)) throw new Error('缺少标签列表');
+  if (list.length > 100 || list.some(id => typeof id !== 'string' || !id)) throw new Error('标签列表无效');
+  return list;
+}
 function contentDTO(item, subscriptions) {
   const sourceKey = `${item.source.channel}:${item.source.kind}:${item.source.external_id}`;
   const sub = subscriptions.find(row => row.source_id === sourceKey);
@@ -35,7 +43,9 @@ function contentDTO(item, subscriptions) {
     channelId: sub?.id ?? null, channelName: sub?.name ?? item.source.name, author: sub?.name ?? item.source.name,
     publishedAt: item.published.value, publishedPrecision: item.published.precision,
     publishedTimezone: item.published.timezone, url: item.url, thumb: item.thumbnail, cover: item.thumbnail, publishedProvenance: item.published.provenance,
-    state: item.state, priority: item.priority ?? null, priorityOverride: item.priority_override ?? null, sourcePriority: item.source_priority ?? null, tags: [], contentHash: null,
+    state: item.state, priority: item.priority ?? null, priorityOverride: item.priority_override ?? null, sourcePriority: item.source_priority ?? null,
+    tags: (item.tags || []).map(tag => ({id: tag.id, name: tag.name, color: tag.color, origin: tag.origin})),
+    updatedAt: item.updated_at ?? null, contentHash: null,
   };
 }
 function channelDTO(sub, descriptors = [], schedule = null) {
@@ -98,11 +108,18 @@ async function callUI(core, name, args) {
     case 'getCalendar':
     case 'listContents': {
       const query = object(first);
-      keys(query, ['platform', 'channelId', 'state', 'keyword', 'priority', ...(name === 'getCalendar' ? ['month'] : ['limit','offset','from','to'])]);
+      keys(query, ['platform', 'channelId', 'state', 'keyword', 'priority', 'tags', 'tagMode',
+                   ...(name === 'getCalendar' ? ['month'] : ['limit','offset','from','to'])]);
       const params = {};
       for (const [front, back] of [['platform', 'channel'], ['keyword', 'query'], ['limit', 'limit'], ['offset', 'offset'], ['from', 'start'], ['to', 'end'], ['priority', 'priority']]) {
         if (query[front] != null && query[front] !== '') params[back] = query[front];
       }
+      // 非法取值必须在这里报错：静默降级成「任一符合」会让用户看到错的筛选结果。
+      if (query.tags != null && query.tags.length) params.tags = tagIds(query.tags);
+      if (query.tagMode != null && query.tagMode !== '' && query.tagMode !== 'any' && query.tagMode !== 'all') {
+        throw new Error('标签筛选方式需为任一符合或全部符合');
+      }
+      if (query.tagMode === 'all') params.tag_mode = 'all';
       if (query.state === 'unread') Object.assign(params, INBOX_FILTER);
       else if (query.state) {
         if (!['read', 'archived', 'deferred'].includes(query.state)) unsupported('不支持此内容状态');
@@ -126,6 +143,50 @@ async function callUI(core, name, args) {
     }
     case 'bulkUpdate': {
       return call('content.bulk_update', {item_ids: first, patch: contentPatch(second)});
+    }
+    case 'listTags': {
+      const query = object(first); keys(query, ['keyword', 'enabled']);
+      const params = {};
+      if (query.keyword) params.query = query.keyword;
+      if (typeof query.enabled === 'boolean') params.enabled = query.enabled;
+      return call('tag.list', params);
+    }
+    case 'getTag':
+      return call('tag.get', {tag_id: first});
+    case 'createTag': {
+      const draft = object(first); keys(draft, ['name', 'description', 'color', 'synonyms']);
+      const params = {name: draft.name};
+      for (const field of ['description', 'color']) if (draft[field] != null && draft[field] !== '') params[field] = draft[field];
+      if (Array.isArray(draft.synonyms)) params.synonyms = draft.synonyms;
+      return call('tag.create', params);
+    }
+    case 'updateTag': {
+      const patch = object(second); keys(patch, ['name', 'description', 'color', 'synonyms']);
+      return call('tag.update', {tag_id: first, ...patch});
+    }
+    case 'setTagEnabled':
+      if (typeof second !== 'boolean') throw new Error('enabled 必须为布尔值');
+      return call('tag.set_enabled', {tag_id: first, enabled: second});
+    case 'removeTag':
+      return call('tag.remove', {tag_id: first});
+    case 'listTagContents': {
+      const query = object(second); keys(query, ['limit', 'offset', 'state', 'priority']);
+      const params = {tag_id: first};
+      if (query.limit != null) params.limit = query.limit;
+      if (query.offset != null) params.offset = query.offset;
+      if (query.priority) params.priority = query.priority;
+      if (query.state === 'unread') Object.assign(params, INBOX_FILTER);
+      else if (query.state && ['read', 'archived', 'deferred'].includes(query.state)) params[query.state] = true;
+      else if (query.state) unsupported('不支持此内容状态');
+      const result = await call('tag.contents', params);
+      const subs = await subscriptions();
+      return {...result, items: result.items.map(item => contentDTO(item, subs))};
+    }
+    case 'setContentTags':
+      return contentDTO(await call('content.set_tags', {item_id: first, tag_ids: tagIds(second)}), await subscriptions());
+    case 'bulkSetTags': {
+      if (!Array.isArray(first)) throw new Error('缺少内容列表');
+      return call('content.bulk_set_tags', {item_ids: first, tag_ids: tagIds(second)});
     }
     case 'listChannels':
     case 'listCreators': {

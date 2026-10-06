@@ -145,6 +145,15 @@
     return h("span.tag" + (variant ? "." + variant : ""), { text: text });
   };
 
+  /**
+   * 标签色块。SF.tagUi 由后加载的 tag-controls.js 提供，这里在渲染时才取，
+   * 不依赖脚本加载顺序；万一未加载也退回纯文本标签，不会渲染出 [object Object]。
+   */
+  function tagChip(tag) {
+    if (SF.tagUi && SF.tagUi.tagChip) return SF.tagUi.tagChip(tag);
+    return ui.tag(tag && tag.name ? tag.name : "");
+  }
+
   ui.platformTag = function (platformId) {
     var p = catalog.platform(platformId);
     return h("span.tag.tag--" + p.id, { text: p.name });
@@ -235,7 +244,7 @@
               "span.content-card__tags",
               null,
               item.tags.map(function (t) {
-                return ui.tag(t);
+                return tagChip(t);
               })
             )
           : null,
@@ -281,7 +290,16 @@
           ui.priorityTag(item.priority),
           h("span.spacer"),
           h("span", { text: fmt.publication(item, true) })
-        )
+        ),
+        item.tags && item.tags.length
+          ? h(
+              "span.row-card__tags",
+              null,
+              item.tags.map(function (t) {
+                return tagChip(t);
+              })
+            )
+          : null
       )
     );
     return card;

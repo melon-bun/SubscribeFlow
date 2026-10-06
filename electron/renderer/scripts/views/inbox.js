@@ -3,6 +3,54 @@
   'use strict';
   var SF = global.SF, h = SF.dom.h, ui = SF.ui, fmt = SF.fmt, icon = SF.icon;
   var cache = {}, offset = 0, queryKey = '', selected = new Set();
+  /* 标签目录单独缓存：筛选面板与详情编辑器都要用，不该跟着内容列表一起失效。 */
+  var tagCache = {}, tagPanelOpen = false;
+  /* 后端 content.bulk_set_tags 的硬上限。界面先拦一道，好过只丢一个后端错误码上来。 */
+  var BULK_LIMIT = 100, BULK_CLEAR = '__clear__';
+
+  /* ---------------- 标签目录 ---------------- */
+
+  /**
+   * 取一份标签目录。就绪后回调 done，供「容器自己重画」的场景使用：
+   * 详情弹窗被 overview 复用（见 overview.js 的 openDetail），它不受主区域重绘影响，
+   * 只能由自己这块 DOM 重新画一次。
+   */
+  function ensureTags(app, done) {
+    if (tagCache.loaded) { if (done) done(); return; }
+    tagCache.waiting = tagCache.waiting || [];
+    if (tagCache.loading) { if (done) tagCache.waiting.push(done); return; }
+    /* 目录拿不到时退化成空列表：内容侧照常可用，只是没有可添加的标签。 */
+    if (!app.client || !app.client.listTags) { tagCache = {loaded: true, items: []}; if (done) done(); return; }
+    var current = tagCache; current.loading = true;
+    if (done) current.waiting.push(done);
+    function flush() { (current.waiting || []).forEach(function (fn) { try { fn(); } catch (e) {} }); current.waiting = []; }
+    app.client.listTags({}).then(function (r) {
+      if (tagCache !== current) return;
+      Object.assign(tagCache, r, {loaded: true, loading: false});
+      flush();
+    }).catch(function (err) {
+      if (tagCache !== current) return;
+      Object.assign(tagCache, {loaded: true, loading: false, error: err, items: []});
+      flush();
+    });
+  }
+
+  function allTags() { return tagCache.items || []; }
+  function enabledTags() { return allTags().filter(function (t) { return t.enabled !== false; }); }
+
+  /** 标签色块的唯一入口。SF.tagUi 未加载时退回纯文字，
+      避免共享组件把标签对象当字符串渲染成一串 [object Object]。 */
+  function chip(tag, opts) {
+    if (SF.tagUi) return SF.tagUi.tagChip(tag, opts || {});
+    return h('span.tag', {text: tag.name});
+  }
+
+  /** 已选中的筛选标签。目录里已删掉的标签不再出现在面板上，但仍随筛选条件生效。 */
+  function pickedTags(app) {
+    var ids = app.filters.tags || [];
+    return allTags().filter(function (t) { return ids.indexOf(t.id) >= 0; });
+  }
+
   function query(app) {
     var q = {limit: 20, offset: offset};
     if (app.filters.quick !== 'all') q.state = app.filters.quick;
@@ -11,8 +59,13 @@
     if (app.filters.channelId) q.channelId = app.filters.channelId;
     if (app.search) q.keyword = app.search;
     if (app.filters.day) { q.from = app.filters.day; q.to = app.filters.day + 'T23:59:59.999999Z'; }
+    /* tags 为空等价于不筛选，所以只在真的选了标签时才下发。
+       any 是后端默认值，不下发 tagMode，避免把默认语义写死在请求里。 */
+    var tags = app.filters.tags || [];
+    if (tags.length) { q.tags = tags; if (app.filters.tagMode === 'all') q.tagMode = 'all'; }
     return q;
   }
+
   function render(app) {
     var key = JSON.stringify([app.filters, app.search]);
     if (key !== queryKey) { queryKey = key; offset = 0; cache = {}; selected.clear(); }
@@ -30,6 +83,10 @@
         SF.app.renderContent();
       }).catch(function (err) { if (cache !== current) return; Object.assign(cache, {loaded: true, loading: false, error: err}); SF.app.renderContent(); });
     }
+    /* 目录就绪后只重画真正依赖它的地方：筛选面板开着才需要整块重画，
+       详情里的编辑器自己 repaint。目录到达不该把用户正在操作的 DOM 整页换掉——
+       那会让进行中的点击落空，也让读屏焦点丢失。 */
+    if (!tagCache.loaded) ensureTags(app, function () { if (tagPanelOpen) SF.app.renderContent(); });
     var isInbox = app.filters.quick === 'unread';
     var titles = {unread:'收件箱',all:'全部更新',read:'已读',deferred:'稍后处理',archived:'已归档'};
     var descriptions = {unread:'待处理的创作者更新；标记已读、稍后处理或归档后会移出收件箱。',
@@ -48,6 +105,10 @@
         }),
         app.filters.channelId || app.filters.day ? ui.btn('清除来源 / 日期筛选', {onClick:function () { app.filters.channelId = null; delete app.filters.day; SF.app.render(); }}) : null));
     chips.appendChild(ui.select([{value:'',label:'全部优先级'}].concat(['high','medium','low','none'].map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), app.filters.priority || '', function(value) { app.filters.priority=value || null; SF.app.render(); }, {ariaLabel:'筛选优先级'}));
+    /* 标签筛选入口紧跟优先级，和其它筛选项同属一条工具栏；面板展开时插在工具栏下方。 */
+    var picked = pickedTags(app);
+    chips.appendChild(ui.btn('标签' + (picked.length ? ' · ' + picked.length : ''), {icon:'tag', onClick:function () { tagPanelOpen = !tagPanelOpen; SF.app.renderContent(); }}));
+    var tagPanel = tagPanelOpen ? tagFilterPanel(app) : null;
     var body;
     if (cache.error) body = ui.state({icon:'alert', title:'内容读取失败', desc:cache.error.message, actions:[{label:'重试', onClick:function () { cache = {}; SF.app.renderContent(); }}]});
     else if (!cache.loaded) body = ui.skeletonCards(4);
@@ -57,24 +118,24 @@
       {label:'查看全部更新', onClick:function () { app.filters = {quick:'all', platform:null, channelId:null}; app.search = ''; SF.app.render(); }}] : [])});
     else body = h('div.inbox__grid.scroll-y', null, cache.items.map(function (item) {
       return h('div.content-selection', null, ui.check(selected.has(item.id), function () { if (selected.has(item.id)) selected.delete(item.id); else selected.add(item.id); SF.app.renderContent(); }, '选择 ' + item.title),
-        ui.contentCard(item, {selected:app.selectedId === item.id, now:app.now,
+        withTags(ui.contentCard(item, {selected:app.selectedId === item.id, now:app.now,
           onSelect:function () { app.selectedId = item.id; SF.app.renderContent(); },
           onMenu:function (e) { e.stopPropagation(); ui.menu([
             {label:item.state.read ? '标记为未读' : '标记为已读', onClick:function () { update(app, item.id, {read:!item.state.read}); }},
             {label:'打开原文', onClick:function () { SF.app.act('open:' + item.id, function () { return app.client.openContent(item.id); }); }}
-          ], e.currentTarget); }}));
+          ], e.currentTarget); }}), item));
     }));
     var bulk = selected.size ? h('div.inbox__toolbar', null, h('span', {text:'已选 ' + selected.size + ' 条'}),
       ['已读', '稍后处理', '归档'].map(function (label, i) { return ui.btn(label, {onClick:function () {
         var ids = Array.from(selected), state = {}; state[['read','deferred','archived'][i]] = true;
         SF.app.act('bulk', async function () { await app.client.bulkUpdate(ids, {state:state}); selected.clear(); await SF.app.refreshData(true); });
-      }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复跟随来源'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true); }); },{ariaLabel:'批量设置优先级'}), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
+      }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复跟随来源'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true); }); },{ariaLabel:'批量设置优先级'}), bulkTagControl(app), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
     var pager = cache.loaded && !cache.error ? h('div.inbox__toolbar', null,
       h('span.muted', {text:'共 ' + cache.total + ' 条 · 第 ' + (Math.floor(offset / 20) + 1) + ' 页'}),
       ui.btn('上一页', {disabled:offset === 0, onClick:function () { offset = Math.max(0, offset - 20); cache = {}; selected.clear(); SF.app.renderContent(); }}),
       ui.btn('下一页', {disabled:cache.next_offset == null, onClick:function () { offset = cache.next_offset; cache = {}; selected.clear(); SF.app.renderContent(); }})) : null;
     var item = cache.items && cache.items.find(function (c) { return c.id === app.selectedId; });
-    return {main:h('div.view', {'data-view':'inbox'}, head, h('div.view__body.inbox', null, chips, bulk, body, pager)),
+    return {main:h('div.view', {'data-view':'inbox'}, head, h('div.view__body.inbox', null, chips, tagPanel, bulk, body, pager)),
       aside:item && !cache.error ? h('aside.detail', {'aria-label':'内容详情'},
         h('div.detail__head', null, h('span', {text:'内容详情'}), h('div.spacer'), ui.iconBtn('close', '关闭详情', function () { app.selectedId = null; SF.app.renderContent(); })),
         h('div.detail__body.scroll-y', null, detailBody(app, item, function (fresh) { var i = cache.items.findIndex(function (c) { return c.id === fresh.id; }); if (i >= 0) cache.items[i] = fresh; SF.app.renderContent(); }))) : null};
@@ -82,6 +143,26 @@
   function update(app, id, state) {
     return SF.app.act('content:' + id, async function () { await app.client.updateContent(id, {state:state}); await SF.app.refreshData(true); });
   }
+
+  /* ---------------- 卡片上的标签 ---------------- */
+
+  /**
+   * 共享卡片已经预留了 .content-card__tags 容器，但它按纯文本渲染标签对象。
+   * 这里换成真正的色块，而不是去改共享组件——标签的呈现规则归 tagUi 管。
+   * 没有标签时容器本来就不存在，也不补占位：每张卡片挂一个「无标签」只是噪音。
+   */
+  function withTags(card, item) {
+    var slot = card.querySelector('.content-card__tags'), tags = item.tags || [];
+    if (!slot || !tags.length) return card;
+    while (slot.firstChild) slot.removeChild(slot.firstChild);
+    tags.forEach(function (t) {
+      slot.appendChild(chip(t, {title: t.origin === 'suggested' ? t.name + ' · 识别建议，未经确认' : t.name}));
+    });
+    return card;
+  }
+
+  /* ---------------- 详情里的标签编辑器 ---------------- */
+
   function priorityControls(app,item,repaint) {
     return h('div.detail__section',null,h('div.detail__section-title',{text:'优先级'}),
       h('p.field__hint',{text:item.priorityOverride ? '此内容已单独设置，不受来源默认值变化影响。' : '跟随来源 · 当前' + SF.catalog.priority(item.priority).name}),
@@ -95,6 +176,149 @@
       SF.app.act('content:'+item.id,async function() { var fresh=await app.client.updateContent(item.id,{priority:priority}); if(repaint) repaint(fresh); await SF.app.refreshData(true); });
     }
   }
+
+  function tagControls(app, item, repaint) {
+    var box = h('div.detail__section', null);
+    function paint() {
+      while (box.firstChild) box.removeChild(box.firstChild);
+      var tags = item.tags || [];
+      var suggested = tags.some(function (t) { return t.origin === 'suggested'; });
+      box.appendChild(h('div.detail__section-title', {text:'标签'}));
+      box.appendChild(h('p.field__hint', {text: suggested
+        ? '改动立即保存。带「识别」角标的是自动识别建议，可以直接移除，也可以保留。'
+        : '为这条内容添加标签，改动立即保存。'}));
+      if (!SF.tagUi) {
+        /* 标签控件没加载时只展示现状，不给一个点了没反应的添加入口。 */
+        box.appendChild(h('div.tag-editor__chips', null, tags.length
+          ? tags.map(function (t) { return chip(t); })
+          : h('span.muted', {text:'还没有标签'})));
+        box.appendChild(h('p.field__hint', {text:'标签控件尚未加载，暂时无法修改。'}));
+        return;
+      }
+      box.appendChild(SF.tagUi.tagEditor({
+        selected: tags,
+        allTags: allTags(),
+        emptyHint: '还没有标签',
+        selectLabel: '为这条内容添加标签',
+        onChange: function (next) { save(next.map(function (t) { return t.id; })); }
+      }));
+    }
+    function save(ids) {
+      SF.app.act('tags:' + item.id, async function () {
+        var fresh = await app.client.setContentTags(item.id, ids);
+        item = fresh;
+        /* 标签的 contentCount 变了，筛选面板上的计数要跟着重取。 */
+        SF.views.inbox.invalidateTags();
+        if (repaint) repaint(fresh);
+        await SF.app.refreshData(true);
+      });
+    }
+    paint();
+    /* 目录晚到时只重画这一块：这个详情区被 overview 的弹窗复用，不能靠主区域重绘带回来。 */
+    if (!tagCache.loaded) ensureTags(app, function () { if (box.isConnected) paint(); });
+    return box;
+  }
+
+  /* ---------------- 标签筛选 ---------------- */
+
+  function toggleTagFilter(app, id) {
+    var ids = (app.filters.tags || []).slice();
+    var i = ids.indexOf(id);
+    if (i >= 0) ids.splice(i, 1); else ids.push(id);
+    app.filters.tags = ids;
+    /* 清空后回到默认语义，避免上一次留下的 all 影响下一次筛选。 */
+    if (!ids.length) app.filters.tagMode = 'any';
+    SF.app.render();
+  }
+
+  function tagFilterPanel(app) {
+    var picked = pickedTags(app), mode = app.filters.tagMode === 'all' ? 'all' : 'any';
+    var list = allTags();
+    return h('div.tag-filter', {role:'group', 'aria-label':'按标签筛选'},
+      h('div.tag-filter__head', null,
+        h('span.tag-filter__title', {text:'按标签筛选'}),
+        h('div.spacer'),
+        ui.btn('收起', {size:'sm', onClick:function () { tagPanelOpen = false; SF.app.renderContent(); }}),
+        ui.btn('清除标签筛选', {size:'sm', disabled:!picked.length, onClick:function () { app.filters.tags = []; app.filters.tagMode = 'any'; SF.app.render(); }})),
+      tagCache.error ? h('p.field__hint.field__error', {text:'标签目录读取失败：' + tagCache.error.message}) : null,
+      !list.length && !tagCache.loading ? h('p.field__hint', {text:'还没有任何标签，先到标签管理里创建后再回来筛选。'}) : null,
+      list.length ? h('div.tag-filter__tags', null, list.map(function (t) {
+        var on = (app.filters.tags || []).indexOf(t.id) >= 0;
+        return h('button.chip.chip--tag' + (on ? '.is-active' : ''), {type:'button', 'aria-pressed':String(on),
+          title:t.name + (t.enabled === false ? '（已停用）' : ''),
+          onclick:function () { toggleTagFilter(app, t.id); }},
+          SF.tagUi ? SF.tagUi.colorDot(t.color, 8) : null,
+          h('span', {text:t.name}),
+          h('span.chip__count', {text:String(t.contentCount || 0)}));
+      })) : null,
+      /* 只选一个标签时两种语义等价，所以少于两个就禁用切换，但文案照实说明当前是哪种。 */
+      h('div.tag-filter__mode', null,
+        h('div.segment.segment--fill', {role:'group', 'aria-label':'标签筛选方式'},
+          [['any','任一符合'],['all','全部符合']].map(function (entry) {
+            return h('button.segment__item' + (mode === entry[0] ? '.is-active' : ''), {type:'button', 'aria-pressed':String(mode === entry[0]),
+              disabled: picked.length < 2,
+              title: picked.length < 2 ? '选择 2 个以上标签后才能区分两种语义' : null,
+              onclick:function () { app.filters.tagMode = entry[0]; SF.app.render(); }},
+              h('span', {text:entry[1]}));
+          })),
+        h('p.tag-filter__hint', {'aria-live':'polite', text:tagFilterHint(app)})));
+  }
+
+  /** 一句话讲清当前语义。同一个筛选入口下「任一」和「全部」的结果差别很大，不写清楚会默认成前者。 */
+  function tagFilterHint(app) {
+    var picked = pickedTags(app), names = picked.map(function (t) { return t.name; }).join('、');
+    var all = app.filters.tagMode === 'all';
+    var text;
+    if (!picked.length) text = '当前不按标签筛选：显示符合其余筛选条件的全部内容。';
+    else if (picked.length === 1) text = '当前语义：内容带有「' + names + '」即显示（只选一个时两种语义结果相同）。';
+    else if (all) text = '当前语义：内容必须同时带有全部 ' + picked.length + ' 个所选标签（' + names + '）才显示。';
+    else text = '当前语义：内容带有所选 ' + picked.length + ' 个标签（' + names + '）中的任意一个即显示。';
+    return text + '标签筛选可与平台、来源、优先级、处理状态和关键词叠加。';
+  }
+
+  /* ---------------- 批量打标 ---------------- */
+
+  /**
+   * 与批量优先级同构：工具栏上一个下拉，选完即执行。
+   * 语义是「以这批标签整体替换所选内容的标签」，与后端 set_content_tags 的替换语义一致，
+   * 因此破坏性比批量优先级更强，先确认再执行。
+   */
+  function bulkTagControl(app) {
+    var tags = enabledTags();
+    if (!tags.length) return null;
+    var options = [{value:'',label:'批量打标'},{value:BULK_CLEAR,label:'清除全部标签'}].concat(tags.map(function (t) {
+      return {value:t.id, label:t.name};
+    }));
+    return ui.select(options, '', function (value) {
+      if (!value) return;
+      var ids = Array.from(selected);
+      if (ids.length > BULK_LIMIT) {
+        ui.toast('批量打标一次最多 ' + BULK_LIMIT + ' 条，当前已选 ' + ids.length + ' 条，请先缩小选择范围。', 'error');
+        return;
+      }
+      var tagIds = value === BULK_CLEAR ? [] : [value];
+      var name = tags.filter(function (t) { return t.id === value; })[0];
+      ui.confirm({
+        title: value === BULK_CLEAR ? '清除所选内容的标签' : '批量打标',
+        message: value === BULK_CLEAR
+          ? '将清除 ' + ids.length + ' 条内容上的全部标签，此操作不可撤销。'
+          : '将把 ' + ids.length + ' 条内容的标签整体替换为「' + (name ? name.name : '') + '」，原有标签会被移除。',
+        confirmText: '确认'
+      }).then(function (ok) {
+        /* 取消时重画一次：下拉框停在刚才的选项上会让人以为已经生效。 */
+        if (!ok) { SF.app.renderContent(); return; }
+        SF.app.act('bulk', async function () {
+          await app.client.bulkSetTags(ids, tagIds);
+          selected.clear();
+          tagCache = {};
+          await SF.app.refreshData(true);
+        });
+      });
+    }, {ariaLabel:'批量打标'});
+  }
+
+  /* ---------------- 详情 ---------------- */
+
   function detailBody(app, item, repaint) {
     var canDetail = app.session.channels.some(function (c) { return c.channel === item.platform && c.operations.get_item_detail && c.operations.get_item_detail.supported; });
     return h('div.detail-preview', null,
@@ -104,6 +328,7 @@
         h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform)), h('div.detail__byline-time', {text:fmt.publication(item)}))),
       h('div.detail__section', null, h('div.detail__section-title', {text:'内容摘要'}), h('p.detail__summary', {text:item.summary || '此内容尚未提供摘要，可补充详情或打开原文。'})),
       priorityControls(app,item,repaint),
+      tagControls(app, item, repaint),
       h('div.detail__section', null, h('div.detail__section-title', {text:'整理内容（单选）'}),
         h('p.field__hint', {text:'选择一项会取消其他状态，再次点击可取消。'}),
         h('div.op-grid', {role:'group','aria-label':'整理内容（单选）'},
@@ -117,6 +342,10 @@
         canDetail ? ui.btn('补充详情', {icon:'refresh', onClick:function () { SF.app.act('detail:' + item.id, async function () { await app.client.fetchDetail(item.id); ui.toast('详情任务已创建'); await SF.app.refreshData(true); }); }}) : null,
         ui.btn('打开原文', {variant:'primary', block:true, icon:'external', onClick:function () { SF.app.act('open:' + item.id, function () { return app.client.openContent(item.id); }); }})));
   }
+  /* 数据刷新时只丢内容缓存。标签目录不跟着内容刷新失效——它变化极慢，
+     每次刷新都重取只会多出一轮异步往返和一次多余重绘。真正该重取的是
+     tags.changed 事件，以及本视图自己写入标签之后。 */
   SF.views = SF.views || {};
-  SF.views.inbox = {render:render, reset:function () { cache = {}; }, detailBody:detailBody};
+  SF.views.inbox = {render:render, reset:function () { cache = {}; }, detailBody:detailBody,
+    invalidateTags:function () { tagCache = {}; }};
 })(window);

@@ -32,6 +32,15 @@
      updateRule(id, patch)   → Rule
      removeRule(id)          → { removed }
      getSyncCoverage(id)     → Coverage                    「最近窗口 / 历史完成」范围
+     listTags(query)         → { items, total }            标签管理（M9）
+     getTag(id)              → Tag
+     createTag(draft)        → Tag
+     updateTag(id, patch)    → Tag                         改名不改稳定 ID
+     setTagEnabled(id,on)    → Tag
+     removeTag(id)           → { removed, detachedContents }
+     listTagContents(id, q)  → { items, total }            该标签下的内容
+     setContentTags(id, ids) → ContentItem                 内容打标
+     bulkSetTags(ids, ids)   → { updated }                 批量打标
      on(event, handler)      → unsubscribe                 进度等事件
    ========================================================================== */
 (function (global) {
@@ -66,6 +75,15 @@
     "updateRule",
     "removeRule",
     "getSyncCoverage",
+    "listTags",
+    "getTag",
+    "createTag",
+    "updateTag",
+    "setTagEnabled",
+    "removeTag",
+    "listTagContents",
+    "setContentTags",
+    "bulkSetTags",
     "resolveSource", "searchSources", "listConnections", "checkConnection", "retryRun", "fetchDetail",
     "on",
   ];

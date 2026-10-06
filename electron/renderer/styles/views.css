@@ -1278,3 +1278,702 @@
 .cal-day__count { margin-left:auto; font-size:var(--fs-xs); color:var(--c-text-2); }
 .calendar-legend .muted { font-size:var(--fs-sm); }
 .day-panel__foot p { margin-bottom:var(--s-2); }
+
+/* ==========================================================================
+   视图层：标签管理（M9）
+   --------------------------------------------------------------------------
+   通用控件（按钮、输入、表格、开关、对话框、标签输入）一律复用 components.css，
+   这里只写本模块特有的结构：页签栏、两栏布局、工具栏、标签表、右侧详情、AI 空态。
+
+   一条线贯穿全模块：标签颜色是身份，不是装饰。行首色条、色块、使用量条、
+   详情横幅的竖条都取自同一档 --tag-* 变量，页面因此不需要出现任何色值字面量，
+   深色模式也由 tokens.css 集中接管。
+   ========================================================================== */
+
+:root {
+  /* 右侧详情面板宽度。tokens.css 里只有 --detail-w（内容详情），
+     标签详情比它窄一些也不该复用同一个值，否则以后调一个会连着动另一个。 */
+  --tags-editor-w: 440px;
+}
+
+/* ---------------- 页签栏 ---------------- */
+
+.tags-tabbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex: none;
+  padding-bottom: var(--s-1);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.tags-tab {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 var(--s-6);
+  border-radius: var(--r-md);
+  color: var(--c-text-2);
+  font-size: var(--fs-base);
+  white-space: nowrap;
+  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+
+.tags-tab:hover {
+  background: var(--c-surface-3);
+  color: var(--c-text);
+}
+
+.tags-tab.is-active {
+  background: var(--c-brand-weak);
+  color: var(--c-brand);
+  font-weight: 500;
+  box-shadow: 0 0 0 1px var(--c-brand-border) inset;
+}
+
+/* ---------------- 两栏布局 ---------------- */
+
+.tags-layout {
+  display: flex;
+  gap: var(--s-6);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.tags-list {
+  /* 不设 min-height:0：窄窗堆叠时这一列要按内容撑开，
+     继续压高度会把表格挤到只剩一行 */
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+  flex: 1;
+  min-width: 0;
+}
+
+.tags-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--tags-editor-w);
+  min-height: 0;
+  min-width: 0;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+/* 空态 / 错误态铺满整块区域，而不是缩成一小块飘在中间 */
+.tags-fill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---------------- 工具栏 ---------------- */
+
+/* 标题固定在左，操作区作为一组换行；否则四个控件会被逐个甩到第二行 */
+.tags-toolbar {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  flex: none;
+  flex-wrap: wrap;
+  padding: var(--s-5) var(--s-6);
+}
+
+.toolbar__title {
+  flex: none;
+  white-space: nowrap;
+  line-height: 34px;
+}
+
+.toolbar__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex: 1 1 340px;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.toolbar__tools .search-input {
+  flex: 1 1 120px;
+  min-width: 116px;
+  max-width: 260px;
+}
+
+/* ---------------- 标签表 ---------------- */
+
+.tags-table-wrap {
+  flex: 1;
+  min-height: 0;
+  /* 窄窗时表格横向滚动，而不是把整页撑宽 */
+  overflow: auto;
+}
+
+.table--tags {
+  min-width: 560px;
+  table-layout: fixed;
+}
+
+.table--tags .tags-col-name { width: 26%; }
+.table--tags .tags-col-desc { width: 30%; }
+.table--tags .tags-col-usage { width: 128px; }
+.table--tags .tags-col-updated { width: 96px; }
+.table--tags .tags-col-status { width: 72px; }
+
+/* 描述列用 max-width:0 + 百分比：单元格默认按 nowrap 内容的最小宽度撑开，
+   省略号根本不会生效；max-width:0 让浏览器改用指定宽度 */
+.table--tags .tags-col-desc {
+  max-width: 0;
+}
+
+.table--tags .tags-col-desc span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-text-2);
+}
+
+/* 整行可点：行本身用 tabindex + 键盘事件，不在里面再套一层按钮，
+   否则表格语义（row / cell）会被破坏 */
+.tags-table-wrap tbody tr {
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+
+.tags-table-wrap tbody tr.is-selected td {
+  background: var(--c-brand-weak-2);
+}
+
+.tags-table-wrap tbody tr.is-selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--c-brand);
+}
+
+.tags-table-wrap tbody tr:focus-visible {
+  outline: 2px solid var(--c-brand);
+  outline-offset: -2px;
+}
+
+/* ---------------- 标签色块 ---------------- */
+
+.tag-row {
+  position: relative;
+  display: inline-flex;
+  padding-left: var(--s-4);
+  max-width: 100%;
+}
+
+/* 行首色条：让一整列标签在快速扫视时靠颜色区分，而不是逐行读文字 */
+.tag-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: var(--r-full);
+  background: var(--row-color, var(--c-border-strong));
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 24px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-cap);
+  line-height: 1;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.tag-chip.is-clickable {
+  cursor: pointer;
+}
+
+.tag-chip__dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.tag-chip__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-chip__origin {
+  flex: none;
+  padding: 0 4px;
+  border-radius: var(--r-xs);
+  background: var(--c-surface);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+}
+
+.tag-chip--removable {
+  padding-right: var(--s-2);
+}
+
+.tag-chip__remove {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: var(--r-xs);
+  color: currentColor;
+  opacity: 0.6;
+  transition: opacity var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+
+.tag-chip__remove:hover {
+  opacity: 1;
+  background: var(--c-surface-3);
+}
+
+.tag-chip__remove svg {
+  width: 9px;
+  height: 9px;
+  stroke-width: 2.4;
+}
+
+.color-dot {
+  display: inline-block;
+  border-radius: 50%;
+}
+
+/* ---------------- 使用次数 ---------------- */
+
+.usage-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.usage-cell__num {
+  min-width: 34px;
+  font-weight: 500;
+  text-align: right;
+}
+
+/* 使用量条：宽度即占比。同一列表内共用一把标尺（max = 真实最大值），
+   最长的一条就是用得最多的标签，而不是每行各自撑满 */
+.usage-bar {
+  display: block;
+  width: 72px;
+  height: 5px;
+  flex: none;
+  border-radius: var(--r-full);
+  background: var(--c-surface-3);
+  overflow: hidden;
+}
+
+.usage-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-full);
+  transition: width var(--dur-2) var(--ease);
+}
+
+/* ---------------- 取色器 ---------------- */
+
+.swatches {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+
+.swatch {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--r-full);
+  color: var(--c-surface);
+  border: 2px solid transparent;
+  transition: transform var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+
+.swatch:hover {
+  transform: scale(1.12);
+}
+
+.swatch.is-active {
+  box-shadow: 0 0 0 2px var(--c-surface), 0 0 0 4px currentColor;
+}
+
+.swatch svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 3;
+}
+
+.tags-field-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4);
+  border: 1px dashed var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+}
+
+.tags-field-preview .field__label {
+  font-size: var(--fs-sm);
+}
+
+.tags-counter {
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  font-family: var(--font-num);
+  white-space: nowrap;
+}
+
+/* 字段标题要挂右侧的计数器或按钮，必须显式 flex */
+.tags-label-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+/* ---------------- 右侧详情 ---------------- */
+
+.tags-editor__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  height: 52px;
+  flex: none;
+  padding: 0 var(--s-5) 0 var(--s-6);
+  border-bottom: 1px solid var(--c-divider);
+}
+
+.tags-editor__title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+/* 横幅用中性底色 + 标签色竖条。色块本身是 soft 底，
+   放在同样 soft 的横幅上会糊成一片，深色模式下对比更差 */
+.tags-editor__banner {
+  flex: none;
+  padding: var(--s-5) var(--s-6) var(--s-5) var(--s-6);
+  border-left: 3px solid var(--banner-color, var(--c-border-strong));
+  border-bottom: 1px solid var(--c-divider);
+  background: var(--c-surface-2);
+}
+
+.tags-editor__banner-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.tags-editor__banner-text {
+  font-size: var(--fs-base);
+  font-weight: 500;
+}
+
+.tags-editor__banner-hint {
+  margin-top: var(--s-3);
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  line-height: 1.5;
+}
+
+.tags-editor__body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--s-6) var(--s-7);
+}
+
+.tags-editor__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding-top: var(--s-6);
+}
+
+.tags-editor__section + .tags-editor__section {
+  margin-top: var(--s-5);
+  border-top: 1px solid var(--c-divider);
+}
+
+.tags-editor__section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: var(--fs-cap);
+  font-weight: 600;
+  color: var(--c-text-3);
+}
+
+.tags-editor__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex: none;
+  padding: var(--s-5) var(--s-6);
+  background: var(--c-surface-2);
+  border-top: 1px solid var(--c-divider);
+}
+
+.tags-mini-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-3);
+}
+
+.tags-mini-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--s-4) var(--s-5);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+}
+
+.tags-mini-stat__num {
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.tags-mini-stat__label {
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+
+.tags-mini-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.tags-mini-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-3);
+  border-radius: var(--r-md);
+  text-align: left;
+  transition: background var(--dur-1) var(--ease);
+}
+
+.tags-mini-row:hover {
+  background: var(--c-surface-2);
+}
+
+.tags-mini-row__thumb {
+  display: block;
+  width: 40px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--c-surface-3);
+}
+
+.tags-mini-row__thumb:empty::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.tags-mini-row__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tags-mini-row__title {
+  display: block;
+  font-size: var(--fs-cap);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--c-text);
+}
+
+.tags-mini-row__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  min-width: 0;
+}
+
+/* ---------------- AI 空态 ---------------- */
+
+.tags-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-4);
+  padding: var(--s-10) var(--s-8);
+  text-align: center;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.tags-empty__icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--r-xl);
+  background: var(--c-brand-weak);
+  color: var(--c-brand);
+}
+
+.tags-empty__icon svg {
+  width: 30px;
+  height: 30px;
+}
+
+.tags-empty__title {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+.tags-empty__desc {
+  font-size: var(--fs-base);
+  color: var(--c-text-2);
+  line-height: 1.7;
+}
+
+.tags-empty__actions {
+  display: flex;
+  gap: var(--s-3);
+  margin-top: var(--s-2);
+}
+
+.tags-empty__note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  margin-top: var(--s-6);
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  line-height: 1.6;
+  text-align: left;
+}
+
+.tags-empty__note svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--c-text-4);
+}
+
+.tags-empty__note-t {
+  color: var(--c-text-2);
+  font-weight: 500;
+  margin-top: var(--s-2);
+}
+
+.tags-empty__note-t:first-child {
+  margin-top: 0;
+}
+
+/* ==========================================================================
+   响应式（标签管理）
+   --------------------------------------------------------------------------
+   统一放在本段末尾。媒体查询不提升特异性：写在对应基础规则之前，
+   会被后面的基础规则整条盖掉，表现为「改了没反应」。
+
+   ★ 并排（列表 | 详情）是默认形态，不是降级形态。
+     变窄时的取舍顺序是：详情面板变瘦 → 表格舍弃次要列 → 最后才堆叠。
+     堆叠意味着详情被推到列表下方视口外，点一行「看起来没反应」。
+   ========================================================================== */
+
+/* 舍弃的第一批：描述在右侧详情里随时能看，不影响判断 */
+@media (max-width: 1500px) {
+  .table--tags .tags-col-desc {
+    display: none;
+  }
+
+  .table--tags .tags-col-name {
+    width: 40%;
+  }
+}
+
+@media (max-width: 1360px) {
+  :root {
+    --tags-editor-w: 380px;
+  }
+}
+
+@media (max-width: 1240px) {
+  :root {
+    --tags-editor-w: 320px;
+  }
+
+  .table--tags .tags-col-updated {
+    display: none;
+  }
+}
+
+/* 只有窄到放不下并排时才堆叠。必须排在上面几段之后——
+   同一宽度下多个断点会同时命中，后写的 display 才生效 */
+@media (max-width: 1080px) {
+  .tags-layout {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  /* 堆叠后由整列滚动，各块按内容撑开：
+     继续沿用 flex:1 + min-height:0 会把表格压到只剩一行 */
+  .tags-list {
+    flex: none;
+  }
+
+  .tags-table-wrap {
+    flex: none;
+    overflow: visible;
+  }
+
+  .tags-editor {
+    flex: none;
+    width: auto;
+  }
+
+  /* 表格拿到全宽后，被藏起来的次要列还回来 */
+  .table--tags .tags-col-desc,
+  .table--tags .tags-col-updated {
+    display: table-cell;
+  }
+
+  .table--tags .tags-col-name {
+    width: 30%;
+  }
+
+  /* 详情横跨整屏，表单不设上限的话输入框会被拉到一整行那么宽 */
+  .tags-editor__body .field,
+  .tags-editor__section-title {
+    max-width: 680px;
+  }
+}

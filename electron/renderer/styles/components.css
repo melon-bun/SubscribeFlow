@@ -1674,3 +1674,204 @@ textarea.input {
   height: 9px;
   stroke-width: 2.4;
 }
+
+/* ==========================================================================
+   标签色块与内容侧打标（M9）
+   --------------------------------------------------------------------------
+   颜色不写在这里：tag-controls.js 用 tagCatalog 把 solid / soft / ink 三个
+   CSS 变量写到行内样式上，所以浅色与深色模式各自成立，页面也不出现任何色值。
+   文字与底色的对比度由 tokens.css 里的 *-ink / *-soft 配对保证。
+   ========================================================================== */
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  max-width: 100%;
+  height: 24px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.tag-chip--sm {
+  height: 22px;
+}
+
+.tag-chip__dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.tag-chip__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-chip--removable {
+  padding-right: var(--s-2);
+}
+
+.tag-chip__remove {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: var(--r-xs);
+  color: currentColor;
+  opacity: 0.7;
+  transition: opacity var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+
+.tag-chip__remove:hover {
+  opacity: 1;
+  background: rgba(127, 127, 127, 0.22);
+}
+
+.tag-chip__remove svg {
+  width: 9px;
+  height: 9px;
+  stroke-width: 2.4;
+}
+
+/* 「识别」角标：只加一道细边分隔并缩小字号，文字仍用 chip 本色。
+   不用降低透明度做弱化——那会让角标比它标注的标签名还难读。 */
+.tag-chip__origin {
+  margin-left: var(--s-1);
+  padding-left: var(--s-2);
+  border-left: 1px solid currentColor;
+  font-size: var(--fs-cap);
+  line-height: 1;
+}
+
+.tag-chip.is-clickable {
+  cursor: pointer;
+  transition: filter var(--dur-1) var(--ease);
+}
+
+.tag-chip.is-clickable:hover {
+  filter: brightness(0.96);
+}
+
+/* 纯色点：筛选面板、表格与使用量条共用 */
+.color-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+}
+
+/* 内容侧标签编辑器：已选色块 + 添加下拉，同一行内换行 */
+.tag-editor {
+  margin-top: var(--s-4);
+}
+
+.tag-editor__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.tag-editor__chips .select--sm {
+  margin-left: auto;
+}
+
+/* 卡片上的标签：跟随共享卡片已有的容器样式，这里只做密度收敛 */
+.content-card__tags .tag-chip {
+  max-width: 160px;
+  height: 22px;
+  font-size: var(--fs-cap);
+}
+
+/* ---------------- 标签筛选面板 ---------------- */
+
+.tag-filter {
+  margin-top: var(--s-4);
+  padding: var(--s-5);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+}
+
+.tag-filter__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-bottom: var(--s-4);
+}
+
+.tag-filter__title {
+  font-size: var(--fs-cap);
+  color: var(--c-text-3);
+}
+
+.tag-filter__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+
+.chip--tag {
+  gap: var(--s-2);
+}
+
+.tag-filter__mode {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-top: var(--s-5);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--c-divider);
+}
+
+.tag-filter__mode .segment {
+  width: 220px;
+  flex: none;
+}
+
+.tag-filter__mode .segment__item {
+  height: 32px;
+  font-size: var(--fs-sm);
+  padding: 0 var(--s-4);
+}
+
+.tag-filter__mode .segment__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tag-filter__mode .segment__item:disabled:hover {
+  border-color: var(--c-border);
+  color: var(--c-text-2);
+  box-shadow: none;
+}
+
+.tag-filter__hint {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  line-height: 1.6;
+}
+
+/* 行卡片（内容总览日历）上的标签：与内容卡片同规则，仅收紧密度 */
+.row-card__tags {
+  display: flex;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+  flex-wrap: wrap;
+}
+
+.row-card__tags .tag-chip {
+  max-width: 160px;
+  height: 22px;
+  font-size: var(--fs-cap);
+}

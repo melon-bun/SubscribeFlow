@@ -246,3 +246,93 @@ test('cancelling a live Core job aborts Main acquisition and releases the shared
     assert.equal((await core.call('connection.check',{connection_id:'bilibili:default'})).state,'ready');
   },acquisition);
 });
+
+test('real sidecar tag lifecycle, filtering and restart survival through the whitelisted bridge', async () => {
+  const acquisition = async p => {
+    if (p.operation === 'check') return {code:0, data:{authenticated:true}};
+    if (p.operation === 'search') return {code:0, data:{numResults:1, result:[{mid:946974, uname:'测试作者'}]}};
+    return {code:0, data:{page:{pn:p.page, ps:p.limit, count:4}, list:{vlist:Array.from({length:4},(_,i)=>({
+      bvid:'BV1tag411c'+String(i).padStart(2,'0'), mid:946974, title:'标签验证 '+i, created:1700000000+i*86400,
+    }))}}};
+  };
+  await fixture(async core => {
+    const sub = await callUI(core, 'createChannel', [{platform:'bilibili', link:'946974', confirmed:true}]);
+    const wait = async id => {
+      let job;
+      for (let i=0;i<100;i++) {
+        job = await core.call('sync.get',{job_id:id});
+        if (!['running','queued'].includes(job.state)) return job;
+        await new Promise(r => setTimeout(r,20));
+      }
+      throw new Error('job did not finish');
+    };
+    assert.equal((await wait((await core.call('sync.start',{subscription_id:sub.id, mode:'backfill', page_budget:1})).job_id)).state, 'succeeded');
+
+    // 建标签：颜色受控、重名被拒、默认色可取
+    const travel = await callUI(core, 'createTag', [{name:'旅行', color:'cyan', synonyms:['出游']}]);
+    assert.equal(travel.color, 'cyan');
+    assert.equal(travel.contentCount, 0);
+    await callUI(core,'createTag',[{name:'Travel'}]);
+    // 大小写不同的重名由唯一索引拦下，不会静默合并成同一个标签
+    await assert.rejects(callUI(core,'createTag',[{name:'travel'}]), error => error.code === 'CONFLICT');
+    await assert.rejects(callUI(core,'createTag',[{name:'TRAVEL'}]), error => error.code === 'CONFLICT');
+    await assert.rejects(callUI(core,'createTag',[{name:'配色', color:'chartreuse'}]));
+    const food = await callUI(core, 'createTag', [{name:'美食'}]);
+    assert.equal(food.color, 'slate');
+
+    const items = await callUI(core, 'listContents', [{limit:10}]);
+    assert.equal(items.total, 4);
+
+    // 人工打标经过统一服务，origin 为 manual
+    await callUI(core, 'setContentTags', [items.items[0].id, [travel.id]]);
+    await callUI(core, 'setContentTags', [items.items[1].id, [travel.id, food.id]]);
+    const tagged = await callUI(core, 'getContent', [items.items[0].id]);
+    assert.deepEqual(tagged.tags.map(t => [t.name, t.origin]), [['旅行','manual']]);
+
+    // 任一符合命中 2 条，全部符合只命中同时带两个标签的那 1 条
+    assert.equal((await callUI(core,'listContents',[{tags:[travel.id]}])).total, 2);
+    assert.equal((await callUI(core,'listContents',[{tags:[travel.id, food.id]}])).total, 2);
+    assert.equal((await callUI(core,'listContents',[{tags:[travel.id, food.id], tagMode:'all'}])).total, 1);
+    await assert.rejects(callUI(core,'listContents',[{tags:[travel.id], tagMode:'sometimes'}]));
+
+    // 批量打标与优先级可组合
+    await callUI(core, 'bulkSetTags', [[items.items[2].id, items.items[3].id], [food.id]]);
+    await callUI(core, 'bulkUpdate', [[items.items[2].id], {priority:'high'}]);
+    assert.equal((await callUI(core,'listContents',[{tags:[food.id], priority:'high'}])).total, 1);
+
+    // 标签视图：使用次数、改名不丢关联、删除如实回报影响条数
+    const list = await callUI(core, 'listTags', []);
+    assert.equal(list.total, 3);
+    assert.equal(list.items.find(t => t.id === food.id).contentCount, 3);
+    assert.equal((await callUI(core,'listTagContents',[travel.id, {}])).total, 2);
+    await callUI(core, 'updateTag', [travel.id, {name:'出行'}]);
+    assert.equal((await callUI(core,'listTagContents',[travel.id, {}])).total, 2);
+    const removed = await callUI(core, 'removeTag', [food.id]);
+    assert.equal(removed.detachedContents, 3);
+    assert.equal((await callUI(core,'getContent',[items.items[0].id])).tags.length, 1);
+
+    // 停用不再作为新归类候选，但已有归类仍可检索
+    await callUI(core, 'setTagEnabled', [travel.id, false]);
+    assert.equal((await callUI(core,'listTags',[{enabled:false}])).total, 1);
+    // 美食已删除，剩下启用的是 Travel 一个
+    assert.equal((await callUI(core,'listTags',[{enabled:true}])).total, 1);
+    assert.equal((await callUI(core,'listContents',[{tags:[travel.id]}])).total, 2);
+
+    // 重启后全部结果一致
+    await core.restart();
+    const after = await callUI(core, 'listTags', []);
+    assert.equal(after.total, 2);
+    assert.equal(after.items.find(t => t.id === travel.id).name, '出行');
+    assert.equal((await callUI(core,'getContent',[items.items[0].id])).tags[0].name, '出行');
+
+    // 内容上的标签全部来自用户标签库，每条都带来源标记，不会混入平台话题
+    const raw = await core.call('content.get', {item_id: items.items[0].id});
+    const owned = new Set((await callUI(core,'listTags',[])).items.map(t => t.id));
+    assert.ok(raw.tags.length > 0);
+    for (const tag of raw.tags) {
+      assert.ok(owned.has(tag.id), `标签 ${tag.id} 不在用户标签库中`);
+      assert.equal(tag.origin, 'manual');
+    }
+    assert.ok(!JSON.stringify(raw.payload || {}).includes('hashtag'));
+  }, acquisition);
+});

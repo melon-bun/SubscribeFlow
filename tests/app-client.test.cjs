@@ -26,7 +26,27 @@ test('calendar and inbox pagination map to bounded Core queries', async () => {
   assert.equal(result.next_offset,20);
   await callUI(core,'listContents',[{priority:'high',state:'unread',limit:20,offset:20}]);
   assert.deepEqual(received,{limit:20,offset:20,priority:'high',read:false,archived:false,deferred:false});
-  await assert.rejects(callUI(core,'listContents',[{tags:['later']}]),{code:'UNSUPPORTED_OPERATION'});
+  // 非法取值属于入参错误，不静默降级，否则用户会看到错的筛选结果。
+  await assert.rejects(callUI(core,'listContents',[{tagMode:'sometimes'}]),{message:'标签筛选方式需为任一符合或全部符合'});
+  await assert.rejects(callUI(core,'listContents',[{tags:['']}]),{message:'标签列表无效'});
+});
+
+test('tag filters reach the Core query and never widen an empty selection', async () => {
+  let received;
+  const core={call:async (name,params)=>{
+    if(name==='subscription.list') return [];
+    assert.ok(name==='content.list'||name==='content.calendar'); received=params;
+    return name==='content.calendar' ? {month:params.month,total:0,priorities:{},days:[]} : {items:[],total:0,next_offset:null};
+  }};
+  await callUI(core,'listContents',[{tags:['t1'],limit:20,offset:0}]);
+  assert.deepEqual(received,{limit:20,offset:0,tags:['t1']});
+  // 只有显式要求「全部符合」才下发 all；默认即任一符合，不额外传参。
+  await callUI(core,'listContents',[{tags:['t1','t2'],tagMode:'all',limit:20}]);
+  assert.deepEqual(received,{limit:20,tags:['t1','t2'],tag_mode:'all'});
+  await callUI(core,'listContents',[{tags:[],limit:20}]);
+  assert.equal('tags' in received,false);
+  await callUI(core,'getCalendar',[{month:'2026-10',tags:['t1'],tagMode:'all'}]);
+  assert.deepEqual(received,{month:'2026-10',tags:['t1'],tag_mode:'all'});
 });
 
 test('source search and resolution stay separate from confirmed creation', async () => {
