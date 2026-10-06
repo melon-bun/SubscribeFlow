@@ -49,6 +49,8 @@
     },
   };
 
+  PRIORITIES.none = {id:'none', name:'未设置', hint:'尚未指定优先级', action:'可设置来源默认值或单条内容优先级', icon:'inbox', tagClass:'tag--neutral', color:'var(--c-text-3)', bg:'var(--c-surface)'};
+
   var PRIORITY_ORDER = ["high", "medium", "low"];
 
   function platform(id) {
@@ -56,7 +58,7 @@
   }
 
   function priority(id) {
-    return PRIORITIES[id] || PRIORITIES.low;
+    return PRIORITIES[id] || PRIORITIES.none;
   }
 
   /** 把未知平台标识收敛到 other，页面因此不需要写平台分支。 */
@@ -65,7 +67,7 @@
   }
 
   function normalizePriority(id) {
-    return PRIORITIES[id] ? id : "low";
+    return PRIORITIES[id] ? id : "none";
   }
 
   SF.catalog = {

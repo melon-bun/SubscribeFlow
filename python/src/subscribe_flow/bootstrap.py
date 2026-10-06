@@ -8,6 +8,7 @@ from subscribe_flow.application.subscriptions import SubscriptionService
 from subscribe_flow.application.sync import SyncService
 from subscribe_flow.application.content import ContentService
 from subscribe_flow.application.queries import QueryService
+from subscribe_flow.application.priorities import PriorityService
 from subscribe_flow.application.scheduler import Scheduler
 from subscribe_flow.contracts import Connection
 from subscribe_flow.storage.database import Database
@@ -42,6 +43,7 @@ class Core:
         self.subscriptions = SubscriptionService(self.gateway, self.repository)
         self.sync = SyncService(self.gateway, self.repository, self.emit)
         self.content = ContentService(self.repository, self.emit)
+        self.priorities = PriorityService(self.repository, self.emit)
         self.queries = QueryService(self.repository, self.gateway)
         for descriptor in self.gateway.describe():
             resource = "browser:electron-bilibili" if descriptor.backend == "electron-session" else "browser:opencli-default"

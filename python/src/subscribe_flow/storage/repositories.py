@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from subscribe_flow.contracts import ChannelError, Connection, ContentPatch, Source, jsonable
+from subscribe_flow.contracts.priorities import validate_priority
 
 
 def now() -> str:
@@ -106,6 +107,14 @@ class Repository:
             db.execute("UPDATE subscriptions SET status=?,connection_id=?,interval_seconds=?,sync_mode=?,collect_items=?,version=version+1,updated_at=? WHERE id=?",
                        (status or old["status"], conn_id, interval_seconds if interval_seconds is not None else old["interval_seconds"], sync_mode or old['sync_mode'],
                         collect_items if collect_items is not None else old['collect_items'], now(), sub_id))
+        return self.get_subscription(sub_id)
+
+    def set_source_priority(self, sub_id, priority):
+        validate_priority(priority)
+        self.get_subscription(sub_id)
+        with self.database.transaction() as db:
+            db.execute('UPDATE subscriptions SET default_priority=?,updated_at=? WHERE id=?',
+                       (priority, now(), sub_id))
         return self.get_subscription(sub_id)
 
     def snapshot(self, sub_id, progress_version="1"):
@@ -224,19 +233,26 @@ class Repository:
         return [{**dict(row), "payload": json.loads(row["payload"])} for row in self.db.execute("SELECT * FROM sync_progress WHERE subscription_id=?", (sub_id,))]
 
     def update_content_state(self, keys, patch):
-        if not patch or set(patch) - {"read", "archived", "deferred"} or any(type(v) is not bool for v in patch.values()):
-            raise ChannelError("INVALID_INPUT", "content.update", "只支持布尔值的 read、archived、deferred 状态")
-        chosen = [field for field, value in patch.items() if value]
+        if not isinstance(patch, dict) or not patch or set(patch) - {"read", "archived", "deferred", "priority"}:
+            raise ChannelError("INVALID_INPUT", "content.update", "不支持的内容整理字段")
+        states = {k: v for k, v in patch.items() if k != 'priority'}
+        if any(type(v) is not bool for v in states.values()):
+            raise ChannelError("INVALID_INPUT", "content.update", "处理状态必须为布尔值")
+        chosen = [field for field, value in states.items() if value]
         if len(chosen) > 1:
             raise ChannelError("INVALID_INPUT", "content.update", "已读、稍后处理和归档只能选择一项")
         if chosen:
-            patch = {field: field == chosen[0] for field in ("read", "archived", "deferred")}
-        fields = ",".join(f"{key}=?" for key in patch)
+            states = {field: field == chosen[0] for field in ("read", "archived", "deferred")}
+        values = {key: int(value) for key, value in states.items()}
+        if 'priority' in patch:
+            validate_priority(patch['priority'])
+            values['priority_override'] = patch['priority']
+        fields = ",".join(f"{key}=?" for key in values)
         with self.database.transaction() as db:
             for key in keys:
                 if not db.execute("SELECT 1 FROM contents WHERE id=?", (key,)).fetchone():
                     raise ChannelError("NOT_FOUND", "content.update", "内容不存在")
-                db.execute(f"UPDATE content_states SET {fields},updated_at=? WHERE content_id=?", (*[int(v) for v in patch.values()], now(), key))
+                db.execute(f"UPDATE content_states SET {fields},updated_at=? WHERE content_id=?", (*values.values(), now(), key))
         return {"updated": len(set(keys))}
 
     def apply_detail(self, job_id, patch: ContentPatch):
@@ -260,18 +276,35 @@ class Repository:
     @staticmethod
     def _content(row):
         return {"id": row["id"], **json.loads(row["payload"]),
-                "state": {field: bool(row[field]) for field in ("read", "archived", "deferred")}}
+                "state": {field: bool(row[field]) for field in ("read", "archived", "deferred")},
+                "priority": row["effective_priority"], "priority_override": row["priority_override"],
+                "source_priority": row["source_priority"]}
+
+    # Content may link to several sources: inherit the highest non-null source
+    # default. Aggregation keeps list counts unique and never multiplies rows.
+    SOURCE_PRIORITY = """(SELECT sub.default_priority FROM content_sources cs
+        JOIN subscriptions sub ON sub.source_id=cs.source_id
+        WHERE cs.content_id=c.id AND sub.default_priority IS NOT NULL
+        ORDER BY CASE sub.default_priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,sub.id LIMIT 1)"""
+    EFFECTIVE_PRIORITY = f"COALESCE(s.priority_override,{SOURCE_PRIORITY})"
+    CONTENT_COLUMNS = f"c.*,s.read,s.archived,s.deferred,s.priority_override,{SOURCE_PRIORITY} AS source_priority,{EFFECTIVE_PRIORITY} AS effective_priority"
 
     def get_content(self, key):
-        row = self.db.execute("SELECT c.*,s.read,s.archived,s.deferred FROM contents c JOIN content_states s ON s.content_id=c.id WHERE c.id=?", (key,)).fetchone()
+        row = self.db.execute(f"SELECT {self.CONTENT_COLUMNS} FROM contents c JOIN content_states s ON s.content_id=c.id WHERE c.id=?", (key,)).fetchone()
         if not row:
             raise ChannelError("NOT_FOUND", "content.get", "内容不存在")
         return self._content(row)
 
-    def query_contents(self, *, limit=50, offset=0, channel=None, source_id=None, query=None, start=None, end=None, read=None, archived=None, deferred=None):
+    def query_contents(self, *, limit=50, offset=0, channel=None, source_id=None, query=None, start=None, end=None, read=None, archived=None, deferred=None, priority=None):
         if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 1000000:
             raise ChannelError("INVALID_INPUT", "content.list", "分页参数无效")
         clauses, args = ["1=1"], []
+        if priority == 'none':
+            clauses.append(f"{self.EFFECTIVE_PRIORITY} IS NULL")
+        elif priority is not None:
+            validate_priority(priority)
+            clauses.append(f"{self.EFFECTIVE_PRIORITY}=?")
+            args.append(priority)
         for field, value in (("c.channel", channel), ("s.read", read), ("s.archived", archived), ("s.deferred", deferred)):
             if value is not None:
                 clauses.append(f"{field}=?")
@@ -288,6 +321,6 @@ class Repository:
                 args.append(value)
         base = "FROM contents c JOIN content_states s ON s.content_id=c.id WHERE " + " AND ".join(clauses)
         total = self.db.execute("SELECT count(*) " + base, args).fetchone()[0]
-        records = self.db.execute("SELECT c.*,s.read,s.archived,s.deferred " + base + " ORDER BY c.published_at DESC,c.id DESC LIMIT ? OFFSET ?", (*args, limit, offset))
+        records = self.db.execute(f"SELECT {self.CONTENT_COLUMNS} " + base + " ORDER BY c.published_at DESC,c.id DESC LIMIT ? OFFSET ?", (*args, limit, offset))
         return {"items": [self._content(row) for row in records], "total": total, "limit": limit, "offset": offset,
                 "next_offset": offset + limit if offset + limit < total else None}

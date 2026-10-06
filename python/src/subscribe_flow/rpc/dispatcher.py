@@ -17,7 +17,7 @@ def validate(params, required=None, optional=None):
         raise RPCFault(-32602, "参数字段不符合接口定义")
     for key, value in params.items():
         expected = (required | optional)[key]
-        if type(value) is not expected:
+        if not (type(value) in expected if isinstance(expected, tuple) else type(value) is expected):
             raise RPCFault(-32602, f"参数 {key} 类型不正确")
         if isinstance(value, str) and (not value or len(value) > 2000):
             raise RPCFault(-32602, f"参数 {key} 长度无效")
@@ -53,7 +53,8 @@ class Dispatcher:
             "sync.list": (c.queries.jobs, {}, {"limit": int, "offset": int}),
             "sync.coverage": (c.queries.coverage, {"subscription_id": str}, {}),
             "content.list": (c.queries.contents, {}, {"limit": int, "offset": int, "channel": str, "source_id": str, "query": str, "start": str, "end": str,
-                                                      "read": bool, "archived": bool, "deferred": bool}),
+                                                      "read": bool, "archived": bool, "deferred": bool, "priority": str}),
+            "priority.set_source": (c.priorities.set_source, {"subscription_id": str, "priority": (str, type(None))}, {}),
             "content.get": (c.queries.content, {"item_id": str}, {}),
             "content.update": (c.content.update, {"item_id": str, "patch": dict}, {}),
             "content.bulk_update": (c.content.bulk_update, {"item_ids": list, "patch": dict}, {}),

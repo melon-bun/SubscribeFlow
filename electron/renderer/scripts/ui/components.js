@@ -226,6 +226,7 @@
             h("span.t-ellipsis", { text: item.channelName })
           ),
           ui.platformTag(item.platform),
+          ui.priorityTag(item.priority),
           h("span.content-card__dot", { text: "·" }),
           h("span.content-card__time", { text: fmt.publication(item, true) })
         ),
@@ -277,6 +278,7 @@
           h("span.t-ellipsis", { text: item.channelName }),
           h("span.content-card__dot", { text: "·" }),
           ui.platformTag(item.platform),
+          ui.priorityTag(item.priority),
           h("span.spacer"),
           h("span", { text: fmt.publication(item, true) })
         )

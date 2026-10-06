@@ -22,11 +22,28 @@
     var body;
     if (cache.error) body = ui.state({icon:'alert',title:'渠道读取失败',desc:cache.error.message,actions:[{label:'重试',onClick:reload}]});
     else if (!cache.loaded) body = ui.state({icon:'clock', title:'正在载入渠道…'});
-    else body = h('div.col.grow.channels-content.scroll-y', {style:{gap:'20px'}}, channelList(app), bottomPanels(app));
+    else body = h('div.col.grow.channels-content.scroll-y', {style:{gap:'20px'}}, app.channelTab==='priorities' ? prioritySettings(app) : channelList(app), app.channelTab==='priorities' ? null : bottomPanels(app));
     return h('div.view', {'data-view':'channels'}, h('div.view__head', null,
       h('div.view__head-text', null, h('h1.t-h1',{text:'渠道管理'}), h('p.view__desc',{text:'管理关注的创作者，选择手动或自动刷新，并查看采集状态。'})),
       h('div.view__actions', null, ui.btn('添加渠道或创作者',{variant:'primary',icon:'plus',disabled:!app.session.capabilities.canManageChannels,onClick:function () { addDialog(app); }}))),
+      h('div.inbox__toolbar',null,['list','priorities'].map(function(tab) { return ui.btn(tab==='list'?'渠道列表':'优先级设置',{variant:app.channelTab===tab?'primary':'ghost',onClick:function() { app.channelTab=tab; SF.app.navigate('channels',{tab:tab}); SF.app.renderContent(); }}); })),
       h('div.view__body', null, body));
+  }
+  function prioritySettings(app) {
+    return h('section.panel.source-priorities',{'aria-label':'来源优先级设置'},
+      h('h2.t-h2',{text:'来源默认优先级'}),
+      h('p.view__desc',{text:'未单独设置的历史和新内容都会跟随来源；单条内容的手动设置会保留。'}),
+      keyword ? ui.btn('显示全部来源',{onClick:function() { keyword=''; reload(); }}) : null,
+      cache.items.length ? cache.items.map(function(c) {
+        var saving=false;
+        var select=ui.select([{value:'',label:'未设置'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), c.defaultPriority || '',async function(value) {
+          if(saving) return; saving=true; select._input.disabled=true;
+          try { await app.client.savePrioritySettings({id:c.id,priority:value || null}); ui.toast('来源优先级已保存'); await SF.app.refreshData(true); }
+          catch(err) { select._input.value=c.defaultPriority || ''; ui.toast(err.message,'danger'); }
+          finally { saving=false; select._input.disabled=false; }
+        },{ariaLabel:'来源优先级 '+c.name});
+        return h('div.source-priority-row',{'data-priority-source':c.id},ui.avatar(c.name),h('div.grow',null,h('strong',{text:c.name}),h('div.muted',{text:SF.catalog.platform(c.platform).name+' · '+(c.enabled?'追踪中':'已暂停')})),select);
+      }) : ui.state({icon:'folder-open',title:'还没有可设置的来源',desc:'添加来源后可在这里设置默认优先级。'}));
   }
   function channelList(app) {
     var toolbar = h('div.channels__toolbar', null, h('h2.t-h2',{text:'全部渠道（' + cache.items.length + '）'}), h('div.spacer'),

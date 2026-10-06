@@ -1251,3 +1251,20 @@
   .calendar-panel { min-height: 430px; }
   .day-panel { height: 300px; margin-top: 18px; }
 }
+
+/* M8: source defaults and the real, independently paginated priority board. */
+.source-priorities { padding: var(--s-6); }
+.source-priority-row { display:flex; align-items:center; gap:var(--s-4); padding:var(--s-4) 0; border-bottom:1px solid var(--c-border); }
+.priority-filters { flex-wrap:wrap; }
+.priority-date { display:flex; align-items:center; gap:var(--s-2); font-size:var(--fs-sm); }
+.priority-date input { width:150px; }
+.priority-scope { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--s-3); padding:0 var(--s-6) var(--s-3); }
+.priority-body { display:flex; min-height:0; }
+.priority-body .kanban { width:100%; }
+.kanban.kanban--single { grid-template-columns:minmax(0,1fr); }
+.kanban__col--none { background:var(--c-surface); }
+.kanban__col--none .kanban__head-icon { background:var(--c-text-3); }
+.priority-column-foot { display:flex; justify-content:space-between; align-items:center; padding:var(--s-3) var(--s-4); gap:var(--s-2); border-top:1px solid var(--c-border); }
+.priority-body .kanban__item { flex-shrink:0; text-align:left; }
+.source-priority-row .select { flex-shrink:0; }
+@media (max-width:1180px) { .priority-body .kanban__col { min-height:280px; max-height:420px; } }

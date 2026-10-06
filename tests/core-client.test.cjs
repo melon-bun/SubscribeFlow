@@ -186,18 +186,31 @@ test('private browser RPC commits a large API page, details and repeated refresh
     let inbox=await callUI(core,'listContents',[{state:'unread'}]);
     assert.equal(inbox.total,17);
     assert.ok(inbox.items.every(c=>![item.id,deferred.id,archived.id].includes(c.id)));
-    assert.deepEqual(await callUI(core,'getCounts',[]),{total:20,unread:17,read:1,deferred:1,archived:1});
+    assert.deepEqual(await callUI(core,'getCounts',[]),{total:20,unread:17,read:1,deferred:1,archived:1,high:0,medium:0,low:0,none:20});
     assert.equal((await callUI(core,'listContents',[{}])).total,20);
     // Selecting a new state clears the old one; clearing an inactive flag is harmless.
     await callUI(core,'updateContent',[deferred.id,{state:{read:true}}]);
     assert.deepEqual((await core.call('content.get',{item_id:deferred.id})).state,{read:true,archived:false,deferred:false});
-    assert.deepEqual(await callUI(core,'getCounts',[]),{total:20,unread:17,read:2,deferred:0,archived:1});
+    assert.deepEqual(await callUI(core,'getCounts',[]),{total:20,unread:17,read:2,deferred:0,archived:1,high:0,medium:0,low:0,none:20});
     await assert.rejects(callUI(core,'updateContent',[deferred.id,{state:{read:true,deferred:true}}]),e=>e.code==='INVALID_INPUT');
     await callUI(core,'updateContent',[deferred.id,{state:{deferred:false}}]);
     assert.equal((await callUI(core,'listContents',[{state:'unread'}])).total,17);
     await callUI(core,'updateContent',[deferred.id,{state:{read:false}}]);
     await callUI(core,'updateContent',[archived.id,{state:{archived:false}}]);
     assert.equal((await callUI(core,'getCounts',[])).unread,19);
+    // Priority changes remain independent from collection snapshots and processing.
+    await callUI(core,'savePrioritySettings',[{id:sub.id,priority:'high'}]);
+    assert.equal((await core.call('subscription.list'))[0].version,sub.version);
+    assert.ok((await core.call('sync.coverage',{subscription_id:sub.id})).progress.every(p=>p.compatible));
+    assert.equal((await callUI(core,'getCounts',[])).high,20);
+    await callUI(core,'updateContent',[item.id,{priority:'low'}]);
+    await callUI(core,'savePrioritySettings',[{id:sub.id,priority:'medium'}]);
+    assert.equal((await callUI(core,'getContent',[item.id])).priority,'low');
+    assert.equal((await callUI(core,'listContents',[{priority:'medium',state:'unread'}])).total,19);
+    await assert.rejects(core.call('priority.set_source',{subscription_id:sub.id,priority:true}));
+    await assert.rejects(callUI(core,'updateContent',[item.id,{priority:'urgent'}]),e=>e.code==='INVALID_INPUT');
+    await assert.rejects(callUI(core,'bulkUpdate',[[item.id,'missing'],{priority:'high'}]),e=>e.code==='NOT_FOUND');
+    assert.equal((await callUI(core,'getContent',[item.id])).priority,'low');
     job=await core.call('sync.start',{subscription_id:sub.id,mode:'detail',item_key:item.id});
     assert.equal((await wait(job.job_id)).state,'succeeded');
     assert.equal((await core.call('content.get',{item_id:item.id})).summary,'详情补充');
@@ -205,6 +218,11 @@ test('private browser RPC commits a large API page, details and repeated refresh
     job=await core.call('sync.start',{subscription_id:sub.id});
     assert.equal((await wait(job.job_id)).new_items,0);
     assert.equal((await core.call('content.get',{item_id:item.id})).state.read,true);
+    assert.equal((await callUI(core,'getContent',[item.id])).priority,'low');
+    await callUI(core,'updateContent',[item.id,{priority:null}]);
+    assert.equal((await callUI(core,'getContent',[item.id])).priority,'medium');
+    await callUI(core,'savePrioritySettings',[{id:sub.id,priority:null}]);
+    assert.equal((await callUI(core,'listContents',[{priority:'none'}])).total,20);
     assert.ok(requests.every(p=>!('url' in p) && !('script' in p)));
   },acquisition);
 });

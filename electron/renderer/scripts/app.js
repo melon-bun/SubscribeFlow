@@ -143,7 +143,8 @@
             "data-quick": f.id,
             "aria-label": f.name, title: f.name,
             onclick: function () {
-              app.filters.quick = f.id;
+              app.filters.quick = ['high','medium','low'].includes(f.id) ? 'all' : f.id;
+              app.filters.priority = ['high','medium','low'].includes(f.id) ? f.id : null;
               app.filters.channelId = null; delete app.filters.day;
               app.selectedId = null;
               navigate("inbox"); render();
@@ -396,7 +397,7 @@
       b.classList.toggle("is-active", b.dataset.nav === app.route.name && (b.dataset.nav !== "inbox" || app.filters.quick === "unread"));
     });
     document.querySelectorAll("[data-quick]").forEach(function (b) {
-      b.classList.toggle("is-active", app.route.name === "inbox" && b.dataset.quick === app.filters.quick && !app.filters.platform);
+      b.classList.toggle("is-active", app.route.name === "inbox" && (b.dataset.quick === (app.filters.priority || app.filters.quick)) && !app.filters.platform);
     });
     document.querySelectorAll("[data-platform]").forEach(function (b) {
       b.classList.toggle("is-active", b.dataset.platform === app.filters.platform);

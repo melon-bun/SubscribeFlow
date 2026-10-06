@@ -24,7 +24,9 @@ test('calendar and inbox pagination map to bounded Core queries', async () => {
   const result=await callUI(core,'listContents',[{limit:20,offset:0,from:'2026-10-01',to:'2026-10-31T23:59:59Z',state:'unread'}]);
   assert.deepEqual(received,{limit:20,offset:0,start:'2026-10-01',end:'2026-10-31T23:59:59Z',read:false,archived:false,deferred:false});
   assert.equal(result.next_offset,20);
-  await assert.rejects(callUI(core,'listContents',[{priority:'high'}]),{code:'UNSUPPORTED_OPERATION'});
+  await callUI(core,'listContents',[{priority:'high',state:'unread',limit:20,offset:20}]);
+  assert.deepEqual(received,{limit:20,offset:20,priority:'high',read:false,archived:false,deferred:false});
+  await assert.rejects(callUI(core,'listContents',[{tags:['later']}]),{code:'UNSUPPORTED_OPERATION'});
 });
 
 test('source search and resolution stay separate from confirmed creation', async () => {

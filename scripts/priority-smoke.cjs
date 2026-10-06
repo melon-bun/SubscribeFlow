@@ -1,0 +1,96 @@
+const assert = require('node:assert/strict');
+
+async function verifyPriorities({evaluate, until, click, screenshot, core, window, firstId}) {
+  const sub=(await core.call('subscription.list'))[0];
+  assert.equal((await core.call('content.list',{priority:'none'})).total,25);
+  const change=async (label,value) => evaluate(`(() => {
+    const el=document.querySelector('select[aria-label='+${JSON.stringify(JSON.stringify(label))}+']');
+    if(!el || el.disabled) throw new Error('Missing enabled select');
+    el.value=${JSON.stringify(value)}; el.dispatchEvent(new Event('change',{bubbles:true}));
+  })()`);
+  const sourceLabel='来源优先级 '+sub.name;
+  const sourceSettings=async () => {
+    await evaluate(`SF.app.navigate('channels',{tab:'priorities'})`);
+    await until(`!!document.querySelector('[data-priority-source] select')`);
+  };
+  await sourceSettings();
+  await change(sourceLabel,'high');
+  await until(`SF.app.state.counts.high===25 && document.querySelector('[data-priority-source] select')?.value==='high'`);
+  assert.equal((await core.call('subscription.list'))[0].version,sub.version);
+  await screenshot('m8-source-priorities.png');
+  await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
+  await until(`!!document.querySelector('[data-view="inbox"]') && SF.app.state.filters.quick==='unread'`);
+  await evaluate(`document.querySelector('[data-quick="all"]').click()`);
+  await until(`document.querySelectorAll('.content-card').length===20`);
+  await evaluate(`document.querySelector('[data-content-id='+${JSON.stringify(JSON.stringify(firstId))}+']').click()`);
+  await evaluate(`document.querySelector('.detail .priority-opt--low').click()`);
+  await until(`SF.app.state.counts.low===1 && document.querySelector('.detail .priority-opt--low[aria-pressed="true"]')`);
+  assert.equal((await core.call('content.get',{item_id:firstId})).state.read,true);
+  assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.priority-opt--medium .priority-opt__icon')).backgroundColor`),'rgba(0, 0, 0, 0)');
+  await screenshot('m8-content-priority.png');
+  await sourceSettings();
+  await change(sourceLabel,'medium');
+  await until(`SF.app.state.counts.medium===24 && !!document.querySelector('[data-priority-source] select')`);
+  assert.equal((await core.call('content.get',{item_id:firstId})).priority,'low');
+  await evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
+  await until(`document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===20`);
+  assert.equal(await evaluate(`document.querySelector('[data-priority-column="medium"] .count-pill').textContent`),'24');
+  await evaluate(`Array.from(document.querySelectorAll('[data-priority-column="medium"] button')).find(b=>b.textContent==='加载更多').click()`);
+  await until(`document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===24`);
+  assert.equal(await evaluate(`new Set(Array.from(document.querySelectorAll('[data-priority-item]')).map(e=>e.dataset.priorityItem)).size`),25);
+  await change('看板处理状态','read');
+  await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='0' && document.querySelector('[data-priority-column="low"] .count-pill')?.textContent==='1'`);
+  await change('看板处理状态','all');
+  await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='24'`);
+  // Unknown timestamps remain visible on the board; a day filter excludes them.
+  await evaluate(`const day=document.querySelector('[aria-label="看板发布日期"]'); day.value=SF.fmt.ymd(Date.now()); day.dispatchEvent(new Event('change',{bubbles:true}));`);
+  await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='23'`);
+  await click('重置筛选');
+  await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='24'`);
+  // Manual bulk changes affect only the selected current-page contents.
+  await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
+  await until(`!!document.querySelector('[data-view="inbox"]') && SF.app.state.filters.quick==='unread'`);
+  await evaluate(`document.querySelector('[data-quick="all"]').click()`);
+  await until(`document.querySelectorAll('.content-card').length===20`);
+  const second=await evaluate(`document.querySelectorAll('.content-card')[1].dataset.contentId`);
+  await evaluate(`document.querySelectorAll('.content-selection > [role="checkbox"]')[1].click()`);
+  await change('批量设置优先级','medium');
+  await until(`!!document.querySelectorAll('.content-card')[1] && !document.querySelector('[aria-label="批量设置优先级"]')`);
+  assert.equal((await core.call('content.get',{item_id:second})).priority_override,'medium');
+  await sourceSettings();
+  await change(sourceLabel,'high');
+  await until(`SF.app.state.counts.high===23 && SF.app.state.counts.medium===1`);
+  await evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
+  await until(`document.querySelectorAll('[data-priority-column="high"] [data-priority-item]').length===20 && document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===1`);
+  await screenshot('m8-priority-board.png');
+  await evaluate(`document.documentElement.setAttribute('data-theme','dark')`);
+  await screenshot('m8-priority-board-dark.png');
+  await evaluate(`document.documentElement.setAttribute('data-theme','light')`);
+  window.setSize(900,760);
+  await screenshot('m8-priority-board-compact.png');
+  assert.ok(await evaluate(`document.documentElement.scrollWidth<=innerWidth`));
+  await evaluate(`document.querySelector('[data-priority-column="low"]').scrollIntoView({block:'end'})`);
+  assert.ok(await evaluate(`(() => { const r=document.querySelector('[data-priority-column="low"] .priority-column-foot button').getBoundingClientRect(); return r.bottom<=innerHeight && r.top>=0; })()`));
+  window.setSize(1440,1000);
+  // One group can fail independently; retry recovers the actual persisted data.
+  await evaluate(`window.originalPriorityList=SF.app.state.client.listContents; SF.app.state.client.listContents=function(q) { if(q.priority==='medium') return Promise.reject(new Error('离线验收：分组读取失败')); return window.originalPriorityList(q); }; SF.views.overview.reset(); SF.app.renderContent()`);
+  await until(`document.querySelector('[data-priority-column="medium"]')?.textContent.includes('离线验收：分组读取失败')`);
+  await evaluate(`SF.app.state.client.listContents=window.originalPriorityList; delete window.originalPriorityList; Array.from(document.querySelectorAll('[data-priority-column="medium"] button')).find(b=>b.textContent==='重试').click()`);
+  await until(`document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===1`);
+  // Removing a source default preserves explicit content choices.
+  await sourceSettings();
+  await change(sourceLabel,'');
+  await until(`SF.app.state.counts.none===23 && SF.app.state.counts.low===1`);
+  await evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
+  await until(`!!document.querySelector('[aria-label="看板优先级"]')`);
+  await change('看板优先级','none');
+  await until(`document.querySelector('[data-priority-column="none"] .count-pill')?.textContent==='23'`);
+  await screenshot('m8-unset-priority.png');
+  await evaluate(`document.querySelector('[data-priority-column="none"] .priority-column-foot button').click()`);
+  await until(`document.querySelectorAll('.content-card').length===20 && SF.app.state.filters.priority==='none'`);
+  // Keep the remaining baseline renderer checks on their original route/scope.
+  await evaluate(`SF.app.state.filters={quick:'all',platform:null,channelId:null}; SF.app.state.channelTab='list'; SF.app.navigate('overview',{mode:'calendar'})`);
+  await until(`!!document.querySelector('.calendar-grid')`);
+  console.log(JSON.stringify({prioritySmoke:'passed',sourceInheritance:true,manualOverride:true,bulk:true,fullCounts:true,pagination:true,unknownDates:true}));
+}
+module.exports={verifyPriorities};

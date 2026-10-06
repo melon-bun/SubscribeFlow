@@ -20,6 +20,13 @@ function object(value) {
 function keys(value, allowed) {
   if (Object.keys(value).some(key => !allowed.includes(key))) unsupported('请求包含尚未接入的字段');
 }
+function contentPatch(value) {
+  const patch = object(value); keys(patch, ['state','priority']);
+  const state = object(patch.state); keys(state, ['read','archived','deferred']);
+  const result = {...state};
+  if ('priority' in patch) result.priority = patch.priority;
+  return result;
+}
 function contentDTO(item, subscriptions) {
   const sourceKey = `${item.source.channel}:${item.source.kind}:${item.source.external_id}`;
   const sub = subscriptions.find(row => row.source_id === sourceKey);
@@ -28,14 +35,14 @@ function contentDTO(item, subscriptions) {
     channelId: sub?.id ?? null, channelName: sub?.name ?? item.source.name, author: sub?.name ?? item.source.name,
     publishedAt: item.published.value, publishedPrecision: item.published.precision,
     publishedTimezone: item.published.timezone, url: item.url, thumb: item.thumbnail, cover: item.thumbnail, publishedProvenance: item.published.provenance,
-    state: item.state, priority: null, tags: [], contentHash: null,
+    state: item.state, priority: item.priority ?? null, priorityOverride: item.priority_override ?? null, sourcePriority: item.source_priority ?? null, tags: [], contentHash: null,
   };
 }
 function channelDTO(sub, descriptors = [], schedule = null) {
   const operations = descriptors.find(c => c.channel === sub.channel)?.operations || {};
   return { id: sub.id, name: sub.name, platform: sub.channel, link: sub.url,
     enabled: sub.status === 'active', status: sub.status, connectionId: sub.connection_id,
-    externalId: sub.external_id, intervalSeconds: sub.interval_seconds, syncMode:sub.sync_mode, collectItems: sub.collect_items || 0,
+    defaultPriority: sub.default_priority ?? null, externalId: sub.external_id, intervalSeconds: sub.interval_seconds, syncMode:sub.sync_mode, collectItems: sub.collect_items || 0,
     frequency: sub.sync_mode === 'automatic' ? (sub.interval_seconds % 3600 ? `每 ${sub.interval_seconds/60} 分钟` : `每 ${sub.interval_seconds/3600} 小时`) : '手动刷新', schedule,
     capabilities: { canRefresh: !!operations.list_items?.supported,
       canBackfill: !!operations.list_items?.supported && operations.list_items.pagination !== 'none',
@@ -62,25 +69,37 @@ async function callUI(core, name, args) {
       return { user: { name: '本地用户' }, now: Date.now(), isDemo: false,
         capabilities: { canRefresh: channels.some(c => c.operations.list_items?.supported),
           canBackfill: channels.some(c => c.operations.list_items?.supported && c.operations.list_items.pagination !== 'none'),
-          canCancel: true, canManageChannels: true, canManagePriorities: false, canManageRules: false, canBookmark: false, canManageTags: false, canSchedule: true },
+          canCancel: true, canManageChannels: true, canManagePriorities: true, canManageRules: false, canBookmark: false, canManageTags: false, canSchedule: true },
         channels, connections, scheduler,
         connection: { state: latest?.state ?? 'unknown', detail: latest?.reason ?? '尚未检查采集环境',
           dependency: latest?.dependency, authentication: latest?.authentication, actions: latest?.actions || [] } };
     }
     case 'getCounts': {
-      const queries = [{}, INBOX_FILTER, {read: true}, {deferred: true}, {archived: true}];
+      const queries = [{}, INBOX_FILTER, {read: true}, {deferred: true}, {archived: true}, ...['high','medium','low','none'].map(priority => ({priority}))];
       const results = await Promise.all(queries.map(query => call('content.list', { ...query, limit: 1 })));
-      return Object.fromEntries(['total', 'unread', 'read', 'deferred', 'archived'].map((key, i) => [key, results[i].total]));
+      return Object.fromEntries(['total', 'unread', 'read', 'deferred', 'archived', 'high', 'medium', 'low', 'none'].map((key, i) => [key, results[i].total]));
     }
     case 'listPlatforms': {
       const channels = await call('channel.list');
       return Promise.all(channels.map(async c => ({ id: c.channel, count: (await call('content.list', {channel: c.channel, limit: 1})).total })));
     }
+    case 'listPriorities': {
+      const levels = ['high','medium','low','none'];
+      return Promise.all(levels.map(async id => ({id, count: (await callUI(core, 'listContents', [{...object(first), priority:id, limit:1, offset:0}])).total})));
+    }
+    case 'getPrioritySettings':
+      return (await subscriptions()).map(sub => ({id:sub.id, name:sub.name, platform:sub.channel, status:sub.status, priority:sub.default_priority ?? null}));
+    case 'savePrioritySettings': {
+      // One source per save: a failed request never partially applies a list.
+      const setting = object(first); keys(setting, ['id','priority']);
+      if (!('priority' in setting)) throw new Error('缺少优先级');
+      return channelDTO(await call('priority.set_source', {subscription_id:setting.id, priority:setting.priority}), await call('channel.list'));
+    }
     case 'listContents': {
       const query = object(first);
-      keys(query, ['platform', 'channelId', 'state', 'keyword', 'limit', 'offset', 'from', 'to']);
+      keys(query, ['platform', 'channelId', 'state', 'keyword', 'limit', 'offset', 'from', 'to', 'priority']);
       const params = {};
-      for (const [front, back] of [['platform', 'channel'], ['keyword', 'query'], ['limit', 'limit'], ['offset', 'offset'], ['from', 'start'], ['to', 'end']]) {
+      for (const [front, back] of [['platform', 'channel'], ['keyword', 'query'], ['limit', 'limit'], ['offset', 'offset'], ['from', 'start'], ['to', 'end'], ['priority', 'priority']]) {
         if (query[front] != null && query[front] !== '') params[back] = query[front];
       }
       if (query.state === 'unread') Object.assign(params, INBOX_FILTER);
@@ -100,12 +119,11 @@ async function callUI(core, name, args) {
     case 'getContent':
       return contentDTO(await call('content.get', {item_id: first}), await subscriptions());
     case 'updateContent': {
-      const patch = object(second); keys(patch, ['state']);
-      return contentDTO(await call('content.update', {item_id: first, patch: object(patch.state)}), await subscriptions());
+      const patch = contentPatch(second);
+      return contentDTO(await call('content.update', {item_id: first, patch}), await subscriptions());
     }
     case 'bulkUpdate': {
-      const patch = object(second); keys(patch, ['state']);
-      return call('content.bulk_update', {item_ids: first, patch: object(patch.state)});
+      return call('content.bulk_update', {item_ids: first, patch: contentPatch(second)});
     }
     case 'listChannels':
     case 'listCreators': {

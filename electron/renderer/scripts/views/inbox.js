@@ -6,6 +6,7 @@
   function query(app) {
     var q = {limit: 20, offset: offset};
     if (app.filters.quick !== 'all') q.state = app.filters.quick;
+    if (app.filters.priority) q.priority = app.filters.priority;
     if (app.filters.platform) q.platform = app.filters.platform;
     if (app.filters.channelId) q.channelId = app.filters.channelId;
     if (app.search) q.keyword = app.search;
@@ -46,6 +47,7 @@
             h('span', {text:SF.catalog.platform(p.id).name}), h('span.chip__count', {text:String(p.count || 0)}));
         }),
         app.filters.channelId || app.filters.day ? ui.btn('清除来源 / 日期筛选', {onClick:function () { app.filters.channelId = null; delete app.filters.day; SF.app.render(); }}) : null));
+    chips.appendChild(ui.select([{value:'',label:'全部优先级'}].concat(['high','medium','low','none'].map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), app.filters.priority || '', function(value) { app.filters.priority=value || null; SF.app.render(); }, {ariaLabel:'筛选优先级'}));
     var body;
     if (cache.error) body = ui.state({icon:'alert', title:'内容读取失败', desc:cache.error.message, actions:[{label:'重试', onClick:function () { cache = {}; SF.app.renderContent(); }}]});
     else if (!cache.loaded) body = ui.skeletonCards(4);
@@ -66,7 +68,7 @@
       ['已读', '稍后处理', '归档'].map(function (label, i) { return ui.btn(label, {onClick:function () {
         var ids = Array.from(selected), state = {}; state[['read','deferred','archived'][i]] = true;
         SF.app.act('bulk', async function () { await app.client.bulkUpdate(ids, {state:state}); selected.clear(); await SF.app.refreshData(true); });
-      }}); }), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
+      }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复跟随来源'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true); }); },{ariaLabel:'批量设置优先级'}), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
     var pager = cache.loaded && !cache.error ? h('div.inbox__toolbar', null,
       h('span.muted', {text:'共 ' + cache.total + ' 条 · 第 ' + (Math.floor(offset / 20) + 1) + ' 页'}),
       ui.btn('上一页', {disabled:offset === 0, onClick:function () { offset = Math.max(0, offset - 20); cache = {}; selected.clear(); SF.app.renderContent(); }}),
@@ -80,6 +82,19 @@
   function update(app, id, state) {
     return SF.app.act('content:' + id, async function () { await app.client.updateContent(id, {state:state}); await SF.app.refreshData(true); });
   }
+  function priorityControls(app,item,repaint) {
+    return h('div.detail__section',null,h('div.detail__section-title',{text:'优先级'}),
+      h('p.field__hint',{text:item.priorityOverride ? '此内容已单独设置，不受来源默认值变化影响。' : '跟随来源 · 当前' + SF.catalog.priority(item.priority).name}),
+      h('div.priority-grid',{'aria-label':'内容优先级'}, SF.catalog.PRIORITY_ORDER.map(function(id) {
+        var meta=SF.catalog.priority(id);
+        return h('button.priority-opt.priority-opt--'+id+(item.priorityOverride===id?'.is-active':''),{type:'button','aria-pressed':String(item.priorityOverride===id),onclick:function() { save(id); }},
+          h('span.priority-opt__icon',null,icon(meta.icon,14)),h('span.priority-opt__name',{text:meta.name}));
+      })),
+      ui.btn('跟随来源',{size:'sm',disabled:!item.priorityOverride,onClick:function() { save(null); }}));
+    function save(priority) {
+      SF.app.act('content:'+item.id,async function() { var fresh=await app.client.updateContent(item.id,{priority:priority}); if(repaint) repaint(fresh); await SF.app.refreshData(true); });
+    }
+  }
   function detailBody(app, item, repaint) {
     var canDetail = app.session.channels.some(function (c) { return c.channel === item.platform && c.operations.get_item_detail && c.operations.get_item_detail.supported; });
     return h('div.detail-preview', null,
@@ -88,6 +103,7 @@
       h('div.detail__byline', null, ui.avatar(item.channelName, null, 'md'), h('div.detail__byline-text', null,
         h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform)), h('div.detail__byline-time', {text:fmt.publication(item)}))),
       h('div.detail__section', null, h('div.detail__section-title', {text:'内容摘要'}), h('p.detail__summary', {text:item.summary || '此内容尚未提供摘要，可补充详情或打开原文。'})),
+      priorityControls(app,item,repaint),
       h('div.detail__section', null, h('div.detail__section-title', {text:'整理内容（单选）'}),
         h('p.field__hint', {text:'选择一项会取消其他状态，再次点击可取消。'}),
         h('div.op-grid', {role:'group','aria-label':'整理内容（单选）'},

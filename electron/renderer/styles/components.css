@@ -1553,7 +1553,8 @@ textarea.input {
 .priority-opt--high .priority-opt__icon {
   background: var(--c-high);
 }
-.priority-opt--mid .priority-opt__icon {
+.priority-opt--mid .priority-opt__icon,
+.priority-opt--medium .priority-opt__icon {
   background: var(--c-mid);
 }
 .priority-opt--low .priority-opt__icon {
@@ -1573,7 +1574,8 @@ textarea.input {
   color: var(--c-high);
   background: var(--c-high-bg);
 }
-.priority-opt--mid.is-active {
+.priority-opt--mid.is-active,
+.priority-opt--medium.is-active {
   color: var(--c-mid);
   background: var(--c-mid-bg);
 }

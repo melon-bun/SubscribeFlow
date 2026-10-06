@@ -99,8 +99,10 @@ async function main() {
 db=sqlite3.connect(sys.argv[1]);db.executescript('''
 ALTER TABLE content_states RENAME TO old_states;
 CREATE TABLE content_states(content_id TEXT PRIMARY KEY REFERENCES contents(id) ON DELETE CASCADE,read INTEGER NOT NULL DEFAULT 0,archived INTEGER NOT NULL DEFAULT 0,deferred INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL);
-INSERT INTO content_states SELECT * FROM old_states;
+INSERT INTO content_states SELECT content_id,read,archived,deferred,updated_at FROM old_states;
 DROP TABLE old_states;
+ALTER TABLE subscriptions DROP COLUMN collect_items;
+ALTER TABLE subscriptions DROP COLUMN default_priority;
 PRAGMA user_version=2;
 ''');db.execute('UPDATE content_states SET read=1,archived=1 WHERE content_id=?',(sys.argv[2],));db.commit();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id],{encoding:'utf8'});
     assert.equal(legacy.status,0,legacy.stderr);
@@ -110,7 +112,7 @@ PRAGMA user_version=2;
     assert.equal(await app.evaluate('SF.app.state.source'),'real');
     assert.equal((await call('content.list')).total,3);
     assert.deepEqual((await call('content.get',{item_id:items[0].id})).state,{read:false,archived:true,deferred:false});
-    assert.ok(fs.existsSync(path.join(dataDir,'subscribe-flow.before-v3.backup')));
+    assert.ok(fs.existsSync(path.join(dataDir,'subscribe-flow.before-v5.backup')));
     await until(()=>app.evaluate('document.querySelectorAll(".content-card").length===2'));
     const selected=await app.evaluate('SF.app.state.selectedId');
     await app.evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()==='稍后处理').click()`);
@@ -122,6 +124,16 @@ PRAGMA user_version=2;
     assert.equal((await call('schedule.list'))[0].next_due,null);
     await app.page.send('Page.enable');
     fs.writeFileSync(path.join(output,'packaged-inbox.png'),Buffer.from((await app.page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    // M8 uses the frozen Core, production bridge and real priority board.
+    const priorVersion=(await call('subscription.list'))[0].version;
+    await call('priority.set_source',{subscription_id:sub.id,priority:'high'});
+    await call('content.update',{item_id:selected,patch:{priority:'low'}});
+    assert.equal((await call('subscription.list'))[0].version,priorVersion);
+    assert.equal((await call('content.list',{priority:'high'})).total,2);
+    await app.evaluate(`SF.app.state.filters={quick:'all',platform:null,channelId:null}; SF.app.navigate('overview',{mode:'priority'})`);
+    await until(()=>app.evaluate(`document.querySelector('[data-priority-column="high"] .count-pill')?.textContent==='2' && document.querySelector('[data-priority-column="low"] .count-pill')?.textContent==='1'`));
+    fs.writeFileSync(path.join(output,'packaged-priorities.png'),Buffer.from((await app.page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    result.priorityBoard=true;result.priorityInheritance=true;
     // Find only the frozen child of the test-launched app; never touch another instance.
     const rows=spawnSync('/bin/ps',['-axo','pid=,ppid=,comm='],{encoding:'utf8'}).stdout.split('\n');
     const child=rows.map(r=>r.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/)).find(m=>m&&Number(m[2])===app.pid&&path.basename(m[3])===path.basename(executable));
@@ -136,7 +148,9 @@ PRAGMA user_version=2;
     assert.equal((await call('content.list')).total,3);
     assert.equal((await call('content.get',{item_id:selected})).state.deferred,true);
     assert.equal((await call('subscription.list'))[0].sync_mode,'manual');
-    result.appRestart=true;
+    assert.equal((await call('content.get',{item_id:selected})).priority,'low');
+    assert.equal((await call('subscription.list'))[0].default_priority,'high');
+    result.priorityRestart=true;result.appRestart=true;
     await app.close();app=null;
     // Fault injection only alters this disposable copy of the package.
     fs.renameSync(executable,executable+'.removed');

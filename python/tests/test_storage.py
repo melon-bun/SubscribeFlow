@@ -88,7 +88,7 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(repo.query_contents()["total"], 1)
             repo.recover_interrupted()
             self.assertEqual(repo.get_job(job["id"])["state"], "interrupted")
-            self.assertEqual(restored.connection.execute("PRAGMA user_version").fetchone()[0], 4)
+            self.assertEqual(restored.connection.execute("PRAGMA user_version").fetchone()[0], 5)
         finally:
             restored.close()
 
@@ -127,7 +127,7 @@ class StorageTests(unittest.TestCase):
             self.assertEqual((sub['sync_mode'],sub['interval_seconds']), ('manual',86400))
             self.assertFalse(repo.get_content('item')['state']['read'])
             self.assertTrue(repo.get_content('item')['state']['deferred'])
-            with sqlite3.connect(legacy_path.with_suffix('.before-v4.backup')) as backup:
+            with sqlite3.connect(legacy_path.with_suffix('.before-v5.backup')) as backup:
                 self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0],1)
                 self.assertEqual(backup.execute('SELECT interval_seconds FROM subscriptions').fetchone()[0],3600)
         finally:
@@ -170,7 +170,7 @@ class StorageTests(unittest.TestCase):
             for i, (read, archived, deferred) in enumerate(combinations):
                 self.assertEqual(repo.get_content(str(i))['state'], {
                     'read':bool(read and not archived and not deferred), 'archived':bool(archived), 'deferred':bool(deferred and not archived)})
-            with sqlite3.connect(legacy_path.with_suffix('.before-v4.backup')) as backup:
+            with sqlite3.connect(legacy_path.with_suffix('.before-v5.backup')) as backup:
                 self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0],2)
                 self.assertEqual(backup.execute('SELECT read,archived,deferred FROM content_states ORDER BY CAST(content_id AS INTEGER)').fetchall(),combinations)
         finally:
@@ -197,7 +197,7 @@ class StorageTests(unittest.TestCase):
             unchanged.execute("UPDATE contents SET title='After failed upgrade'")
         migrated = Database(legacy_path)
         migrated.close()
-        with sqlite3.connect(legacy_path.with_suffix('.before-v4.backup')) as backup:
+        with sqlite3.connect(legacy_path.with_suffix('.before-v5.backup')) as backup:
             self.assertEqual(backup.execute('SELECT title FROM contents').fetchone()[0], 'Original')
             self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0], 1)
-        self.assertEqual(len(list(legacy_path.parent.glob('failed-upgrade.before-v4.*.backup'))), 1)
+        self.assertEqual(len(list(legacy_path.parent.glob('failed-upgrade.before-v5.*.backup'))), 1)
