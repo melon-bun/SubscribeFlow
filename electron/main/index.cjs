@@ -63,9 +63,11 @@ async function start() {
   powerMonitor.on('resume', () => { suspended = false; updatePower(); });
   core.on('status', status => { diagnostic('core.status', status); lastStatus = status; send('core.status', status); if (status.state === 'ready' && suspended) updatePower(); });
   core.on('notification', (event, data) => {
-    if (!['sync.changed', 'content.changed', 'subscription.changed', 'scheduler.changed'].includes(event)) return;
+    if (!['sync.changed', 'content.changed', 'subscription.changed', 'scheduler.changed', 'tags.changed'].includes(event)) return;
     send(event, data);
-    const aliases = {'sync.changed': ['run', 'runs'], 'content.changed': ['content'], 'subscription.changed': ['channels'], 'scheduler.changed':['channels']};
+    // 标签变动同时影响侧栏计数：内容收件箱据此重取标签目录，
+    // 否则目录被标记为已加载且为空，新建标签在收件箱里会看不到。
+    const aliases = {'sync.changed': ['run', 'runs'], 'content.changed': ['content'], 'subscription.changed': ['channels'], 'scheduler.changed':['channels'], 'tags.changed': ['content']};
     for (const alias of aliases[event]) send(alias, null); // Invalidation; consumers re-query durable state.
   });
 

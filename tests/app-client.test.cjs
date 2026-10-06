@@ -140,3 +140,41 @@ test('omitting pageBudget lets the Core derive it; an explicit one is range chec
     await assert.rejects(callUI(core,'startChannelRun',['s',{pageBudget:bad}]),/分页预算/);
   }
 });
+
+test('every event the Core emits is forwarded, and every subscribed event is exposed', () => {
+  const fs=require('node:fs');
+  const path=require('node:path');
+  const root=path.resolve(__dirname,'..');
+  // Core 里实际 emit 出去的事件名。这张清单是真实的，漏转发就是静默失效。
+  const emitted=new Set();
+  const walk=dir=>{
+    for(const entry of fs.readdirSync(dir,{withFileTypes:true})) {
+      const full=path.join(dir,entry.name);
+      if(entry.isDirectory()) walk(full);
+      else if(entry.name.endsWith('.py')) {
+        for(const match of fs.readFileSync(full,'utf8').matchAll(/\.emit\(\s*["']([a-z_.]+)["']/g)) emitted.add(match[1]);
+      }
+    }
+  };
+  walk(path.join(root,'python/src/subscribe_flow'));
+  assert.ok(emitted.size >= 5, `未从 Core 解析到事件：${[...emitted]}`);
+
+  // 主进程按白名单转发：这里漏掉任何一个，对应界面的缓存就会静默停在旧值。
+  const main=fs.readFileSync(path.join(root,'electron/main/index.cjs'),'utf8');
+  // 只认转发白名单本身：别名字符串表里也出现同样的事件名，不能算作已转发。
+  const allowBlock=main.match(/if \(!\[([^\]]+)\]\.includes\(event\)\) return;/);
+  assert.ok(allowBlock, '未能从主进程解析出事件转发白名单');
+  const forwarded=new Set([...allowBlock[1].matchAll(/'([a-z_.]+)'/g)].map(m=>m[1]));
+  const missed=[...emitted].filter(e=>!forwarded.has(e));
+  assert.deepEqual(missed,[], `Core 发出但主进程未转发：${missed}`);
+
+  // 渲染层订阅的事件必须在 preload 里开放，否则订阅会抛「事件订阅无效」。
+  const app=fs.readFileSync(path.join(root,'electron/renderer/scripts/app.js'),'utf8');
+  const subscribed=new Set([...app.matchAll(/client\.on\(\s*["']([a-z_.]+)["']/g)].map(m=>m[1]));
+  const preload=fs.readFileSync(path.join(root,'electron/preload/index.cjs'),'utf8');
+  const eventBlock=preload.match(/events = new Set\(\[([^\]]+)\]/);
+  assert.ok(eventBlock, '未能从 preload 解析出 events 白名单');
+  const exposed=new Set([...eventBlock[1].matchAll(/'([a-z_.]+)'/g)].map(m=>m[1]));
+  const blocked=[...subscribed].filter(e=>!exposed.has(e));
+  assert.deepEqual(blocked,[], `渲染层在订阅但 preload 未开放：${blocked}`);
+});

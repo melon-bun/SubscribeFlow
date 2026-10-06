@@ -95,7 +95,7 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
 
   await evaluate(`Array.from(document.querySelectorAll('[data-view="tags"] tbody tr'))
     .find(r => r.textContent.includes('旅行')).click()`);
-  await until(`!!document.querySelector('[data-tag-editor=' + ${JSON.stringify(travel.id)} + ']')`);
+  await until(`!!document.querySelector('[data-tag-editor="' + ${JSON.stringify(travel.id)} + '"]')`);
   await setValue(`[data-tag-editor] [aria-label="标签名称"]`, '出行');
   await clickWhenReady('保存修改');
   await until(`!!document.querySelector('[data-view="tags"] tbody tr')`);
@@ -115,13 +115,13 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   await evaluate(`document.querySelector('[data-content-id=${JSON.stringify(itemId)}]').click()`);
   await until(`!!document.querySelector('.detail')`);
   await until(`!!document.querySelector(${JSON.stringify(addPicker)})`);
-  await until(`['${travel.id}','${food.id}'].every(id => !!document.querySelector('.detail [aria-label="为这条内容添加标签"] option[value=' + id + ']'))`);
+  await until(`['${travel.id}','${food.id}'].every(id => !!document.querySelector('.detail [aria-label="为这条内容添加标签"] option[value="' + id + '"]'))`);
   await setValue(addPicker, travel.id);
   await until(`document.querySelector('.detail')?.textContent.includes('出行')`);
   assert.deepEqual((await core.call('content.get', {item_id: itemId})).tags.map(t => [t.name, t.origin]),
     [['出行', 'manual']], '人工写入的关联来源必须是 manual');
 
-  await until(`!!document.querySelector('.detail [aria-label="为这条内容添加标签"] option[value=${JSON.stringify(food.id)}]')`);
+  await until(`!!document.querySelector('.detail [aria-label="为这条内容添加标签"] option[value="${food.id}"]')`);
   await setValue(addPicker, food.id);
   await until(`document.querySelectorAll('.detail .tag-chip').length === 2`);
   await evaluate(`document.querySelector('.detail [aria-label="关闭对话框"]')?.click()`);
@@ -186,7 +186,7 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
 
   await evaluate(`Array.from(document.querySelectorAll('[data-view="tags"] tbody tr'))
     .find(r => r.textContent.includes('美食')).click()`);
-  await until(`!!document.querySelector('[data-tag-editor=' + ${JSON.stringify(food.id)} + ']')`);
+  await until(`!!document.querySelector('[data-tag-editor="' + ${JSON.stringify(food.id)} + '"]')`);
   await clickWhenReady('删除标签');
   await until(`!!document.querySelector('.dialog') && /1 条内容/.test(document.querySelector('.dialog').textContent)`,
     '删除确认必须告知会摘掉多少条内容');

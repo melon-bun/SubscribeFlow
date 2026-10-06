@@ -390,6 +390,21 @@ class TagTests(unittest.TestCase):
 
     # ------------------------------------------------- 事件
 
+    def test_every_mutation_emits_tags_changed(self):
+        # 主进程按事件名白名单转发，漏掉任何一个都会让别处的缓存停在旧值。
+        seen = []
+        service = TagService(self.repo, lambda name, data: seen.append(name))
+        travel = service.create('旅行')
+        service.update(travel['id'], name='出行')
+        service.set_enabled(travel['id'], False)
+        service.set_content(self.item.key, [travel['id']])
+        service.bulk_set([self.item.key], [travel['id']])
+        service.remove(travel['id'])
+        # 打标与批量打标同样要发：使用次数变了，标签视图的使用量条依赖它。
+        # create/update/enable/tagging/bulk/removal 都算标签变动；删除另发 content.changed。
+        self.assertEqual(seen.count('tags.changed'), 6)
+        self.assertEqual(seen.count('content.changed'), 3)
+
     def test_tag_changes_emit_refresh_events(self):
         travel = self.make_tags('旅行')[0]
         self.tags.update(travel['id'], name='出行')
@@ -397,7 +412,8 @@ class TagTests(unittest.TestCase):
         self.tags.set_content(self.item.key, [travel['id']])
         self.tags.remove(travel['id'])
         names = [name for name, _ in self.events]
-        self.assertEqual(names.count('tags.changed'), 4)
+        # 建标签、改名、停用、删除各一次，外加给内容打标时的一次。
+        self.assertEqual(names.count('tags.changed'), 5)
         self.assertIn('content.changed', names)
 
 

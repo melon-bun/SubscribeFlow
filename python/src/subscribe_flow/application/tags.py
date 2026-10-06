@@ -76,6 +76,8 @@ class TagService:
     def set_content(self, item_id, tag_ids):
         result = self.repository.set_content_tags([item_id], validate_tag_ids(tag_ids))
         self.emit("content.changed", {"ids": [item_id]})
+        # 打标会改变标签的使用次数，标签视图的使用量条依赖这个值。
+        self.emit("tags.changed", {"ids": list(result["tags"])})
         return self.repository.get_content(item_id)
 
     def bulk_set(self, item_ids, tag_ids):
@@ -83,6 +85,7 @@ class TagService:
             raise ChannelError("INVALID_INPUT", "content.bulk_set_tags", "每次需指定 1 到 100 条内容")
         result = self.repository.set_content_tags(item_ids, validate_tag_ids(tag_ids))
         self.emit("content.changed", {"ids": list(dict.fromkeys(item_ids))})
+        self.emit("tags.changed", {"ids": list(tag_ids)})
         return result
 
     # ------------------------------------------------------------ 识别边界
