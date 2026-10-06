@@ -4,6 +4,8 @@
 
 ## 直接运行
 
+**二期开发请使用下方的开发启动方式。二期全部完成后再统一打包；当前 `dist/` 中间产物不代表最新源码，不作为本轮正式交付。**
+
 打开 `dist/Subscribe Flow-darwin-x64/Subscribe Flow.app`，或解压 `dist/Subscribe-Flow-0.1.0-mac-x64.zip` 后把应用移到“应用程序”。
 当前交付 macOS Intel 本机版本，内置 Python，无需开发终端、外部 Chrome、OpenCLI 或 Node。
 安装、数据备份、恢复和适用范围见 [M7 交付说明](docs/M7_DELIVERY.md)。

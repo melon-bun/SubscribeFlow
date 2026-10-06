@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 async function verifyPriorities({evaluate, until, click, screenshot, core, window, firstId}) {
   const sub=(await core.call('subscription.list'))[0];
   assert.equal((await core.call('content.list',{priority:'none'})).total,25);
+  assert.equal(await evaluate(`SubscribeFlow.call('priority.set_source',{subscription_id:${JSON.stringify(sub.id)},priority:null}).then(s=>s.id)`),sub.id);
+  assert.equal(await evaluate(`SubscribeFlow.call('os.system',{}).then(()=>false,()=>true)`),true);
   const change=async (label,value) => evaluate(`(() => {
     const el=document.querySelector('select[aria-label='+${JSON.stringify(JSON.stringify(label))}+']');
     if(!el || el.disabled) throw new Error('Missing enabled select');
@@ -64,6 +66,12 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   await until(`document.querySelectorAll('[data-priority-column="high"] [data-priority-item]').length===20 && document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===1`);
   await screenshot('m8-priority-board.png');
   await evaluate(`document.documentElement.setAttribute('data-theme','dark')`);
+  await evaluate(`SF.ui.toast('深色主题优先级已保存')`);
+  assert.ok(await evaluate(`(() => {
+    const style=getComputedStyle(document.querySelector('.toast-layer .toast:last-child'));
+    const luminance=rgb=>rgb.match(/[0-9.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4);}).reduce((s,v,i)=>s+v*[0.2126,0.7152,0.0722][i],0);
+    const a=luminance(style.color), b=luminance(style.backgroundColor); return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)>=4.5;
+  })()`));
   await screenshot('m8-priority-board-dark.png');
   await evaluate(`document.documentElement.setAttribute('data-theme','light')`);
   window.setSize(900,760);

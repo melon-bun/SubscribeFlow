@@ -1309,7 +1309,7 @@ textarea.input {
   padding: var(--s-4) var(--s-5);
   border-radius: var(--r-md);
   background: var(--c-text);
-  color: #fff;
+  color: var(--c-bg);
   font-size: var(--fs-cap);
   box-shadow: var(--sh-3);
   animation: sf-rise var(--dur-2) var(--ease);
