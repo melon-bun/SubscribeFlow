@@ -86,6 +86,38 @@
     return parent;
   }
 
+  /** 保存实际滚动容器的状态，加载占位不覆盖上一次列表位置。 */
+  function renderWithScroll(parent, children, positions) {
+    function containers() {
+      var nodes = Array.from(parent.querySelectorAll('.scroll-y'));
+      if (parent.matches('.scroll-y')) nodes.unshift(parent);
+      var occurrences = {};
+      return nodes.map(function (node) {
+        var scope = node.closest('[data-scroll-scope]');
+        var name = node.dataset.scrollKey || node.className;
+        var base = JSON.stringify([scope ? scope.dataset.scrollScope : '', name]);
+        var index = occurrences[base] || 0;
+        occurrences[base] = index + 1;
+        return {node: node, key: base + ':' + index};
+      });
+    }
+    containers().forEach(function (entry) {
+      if (entry.node.dataset.scrollReady === 'false') return;
+      positions.delete(entry.key);
+      positions.set(entry.key, {top: entry.node.scrollTop, left: entry.node.scrollLeft});
+    });
+    // 只保存少量界面状态，避免长期切换筛选累积无限历史。
+    while (positions.size > 100) positions.delete(positions.keys().next().value);
+    render(parent, children);
+    containers().forEach(function (entry) {
+      var position = positions.get(entry.key);
+      if (!position || entry.node.dataset.scrollReady === 'false') return;
+      entry.node.scrollTop = position.top;
+      entry.node.scrollLeft = position.left;
+    });
+    return parent;
+  }
+
   /** 由 SVG 字符串创建节点（图标全部走这里） */
   function svg(markup) {
     var wrap = document.createElement("div");
@@ -110,5 +142,5 @@
     }
   }
 
-  SF.dom = { h: h, render: render, svg: svg, trapFocus: trapFocus, append: append };
+  SF.dom = { h: h, render: render, renderWithScroll: renderWithScroll, svg: svg, trapFocus: trapFocus, append: append };
 })(window);

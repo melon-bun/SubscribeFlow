@@ -181,7 +181,7 @@
     var contents;
     if(group.error && !group.items) contents=ui.state({icon:'alert',title:'读取失败',desc:group.error.message,actions:[{label:'重试',onClick:function() { board[id]={}; SF.app.renderContent(); }}]});
     else if(!group.loaded) contents=h('p.kanban__empty',{text:'正在载入…'});
-    else contents=h('div.kanban__list.scroll-y',null,
+    else contents=h('div.kanban__list.scroll-y',{'data-scroll-key':'priority:' + id},
       (group.items||[]).length ? group.items.map(function(item) { return h('button.kanban__item',{type:'button','data-priority-item':item.id,onclick:function() { openDetail(app,item); }},
         h('div.kanban__item-head',null,item.cover?h('div.kanban__item-thumb',null,h('img',{src:item.cover,alt:'',loading:'lazy'})):null,h('div.kanban__item-title',{text:item.title})),
         h('div.kanban__item-author',null,ui.avatar(item.channelName),h('span',{text:item.channelName}),ui.platformTag(item.platform)),
@@ -315,7 +315,7 @@
 
   function buildDayPanel(app,byDay) {
     var key=app.selectedDate, day=byDay[key] || {total:0}, items=dayCache.items || [];
-    var list=h('div.day-panel__list.scroll-y');
+    var list=h('div.day-panel__list.scroll-y',{'data-scroll-key':'day:' + key,'data-scroll-ready':String(!!dayCache.loaded)});
     if(dayCache.error && !items.length) {
       list.appendChild(ui.state({icon:'alert',title:'当日内容读取失败',desc:dayCache.error.message,actions:[{label:'重试当日内容',onClick:function() { dayCache={}; SF.app.renderContent(); }}]}));
     } else if(!dayCache.loaded) list.appendChild(ui.state({icon:'clock',title:'正在载入当日内容…'}));
@@ -334,8 +334,9 @@
 
   function openDetail(app, item) {
     var closed = false;
+    var positions = new Map();
     var layer = ui.dialog({title:'内容详情',wide:true,body:ui.state({icon:'clock',title:'正在载入详情…'}),onClose:function () { closed=true; }});
-    function repaint(fresh) { if (!closed) SF.dom.render(layer.el.querySelector('.dialog__body'), SF.views.inbox.detailBody(app,fresh,repaint)); }
+    function repaint(fresh) { if (!closed) SF.dom.renderWithScroll(layer.el.querySelector('.dialog__body'), SF.views.inbox.detailBody(app,fresh,repaint), positions); }
     app.client.getContent(item.id).then(repaint).catch(function (err) { if(!closed) SF.dom.render(layer.el.querySelector('.dialog__body'),ui.state({icon:'alert',title:'详情读取失败',desc:err.message})); });
   }
   SF.views = SF.views || {};

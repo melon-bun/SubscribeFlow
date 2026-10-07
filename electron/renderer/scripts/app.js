@@ -13,6 +13,7 @@
   var icon = SF.icon;
   var fmt = SF.fmt;
   var catalog = SF.catalog;
+  var scrollPositions = new Map();
 
   /* ---------------- 侧栏筛选定义 ---------------- */
 
@@ -272,12 +273,12 @@
   function render() {
     var root = document.getElementById("app");
     if (!root) return;
-    SF.dom.render(root, [
+    SF.dom.renderWithScroll(root, [
       h("div.app", null, [
         buildSidebar(),
         h("div.shell", null, buildTopbar(), h("div.shell__body", null, buildShellBody())),
       ]),
-    ]);
+    ], scrollPositions);
     syncNavState();
   }
 
@@ -381,6 +382,9 @@
     else view = SF.views.inbox;
 
     var result = view.render(app);
+    var main = result && result.main || result;
+    if (main) main.dataset.scrollScope = JSON.stringify([app.route.name, app.filters, app.search,
+      app.overviewMode, app.calendarMonth, app.channelTab, app.tagTab]);
     if (result && result.main) {
       app.contentEl = result.main;
       return result;
@@ -393,7 +397,7 @@
     var host = document.querySelector(".shell__body");
     if (!host) return;
     SF.tooltip.hide(); // 锚点会被整体替换，旧提示要跟着收掉
-    SF.dom.render(host, buildShellBody());
+    SF.dom.renderWithScroll(host, buildShellBody(), scrollPositions);
   }
 
   function buildShellBody() {
@@ -506,7 +510,7 @@
     var sidebar = document.querySelector(".sidebar");
     if (!sidebar) return;
     var fresh = buildSidebar();
-    sidebar.parentNode.replaceChild(fresh, sidebar);
+    SF.dom.renderWithScroll(sidebar, Array.from(fresh.childNodes), scrollPositions);
     syncNavState();
   }
 

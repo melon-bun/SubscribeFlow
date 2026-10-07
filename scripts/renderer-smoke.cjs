@@ -153,6 +153,7 @@ async function verify({window, core, root, mode}) {
     await until(`!!document.querySelector('.detail-preview') && !!document.querySelector('.content-card')`);
   }
   await screenshot(mode==='live'?'m5-live-inbox.png':'m5-offline-inbox.png');
+  if(mode==='offline') await require('./list-state-smoke.cjs').verifyListState({evaluate,until,click,screenshot,core,window});
   const firstId=await evaluate('SF.app.state.selectedId');
   const total=(await core.call('content.list',{limit:1})).total;
   const card=id=>'.content-card[data-content-id=' + JSON.stringify(id) + ']';

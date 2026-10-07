@@ -3,6 +3,7 @@
   'use strict';
   var SF = global.SF, h = SF.dom.h, ui = SF.ui, fmt = SF.fmt, icon = SF.icon;
   var cache = {}, offset = 0, queryKey = '', selected = new Set();
+  var previousIds = [], selectLast = false;
   /* 标签目录单独缓存：筛选面板与详情编辑器都要用，不该跟着内容列表一起失效。 */
   var tagCache = {}, tagPanelOpen = false;
   /* 后端 content.bulk_set_tags 的硬上限。界面先拦一道，好过只丢一个后端错误码上来。 */
@@ -72,17 +73,29 @@
 
   function render(app) {
     var key = JSON.stringify([app.filters, app.search]);
-    if (key !== queryKey) { queryKey = key; offset = 0; cache = {}; selected.clear(); }
+    if (key !== queryKey) { queryKey = key; offset = 0; cache = {}; selected.clear(); previousIds = []; selectLast = false; }
     if (!cache.loaded && !cache.loading) {
       var current = cache; current.loading = true;
       app.client.listContents(query(app)).then(function (r) {
         if (cache !== current) return;
         if (!r.items.length && offset) {
-          offset = 0;
+          offset = r.total ? Math.floor((r.total - 1) / 20) * 20 : 0;
+          selectLast = true;
           if (r.total) { cache = {}; SF.app.renderContent(); return; }
         }
         Object.assign(cache, r, {loaded: true, loading: false});
-        if (!r.items.some(function (c) { return c.id === app.selectedId; })) app.selectedId = r.items[0] && r.items[0].id;
+        if (!r.items.some(function (c) { return c.id === app.selectedId; })) {
+          var ids = r.items.map(function (c) { return c.id; });
+          var index = previousIds.indexOf(app.selectedId);
+          var next = index < 0 ? null : previousIds.slice(index + 1).find(function (id) { return ids.includes(id); });
+          var previous = index < 0 ? null : previousIds.slice(0, index).reverse().find(function (id) { return ids.includes(id); });
+          // 页末移出时，后端可能用下一页的第一条补上当前位置。
+          if (!next && index >= 0 && !selectLast) next = ids.slice(previous ? ids.indexOf(previous) + 1 : 0).find(function (id) { return !previousIds.includes(id); });
+          if (!next) next = previous;
+          app.selectedId = next || (selectLast ? ids[ids.length - 1] : ids[0]);
+        }
+        previousIds = r.items.map(function (c) { return c.id; });
+        selectLast = false;
         selected = new Set(Array.from(selected).filter(function (id) { return r.items.some(function (c) { return c.id === id; }); }));
         SF.app.renderContent();
       }).catch(function (err) { if (cache !== current) return; Object.assign(cache, {loaded: true, loading: false, error: err}); SF.app.renderContent(); });
@@ -120,7 +133,7 @@
       {label:'添加来源', variant:'primary', onClick:function () { SF.app.navigate('channels'); }},
       {label:'清除筛选', onClick:function () { app.filters = {quick:app.filters.quick, platform:null, channelId:null}; app.search = ''; SF.app.render(); }}].concat(isInbox ? [
       {label:'查看全部更新', onClick:function () { app.filters = {quick:'all', platform:null, channelId:null}; app.search = ''; SF.app.render(); }}] : [])});
-    else body = h('div.inbox__grid.scroll-y', null, cache.items.map(function (item) {
+    else body = h('div.inbox__grid.scroll-y', {'data-scroll-key':'contents:' + offset}, cache.items.map(function (item) {
       return h('div.content-selection', null, ui.check(selected.has(item.id), function () { if (selected.has(item.id)) selected.delete(item.id); else selected.add(item.id); SF.app.renderContent(); }, '选择 ' + item.title),
         withTags(ui.contentCard(item, {selected:app.selectedId === item.id, now:app.now,
           onSelect:function () { app.selectedId = item.id; SF.app.renderContent(); },
@@ -136,13 +149,13 @@
       }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复跟随来源'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true); }); },{ariaLabel:'批量设置优先级'}), bulkTagControl(app), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
     var pager = cache.loaded && !cache.error ? h('div.inbox__toolbar', null,
       h('span.muted', {text:'共 ' + cache.total + ' 条 · 第 ' + (Math.floor(offset / 20) + 1) + ' 页'}),
-      ui.btn('上一页', {disabled:offset === 0, onClick:function () { offset = Math.max(0, offset - 20); cache = {}; selected.clear(); SF.app.renderContent(); }}),
-      ui.btn('下一页', {disabled:cache.next_offset == null, onClick:function () { offset = cache.next_offset; cache = {}; selected.clear(); SF.app.renderContent(); }})) : null;
+      ui.btn('上一页', {disabled:offset === 0, onClick:function () { offset = Math.max(0, offset - 20); cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }}),
+      ui.btn('下一页', {disabled:cache.next_offset == null, onClick:function () { offset = cache.next_offset; cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }})) : null;
     var item = cache.items && cache.items.find(function (c) { return c.id === app.selectedId; });
     return {main:h('div.view', {'data-view':'inbox'}, head, h('div.view__body.inbox', null, chips, tagPanel, bulk, body, pager)),
       aside:item && !cache.error ? h('aside.detail', {'aria-label':'内容详情'},
         h('div.detail__head', null, h('span', {text:'内容详情'}), h('div.spacer'), ui.iconBtn('close', '关闭详情', function () { app.selectedId = null; SF.app.renderContent(); })),
-        h('div.detail__body.scroll-y', null, detailBody(app, item, function (fresh) { var i = cache.items.findIndex(function (c) { return c.id === fresh.id; }); if (i >= 0) cache.items[i] = fresh; SF.app.renderContent(); }))) : null};
+        h('div.detail__body.scroll-y', {'data-scroll-key':'detail:' + item.id}, detailBody(app, item, function (fresh) { var i = cache.items.findIndex(function (c) { return c.id === fresh.id; }); if (i >= 0) cache.items[i] = fresh; SF.app.renderContent(); }))) : null};
   }
   function update(app, id, state) {
     return SF.app.act('content:' + id, async function () { await app.client.updateContent(id, {state:state}); await SF.app.refreshData(true); });
