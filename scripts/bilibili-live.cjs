@@ -22,6 +22,8 @@ if (!process.versions.electron) {
     const {CoreClient} = require('../electron/main/core-client.cjs');
     const runtime = JSON.parse(fs.readFileSync(path.join(root,'.runtime-paths.json'),'utf8'));
     const service = new BilibiliSession();
+    const {ChannelSessions} = require('../electron/main/channel-sessions.cjs');
+    const channels = new ChannelSessions(); channels.register('bilibili',service);
     if (process.argv.includes('--login')) {
       service.onChanged = async () => {
         try { console.log(JSON.stringify({connection:await service.request({operation:'check'})})); }
@@ -31,7 +33,7 @@ if (!process.versions.electron) {
       service.openLogin(); return;
     }
     const core = new CoreClient({...runtime,coreExecutable:process.env.SUBSCRIBE_FLOW_ACCEPTANCE_CORE,
-      root,dataDir:app.getPath('userData'),acquisition:(p,s) => service.request(p,s)});
+      root,dataDir:app.getPath('userData'),acquisition:(p,s) => channels.request(p,s)});
     const timer = setTimeout(() => app.exit(1),180000);
     try {
       await core.start();

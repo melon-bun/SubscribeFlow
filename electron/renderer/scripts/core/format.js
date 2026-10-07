@@ -113,7 +113,7 @@
   }
 
   function publication(item, compact) {
-    if (!item.publishedAt || item.publishedPrecision === "unknown") return "发布时间未知";
+    if (!item.publishedAt || item.publishedPrecision === "unknown") return item.publishedLabel ? item.publishedLabel + "（时间待确认）" : "发布时间未知";
     var value = String(item.publishedAt);
     if (compact) return value.slice(0,10) + (item.publishedPrecision === "date" ? "（仅日期）" : "");
     if (item.publishedPrecision === "date") return value.slice(0, 10) + "（仅日期" + (item.publishedTimezone ? "，" + item.publishedTimezone : "，时区未知") + "）";

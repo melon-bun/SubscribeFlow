@@ -86,8 +86,9 @@ class Repository:
         return self.get_subscription(sub_id)
 
     def get_subscription(self, sub_id):
-        row = self.db.execute("""SELECT s.*,r.channel,r.kind,r.external_id,r.name,r.url,r.confirmed
-                                 FROM subscriptions s JOIN sources r ON r.id=s.source_id WHERE s.id=?""", (sub_id,)).fetchone()
+        row = self.db.execute("""SELECT s.*,r.channel,r.kind,r.external_id,r.name,r.url,r.confirmed,c.backend
+                                 FROM subscriptions s JOIN sources r ON r.id=s.source_id
+                                 JOIN connections c ON c.id=s.connection_id WHERE s.id=?""", (sub_id,)).fetchone()
         if not row:
             raise ChannelError("NOT_FOUND", "subscription", "订阅不存在")
         return dict(row)
@@ -152,7 +153,7 @@ class Repository:
         if not row:
             raise ChannelError("NOT_FOUND", "sync.status", "任务不存在")
         result = dict(row)
-        for field in ("snapshot", "cursor", "error"):
+        for field in ("snapshot", "cursor", "error", "acquisition_metrics"):
             result[field] = json.loads(result[field]) if result[field] else None
         return result
 
@@ -174,6 +175,7 @@ class Repository:
         old = db.execute("SELECT payload FROM contents WHERE id=?", (item.key,)).fetchone()
         if old:
             prior = json.loads(old[0])
+            data["acquisition_complete"] = data["acquisition_complete"] or prior.get("acquisition_complete", False)
             for field in ("summary", "thumbnail", "duration_seconds"):
                 if data[field] is None:
                     data[field] = prior[field]
@@ -208,6 +210,12 @@ class Repository:
                 raise ValueError("Adapter returned content for a different source")
             new_count = sum(self._upsert_item(db, item) for item in page.items)
             errors = job["item_errors"] + len(page.item_errors)
+            metrics = dict(job["acquisition_metrics"])
+            for key, value in page.metrics.items():
+                if key not in {"profile_reads", "discovered", "skipped", "detail_requests"} or type(value) is not int or value < 0:
+                    raise ValueError("Invalid acquisition metric")
+                metrics[key] = metrics.get(key, 0) + value
+            db.execute("UPDATE jobs SET acquisition_metrics=? WHERE id=?", (encode(metrics), job_id))
             coverage = "possible_gaps" if errors else page.coverage
             db.execute("INSERT INTO fetch_runs(job_id,page_index,item_count,new_count,errors,coverage,created_at) VALUES(?,?,?,?,?,?,?)",
                        (job_id, job["pages"] + 1, len(page.items), new_count, encode(page.item_errors), coverage, now()))
@@ -217,6 +225,13 @@ class Repository:
             if job["mode"] == "backfill":
                 self._save_progress(db, job, "backfill", {"cursor": page.next_cursor, "coverage": coverage, "complete": False})
         return self.get_job(job_id)
+
+    def complete_source_ids(self, source_key, limit=2000):
+        """Only successfully acquired details qualify for the pre-navigation skip."""
+        return tuple(row[0] for row in self.db.execute(
+            "SELECT c.external_id FROM contents c JOIN content_sources cs ON cs.content_id=c.id "
+            "WHERE cs.source_id=? AND json_extract(c.payload,'$.acquisition_complete')=1 "
+            "ORDER BY c.published_at DESC,c.id DESC LIMIT ?", (source_key, limit)))
 
     def finish_scan(self, job_id, *, coverage, complete=False, checkpoint=None):
         with self.database.transaction() as db:
@@ -260,7 +275,7 @@ class Repository:
         return {"updated": len(set(keys))}
 
     def apply_detail(self, job_id, patch: ContentPatch):
-        allowed = {"title", "summary", "thumbnail", "duration_seconds", "published"}
+        allowed = {"title", "summary", "thumbnail", "duration_seconds", "published", "acquisition_complete"}
         if set(patch.fields) - allowed:
             raise ValueError("Unknown detail field")
         with self.database.transaction() as db:
@@ -272,7 +287,11 @@ class Repository:
             if not row:
                 raise ChannelError("NOT_FOUND", "content.detail", "内容尚未入库")
             data = json.loads(row[0])
-            data.update({key: jsonable(value) for key, value in patch.fields.items() if value is not None})
+            fields = {key: jsonable(value) for key, value in patch.fields.items() if value is not None}
+            precision = {"unknown": 0, "date": 1, "minute": 2, "second": 3}
+            if "published" in fields and precision.get(fields["published"]["precision"], 0) < precision.get(data["published"]["precision"], 0):
+                fields.pop("published")
+            data.update(fields)
             db.execute("UPDATE contents SET title=?,published_at=?,payload=?,updated_at=? WHERE id=?",
                        (data["title"], data["published"]["value"], encode(data), now(), patch.item_key))
             db.execute("UPDATE jobs SET state='succeeded',updated_at=? WHERE id=?", (now(), job_id))

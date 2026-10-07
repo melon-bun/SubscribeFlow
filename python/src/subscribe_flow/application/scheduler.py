@@ -19,17 +19,19 @@ class SchedulePolicy:
     retry_cap: float = 3600
     max_retries: int = 3
     dependency_interval: float = 300
-    page_budget: int = 1
+    page_budget: int | None = None
 
     def __post_init__(self):
         for key, value in asdict(self).items():
+            if key == 'page_budget' and value is None:
+                continue
             if type(value) not in {int, float} or not math.isfinite(value) or value < 0:
                 raise ValueError(f'Invalid scheduling policy: {key}')
         if self.tick_seconds <= 0 or self.retry_base <= 0 or self.retry_cap < self.retry_base:
             raise ValueError('Invalid scheduling delay')
         if type(self.max_retries) is not int or not 0 <= self.max_retries <= 10:
             raise ValueError('Invalid retry budget')
-        if type(self.page_budget) is not int or not 1 <= self.page_budget <= 100:
+        if self.page_budget is not None and (type(self.page_budget) is not int or not 1 <= self.page_budget <= 100):
             raise ValueError('Invalid page budget')
 
 

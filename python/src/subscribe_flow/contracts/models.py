@@ -57,6 +57,11 @@ class ChannelDescriptor:
     parser_version: str = "1"
     progress_version: str = "1"
     content_types: tuple[str, ...] = ("video",)
+    page_size: int = 20
+    default_refresh_budget: int = 1
+    default_backfill_budget: int = 10
+    scan_overhead_budget: int = 0
+    budget_unit: str = "pages"
 
 
 @dataclass(frozen=True)
@@ -75,6 +80,7 @@ class Context:
     job_id: str
     deadline: float
     cancelled: asyncio.Event = field(default_factory=asyncio.Event)
+    source: Source | None = None
 
     def check(self, operation: str) -> None:
         if self.cancelled.is_set():
@@ -94,6 +100,8 @@ class Source:
     name: str
     url: str
     confirmed: bool = False
+    avatar: str | None = None
+    description: str | None = None
 
     @property
     def key(self) -> str:
@@ -106,6 +114,7 @@ class PublishedTime:
     precision: str = "unknown"
     provenance: str = "unavailable"
     timezone: str | None = None
+    raw_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -121,6 +130,7 @@ class ContentItem:
     summary: str | None = None
     thumbnail: str | None = None
     duration_seconds: int | None = None
+    acquisition_complete: bool = False
 
     @property
     def key(self) -> str:
@@ -140,6 +150,8 @@ class FetchRequest:
     progress: dict | None = None
     limit: int = 20
     content_range: str = "videos"
+    known_ids: tuple[str, ...] = ()
+    item_budget: int | None = None
 
 
 @dataclass(frozen=True)
@@ -158,6 +170,8 @@ class FetchPage:
     end_evidence: str | None = None
     candidate_progress: dict | None = None
     item_errors: tuple[ItemError, ...] = ()
+    scan_advanced: bool = False
+    metrics: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self):
         if self.terminal and (not self.end_evidence or self.next_cursor is not None):

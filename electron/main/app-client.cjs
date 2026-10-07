@@ -42,28 +42,34 @@ function contentDTO(item, subscriptions) {
     id: item.id, title: item.title, summary: item.summary, platform: item.channel,
     channelId: sub?.id ?? null, channelName: sub?.name ?? item.source.name, author: sub?.name ?? item.source.name,
     publishedAt: item.published.value, publishedPrecision: item.published.precision,
-    publishedTimezone: item.published.timezone, url: item.url, thumb: item.thumbnail, cover: item.thumbnail, publishedProvenance: item.published.provenance,
+    publishedTimezone: item.published.timezone, publishedLabel:item.published.raw_label || null, url: item.url, thumb: item.thumbnail, cover: item.thumbnail, publishedProvenance: item.published.provenance,
     state: item.state, priority: item.priority ?? null, priorityOverride: item.priority_override ?? null, sourcePriority: item.source_priority ?? null,
     tags: (item.tags || []).map(tag => ({id: tag.id, name: tag.name, color: tag.color, origin: tag.origin})),
     updatedAt: item.updated_at ?? null, contentHash: null,
   };
 }
 function channelDTO(sub, descriptors = [], schedule = null) {
-  const operations = descriptors.find(c => c.channel === sub.channel)?.operations || {};
+  const descriptor = descriptors.find(c => c.channel === sub.channel && (!sub.backend || c.backend === sub.backend)) || {};
+  const operations = descriptor.operations || {};
   return { id: sub.id, name: sub.name, platform: sub.channel, link: sub.url,
     enabled: sub.status === 'active', status: sub.status, connectionId: sub.connection_id,
     defaultPriority: sub.default_priority ?? null, externalId: sub.external_id, intervalSeconds: sub.interval_seconds, syncMode:sub.sync_mode, collectItems: sub.collect_items || 0,
     frequency: sub.sync_mode === 'automatic' ? (sub.interval_seconds % 3600 ? `每 ${sub.interval_seconds/60} 分钟` : `每 ${sub.interval_seconds/3600} 小时`) : '手动刷新', schedule,
+    pageSize:descriptor.page_size || 20, defaultRefreshBudget:descriptor.default_refresh_budget || 1,
+    defaultBackfillBudget:descriptor.default_backfill_budget || 10, incrementalDetails:descriptor.budget_unit === 'details',
     capabilities: { canRefresh: !!operations.list_items?.supported,
       canBackfill: !!operations.list_items?.supported && operations.list_items.pagination !== 'none',
       fullHistory: !!operations.list_items?.full_history, canFetchDetail: !!operations.get_item_detail?.supported } };
 }
 function runDTO(job, subscriptions) {
+  const metrics = job.acquisition_metrics || {};
+  const scanMessage = Object.keys(metrics).length ? `主页读取 ${metrics.profile_reads || 0} 次，发现 ${metrics.discovered || 0} 条笔记，跳过已收录 ${metrics.skipped || 0} 条，详情读取 ${metrics.detail_requests || 0} 次；新增 ${job.new_items} 条` : null;
   return { id: job.id, channelId: job.subscription_id,
     channelName: subscriptions.find(sub => sub.id === job.subscription_id)?.name ?? '',
     kind: job.mode, scope: job.coverage, trigger:job.trigger,
     state: job.state, progress: null, pages: job.pages, items: job.items, newItems: job.new_items,
-    message: job.error?.message ?? (job.mode === 'detail' ? (job.state === 'succeeded' ? '详情补充完成' : '正在处理详情任务') : job.state === 'succeeded' && job.mode !== 'detail' && job.new_items === 0 ? `检查完成，没有新内容；本次读取 ${job.items} 条记录` : `已提交 ${job.pages} 页、${job.items} 条记录，新增 ${job.new_items} 条`),
+    acquisitionMetrics:metrics,
+    message: job.error?.message ?? scanMessage ?? (job.mode === 'detail' ? (job.state === 'succeeded' ? '详情补充完成' : '正在处理详情任务') : job.state === 'succeeded' && job.mode !== 'detail' && job.new_items === 0 ? `检查完成，没有新内容；本次读取 ${job.items} 条记录` : `已提交 ${job.pages} 页、${job.items} 条记录，新增 ${job.new_items} 条`),
     startedAt: Date.parse(job.created_at), updatedAt: job.updated_at, error: job.error };
 }
 
@@ -90,7 +96,7 @@ async function callUI(core, name, args) {
       return Object.fromEntries(['total', 'unread', 'read', 'deferred', 'archived', 'high', 'medium', 'low', 'none'].map((key, i) => [key, results[i].total]));
     }
     case 'listPlatforms': {
-      const channels = await call('channel.list');
+      const channels = [...new Map((await call('channel.list')).map(c => [c.channel,c])).values()];
       return Promise.all(channels.map(async c => ({ id: c.channel, count: (await call('content.list', {channel: c.channel, limit: 1})).total })));
     }
     case 'listPriorities': {

@@ -10,6 +10,11 @@ class ChannelGateway:
         key = (descriptor.channel, descriptor.backend)
         if key in self._adapters or descriptor.contract_version != CONTRACT_VERSION:
             raise ValueError("Duplicate adapter or incompatible contract")
+        if (descriptor.budget_unit not in {"pages", "details"} or type(descriptor.page_size) is not int or not 1 <= descriptor.page_size <= 100 or
+                type(descriptor.scan_overhead_budget) is not int or not 0 <= descriptor.scan_overhead_budget <= 20 or
+                any(type(value) is not int or not 1 <= value <= 100 for value in
+                    (descriptor.default_refresh_budget, descriptor.default_backfill_budget))):
+            raise ValueError("Invalid channel acquisition policy")
         self._adapters[key] = adapter
 
     def describe(self) -> list:

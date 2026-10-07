@@ -6,6 +6,8 @@ const { CORE_METHODS, DESKTOP_METHODS } = require('./methods.cjs');
 const { UI_METHODS, callUI } = require('./app-client.cjs');
 const {openSavedLink} = require('./external-links.cjs');
 const {BilibiliSession} = require('./bilibili-session.cjs');
+const {XiaohongshuSession} = require('./xiaohongshu-session.cjs');
+const {ChannelSessions} = require('./channel-sessions.cjs');
 const {resolveRuntime} = require('./runtime.cjs');
 const {createDiagnostics} = require('./diagnostics.cjs');
 
@@ -25,7 +27,8 @@ else app.whenReady().then(start).catch(() => {
   app.exit(1);
 });
 
-let window, core, bilibili;
+let window, core, bilibili, xiaohongshu;
+const channels = new ChannelSessions();
 let lastStatus = {state: 'starting'};
 let quitting = false;
 let suspended = false, powerUpdate = Promise.resolve();
@@ -42,18 +45,26 @@ async function start() {
     {label:'帮助', submenu:[
       {label:'打开应用数据目录', click:()=>void shell.openPath(app.getPath('userData'))},
       {label:'打开诊断记录', click:async()=>{const folder=path.join(app.getPath('userData'),'diagnostics'); await fs.mkdir(folder,{recursive:true}); await shell.openPath(folder);}},
-      {label:'使用与备份说明', click:()=>void dialog.showMessageBox(window,{type:'info',title:'知流使用说明',message:'订阅、同步与备份',detail:'在渠道管理中登录 B站、添加作者并刷新。默认手动，可切换自动；间隔默认 24 小时，最大 72 小时。自动采集需要应用保持运行。\n\n备份：退出所有知流窗口后，复制整个应用数据目录。升级前会自动备份数据库。恢复前先退出应用并另存当前目录，再还原备份。不要把旧版数据库文件与当前 WAL 文件混用。\n\n登录会话独立于 Chrome。登录过期时在应用内重新登录。可在渠道管理设置来源默认优先级，在内容详情单独设置，并在内容总览切换优先级模式。规则、标签及完整历史覆盖仍未交付。'})},
+      {label:'使用与备份说明', click:()=>void dialog.showMessageBox(window,{type:'info',title:'知流使用说明',message:'订阅、同步与备份',detail:'在渠道管理中登录 B站或小红书，按昵称搜索并确认作者后添加订阅，再手动刷新。默认手动，可切换自动；间隔默认 24 小时，最大 72 小时。自动采集需要应用保持运行。\n\n备份：退出所有知流窗口后，复制整个应用数据目录。升级前会自动备份数据库。恢复前先退出应用并另存当前目录，再还原备份。不要把旧版数据库文件与当前 WAL 文件混用。\n\n登录会话独立于 Chrome。登录过期时在应用内重新登录。可在渠道管理设置来源默认优先级，在内容详情单独设置，并在内容总览切换优先级模式。可创建人工标签并筛选内容。标签规则与完整历史覆盖暂不支持。'})},
     ]},
   ]));
   app.setAboutPanelOptions({applicationName:'知流 · Subscribe Flow', applicationVersion:app.getVersion()});
-  bilibili = new BilibiliSession({offline:smoke || rendererSmoke === 'offline', onChanged:async () => {
+  bilibili = new BilibiliSession({offline:smoke || (!!rendererSmoke && rendererSmoke !== 'live'), onChanged:async () => {
     if (quitting || !core?.ready) return;
     try { await core.call('connection.check',{connection_id:'bilibili:default'}); send('channels',null); }
     catch { /* The connection panel can retry a failed check. */ }
   }});
+  xiaohongshu = new XiaohongshuSession({offline:smoke || rendererSmoke === 'offline', ...(rendererSmoke === 'xhs' ? {apiOptions:{delay:0,jitter:0}} : {}), onChanged:async () => {
+    if (quitting || !core?.ready) return;
+    try { await core.call('connection.check',{connection_id:'xiaohongshu:default'}); send('channels',null); }
+    catch { /* A manual connection check remains available. */ }
+  }});
+  channels.register('bilibili',bilibili);
+  channels.register('xiaohongshu',xiaohongshu);
+  const xhsFixture = rendererSmoke === 'xhs' ? require('../../scripts/xiaohongshu-fixture.cjs').install(xiaohongshu.session) : null;
   core = new CoreClient({ ...runtime,
     root, dataDir: app.getPath('userData'), autoRestart:!smoke && !rendererSmoke,
-    acquisition:(params,signal) => bilibili.request(params,signal) });
+    acquisition:(params,signal) => channels.request(params,signal) });
   const updatePower = () => {
     const value = suspended;
     powerUpdate = powerUpdate.catch(() => {}).then(() => core.ready && core.call('system.power',{suspended:value}));
@@ -99,8 +110,8 @@ async function start() {
       if (name === 'core.status') value = lastStatus;
       else if (name === 'core.restart') value = await core.restart();
       else if (name === 'connection.login') {
-        if (Object.keys(params).length !== 1 || params.connection_id !== 'bilibili:default') throw new Error('登录连接无效');
-        value = bilibili.openLogin(window);
+        if (Object.keys(params).length !== 1) throw new Error('登录连接无效');
+        value = await channels.login(params.connection_id,window);
       }
       else if (name === 'content.open' || name === 'source.open') {
         value = await openSavedLink(core, name, params, url => shell.openExternal(url));
@@ -120,11 +131,13 @@ async function start() {
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('will-attach-webview', event => event.preventDefault());
   await window.loadURL(APP_URL);
+  window.on('closed', () => { window = null; app.quit(); });
   try { await core.start(); }
   catch (error) { lastStatus = {state: 'error', message: error.message}; diagnostic('core.status', lastStatus); send('core.status', lastStatus); if (smoke || rendererSmoke) throw error; }
   if (rendererSmoke) {
     try {
-      await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
+      if (rendererSmoke === 'xhs') await require('../../scripts/xiaohongshu-renderer.cjs').verify({window,core,root,xiaohongshu,fixture:xhsFixture});
+      else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
       await core.stop(); quitting = true; app.quit();
     } catch (error) { console.error(error); await core.stop(); app.exit(1); }
     return;
@@ -170,5 +183,5 @@ app.on('before-quit', event => {
   event.preventDefault();
   quitting = true;
   diagnostic('app.quit');
-  Promise.allSettled([core.stop(), bilibili?.close()]).finally(() => app.quit());
+  Promise.allSettled([core.stop(), channels.close()]).finally(() => app.quit());
 });

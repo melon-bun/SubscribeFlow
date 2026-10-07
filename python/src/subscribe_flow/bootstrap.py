@@ -4,6 +4,7 @@ from subscribe_flow.channels.gateway import ChannelGateway
 from subscribe_flow.channels.bilibili.adapter import BilibiliAdapter
 from subscribe_flow.channels.bilibili.backends.opencli import BilibiliOpenCLIBackend
 from subscribe_flow.channels.bilibili.electron import BilibiliElectronAdapter
+from subscribe_flow.channels.xiaohongshu.adapter import XiaohongshuAdapter
 from subscribe_flow.application.subscriptions import SubscriptionService
 from subscribe_flow.application.sync import SyncService
 from subscribe_flow.application.content import ContentService
@@ -22,6 +23,7 @@ def build_gateway(opencli_path: str = "opencli", browser_bridge=None) -> Channel
     gateway = ChannelGateway()
     if browser_bridge is not None:
         gateway.register(BilibiliElectronAdapter(browser_bridge))
+        gateway.register(XiaohongshuAdapter(browser_bridge))
     else:
         gateway.register(BilibiliAdapter(BilibiliOpenCLIBackend(CLITransport(ResourceCoordinator()), opencli_path)))
     return gateway
@@ -49,13 +51,13 @@ class Core:
         self.tags = TagService(self.repository, self.emit, recognition_provider)
         self.queries = QueryService(self.repository, self.gateway)
         for descriptor in self.gateway.describe():
-            resource = "browser:electron-bilibili" if descriptor.backend == "electron-session" else "browser:opencli-default"
+            resource = f"browser:electron-{descriptor.channel}" if descriptor.backend == "electron-session" else "browser:opencli-default"
             self.repository.add_connection(Connection(f"{descriptor.channel}:default", descriptor.channel, descriptor.backend, resource))
             if descriptor.backend == "electron-session":
                 # One-way upgrade of known legacy connections. Version invalidates
                 # old cursors/checkpoints without deleting subscriptions or content.
                 for connection in self.repository.list_connections():
-                    if connection["channel"] == "bilibili" and connection["backend"] == "opencli":
+                    if descriptor.channel == "bilibili" and connection["channel"] == "bilibili" and connection["backend"] == "opencli":
                         self.repository.update_connection(connection["id"], backend="electron-session", resource_key=resource)
         self.scheduler = Scheduler(self, policy=schedule_policy, **({'clock': clock} if clock else {}))
         self.listeners.append(self.scheduler.observe)

@@ -66,7 +66,7 @@
           h('td',null,job ? h('div.table__time',null,h('span',{text:fmt.runState(job.state)}),h('small',{text:fmt.relative(job.startedAt,app.now)})) : h('span.muted',{text:'尚未采集'})),
           h('td',null,h('div.table__ops',null,
             ui.iconBtn('refresh','刷新来源',function () { startRun(app,c,'recent'); },{disabled:!c.enabled || !c.capabilities.canRefresh}),
-            ui.iconBtn('clock','回溯历史',function () { var pages = collectPages(c,10); ui.confirm({title:'分页回溯 ' + c.name,message:'本次最多读取 ' + pages + ' 页（约 ' + pages*20 + ' 条）。当前渠道没有可靠末页证据，回溯成功也不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
+            ui.iconBtn('clock','回溯历史',function () { var pages = collectPages(c,c.defaultBackfillBudget || 10); ui.confirm({title:'回溯 ' + c.name,message:c.incrementalDetails ? '本次最多读取 ' + pages + ' 条笔记详情，已完整收录的会跳过；主页分页扫描有上限，结果不代表全部历史。' : '本次最多读取 ' + pages + ' 页（约 ' + pages*(c.pageSize || 20) + ' 条）。当前渠道没有可靠末页证据，回溯成功也不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
             ui.iconBtn('sliders',(c.collectItems ? '采集条数（当前 '+c.collectItems+' 条）' : '采集条数（默认）'),function () { collectDialog(app,c); },{disabled:!c.enabled,ariaLabel:'设置采集条数'}),
             ui.iconBtn('trash','取消追踪',function () { ui.confirm({title:'取消追踪 ' + c.name + '？',message:'已保存的历史内容会保留。再次添加相同 UID 可以恢复订阅。',confirmText:'取消追踪',danger:true}).then(function(ok) { if(ok) SF.app.act('subscription:' + c.id,async function () { await app.client.removeChannel(c.id); await SF.app.refreshData(true); }); }); },{danger:true}))));
       })))));
@@ -76,9 +76,9 @@
   }
   // 界面按“条”表述，后端按整页请求换算；两处保持一致，确认框里的数字才不会骗人。
   var PAGE_ITEMS = 20;
-  function collectPages(c,fallback) { var n = c.collectItems || 0; return n ? Math.ceil(n / PAGE_ITEMS) : fallback; }
+  function collectPages(c,fallback) { var n = c.collectItems || 0; return n ? Math.ceil(n / (c.pageSize || PAGE_ITEMS)) : fallback; }
   function collectDialog(app,c) {
-    var saving = false, current = c.collectItems || 0;
+    var saving = false, current = c.collectItems || 0, pageSize = c.pageSize || PAGE_ITEMS;
     var error = h('p.field__error',{role:'alert'});
     var input = h('input.input',{id:'collect-items',type:'number',min:1,max:50,step:1,value:String(current || ''),placeholder:'留空使用默认',oninput:function () { error.textContent=''; }});
     var save = ui.btn('保存采集条数',{variant:'primary',onClick:async function () {
@@ -99,8 +99,8 @@
     }});
     var layer = ui.dialog({title:c.name + ' · 采集条数',body:h('div.col',{style:{gap:'16px'}},
       h('div.field',null,h('label.field__label',{htmlFor:'collect-items',text:'每次采集条数（1-50）'}),input,
-        h('p.field__hint',{text: current ? '当前 ' + current + ' 条，约 ' + Math.ceil(current/PAGE_ITEMS) + ' 页。同时作用于“刷新来源”和“回溯历史”。' : '当前使用默认：刷新来源 1 页，回溯历史 10 页。留空并保存可恢复默认。'})),
-      h('p.muted',{text:'平台每页约 20 条，条数会向上取整成整页请求；例如填 35 实际读取 2 页约 40 条。'}),error),
+        h('p.field__hint',{text: c.incrementalDetails ? '默认刷新最多 ' + c.defaultRefreshBudget + ' 条、回溯最多 ' + c.defaultBackfillBudget + ' 条详情；已完整收录的笔记跳过详情访问。' : current ? '当前 ' + current + ' 条，约 ' + Math.ceil(current/pageSize) + ' 页。同时作用于“刷新来源”和“回溯历史”。' : '当前使用默认：刷新来源 1 页，回溯历史 10 页。留空并保存可恢复默认。'})),
+      h('p.muted',{text:c.incrementalDetails ? '此设置限制本轮详情读取条数，主页扫描单独设有上限；可能因验证、取消或超时提前停止。' : '平台每页约 ' + pageSize + ' 条，条数会向上取整成整页请求；例如填 35 实际读取 2 页约 40 条。'}),error),
       footer:[ui.btn('取消',{onClick:function () { layer.close(); }}),save]});
   }
   function scheduleText(c) {
@@ -148,7 +148,7 @@
           h('p.muted',{text:'认证：' + ({unknown:'尚未确认',required:'需要登录',available:'已有可用会话',not_required:'无需登录'}[r && r.authentication] || '尚未确认')}),
           r ? h('p.muted',{text:'检查时间：' + fmt.absolute(r.checked_at)}) : null,
           h('div.row.row-gap-3',null,
-            c.backend === 'electron-session' ? ui.btn('应用内登录 B站',{onClick:function () { SF.app.act('login:' + c.id,function () { return app.client.loginConnection(c.id); }); }}) : null,
+            c.backend === 'electron-session' ? ui.btn('应用内登录 ' + SF.catalog.platform(c.channel).name,{onClick:function () { SF.app.act('login:' + c.id,function () { return app.client.loginConnection(c.id); }); }}) : null,
             ui.btn('检查连接',{onClick:function () { SF.app.act('check:' + c.id,async function () { await app.client.checkConnection(c.id); await SF.app.refreshData(true); }); }})));
       }),h('p.field__hint',{text:'自动采集遇到登录或访问验证会暂停，处理后检查连接即可恢复。采集失败时仍可查看本地内容。'})),
       h('section.panel.live-panel',null,h('h2.t-h2',{text:'最近任务（最多 100 条）'}),
@@ -156,7 +156,7 @@
           var canCancel = ['queued','running','waiting'].includes(run.state);
           var canRetry = ['failed','partial','waiting','interrupted','cancelled'].includes(run.state);
           return h('div.run-row',{'data-run-id':run.id},h('div.row',null,h('strong',{text:run.channelName}),h('div.spacer'),ui.tag(fmt.runState(run.state))),
-            h('p',{text:run.message}), h('p.muted',{text:({manual:'手动',automatic:'自动',recovery:'恢复'}[run.trigger] || '手动') + ' · ' + ({initial:'初次获取',refresh:'近期刷新',backfill:'历史回溯',detail:'详情补充'}[run.kind] || run.kind) + (run.kind === 'detail' ? ' · 更新已有内容' : ' · 已提交 ' + run.pages + ' 页 · ' + run.items + ' 条 · 新增 ' + run.newItems + ' 条')}),
+            h('p',{text:run.message}), h('p.muted',{text:({manual:'手动',automatic:'自动',recovery:'恢复'}[run.trigger] || '手动') + ' · ' + ({initial:'初次获取',refresh:'近期刷新',backfill:'历史回溯',detail:'详情补充'}[run.kind] || run.kind) + (run.kind === 'detail' ? ' · 更新已有内容' : Object.keys(run.acquisitionMetrics || {}).length ? ' · 已保存 ' + run.items + ' 条 · 新增 ' + run.newItems + ' 条' : ' · 已提交 ' + run.pages + ' 页 · ' + run.items + ' 条 · 新增 ' + run.newItems + ' 条')}),
             run.kind !== 'detail' ? h('p.scope-note',{text:fmt.coverage(run.scope)}) : null,
             ['queued','running'].includes(run.state) ? ui.progress(0,true) : null,
             canCancel ? ui.btn('取消任务',{onClick:function () { SF.app.act('cancel:' + run.id,async function () { await app.client.cancelRun(run.id); await SF.app.refreshData(true); }); }}) : null,
@@ -185,15 +185,16 @@
     function setBusy(value) {
       input.disabled=value; platform._input.disabled=value; resolve.disabled=value; search.disabled=value || !searchSupported();
       confirm.disabled=value || !chosen; add.disabled=value || !chosen || !confirm.checked;
+      if(login) login.disabled=value; if(check) check.disabled=value;
     }
     function searchSupported() {
       var c = connections.find(function (v) { return v.id === connectionId; });
-      return app.session.channels.some(function (d) { return d.channel === c.channel && d.operations.search_sources && d.operations.search_sources.supported; });
+      return app.session.channels.some(function (d) { return d.channel === c.channel && d.backend === c.backend && d.operations.search_sources && d.operations.search_sources.supported; });
     }
     function choose(source) {
       chosen = source; confirm.checked=false; confirm.disabled=false; add.disabled=true;
-      results.replaceChildren(ui.notice({tone:'info',title:source.name + ' · UID ' + source.external_id,
-        text:source.url + (source.confirmed ? ' · 搜索结果已提供远程身份信息。' : ' · 仅完成地址解析，尚未验证账号存在，请核对 UID。')}));
+      results.replaceChildren(ui.notice({tone:'info',title:source.name + ' · 作者 ID ' + source.external_id,
+        text:(source.description ? source.description + '\n' : '') + source.url + (source.confirmed ? ' · 请核对是否为你要订阅的作者。' : ' · 仅完成地址解析，尚未验证账号存在，请核对作者 ID。')}));
     }
     async function locate(searching) {
       if(busy) return;
@@ -207,19 +208,21 @@
         if(!searching) choose(response);
         else if(!response.items.length) results.replaceChildren(h('p',{text:'没有匹配的作者，请修改关键词或使用 UID。'}));
         else results.replaceChildren.apply(results,response.items.map(function(source) {
-          return ui.btn(source.name + ' · UID ' + source.external_id,{block:true,onClick:function () { choose(source); }});
+          return h('button.btn.source-candidate',{type:'button','data-source-id':source.external_id,onclick:function () { choose(source); }},source.avatar ? h('img.source-candidate__avatar',{src:source.avatar,alt:'',referrerpolicy:'no-referrer'}) : ui.avatar(source.name),h('div.col',null,h('strong',{text:source.name + ' · 作者 ID ' + source.external_id}),source.description ? h('span.muted',{text:source.description}) : null));
         }));
       } catch(err) { if(!closed && requestId===ticket) error.textContent=err.message; }
       finally { busy=false; if(!closed) setBusy(false); }
     }
     var platform=ui.select(connections.map(function(c) { return {value:c.id,label:SF.catalog.platform(c.channel).name}; }),connectionId,function(v) { connectionId=v; clearChoice(); setBusy(false); },{ariaLabel:'来源平台'});
     var resolve=ui.btn('解析 UID / 主页',{onClick:function () { locate(false); }});
-    var search=ui.btn('搜索作者',{disabled:!searchSupported(),onClick:function () { locate(true); }});
+    var search=ui.btn('搜索作者',{variant:'primary',disabled:!searchSupported(),onClick:function () { locate(true); }});
+    var login=ui.btn('应用内登录',{onClick:function () { SF.app.act('login:' + connectionId,function () { return app.client.loginConnection(connectionId); }); }});
+    var check=ui.btn('检查连接',{onClick:function () { SF.app.act('check:' + connectionId,async function () { var status=await app.client.checkConnection(connectionId); if(!closed) error.textContent=status.state==='ready' ? '' : status.reason; await SF.app.refreshData(true); }); }});
     var layer=ui.dialog({title:'添加渠道或创作者',wide:true,body:h('div.col',{style:{gap:'16px'}},
       h('div.field',null,h('span.field__label',{text:'来源平台'}),platform),
       h('div.field',null,h('label.field__label',{htmlFor:'source-input',text:'作者 UID、主页或名称'}),input),
-      h('div.row.row-gap-3',null,resolve,search),results,error,
-      h('label.row.row-gap-3',null,confirm,h('span',{text:'我已核对 UID，确认追踪此作者'}))),
+      h('div.row.row-gap-3',null,search,resolve,login,check),h('p.field__hint',{text:'输入昵称搜索并选择正确作者。首次使用或登录失效时，先在应用内登录，关闭登录窗口后检查连接。'}),results,error,
+      h('label.row.row-gap-3',null,confirm,h('span',{text:'我已核对账号，确认追踪此作者'}))),
       footer:[h('p.field__hint',{text:'添加后手动刷新。相同 UID 不会重复订阅。'}),h('div.spacer'),ui.btn('取消',{onClick:function(){layer.close();}}),add],
       onClose:function(){closed=true;requestId++;}});
   }

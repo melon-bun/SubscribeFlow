@@ -109,7 +109,7 @@ class CoreClient extends EventEmitter {
     const controller = new AbortController(); this.acquiring.set(message.id,controller);
     let response;
     try {
-      if (!this.acquisition) { const error = new Error('请从桌面应用打开 B站连接'); error.code = 'DEPENDENCY_UNAVAILABLE'; throw error; }
+      if (!this.acquisition) { const error = new Error('请从桌面应用打开此渠道连接'); error.code = 'DEPENDENCY_UNAVAILABLE'; throw error; }
       response = {result:await this.acquisition(message.params,controller.signal)};
       if (Buffer.byteLength(JSON.stringify(response)) > 3 * 1024 * 1024) throw new Error('Oversized acquisition response');
     } catch (error) {

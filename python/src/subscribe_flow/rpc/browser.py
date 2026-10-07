@@ -4,7 +4,7 @@ from subscribe_flow.contracts import ChannelError
 
 
 class BrowserBridge:
-    """Private Core -> Main RPC. No cookies, URLs or executable scripts."""
+    """Private Core -> channel transport RPC. No cookies, URLs or executable scripts."""
 
     def __init__(self):
         self.send = None
@@ -25,14 +25,15 @@ class BrowserBridge:
     async def call(self, params, context, operation):
         context.check(operation)
         if self.send is None:
-            raise ChannelError("DEPENDENCY_UNAVAILABLE", operation, "请从桌面应用打开 B站连接",
+            raise ChannelError("DEPENDENCY_UNAVAILABLE", operation, "请从桌面应用打开此渠道连接",
                                scope="connection", scope_key=context.connection.id)
         request_id = f"browser:{next(self.ids)}"
         future = asyncio.get_running_loop().create_future()
         self.pending[request_id] = future
         finished = False
         try:
-            await self.send({"jsonrpc": "2.0", "id": request_id, "method": "acquisition.request", "params": params})
+            await self.send({"jsonrpc": "2.0", "id": request_id, "method": "acquisition.request",
+                             "params": {**params, "channel": context.connection.channel}})
             while not future.done():
                 context.check(operation)
                 await asyncio.wait({future}, timeout=0.1)

@@ -3,6 +3,22 @@ const assert = require('node:assert/strict');
 const {callUI, contentDTO} = require('../electron/main/app-client.cjs');
 const {openSavedLink} = require('../electron/main/external-links.cjs');
 
+test('replacement backend capabilities drive the source UI and platform filters stay unique',async()=>{
+  const descriptors=[{channel:'test',backend:'old',operations:{list_items:{supported:false}}},
+    {channel:'test',backend:'replacement',page_size:1,budget_unit:'details',default_refresh_budget:8,default_backfill_budget:30,
+      operations:{list_items:{supported:true,pagination:'bounded_scan'},get_item_detail:{supported:true}}}];
+  const core={call:async name=>{
+    if(name==='channel.list')return descriptors;
+    if(name==='subscription.list')return [{id:'s',channel:'test',backend:'replacement',name:'Author',url:'https://example.com',status:'active'}];
+    if(name==='schedule.list')return [];
+    if(name==='content.list')return {total:2};
+    throw new Error(name);
+  }};
+  const channel=(await callUI(core,'listChannels',[])).items[0];
+  assert.equal(channel.capabilities.canRefresh,true);assert.equal(channel.incrementalDetails,true);assert.equal(channel.defaultRefreshBudget,8);
+  assert.deepEqual(await callUI(core,'listPlatforms',[]),[{id:'test',count:2}]);
+});
+
 test('display DTO preserves missing dates, date precision and cover without invented priority', () => {
   const base={id:'c',source:{channel:'test',kind:'author',external_id:'1',name:'Author'},published:{value:null,precision:'unknown',timezone:null},thumbnail:null,state:{read:false}};
   assert.equal(contentDTO(base,[]).publishedAt,null);

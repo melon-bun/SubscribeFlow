@@ -58,11 +58,11 @@ async function verify({window, core, root, mode}) {
     await until(`!!document.querySelector('#source-confirm') && !document.querySelector('#source-confirm').disabled`);
     await evaluate(`document.querySelector('#source-input').value = '影视飓风'; document.querySelector('#source-input').dispatchEvent(new Event('input', {bubbles:true}));`);
     await click('搜索作者');
-    await until(`Array.from(document.querySelectorAll('.source-results button')).some(b => b.textContent.includes('UID 946974')) || !!document.querySelector('.dialog .field__error')?.textContent`,75000);
+    await until(`Array.from(document.querySelectorAll('.source-results button')).some(b => b.dataset.sourceId === '946974') || !!document.querySelector('.dialog .field__error')?.textContent`,75000);
     const searchError = await evaluate(`document.querySelector('.dialog .field__error').textContent`);
     if (searchError) { await screenshot('m5-live-search-error.png'); throw new Error(searchError); }
     await screenshot('m5-live-search.png');
-    await evaluate(`Array.from(document.querySelectorAll('.source-results button')).find(b => b.textContent.includes('UID 946974')).click()`);
+    await evaluate(`Array.from(document.querySelectorAll('.source-results button')).find(b => b.dataset.sourceId === '946974').click()`);
   }
   await until(`!!document.querySelector('#source-confirm') && !document.querySelector('#source-confirm').disabled`);
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim()==='确认添加').disabled`),true);
@@ -143,8 +143,9 @@ async function verify({window, core, root, mode}) {
   }
   await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
   await until(`document.querySelectorAll('.content-card').length > 0`);
-  assert.equal(await evaluate(`document.querySelectorAll('.chips .chip').length`),2);
-  assert.equal(await evaluate(`document.querySelectorAll('.chips .chip__count').length`),2);
+  const platformCount=(await core.call('channel.list')).length;
+  assert.equal(await evaluate(`document.querySelectorAll('.chips .chip').length`),platformCount+1);
+  assert.equal(await evaluate(`document.querySelectorAll('.chips .chip__count').length`),platformCount+1);
   if (mode === 'live') {
     await click('补充详情');
     await until(`SF.app.state.runs[0]?.kind === 'detail' && ['succeeded','failed','partial','waiting'].includes(SF.app.state.runs[0].state)`,75000);
@@ -314,7 +315,7 @@ module.exports={verify};
 if(require.main === module) {
   const root=path.resolve(__dirname,'..');
   const folder=fs.mkdtempSync(path.join(os.tmpdir(),'subscribe-flow-renderer-'));
-  const mode=process.argv.includes('--live')?'live':'offline';
+  const mode=process.argv.includes('--xhs')?'xhs':process.argv.includes('--live')?'live':'offline';
   const child=spawn(require('electron'),[root],{env:{...process.env,SUBSCRIBE_FLOW_RENDERER_SMOKE:mode,SUBSCRIBE_FLOW_LIVE_SKIP_SEARCH:process.argv.includes('--uid-only')?'1':'0',SUBSCRIBE_FLOW_DATA_DIR:folder},stdio:'inherit'});
   const timer=setTimeout(()=>child.kill('SIGTERM'),180000);
   child.on('close',code=>{clearTimeout(timer);fs.rmSync(folder,{recursive:true,force:true});process.exitCode=code??1;});

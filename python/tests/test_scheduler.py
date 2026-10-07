@@ -98,6 +98,14 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         await self.finish()
         self.assertEqual(self.core.repository.list_jobs()[0]['page_budget'], 7)
 
+    async def test_automatic_refresh_respects_the_subscription_collection_ceiling(self):
+        sub = await self.add(sync_mode='automatic')
+        await self.core.update_subscription(sub['id'], collect_items=35)
+        await self.due(self.core.repository.get_subscription(sub['id']))
+        await self.finish()
+        job = self.core.repository.list_jobs()[0]
+        self.assertEqual((job['trigger'], job['page_budget']), ('automatic', 2))
+
     async def test_manual_and_automatic_requests_merge_and_switching_mode_cancels_pending_work(self):
         sub = await self.add(sync_mode='automatic')
         self.adapter.delay = 1
