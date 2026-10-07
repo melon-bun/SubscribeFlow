@@ -41,6 +41,22 @@ if(!process.versions.electron) {
       if(readiness.state!=='ready'){record({stage:'connection',state:'blocked',readiness});await finish(1);return;}
       const query=arg('--query'),uid=arg('--uid');
       if(query){const result=await core.call('source.search',{connection_id:'xiaohongshu:default',query});record({stage:'search',state:'passed',candidates:result.items,hidden:!service.host.isVisible()});}
+      const shareNote=arg('--share-note');
+      if(shareNote){
+        const before=(await core.call('content.list',{channel:'xiaohongshu',limit:1})).total;
+        const result=await channels.request({channel:'xiaohongshu',operation:'detail',uid,id:shareNote});
+        const link=new URL(result.note.url);
+        await service.api.goto(link.href);
+        const opened=await service.api.wait('detail',s=>s.ready && s.contentPresent);
+        if(opened.id!==shareNote || opened.authorId!==uid)throw new Error('分享链接打开后身份不匹配');
+        const after=(await core.call('content.list',{channel:'xiaohongshu',limit:1})).total;
+        if(before!==after)throw new Error('只读分享验证意外修改了内容数量');
+        record({stage:'share',state:'passed',uid,id:shareNote,sharePath:link.pathname,
+          source:link.searchParams.get('source'),xsecSource:link.searchParams.get('xsec_source'),
+          tokenPresent:!!link.searchParams.get('xsec_token'),opened:true,hidden:!service.host.isVisible(),
+          captureRestored:await service.view.webContents.executeJavaScript('!window.__SF_XHS_SHARE_CAPTURE__'),contentCount:after});
+        await finish();return;
+      }
       if(uid){
         const limit=Number(arg('--limit') || 2);if(!Number.isInteger(limit) || limit<1 || limit>50)throw new Error('limit must be 1..50');
         const sub=await core.call('subscription.add',{connection_id:'xiaohongshu:default',locator:uid,confirmed:true});

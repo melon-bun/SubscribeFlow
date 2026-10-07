@@ -16,6 +16,7 @@ TOKEN = 'a' * 8 + '-' + 'a' * 4 + '-' + 'a' * 4 + '-' + 'a' * 4 + '-' + 'a' * 12
 
 def note(id):
     return dict(id=id, authorId=UID, title='笔记 ' + id, content='正文', acquisition_complete=True,
+                url=f'https://www.xiaohongshu.com/discovery/item/{id}?source=webshare&xhsshare=pc_web&xsec_token=fixture-share%3D&xsec_source=pc_share',
                 published=dict(value='2026-01-02', precision='date', provenance='date-label', raw_label='2026-01-02'), images=[])
 
 
@@ -88,6 +89,7 @@ class XHSTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job['acquisition_metrics']['detail_requests'], 0)
         self.assertEqual(job['acquisition_metrics']['skipped'], 2)
         item = self.core.queries.content(key)
+        self.assertEqual(item['url'],note(IDS[0])['url'])
         self.assertTrue(item['state']['read'])
         self.assertEqual(item['priority'], 'high')
         self.assertEqual(item['tags'][0]['id'], tag['id'])
@@ -134,6 +136,7 @@ class XHSTests(unittest.IsolatedAsyncioTestCase):
         job=await self.scan(mode='detail',item_key=key)
         self.assertEqual(job['state'],'succeeded')
         self.assertEqual(self.bridge.calls[-1]['uid'],UID)
+        self.assertEqual(self.core.queries.content(key)['url'],note(IDS[0])['url'])
         original=self.bridge.call
         async def uncertain(params,ctx,op):
             result=await original(params,ctx,op)

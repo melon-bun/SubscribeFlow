@@ -166,7 +166,8 @@
   function addDialog(app) {
     var connections = app.session.connections.filter(function (c) { return c.enabled; });
     if (!connections.length) { ui.toast('没有可用的渠道连接','error'); return; }
-    var connectionId = connections[0].id, chosen = null, requestId = 0, busy = false, closed = false;
+    var connectionId = connections[0].id, chosen = null, requestId = 0, busy = false, closed = false, searchLocked = false;
+    var disabledBefore = new Map();
     var input = h('input.input',{id:'source-input',placeholder:'输入作者 UID、主页链接或搜索名称',autocomplete:'off'});
     var results = h('div.source-results'), error = h('p.field__error',{'role':'alert'});
     var confirm = h('input',{type:'checkbox',id:'source-confirm',disabled:true});
@@ -183,7 +184,16 @@
     input.addEventListener('input',clearChoice);
     confirm.addEventListener('change',function () { add.disabled = busy || !chosen || !confirm.checked; });
     function setBusy(value) {
-      input.disabled=value; platform._input.disabled=value; resolve.disabled=value; search.disabled=value || !searchSupported();
+      if(value) {
+        layer.el.querySelectorAll('button, input, select, textarea').forEach(function(control) {
+          if(!disabledBefore.has(control)) disabledBefore.set(control,control.disabled);
+          control.disabled=true;
+        });
+      } else {
+        disabledBefore.forEach(function(disabled,control) { control.disabled=disabled; }); disabledBefore.clear();
+      }
+      input.disabled=value; platform.querySelectorAll('button').forEach(function(button) { button.disabled=value; });
+      resolve.disabled=value; search.disabled=value || !searchSupported();
       confirm.disabled=value || !chosen; add.disabled=value || !chosen || !confirm.checked;
       if(login) login.disabled=value; if(check) check.disabled=value;
     }
@@ -192,6 +202,7 @@
       return app.session.channels.some(function (d) { return d.channel === c.channel && d.backend === c.backend && d.operations.search_sources && d.operations.search_sources.supported; });
     }
     function choose(source) {
+      if(busy || closed) return;
       chosen = source; confirm.checked=false; confirm.disabled=false; add.disabled=true;
       results.replaceChildren(ui.notice({tone:'info',title:source.name + ' · 作者 ID ' + source.external_id,
         text:(source.description ? source.description + '\n' : '') + source.url + (source.confirmed ? ' · 请核对是否为你要订阅的作者。' : ' · 仅完成地址解析，尚未验证账号存在，请核对作者 ID。')}));
@@ -200,20 +211,34 @@
       if(busy) return;
       clearChoice(); var ticket = requestId, text=input.value.trim();
       if(!text) { error.textContent='请输入 UID、主页或名称'; return; }
-      busy=true; setBusy(true);
+      var selected=connections.find(function(c) { return c.id===connectionId; });
+      searchLocked=searching && selected.channel==='xiaohongshu';
+      busy=true; setBusy(true); var timeout;
+      if(searchLocked) results.replaceChildren(h('p',{role:'status',text:'正在搜索小红书作者…（最多 60 秒）'}));
       try {
         var query={connectionId:connectionId,text:text};
-        var response=await app.client[searching?'searchSources':'resolveSource'](query);
+        var pending=app.client[searching?'searchSources':'resolveSource'](query);
+        var response=await (searchLocked ? Promise.race([pending,new Promise(function(_resolve,reject) {
+          timeout=setTimeout(function() { reject(new Error('小红书搜索超过 60 秒，已停止，请稍后重试。')); },60000);
+        })]) : pending);
         if(closed || requestId!==ticket) return;
-        if(!searching) choose(response);
+        if(!searching) { busy=false; choose(response); }
         else if(!response.items.length) results.replaceChildren(h('p',{text:'没有匹配的作者，请修改关键词或使用 UID。'}));
         else results.replaceChildren.apply(results,response.items.map(function(source) {
           return h('button.btn.source-candidate',{type:'button','data-source-id':source.external_id,onclick:function () { choose(source); }},source.avatar ? h('img.source-candidate__avatar',{src:source.avatar,alt:'',referrerpolicy:'no-referrer'}) : ui.avatar(source.name),h('div.col',null,h('strong',{text:source.name + ' · 作者 ID ' + source.external_id}),source.description ? h('span.muted',{text:source.description}) : null));
         }));
-      } catch(err) { if(!closed && requestId===ticket) error.textContent=err.message; }
-      finally { busy=false; if(!closed) setBusy(false); }
+      } catch(err) { if(!closed && requestId===ticket) { results.replaceChildren(); error.textContent=err.message; } }
+      finally { clearTimeout(timeout); busy=false; searchLocked=false; if(!closed) setBusy(false); }
     }
-    var platform=ui.select(connections.map(function(c) { return {value:c.id,label:SF.catalog.platform(c.channel).name}; }),connectionId,function(v) { connectionId=v; clearChoice(); setBusy(false); },{ariaLabel:'来源平台'});
+    var platform=h('div.row.row-gap-3.source-platforms',{role:'group','aria-label':'来源平台'},connections.map(function(c) {
+      var button=ui.btn(SF.catalog.platform(c.channel).name,{variant:c.id===connectionId?'primary':'ghost',onClick:function() {
+        if(busy) return; connectionId=c.id; clearChoice();
+        platform.querySelectorAll('button').forEach(function(button) {
+          var active=button.dataset.connectionId===connectionId;
+          button.classList.toggle('btn--primary',active);button.classList.toggle('btn--ghost',!active);button.setAttribute('aria-pressed',String(active));
+        }); setBusy(false);
+      }}); button.dataset.connectionId=c.id; button.setAttribute('aria-pressed',String(c.id===connectionId)); return button;
+    }));
     var resolve=ui.btn('解析 UID / 主页',{onClick:function () { locate(false); }});
     var search=ui.btn('搜索作者',{variant:'primary',disabled:!searchSupported(),onClick:function () { locate(true); }});
     var login=ui.btn('应用内登录',{onClick:function () { SF.app.act('login:' + connectionId,function () { return app.client.loginConnection(connectionId); }); }});
@@ -224,7 +249,7 @@
       h('div.row.row-gap-3',null,search,resolve,login,check),h('p.field__hint',{text:'输入昵称搜索并选择正确作者。首次使用或登录失效时，先在应用内登录，关闭登录窗口后检查连接。'}),results,error,
       h('label.row.row-gap-3',null,confirm,h('span',{text:'我已核对账号，确认追踪此作者'}))),
       footer:[h('p.field__hint',{text:'添加后手动刷新。相同 UID 不会重复订阅。'}),h('div.spacer'),ui.btn('取消',{onClick:function(){layer.close();}}),add],
-      onClose:function(){closed=true;requestId++;}});
+      beforeClose:function(){return !searchLocked;},onClose:function(){closed=true;requestId++;}});
   }
   SF.views = SF.views || {};
   SF.views.channels = {render:render,reset:function(){cache={};}};

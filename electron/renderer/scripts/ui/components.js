@@ -428,6 +428,7 @@
     }
 
     function close() {
+      if (opts.beforeClose && opts.beforeClose() === false) return;
       document.removeEventListener("keydown", onKeydown, true);
       var idx = openLayers.indexOf(layer);
       if (idx >= 0) openLayers.splice(idx, 1);

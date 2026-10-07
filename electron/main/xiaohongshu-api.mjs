@@ -15,6 +15,16 @@ export function trustedURL(value, kind = 'page') {
     throw new XHSError('INVALID_INPUT', '笔记地址无效');
   return u.href;
 }
+export function shareURL(text,id) {
+  const raw=typeof text==='string' && text.match(/https:\/\/www\.xiaohongshu\.com\/discovery\/item\/[a-f0-9]{24}[^\s<>"“”]*/)?.[0];
+  if(!raw)throw new XHSError('SCHEMA_CHANGED','分享未提供可用链接，请稍后补充详情或重试');
+  const url=trustedURL(raw.replace(/[。，；）)\]]+$/,''));const u=new URL(url);
+  if(u.pathname!==`/discovery/item/${id}` || u.hash || u.searchParams.getAll('source').length!==1 || u.searchParams.get('source')!=='webshare' ||
+      u.searchParams.getAll('xsec_source').length!==1 || u.searchParams.get('xsec_source')!=='pc_share' ||
+      u.searchParams.getAll('xsec_token').length!==1 || !u.searchParams.get('xsec_token'))
+    throw new XHSError('SCHEMA_CHANGED','分享链接身份或签名无效，请稍后补充详情或重试');
+  return url;
+}
 export function validateRequest(p) {
   const fields = {check:['channel','operation'], search:['channel','operation','query','limit'],
     scan:['channel','operation','uid','job_id','cursor','limit','mode','known_ids'], detail:['channel','operation','uid','id']};
@@ -79,7 +89,7 @@ export class XiaohongshuAPI {
   }
   async request(p, signal) {
     validateRequest(p);
-    // Bound cache lifetime; signed URLs never cross the private acquisition boundary.
+    // Profile navigation signatures stay private; official share URLs are content.
     for (const [key, scan] of this.scans) if (Date.now()-scan.started > 600000) {
       this.scans.delete(key);
       if (p.operation === 'scan' && p.cursor?.startsWith(key+':')) throw new XHSError('TIMEOUT','本轮达到 10 分钟上限，已保存结果保留');
@@ -122,13 +132,24 @@ export class XiaohongshuAPI {
     const d = await this.wait('detail',s => s.unavailable || (s.ready && s.contentPresent !== false),signal);
     if (d.unavailable) throw new XHSError('SCHEMA_CHANGED','笔记已删除、私密或不可访问');
     if (d.id?.toLowerCase() !== n.id.toLowerCase() || d.authorId?.toLowerCase() !== uid) throw new XHSError('SCHEMA_CHANGED','无法确认笔记身份与作者归属');
+    const url=await this.share(n.id.toLowerCase(),signal);
     const range = publicationRange(d);
     const date = range?.exact ? new Date(range.start).toISOString() : range?.source === 'date-label' ? new Date(range.start+8*3600000).toISOString().slice(0,10) : null;
     return {id:n.id.toLowerCase(),authorId:uid,author:d.author || '',title:d.title || n.title || d.content?.slice(0,80) || '无标题笔记',
-      content:d.content || '',url:`https://www.xiaohongshu.com/explore/${n.id.toLowerCase()}`,type:d.type || 'normal',
+      content:d.content || '',url,type:d.type || 'normal',
       images:(d.images || []).slice(0,30),tags:(d.tags || []).slice(0,100),
       published:{value:date,precision:range?.exact ? 'second' : date ? 'date' : 'unknown',provenance:range?.source || 'unavailable',timezone:'Asia/Shanghai',raw_label:d.dateText || null},
       acquisition_complete:true};
+  }
+  async share(id,signal) {
+    try {
+      const start=await this.read('share-start',signal);
+      if(start.shareUnavailable)throw new XHSError('SCHEMA_CHANGED','未找到笔记分享入口，保留待重试');
+      const copied=await this.wait('share-copy',s=>!!s.shareText,signal);
+      return shareURL(copied.shareText,id);
+    } finally {
+      try {await this.bounded(this.page.evaluate(scriptFor('share-cleanup')),undefined,2000);}catch{}
+    }
   }
   async scan(p,signal) {
     let scan;

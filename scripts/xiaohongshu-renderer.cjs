@@ -17,10 +17,15 @@ async function verify({window,core,root,xiaohongshu,fixture}) {
   assert.equal((await core.call('channel.list')).length,2);
   await evaluate("SF.app.navigate('channels')");await until("!!document.querySelector('.channels__toolbar')");
   await click('添加渠道或创作者');
-  await evaluate("(()=>{const input=document.querySelector('[aria-label=\"来源平台\"]');input.value='xiaohongshu:default';input.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#source-input').value='同名作者';document.querySelector('#source-input').dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await evaluate("(()=>{document.querySelector('[data-connection-id=\"xiaohongshu:default\"]').click();document.querySelector('#source-input').value='同名作者';document.querySelector('#source-input').dispatchEvent(new Event('input',{bubbles:true}));})()");
+  assert.equal(await evaluate("!!document.querySelector('.source-platforms select')"),false);
+  assert.equal(await evaluate("document.querySelector('[data-connection-id=\"xiaohongshu:default\"]').getAttribute('aria-pressed')"),'true');
+  // Delay the actual search response to inspect every control and close path.
+  await evaluate("(()=>{const client=SF.app.state.client;window.savedSearch=client.searchSources;client.searchSources=async function(q){await new Promise(r=>setTimeout(r,200));return window.savedSearch.call(client,q);};})()");
   await click('搜索作者');await until("!!document.querySelector('.dialog .field__error')?.textContent");
   assert.match(await evaluate("document.querySelector('.dialog .field__error').textContent"),/登录/);
   assert.equal(xiaohongshu.host.isVisible(),false);
+  await evaluate('SF.app.state.client.searchSources=window.savedSearch;void 0');
   await click('应用内登录');
   for(let i=0;i<100 && !xiaohongshu.loginVisible;i++)await new Promise(r=>setTimeout(r,20));
   assert.equal(xiaohongshu.host.isVisible(),true);
@@ -28,7 +33,14 @@ async function verify({window,core,root,xiaohongshu,fixture}) {
   xiaohongshu.host.close();
   for(let i=0;i<100 && xiaohongshu.loginVisible;i++)await new Promise(r=>setTimeout(r,20));
   assert.equal(xiaohongshu.host.isVisible(),false);
-  await click('搜索作者');await until("document.querySelectorAll('.source-candidate').length===2");
+  await evaluate("SF.app.state.client.searchSources=async function(q){await new Promise(r=>setTimeout(r,200));return window.savedSearch.call(SF.app.state.client,q);};void 0");
+  await click('搜索作者');
+  assert.equal(await evaluate("[...document.querySelectorAll('.dialog button, .dialog input')].every(c=>c.disabled)"),true);
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));document.querySelector('.dialog-mask').dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));");
+  assert.equal(await evaluate("!!document.querySelector('.dialog')"),true);
+  await until("document.querySelectorAll('.source-candidate').length===2");
+  await evaluate('SF.app.state.client.searchSources=window.savedSearch;void 0');
+  assert.equal(await evaluate("document.querySelector('[aria-label=\"关闭对话框\"]').disabled"),false);
   assert.equal(await evaluate("document.querySelector('#source-confirm').disabled"),true);
   await screenshot('author-candidates-light.png');
   await evaluate(`document.querySelector('[data-source-id="${fixture.UID}"]').click()`);
@@ -40,6 +52,9 @@ async function verify({window,core,root,xiaohongshu,fixture}) {
   await click('刷新来源');
   await until("SF.app.state.runs.some(r=>r.state==='succeeded' && r.newItems===3)");
   const items=await core.call('content.list');assert.equal(items.total,3);assert.equal(items.items.filter(i=>i.published.value===null).length,1);
+  for(const item of items.items)assert.equal(new URL(item.url).searchParams.get('xsec_source'),'pc_share');
+  assert.equal(await xiaohongshu.view.webContents.executeJavaScript('window.fixtureClipboardWrites'),0);
+  assert.equal(await xiaohongshu.view.webContents.executeJavaScript('navigator.clipboard.writeText===window.fixtureOriginalClipboard && !window.__SF_XHS_SHARE_CAPTURE__'),true);
   assert.equal(xiaohongshu.host.isVisible(),false);
   const key='xiaohongshu:note:'+fixture.IDS[0];
   await core.call('content.update',{item_id:key,patch:{priority:'high',read:true}});
@@ -61,7 +76,15 @@ async function verify({window,core,root,xiaohongshu,fixture}) {
   await xiaohongshu.view.webContents.loadURL('https://www.xiaohongshu.com/explore');
   assert.equal((await core.call('connection.check',{connection_id:'xiaohongshu:default'})).authentication,'required');
   assert.equal((await core.call('content.list')).total,3);
-  const result={renderer:'passed',transport:'A',hidden:true,candidates:2,items:3,repeatDetailVisits:0,manualMetadataPreserved:true,coreRestart:true,rendererReload:true,expiredSession:true,realPlatform:false};
+  await evaluate("SF.app.navigate('channels')");await until("!!document.querySelector('.channels__toolbar')");await click('添加渠道或创作者');
+  await evaluate(`(()=>{document.querySelector('[data-connection-id="xiaohongshu:default"]').click();document.querySelector('#source-input').value='超时测试';const client=SF.app.state.client;window.savedSearch=client.searchSources;client.searchSources=()=>new Promise(resolve=>{window.lateSearch=resolve;});window.savedTimeout=window.setTimeout;window.setTimeout=(fn,ms,...args)=>{if(ms===60000){window.searchTimeoutBudget=ms;return window.savedTimeout(fn,30,...args);}return window.savedTimeout(fn,ms,...args);};})()`);
+  await click('搜索作者');await until("document.querySelector('.dialog .field__error').textContent.includes('60 秒')");
+  assert.equal(await evaluate('window.searchTimeoutBudget'),60000);
+  assert.equal(await evaluate("document.querySelector('[data-connection-id=\"bilibili:default\"]').disabled"),false);
+  await evaluate("window.lateSearch({items:[{external_id:'late',name:'不应显示'}]});SF.app.state.client.searchSources=window.savedSearch;window.setTimeout=window.savedTimeout;void 0");
+  await new Promise(r=>setTimeout(r,60));assert.equal(await evaluate("document.querySelectorAll('.source-candidate').length"),0);
+  await click('取消');
+  const result={renderer:'passed',transport:'A',hidden:true,candidates:2,items:3,repeatDetailVisits:0,shareLinks:true,platformButtons:true,allSearchControlsDisabled:true,searchTimeoutSeconds:60,lateResponseIgnored:true,manualMetadataPreserved:true,coreRestart:true,rendererReload:true,expiredSession:true,realPlatform:false};
   await fs.writeFile(path.join(output,'validation.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
 }
 module.exports={verify};

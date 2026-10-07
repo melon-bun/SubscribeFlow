@@ -52,9 +52,10 @@ class XiaohongshuSession {
       if(this.closing)throw new XHSError('CANCELLED','应用正在关闭');
       if(this.loginVisible)throw new XHSError('INTERACTION_REQUIRED','请先完成小红书登录并关闭登录窗口，再检查连接或重试');
       await this.init();
-      const timeout=setTimeout(()=>controller.abort(new XHSError('TIMEOUT','小红书读取超时，已保存结果保留，请稍后重试')),45000);
+      const timeout=setTimeout(()=>controller.abort(new XHSError('TIMEOUT','小红书读取超时，已保存结果保留，请稍后重试')),params.operation==='search' ? 60000 : 45000);
       try{return await this.api.request(params,controller.signal);}
       catch(error){
+        if(controller.signal.aborted && controller.signal.reason instanceof XHSError)error=controller.signal.reason;
         if(['AUTH_REQUIRED','INTERACTION_REQUIRED','CANCELLED','TIMEOUT'].includes(error.code))this.api?.abortScan(params.job_id);
         if(error.code==='TIMEOUT') {
           this.api.reset();this.api=null;

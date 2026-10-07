@@ -17,6 +17,7 @@ function fixture({profiles,login=true,detailFail,detailDate}={}) {
       const id=new URL(url).pathname.split('/').pop();if(detailFail)throw detailFail;
       return {...base,id,authorId:UID,ready:true,title:'笔记 '+id,content:'正文',rawTime:detailDate ? null : Date.now()-7*86400000,dateText:detailDate || '',images:[],tags:[]};
     }
+    if(action==='share-copy')return {...base,shareText:`7 【笔记分享】 https://www.xiaohongshu.com/discovery/item/${new URL(url).pathname.split('/').pop()}?source=webshare&xhsshare=pc_web&xsec_token=fixture-share-token%3D&xsec_source=pc_share`};
     return base;
   }};
   return {page,visits};
@@ -65,11 +66,20 @@ test('ambiguous dates remain unknown and China date labels do not shift to the p
     assert.equal(r.items[0].published.value,value);assert.equal(r.items[0].published.precision,precision);assert.equal(r.items[0].published.raw_label,label);
   }
 });
-test('signed links stay in the backend and failed notes retain retry eligibility',async()=>{
+test('profile signatures stay private and failed notes retain retry eligibility',async()=>{
   const f=await setup({detailFail:new Error('fixture token must not escape')});let r=await f.api.request({...scanParams,limit:1});
   r=await f.api.request({...scanParams,limit:1,cursor:r.cursor});
   assert.equal(r.items.length,0);assert.equal(r.errors.length,1);assert.equal(r.terminal,true);
   assert.ok(!JSON.stringify(r).includes('fixture token'));assert.ok(!JSON.stringify(r).includes('xsec_token'));
+});
+test('official copied share URL is preserved and wrong identity or signature is rejected',async()=>{
+  const {shareURL}=await import('../electron/main/xiaohongshu-api.mjs');
+  const url=`https://www.xiaohongshu.com/discovery/item/${IDS[0]}?source=webshare&xhsshare=pc_web&xsec_token=share%3D&xsec_source=pc_share`;
+  assert.equal(shareURL('7 【笔记】 😆 '+url,IDS[0]),url);
+  for(const candidate of [url.replace(IDS[0],IDS[1]),url.replace('pc_share','pc_user'),url.replace('xsec_token=share%3D&',''),url+'&xsec_token=other',url.replace('www.xiaohongshu.com','evil.test')])
+    assert.throws(()=>shareURL(candidate,IDS[0]),e=>e.code==='SCHEMA_CHANGED');
+  const f=await setup();let r=await f.api.request({...scanParams,limit:1});r=await f.api.request({...scanParams,limit:1,cursor:r.cursor});
+  assert.match(r.items[0].url,/\/discovery\/item\//);assert.equal(new URL(r.items[0].url).searchParams.get('xsec_source'),'pc_share');
 });
 test('cancellation and an unreadable page release the operation within a bound',async()=>{
   const f=await setup();const c=new AbortController();c.abort();await assert.rejects(f.api.request(scanParams,c.signal));

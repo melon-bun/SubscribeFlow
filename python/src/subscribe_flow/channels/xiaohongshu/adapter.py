@@ -1,6 +1,6 @@
 import re
 from datetime import date, datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 from subscribe_flow.acquisition.resources import ResourceCoordinator
 from subscribe_flow.contracts import (ChannelDescriptor, ChannelError, ContentItem, ContentPatch,
@@ -8,7 +8,7 @@ from subscribe_flow.contracts import (ChannelDescriptor, ChannelError, ContentIt
 
 CHANNEL = "xiaohongshu"
 BACKEND = "electron-session"
-VERSION = "xhs-page-1"
+VERSION = "xhs-page-2"
 ID = re.compile(r"^[a-f0-9]{24}$")
 
 
@@ -59,10 +59,17 @@ def item_from_row(row, source):
             row.get("authorId") != source.external_id or row.get("acquisition_complete") is not True or
             not isinstance(row.get("title"), str) or not row["title"].strip() or not isinstance(row.get("content"), str)):
         raise ValueError("invalid note identity or detail")
+    url = row.get("url")
+    parsed = urlparse(url) if isinstance(url, str) else None
+    query = parse_qs(parsed.query) if parsed else {}
+    if (not parsed or len(url) > 4096 or parsed.scheme != 'https' or parsed.netloc != 'www.xiaohongshu.com' or
+            parsed.path != f"/discovery/item/{row['id']}" or query.get('source') != ['webshare'] or
+            query.get('xsec_source') != ['pc_share'] or not query.get('xsec_token') or parsed.fragment):
+        raise ValueError("invalid official share link")
     pictures = row.get("images") or []
     thumbnail = next((image_url(url) for url in pictures if image_url(url)), None)
     return ContentItem(CHANNEL, "note", row["id"], source, row["title"].strip()[:1000],
-        f"https://www.xiaohongshu.com/explore/{row['id']}", kind="note", published=publication(row),
+        url, kind="note", published=publication(row),
         summary=row["content"][:200000], thumbnail=thumbnail, acquisition_complete=True)
 
 
@@ -84,7 +91,7 @@ class XiaohongshuAdapter:
             "list_items": OperationCapability(True, dependencies=deps, authentication="required", pagination="bounded_profile_scan",
                 ordering="pinned_and_unordered", full_history=False, notes="主页 ID 预筛选，逐条保存详情；有界扫描不保证全部历史"),
             "get_item_detail": OperationCapability(True, dependencies=deps, authentication="required", notes="重新从作者主页取得访问链接后补充详情"),
-        }, adapter_version="1", parser_version="1", progress_version=VERSION, content_types=("note",),
+        }, adapter_version="2", parser_version="2", progress_version=VERSION, content_types=("note",),
             page_size=1, default_refresh_budget=8, default_backfill_budget=30, scan_overhead_budget=13, budget_unit="details")
 
     async def call(self, action, context, **params):
@@ -189,6 +196,6 @@ class XiaohongshuAdapter:
             if item.external_id != key:
                 raise ValueError("different note")
             return ContentPatch(item.key, {"title":item.title, "summary":item.summary, "thumbnail":item.thumbnail,
-                                          "published":item.published, "acquisition_complete":True})
+                                          "published":item.published, "url":item.url, "acquisition_complete":True})
         except (ValueError, TypeError, KeyError):
             raise ChannelError("SCHEMA_CHANGED", "get_item_detail", "笔记详情身份或数据无效") from None

@@ -18,7 +18,9 @@ function install(session) {
     } else if(/^\/explore\/[a-f0-9]{24}$/.test(u.pathname)) {
       const id=u.pathname.split('/').pop(),i=IDS.indexOf(id);
       state.note={noteDetailMap:{[id]:{note:{title:['置顶旧笔记','近期笔记','时间待确认笔记'][i],desc:'用于验证正式入库的正文',user:{userId:UID,nickname:'同名作者'},...(i===2 ? {} : {time:Date.now()-(i===0 ? 7*86400000 : 3600000)})}}}};
-      body=`<div id="noteContainer"><div id="detail-title">验收笔记</div><div id="detail-desc">用于验证正式入库的正文</div><div class="date">${i===2 ? '2天前' : ''}</div></div>`;
+      const share=`7 【验收笔记】 https://www.xiaohongshu.com/discovery/item/${id}?source=webshare&xhsshare=pc_web&xsec_token=fixture-share-token%3D&xsec_source=pc_share`;
+      const copy=i===1 ? `()=>{const t=document.createElement('textarea');t.value=${JSON.stringify(share)};document.body.append(t);t.select();document.execCommand('copy');t.remove();}` : `()=>navigator.clipboard.writeText(${JSON.stringify(share)})`;
+      body=`<div id="noteContainer"><div id="detail-title">验收笔记</div><div id="detail-desc">用于验证正式入库的正文</div><div class="date">${i===2 ? '2天前' : ''}</div><button class="share-wrapper" onclick="document.querySelector('#copy-link').hidden=false">分享</button><div class="xhs-note-share-popup" style="visibility:hidden"><button class="xhs-note-share-popup-action-item" id="copy-link" hidden>复制链接</button></div></div><script>window.fixtureClipboardWrites=0;navigator.clipboard.writeText=async()=>{window.fixtureClipboardWrites++};window.fixtureOriginalClipboard=navigator.clipboard.writeText;document.querySelector('#copy-link').onclick=${copy};</script>`;
     } else body='<main><h1>隔离小红书页面</h1></main>';
     return new Response(`<!doctype html><html><head><title>小红书隔离验收</title></head><body>${body}<script>window.__INITIAL_STATE__=${JSON.stringify(state)}</script></body></html>`,{headers:{'Content-Type':'text/html; charset=utf-8'}});
   });

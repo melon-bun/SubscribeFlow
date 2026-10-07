@@ -13,10 +13,66 @@ export function pageAction(action) {
   const loginWall = location.pathname.startsWith('/login') || visible(document.querySelector('#login-btn')) ||
     [...document.querySelectorAll('[class*="login-container"], [class*="login-modal"], [class*="login-mask"]')].some(visible);
   const base = { url: location.origin + location.pathname, risk, loginWall, loggedIn: loggedIn === true ? true : loggedIn === false ? false : null };
+  if (action === 'share-cleanup') {
+    window.__SF_XHS_SHARE_CAPTURE__?.restore();
+    delete window.__SF_XHS_SHARE_CAPTURE__; return base;
+  }
   if (action === 'status') return { ...base, title: document.title, hasState: !!window.__INITIAL_STATE__ };
   if (risk || loginWall) return base;
   const absolute = href => { try { const u = new URL(href, location.origin); return u.protocol === 'https:' && !u.username && !u.password && !u.port ? u.href : ''; } catch { return ''; } };
   const profileId = href => { try { return new URL(href, location.origin).pathname.match(/^\/user\/profile\/([\da-f]{24})\/?$/i)?.[1] || ''; } catch { return ''; } };
+  if (action === 'share-start' || action === 'share-copy') {
+    let capture=window.__SF_XHS_SHARE_CAPTURE__;
+    if (!capture) {
+      capture={text:'',clicked:false,restore:()=>{}};
+      const restorers=[];
+      const remember=text=>{ if(typeof text==='string' && text.length<=12000) capture.text=text; };
+      const replace=(object,key,value)=>{
+        if(!object) return;
+        const old=Object.getOwnPropertyDescriptor(object,key);
+        Object.defineProperty(object,key,{configurable:true,writable:true,value});
+        restorers.push(()=>{if(old)Object.defineProperty(object,key,old);else delete object[key];});
+      };
+      capture.restore=()=>{for(const restore of restorers.reverse()) {try{restore();}catch{}}};
+      try {
+        // Capture only the text this page is about to copy. Never read or change
+        // the user's system clipboard, including when the site uses execCommand.
+        replace(navigator.clipboard,'writeText',async text=>{remember(text);});
+        replace(navigator.clipboard,'write',async items=>{
+          for(const item of items)if(item.types?.includes('text/plain'))remember(await (await item.getType('text/plain')).text());
+        });
+        const original=document.execCommand;
+        replace(document,'execCommand',function(command,...args) {
+          if(String(command).toLowerCase()==='copy') {
+            const el=document.activeElement;
+            remember(typeof el?.value==='string' ? el.value.slice(el.selectionStart || 0,el.selectionEnd ?? el.value.length) : window.getSelection()?.toString());
+            return !!capture.text;
+          }
+          return original.call(this,command,...args);
+        });
+        window.__SF_XHS_SHARE_CAPTURE__=capture;
+      } catch {capture.restore();return {...base,shareUnavailable:true};}
+    }
+    if(action==='share-start') {
+      const scope=document.querySelector('#noteContainer');
+      const use=[...(scope?.querySelectorAll('use') || [])].find(el=>/#share(?:$|[-_])/.test(el.getAttribute('href') || el.getAttribute('xlink:href') || ''));
+      const trigger=scope?.querySelector('.share-icon-container') || scope?.querySelector('.share-wrapper, .share-container, .share-icon, [aria-label="分享"]') || use?.closest('div,button');
+      if(trigger) {
+        trigger.dispatchEvent(new MouseEvent('mouseenter',{bubbles:false}));
+        trigger.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));trigger.click();
+      }
+      return {...base,shareUnavailable:!trigger};
+    }
+    if(!capture.clicked) {
+      // The site's floating share popup stays visibility:hidden in a hidden
+      // WebContentsView. Its copy action still generates the official link.
+      const popupCopy=[...document.querySelectorAll('.xhs-note-share-popup .xhs-note-share-popup-action-item')]
+        .find(el=>/^(复制链接|复制分享链接)$/.test(clean(el)));
+      const copy=popupCopy || [...document.querySelectorAll('button, a, div, span')].find(el=>visible(el) && /^(复制链接|复制分享链接)$/.test(clean(el)));
+      if(copy) {capture.clicked=true;copy.click();}
+    }
+    return {...base,shareText:capture.text};
+  }
   if (action === 'user-tab') {
     const tabs = [...document.querySelectorAll('[role="tab"], .channel, .channel-item, .tab, .tab-item, .tabs-item, button, a, span')];
     const tab = tabs.find(el => visible(el) && clean(el) === '用户');
@@ -65,7 +121,7 @@ export function pageAction(action) {
     return { ...base, authorId: location.pathname.match(/^\/user\/profile\/([\da-f]{24})\/?$/i)?.[1]?.toLowerCase(), notes: [...notes.values()], ready: !!pageData && Array.isArray(raw), end, name: pageData?.basicInfo?.nickname || '' };
   }
   if (action === 'detail') {
-    const id = location.pathname.match(/\/(?:explore|search_result)\/([\da-f]{24})/i)?.[1] || location.pathname.match(/\/user\/profile\/[\da-f]{24}\/([\da-f]{24})/i)?.[1];
+    const id = location.pathname.match(/\/(?:explore|search_result|discovery\/item)\/([\da-f]{24})/i)?.[1] || location.pathname.match(/\/user\/profile\/[\da-f]{24}\/([\da-f]{24})/i)?.[1];
     const map = unwrap(state.note?.noteDetailMap);
     const entry = unwrap(map?.[id]);
     const note = unwrap(entry?.note);

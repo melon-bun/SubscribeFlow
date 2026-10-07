@@ -4,7 +4,10 @@ from subscribe_flow.contracts import ChannelError
 
 
 class BrowserBridge:
-    """Private Core -> channel transport RPC. No cookies, URLs or executable scripts."""
+    """Private requests contain stable identifiers, never cookies or scripts.
+
+    Responses can carry validated content URLs, including official share links.
+    """
 
     def __init__(self):
         self.send = None

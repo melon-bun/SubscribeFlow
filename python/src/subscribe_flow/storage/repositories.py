@@ -275,7 +275,7 @@ class Repository:
         return {"updated": len(set(keys))}
 
     def apply_detail(self, job_id, patch: ContentPatch):
-        allowed = {"title", "summary", "thumbnail", "duration_seconds", "published", "acquisition_complete"}
+        allowed = {"title", "summary", "thumbnail", "duration_seconds", "published", "url", "acquisition_complete"}
         if set(patch.fields) - allowed:
             raise ValueError("Unknown detail field")
         with self.database.transaction() as db:
