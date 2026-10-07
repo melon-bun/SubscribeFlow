@@ -178,13 +178,16 @@ export class XiaohongshuAPI {
       this.assertProfile(profile,p.uid); metrics.profile_reads++;
       for (const n of profile.notes) {
         const id=String(n.id).toLowerCase(); if (!ID.test(id) || scan.notes.has(id)) continue;
+        // The budget bounds this profile window. Known IDs occupy a slot too;
+        // skipping a detail must never pull an older note into the window.
+        if (scan.notes.size >= scan.limit) break;
         scan.notes.set(id,{...n,id}); metrics.discovered++;
         if (scan.known.has(id)) metrics.skipped++; else scan.queue.push({...n,id});
       }
       scan.idle = metrics.discovered ? 0 : scan.idle+1; scan.rounds++; scan.end = !!profile.end;
       const bound = scan.rounds >= 13 || scan.idle >= 3 || scan.notes.size >= 500;
-      if (scan.end || scan.queue.length >= scan.limit || bound) {
-        scan.phase='detail'; scan.reason=scan.end ? 'profile_end' : bound ? 'scan_bound' : 'item_limit';
+      if (scan.end || scan.notes.size >= scan.limit || bound) {
+        scan.phase='detail'; scan.reason=scan.notes.size >= scan.limit ? 'item_limit' : scan.end ? 'profile_end' : 'scan_bound';
         scan.queue=scan.queue.slice(0,scan.limit);
       }
     } else {

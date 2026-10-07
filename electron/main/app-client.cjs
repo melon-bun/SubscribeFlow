@@ -56,14 +56,15 @@ function channelDTO(sub, descriptors = [], schedule = null) {
     defaultPriority: sub.default_priority ?? null, externalId: sub.external_id, intervalSeconds: sub.interval_seconds, syncMode:sub.sync_mode, collectItems: sub.collect_items || 0,
     frequency: sub.sync_mode === 'automatic' ? (sub.interval_seconds % 3600 ? `每 ${sub.interval_seconds/60} 分钟` : `每 ${sub.interval_seconds/3600} 小时`) : '手动刷新', schedule,
     pageSize:descriptor.page_size || 20, defaultRefreshBudget:descriptor.default_refresh_budget || 1,
-    defaultBackfillBudget:descriptor.default_backfill_budget || 10, incrementalDetails:descriptor.budget_unit === 'details',
+    defaultBackfillBudget:descriptor.default_backfill_budget || 10, incrementalDetails:['details','items'].includes(descriptor.budget_unit),
+    checkedItems:descriptor.budget_unit === 'items',
     capabilities: { canRefresh: !!operations.list_items?.supported,
       canBackfill: !!operations.list_items?.supported && operations.list_items.pagination !== 'none',
       fullHistory: !!operations.list_items?.full_history, canFetchDetail: !!operations.get_item_detail?.supported } };
 }
 function runDTO(job, subscriptions) {
   const metrics = job.acquisition_metrics || {};
-  const scanMessage = Object.keys(metrics).length ? `主页读取 ${metrics.profile_reads || 0} 次，发现 ${metrics.discovered || 0} 条笔记，跳过已收录 ${metrics.skipped || 0} 条，详情读取 ${metrics.detail_requests || 0} 次；新增 ${job.new_items} 条` : null;
+  const scanMessage = Object.keys(metrics).length ? `主页读取 ${metrics.profile_reads || 0} 次，检查 ${metrics.discovered || 0} 条笔记，跳过已收录 ${metrics.skipped || 0} 条，详情读取 ${metrics.detail_requests || 0} 次；新增 ${job.new_items} 条` : null;
   return { id: job.id, channelId: job.subscription_id,
     channelName: subscriptions.find(sub => sub.id === job.subscription_id)?.name ?? '',
     kind: job.mode, scope: job.coverage, trigger:job.trigger,

@@ -24,6 +24,7 @@ class Bridge:
     def __init__(self):
         self.calls = []
         self.fail_detail = False
+        self.ids = list(IDS)
 
     async def call(self, params, context, operation):
         self.calls.append(params)
@@ -36,8 +37,9 @@ class Bridge:
         cursor = params['cursor']
         if cursor is None:
             known = params.get('known_ids', [])
-            self.pending = [id for id in IDS if id not in known]
-            return dict(items=[], errors=[], metrics=dict(profile_reads=1, discovered=2, skipped=2-len(self.pending), detail_requests=0),
+            window = self.ids[:params['limit']]
+            self.pending = [id for id in window if id not in known]
+            return dict(items=[], errors=[], metrics=dict(profile_reads=1, discovered=len(window), skipped=len(window)-len(self.pending), detail_requests=0),
                         cursor=TOKEN + ':1' if self.pending else None, terminal=not self.pending, end_evidence=None if self.pending else 'profile_end')
         if self.fail_detail:
             raise ChannelError('AUTH_REQUIRED', operation, 'fixture auth expired', scope='connection', scope_key=context.connection.id)
@@ -159,6 +161,28 @@ class XHSTests(unittest.IsolatedAsyncioTestCase):
             await task
         job = self.core.repository.list_jobs()[0]
         self.assertEqual((job['trigger'], job['page_budget']), ('automatic',8))
+
+    async def test_known_entries_consume_budget_in_mixed_and_repeated_windows(self):
+        await self.core.update_subscription(self.sub['id'], collect_items=1)
+        job = await self.scan()
+        self.assertEqual((job['items'], job['new_items']), (1, 1))
+        for mode in ('refresh', 'backfill'):
+            job = await self.scan(mode=mode)
+            self.assertEqual((job['state'], job['items'], job['new_items']), ('succeeded', 0, 0))
+            self.assertEqual(job['acquisition_metrics'], dict(profile_reads=1, discovered=1, skipped=1, detail_requests=0))
+            self.assertEqual(self.core.queries.contents()['total'], 1)
+        await self.core.update_subscription(self.sub['id'], collect_items=2)
+        job = await self.scan()
+        self.assertEqual((job['state'], job['new_items']), ('succeeded', 1))
+        self.assertEqual(job['acquisition_metrics'], dict(profile_reads=1, discovered=2, skipped=1, detail_requests=1))
+        self.assertEqual(self.core.queries.contents()['total'], 2)
+        job = await self.scan()
+        self.assertEqual(job['acquisition_metrics']['detail_requests'], 0)
+        self.bridge.ids.insert(0, '333333333333333333333333')
+        job = await self.scan()
+        self.assertEqual((job['state'], job['new_items']), ('succeeded', 1))
+        self.assertEqual(job['acquisition_metrics']['detail_requests'], 1)
+        self.assertEqual(self.core.queries.contents()['total'], 3)
 
     async def test_replacement_adapter_reuses_persisted_subscriptions_and_views(self):
         await self.scan()

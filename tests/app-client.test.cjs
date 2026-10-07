@@ -16,6 +16,9 @@ test('replacement backend capabilities drive the source UI and platform filters 
   }};
   const channel=(await callUI(core,'listChannels',[])).items[0];
   assert.equal(channel.capabilities.canRefresh,true);assert.equal(channel.incrementalDetails,true);assert.equal(channel.defaultRefreshBudget,8);
+  descriptors[1].budget_unit='items';
+  const windowed=(await callUI(core,'listChannels',[])).items[0];
+  assert.equal(windowed.checkedItems,true);assert.equal(windowed.incrementalDetails,true);
   assert.deepEqual(await callUI(core,'listPlatforms',[]),[{id:'test',count:2}]);
 });
 

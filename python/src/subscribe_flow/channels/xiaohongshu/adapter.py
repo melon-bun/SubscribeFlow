@@ -8,7 +8,7 @@ from subscribe_flow.contracts import (ChannelDescriptor, ChannelError, ContentIt
 
 CHANNEL = "xiaohongshu"
 BACKEND = "electron-session"
-VERSION = "xhs-page-2"
+VERSION = "xhs-page-3"
 ID = re.compile(r"^[a-f0-9]{24}$")
 
 
@@ -89,10 +89,10 @@ class XiaohongshuAdapter:
             "resolve_source": OperationCapability(True, True, "not_required", notes="本地解析作者主页；昵称由搜索候选确认"),
             "search_sources": OperationCapability(True, dependencies=deps, authentication="required", notes="昵称搜索，仅显示当前已加载的候选"),
             "list_items": OperationCapability(True, dependencies=deps, authentication="required", pagination="bounded_profile_scan",
-                ordering="pinned_and_unordered", full_history=False, notes="主页 ID 预筛选，逐条保存详情；有界扫描不保证全部历史"),
+                ordering="pinned_and_unordered", full_history=False, notes="按主页顺序检查限定条数，已收录也占名额；有界扫描不保证全部历史"),
             "get_item_detail": OperationCapability(True, dependencies=deps, authentication="required", notes="重新从作者主页取得访问链接后补充详情"),
-        }, adapter_version="2", parser_version="2", progress_version=VERSION, content_types=("note",),
-            page_size=1, default_refresh_budget=8, default_backfill_budget=30, scan_overhead_budget=13, budget_unit="details")
+        }, adapter_version="3", parser_version="2", progress_version=VERSION, content_types=("note",),
+            page_size=1, default_refresh_budget=8, default_backfill_budget=30, scan_overhead_budget=13, budget_unit="items")
 
     async def call(self, action, context, **params):
         async with self.resources.acquire(context, action):

@@ -59,9 +59,18 @@ async function verify({window,core,root,xiaohongshu,fixture}) {
   const key='xiaohongshu:note:'+fixture.IDS[0];
   await core.call('content.update',{item_id:key,patch:{priority:'high',read:true}});
   const tag=await core.call('tag.create',{name:'M10验收标签'});await core.call('content.set_tags',{item_id:key,tag_ids:[tag.id]});
+  // A fourth older note exists but must not fill a skipped slot in a size-3 window.
+  fixture.IDS.push('444444444444444444444444');
+  await click('设置采集条数');
+  assert.match(await evaluate("document.querySelector('.dialog').textContent"),/已收录的也占名额/);
+  await evaluate("document.querySelector('#collect-items').value='3'");await click('保存采集条数');
+  await until("!document.querySelector('.dialog')");
+  assert.equal((await core.call('subscription.list'))[0].collect_items,3);
   const detailVisits=fixture.visits.filter(u=>/\/explore\/[a-f0-9]{24}$/.test(u)).length;
   await click('刷新来源');await until("SF.app.state.runs.some(r=>r.state==='succeeded' && r.acquisitionMetrics?.skipped===3)");
   assert.equal(fixture.visits.filter(u=>/\/explore\/[a-f0-9]{24}$/.test(u)).length,detailVisits);
+  assert.equal((await core.call('content.list')).total,3);
+  assert.ok(!fixture.visits.some(u=>u.includes('444444444444444444444444')));
   let saved=await core.call('content.get',{item_id:key});assert.equal(saved.state.read,true);assert.equal(saved.priority,'high');assert.equal(saved.tags[0].id,tag.id);
   const platforms=await evaluate('SF.app.state.session.channels.map(c=>c.channel)');assert.deepEqual(platforms,['bilibili','xiaohongshu']);
   await screenshot('channels-light.png');
@@ -84,7 +93,7 @@ async function verify({window,core,root,xiaohongshu,fixture}) {
   await evaluate("window.lateSearch({items:[{external_id:'late',name:'不应显示'}]});SF.app.state.client.searchSources=window.savedSearch;window.setTimeout=window.savedTimeout;void 0");
   await new Promise(r=>setTimeout(r,60));assert.equal(await evaluate("document.querySelectorAll('.source-candidate').length"),0);
   await click('取消');
-  const result={renderer:'passed',transport:'A',hidden:true,candidates:2,items:3,repeatDetailVisits:0,shareLinks:true,platformButtons:true,allSearchControlsDisabled:true,searchTimeoutSeconds:60,lateResponseIgnored:true,manualMetadataPreserved:true,coreRestart:true,rendererReload:true,expiredSession:true,realPlatform:false};
+  const result={renderer:'passed',transport:'A',hidden:true,candidates:2,items:3,repeatDetailVisits:0,boundedKnownWindow:true,olderUncollectedNoteNotVisited:true,shareLinks:true,platformButtons:true,allSearchControlsDisabled:true,searchTimeoutSeconds:60,lateResponseIgnored:true,manualMetadataPreserved:true,coreRestart:true,rendererReload:true,expiredSession:true,realPlatform:false};
   await fs.writeFile(path.join(output,'validation.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
 }
 module.exports={verify};

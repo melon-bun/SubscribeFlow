@@ -34,6 +34,8 @@ class SyncService:
         collect_items = sub.get("collect_items") or 0
         page_size = descriptor.page_size if descriptor else cls.PAGE_ITEMS
         if collect_items:
+            if descriptor and descriptor.budget_unit != "pages":
+                return collect_items
             return -(-collect_items // page_size)
         if descriptor:
             return descriptor.default_backfill_budget if mode == "backfill" else descriptor.default_refresh_budget
@@ -131,8 +133,12 @@ class SyncService:
                 context = self._context(job)
                 page = await self._request(job, 'list_items', lambda ctx: self.gateway.fetch_page(source,
                     FetchRequest(mode=job["mode"], cursor=cursor, limit=descriptor.page_size,
-                                 known_ids=known_ids if cursor is None else (), item_budget=budget * descriptor.page_size), ctx))
-                consumed += page.metrics.get("detail_requests", 0) if descriptor.budget_unit == "details" else 1
+                                 known_ids=known_ids if cursor is None else (),
+                                 item_budget=budget * descriptor.page_size if descriptor.budget_unit == "pages" else budget), ctx))
+                if descriptor.budget_unit == "items":
+                    consumed += len(page.items) + len(page.item_errors) + page.metrics.get("skipped", 0)
+                else:
+                    consumed += page.metrics.get("detail_requests", 0) if descriptor.budget_unit == "details" else 1
                 keys = {item.key for item in page.items}
                 if index == 0:
                     first_keys = keys

@@ -60,6 +60,41 @@ test('all-known first batch continues scrolling to discover a later new note',as
   r=await f.api.request({...scanParams,cursor:r.cursor});assert.equal(r.metrics.discovered,1);assert.equal(r.metrics.skipped,0);
   r=await f.api.request({...scanParams,cursor:r.cursor});assert.equal(r.items[0].id,IDS[1]);
 });
+test('known notes consume the window budget instead of pulling in older notes',async()=>{
+  const ids=Array.from({length:500},(_,i)=>(i+1).toString(16).padStart(24,'0'));
+  const notes=ids.map(id=>({id,url:`https://www.xiaohongshu.com/explore/${id}?xsec_token=fixture`}));
+  for(const mode of ['refresh','backfill']) {
+    const f=await setup({profiles:[{authorId:UID,notes,end:false}]});
+    const r=await f.api.request({...scanParams,mode,limit:5,known_ids:ids.slice(0,15)});
+    assert.equal(r.terminal,true);assert.equal(r.cursor,null);assert.equal(r.end_evidence,'item_limit');
+    assert.deepEqual(r.metrics,{profile_reads:1,discovered:5,skipped:5,detail_requests:0});
+    assert.equal(f.visits.length,1);assert.equal(r.items.length,0);
+  }
+});
+test('mixed windows read only missing entries inside the first N unique notes',async()=>{
+  const ids=Array.from({length:8},(_,i)=>(i+1).toString(16).padStart(24,'0'));
+  const notes=ids.map(id=>({id,url:`https://www.xiaohongshu.com/explore/${id}?xsec_token=fixture`}));
+  const f=await setup({profiles:[{authorId:UID,notes,end:false}]});
+  let r=await f.api.request({...scanParams,limit:5,known_ids:[ids[0],ids[2]]});
+  assert.deepEqual(r.metrics,{profile_reads:1,discovered:5,skipped:2,detail_requests:0});
+  const collected=[];
+  while(r.cursor){r=await f.api.request({...scanParams,limit:5,cursor:r.cursor});collected.push(...r.items.map(n=>n.id));}
+  assert.deepEqual(collected,[ids[1],ids[3],ids[4]]);
+  assert.equal(f.visits.filter(url=>url.includes('/explore/')).length,3);
+  const small=await setup({profiles:[{authorId:UID,notes:[notes[0],notes[0],notes[1]],end:false},
+    {authorId:UID,notes:[...notes.slice(0,4)],end:false}]});
+  r=await small.api.request({...scanParams,limit:3,known_ids:[ids[0],ids[2]]});assert.equal(r.metrics.discovered,2);
+  r=await small.api.request({...scanParams,limit:3,cursor:r.cursor});assert.equal(r.metrics.discovered,1);assert.equal(r.metrics.skipped,1);
+  r=await small.api.request({...scanParams,limit:3,cursor:r.cursor});assert.equal(r.items[0].id,ids[1]);assert.equal(r.terminal,true);
+});
+test('a failed detail also occupies its window slot without replacement',async()=>{
+  const f=await setup({detailFail:new Error('fixture failure')});
+  let r=await f.api.request({...scanParams,limit:2,known_ids:[IDS[0]]});
+  r=await f.api.request({...scanParams,limit:2,cursor:r.cursor});
+  assert.equal(r.terminal,true);assert.equal(r.errors.length,1);assert.equal(r.items.length,0);
+  assert.equal(f.visits.filter(url=>url.includes('/explore/')).length,1);
+  assert.ok(!f.visits.some(url=>url.includes(IDS[2])));
+});
 test('ambiguous dates remain unknown and China date labels do not shift to the previous day',async()=>{
   for(const [label,value,precision] of [['2026-01-02','2026-01-02','date'],['2天前',null,'unknown'],['编辑于 2026-01-02',null,'unknown']]) {
     const f=await setup({detailDate:label});let r=await f.api.request({...scanParams,limit:1});r=await f.api.request({...scanParams,limit:1,cursor:r.cursor});
