@@ -502,14 +502,10 @@
   /* ---------------- 下拉菜单 ---------------- */
 
   var openMenu = null;
-  // 同一时刻只允许一个浮层：菜单和标签浮层都登记在这里，后开的先关掉旧的。
-  var openOverlay = null;
-  function claimOverlay(dismiss) { ui.closeMenu(); openOverlay = dismiss; }
 
   ui.closeMenu = function () {
     if (openMenu && openMenu.parentNode) openMenu.parentNode.removeChild(openMenu);
     openMenu = null;
-    if (openOverlay) { const dismiss = openOverlay; openOverlay = null; dismiss(); }
   };
 
   /**
@@ -519,7 +515,7 @@
   function positionOverlay(el, anchor, align) {
     var rect = anchor.getBoundingClientRect();
     var w = el.offsetWidth;
-    var left = align === "left" ? rect.left : Math.min(rect.left, window.innerWidth - w - 8);
+    var left = align === "left" ? rect.left : Math.min(rect.right - w, window.innerWidth - w - 8);
     var top = rect.bottom + 4;
     if (top + el.offsetHeight > window.innerHeight - 8) {
       top = Math.max(8, rect.top - el.offsetHeight - 4);
@@ -560,7 +556,6 @@
     var firstItem = el.querySelector("button"); if (firstItem) firstItem.focus();
     el.addEventListener("keydown", function (e) { if (e.key === "Escape") { ui.closeMenu(); if (anchor.isConnected) anchor.focus(); } });
     openMenu = el;
-    claimOverlay(function () { if (el.parentNode) el.parentNode.removeChild(el); openMenu = null; });
 
     setTimeout(function () {
       document.addEventListener("mousedown", onDocDown, { once: true });
@@ -604,8 +599,9 @@
     }
     function visible() {
       var q = keyword.trim().toLowerCase();
-      if (!q) return tags;
-      return tags.filter(function (t) {
+      var available = tags.filter(function (t) { return t.enabled !== false; });
+      if (!q) return available;
+      return available.filter(function (t) {
         return (t.name || "").toLowerCase().indexOf(q) >= 0 ||
           (t.synonyms || []).some(function (s) { return s.toLowerCase().indexOf(q) >= 0; });
       });
@@ -689,9 +685,14 @@
       var name = keyword.trim();
       if (!name || !opts.onCreate) return;
       e.preventDefault();
-      var existed = tags.filter(function (t) { return t.name === name; })[0];
-      if (existed) { mount(existed.id); return; }
+      var existed = tags.filter(function (t) { return t.name.toLowerCase() === name.toLowerCase(); })[0];
+      if (existed) {
+        if (existed.enabled === false && !selected[existed.id]) ui.toast("该标签已停用，请先在标签管理中启用。", "error");
+        else mount(existed.id);
+        return;
+      }
       opts.onCreate(name, function (tag) {
+        if (closed) return;
         tags.push(tag);
         mount(tag.id);
       });

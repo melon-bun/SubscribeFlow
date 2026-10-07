@@ -79,7 +79,7 @@ async function callUI(core, name, args) {
       return { user: { name: '本地用户' }, now: Date.now(), isDemo: false,
         capabilities: { canRefresh: channels.some(c => c.operations.list_items?.supported),
           canBackfill: channels.some(c => c.operations.list_items?.supported && c.operations.list_items.pagination !== 'none'),
-          canCancel: true, canManageChannels: true, canManagePriorities: true, canManageRules: false, canBookmark: false, canManageTags: false, canSchedule: true },
+          canCancel: true, canManageChannels: true, canManagePriorities: true, canManageRules: false, canBookmark: false, canManageTags: true, canSchedule: true },
         channels, connections, scheduler,
         connection: { state: latest?.state ?? 'unknown', detail: latest?.reason ?? '尚未检查采集环境',
           dependency: latest?.dependency, authentication: latest?.authentication, actions: latest?.actions || [] } };

@@ -813,13 +813,8 @@
       setFieldError(aliasError, "别名「" + tooLong + "」超过 " + MAX_SYNONYM + " 字");
       return Promise.resolve();
     }
-    /* 空描述不进 patch：RPC 层的参数校验拒收任何空串
-       （rpc/dispatcher.py 的 validate），带上 '' 整个保存都会被判「参数无效」。
-       副作用是「清空已有描述」暂时做不到，这里如实告诉用户，不假装保存成功。 */
     var description = String(draft.description || "").trim();
-    var clearedDescription = !description && !!t.description;
-    var payload = { name: name, color: draft.color, synonyms: draft.synonyms };
-    if (description) payload.description = description;
+    var payload = { name: name, color: draft.color, synonyms: draft.synonyms, description: description };
     return SF.app.act("tag:" + t.id, async function () {
       try {
         await app.client.updateTag(t.id, payload);
@@ -836,13 +831,7 @@
       }
       cache.draft = null;
       cache.draftError = null;
-      /* 描述被清空时如实说明它没被清掉：RPC 层拒收空串（见 report），
-         静默忽略会让用户以为描述已经删了，下次打开又出现。 */
-      if (clearedDescription) {
-        ui.toast("其余修改已保存；描述暂时无法清空，暂保留原文", "error");
-      } else {
-        ui.toast("已保存「" + name + "」");
-      }
+      ui.toast("已保存「" + name + "」");
       await load(app, { force: true });
     });
   }
@@ -1097,7 +1086,7 @@
             h("p.tags-empty__note-t", { text: "现在可以做的" }),
             h("p", { text: "创建、重命名、改色和维护别名标签，并查看每个标签用在了多少条内容上。" }),
             h("p.tags-empty__note-t", { text: "后续会补上的" }),
-            h("p", { text: "在内容详情里手动打标，以及模型自动识别。接入时间待定，到时这一页会给出真正的操作入口。" })
+            h("p", { text: "模型自动识别。接入时间待定，到时这一页会给出真正的操作入口；现在已可在内容详情里手动打标。" })
           )
         )
       )

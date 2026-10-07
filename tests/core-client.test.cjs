@@ -22,6 +22,7 @@ test('real sidecar handshake, persistent subscription, UI mapping and controlled
   await fixture(async core => {
     const channels = await core.call('channel.list');
     assert.equal(channels[0].channel, 'bilibili');
+    assert.equal((await callUI(core, 'getSession', [])).capabilities.canManageTags, true);
     const sub = await callUI(core, 'createChannel', [{platform: 'bilibili', link:'946974', confirmed:true}]);
     assert.equal(sub.platform, 'bilibili');
     const list = await callUI(core, 'listChannels', []);
@@ -305,6 +306,13 @@ test('real sidecar tag lifecycle, filtering and restart survival through the whi
     assert.equal(list.total, 3);
     assert.equal(list.items.find(t => t.id === food.id).contentCount, 3);
     assert.equal((await callUI(core,'listTagContents',[travel.id, {}])).total, 2);
+    await callUI(core, 'updateTag', [travel.id, {description:'可清空的描述'}]);
+    assert.equal((await callUI(core, 'updateTag', [travel.id, {description:''}])).description, '');
+    await assert.rejects(core.call('tag.update', {tag_id:travel.id, name:''}));
+    await assert.rejects(core.call('tag.update', {tag_id:'', description:''}));
+    assert.equal((await callUI(core,'listTagContents',[travel.id, {state:'unread', priority:'none'}])).total, 2);
+    assert.equal((await callUI(core,'listTagContents',[travel.id, {state:'read'}])).total, 0);
+    assert.equal((await callUI(core,'listTagContents',[travel.id, {priority:'high'}])).total, 0);
     await callUI(core, 'updateTag', [travel.id, {name:'出行'}]);
     assert.equal((await callUI(core,'listTagContents',[travel.id, {}])).total, 2);
     const removed = await callUI(core, 'removeTag', [food.id]);

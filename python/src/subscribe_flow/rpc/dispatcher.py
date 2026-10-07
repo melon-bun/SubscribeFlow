@@ -11,7 +11,7 @@ class RPCFault(Exception):
         self.code, self.message, self.data = code, message, data
 
 
-def validate(params, required=None, optional=None):
+def validate(params, required=None, optional=None, allow_empty=()):
     required, optional = required or {}, optional or {}
     if not isinstance(params, dict) or set(params) - (required.keys() | optional.keys()) or required.keys() - params.keys():
         raise RPCFault(-32602, "参数字段不符合接口定义")
@@ -19,7 +19,7 @@ def validate(params, required=None, optional=None):
         expected = (required | optional)[key]
         if not (type(value) in expected if isinstance(expected, tuple) else type(value) is expected):
             raise RPCFault(-32602, f"参数 {key} 类型不正确")
-        if isinstance(value, str) and (not value or len(value) > 2000):
+        if isinstance(value, str) and ((not value and key not in allow_empty) or len(value) > 2000):
             raise RPCFault(-32602, f"参数 {key} 长度无效")
     return params
 
@@ -67,7 +67,8 @@ class Dispatcher:
             "tag.update": (c.tags.update, {"tag_id": str}, {"name": str, "description": str, "color": str, "synonyms": list}),
             "tag.set_enabled": (c.tags.set_enabled, {"tag_id": str, "enabled": bool}, {}),
             "tag.remove": (c.tags.remove, {"tag_id": str}, {}),
-            "tag.contents": (c.tags.contents, {"tag_id": str}, {"limit": int, "offset": int}),
+            "tag.contents": (c.tags.contents, {"tag_id": str}, {"limit": int, "offset": int,
+                             "read": bool, "archived": bool, "deferred": bool, "priority": str}),
             "content.set_tags": (c.tags.set_content, {"item_id": str, "tag_ids": list}, {}),
             "content.bulk_set_tags": (c.tags.bulk_set, {"item_ids": list, "tag_ids": list}, {}),
         }
@@ -98,7 +99,8 @@ class Dispatcher:
                 if method not in self.routes:
                     raise RPCFault(-32601, "Method not found")
                 function, required, optional = self.routes[method]
-                validate(params, required, optional)
+                validate(params, required, optional,
+                         allow_empty=("description",) if method in ("tag.create", "tag.update") else ())
                 if "item_ids" in params and (len(params["item_ids"]) > 100 or any(type(item) is not str or not item or len(item) > 2000 for item in params["item_ids"])):
                     raise RPCFault(-32602, "内容 ID 列表无效")
                 if "tag_ids" in params and (len(params["tag_ids"]) > 100 or any(type(t) is not str or not t or len(t) > 2000 for t in params["tag_ids"])):

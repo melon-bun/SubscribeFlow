@@ -28,7 +28,9 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   await evaluate(`document.querySelector('.detail .priority-opt--low').click()`);
   await until(`SF.app.state.counts.low===1 && document.querySelector('.detail .priority-opt--low[aria-pressed="true"]')`);
   assert.equal((await core.call('content.get',{item_id:firstId})).state.read,true);
-  assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.priority-opt--medium .priority-opt__icon')).backgroundColor`),'rgba(0, 0, 0, 0)');
+  await until(`!!document.querySelector('.priority-opt--medium .priority-opt__icon')`);
+  assert.ok(await evaluate(`(() => { const el=document.querySelector('.priority-opt--medium .priority-opt__icon');
+    return !!el && getComputedStyle(el).backgroundColor!=='rgba(0, 0, 0, 0)'; })()`));
   await screenshot('m8-content-priority.png');
   await sourceSettings();
   await change(sourceLabel,'medium');

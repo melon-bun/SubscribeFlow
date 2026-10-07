@@ -12,7 +12,7 @@ async function verify({window, core, root, mode}) {
   const until = async (expression, timeout = 15000) => {
     const start = Date.now();
     while (!(await evaluate(expression))) {
-      if (Date.now() - start > timeout) throw new Error('Timed out: ' + expression +  + '\n' + await evaluate('document.body.innerText'));
+      if (Date.now() - start > timeout) throw new Error('Timed out: ' + expression + '\n' + await evaluate('document.body.innerText'));
       await new Promise(resolve => setTimeout(resolve, 70));
     }
   };

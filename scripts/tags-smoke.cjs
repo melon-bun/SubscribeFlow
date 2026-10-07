@@ -17,27 +17,26 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   const clickWhenReady = async (label, scope) => {
     // 对话框挂在 body 上而不是视图内部，所以默认全文档搜索。
     await until(`(() => {
-      const root = ${scope ? `document.querySelector(${JSON.stringify(scope)})` : 'document'};
+      const root = ${scope ? `document.querySelector(${JSON.stringify(scope)})` : "document.querySelector('.dialog:last-child') || document"};
       if (!root) return false;
-      return Array.from(root.querySelectorAll('button'))
-        .some(b => (b.textContent.trim() === ${JSON.stringify(label)} || b.getAttribute('aria-label') === ${JSON.stringify(label)}) && !b.disabled);
+      const button = Array.from(root.querySelectorAll('button'))
+        .find(b => (b.textContent.trim() === ${JSON.stringify(label)} || b.getAttribute('aria-label') === ${JSON.stringify(label)}) && !b.disabled);
+      if (!button) return false;
+      button.click();
+      return true;
     })()`);
-    await click(label);
   };
   /** 赋值并确认真的生效：对话框会在数据到达时重建自身，写完不复核会点到旧元素上。 */
   const setValue = async (selector, value) => {
     const selectorLiteral = JSON.stringify(selector);
-    for (let attempt = 0; attempt < 5; attempt++) {
-      await evaluate(`(() => {
+    await until(`(() => {
         const el = document.querySelector(${selectorLiteral});
-        if (!el) throw new Error('Missing field: ' + ${selectorLiteral});
+        if (!el) return false;
         el.value = ${JSON.stringify(value)};
         el.dispatchEvent(new Event('input', {bubbles:true}));
         el.dispatchEvent(new Event('change', {bubbles:true}));
+        return document.querySelector(${selectorLiteral})?.value === ${JSON.stringify(value)};
       })()`);
-      if (await evaluate(`document.querySelector(${selectorLiteral})?.value === ${JSON.stringify(value)}`)) return;
-    }
-    throw new Error('字段赋值未生效: ' + selector);
   };
 
   /* ---------------- 空态与新建 ---------------- */
@@ -98,10 +97,21 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   await until(`!!document.querySelector('[data-tag-editor="' + ${JSON.stringify(travel.id)} + '"]')`);
   await setValue(`[data-tag-editor] [aria-label="标签名称"]`, '出行');
   await clickWhenReady('保存修改');
-  await until(`!!document.querySelector('[data-view="tags"] tbody tr')`);
+  await evaluate(`SF.app.act(${JSON.stringify('tag:' + travel.id)}, () => {})`);
+  await until(`Array.from(document.querySelectorAll('[data-view="tags"] tbody tr')).some(r => r.textContent.includes('出行'))`);
   const renamed = await tagByName('出行');
   assert.equal(renamed.id, travel.id, '改名后稳定 ID 必须不变');
   assert.equal(await core.call('tag.get', {tag_id: travel.id}).then(t => t.name), '出行');
+  await setValue('[data-tag-editor] [aria-label="标签描述"]', '用于出行规划');
+  await clickWhenReady('保存修改');
+  await evaluate(`SF.app.act(${JSON.stringify('tag:' + travel.id)}, () => {})`);
+  await until(`document.querySelector('[data-tag-editor] [aria-label="标签描述"]')?.value === '用于出行规划'`);
+  assert.equal((await core.call('tag.get', {tag_id: travel.id})).description, '用于出行规划');
+  await setValue('[data-tag-editor] [aria-label="标签描述"]', '');
+  await clickWhenReady('保存修改');
+  await evaluate(`SF.app.act(${JSON.stringify('tag:' + travel.id)}, () => {})`);
+  await until(`document.querySelector('[data-tag-editor] [aria-label="标签描述"]')?.value === ''`);
+  assert.equal((await core.call('tag.get', {tag_id: travel.id})).description, '');
 
   /* ---------------- 从收件箱给内容打标 ---------------- */
 
@@ -113,20 +123,22 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   const itemId = await evaluate(`document.querySelector('.content-card').dataset.contentId`);
   const addTrigger = `.detail [data-tag-add]`;
   const openPicker = async () => {
-    await until(`!!document.querySelector(${JSON.stringify(addTrigger)}) && !document.querySelector('.tag-pool')`);
-    await evaluate(`document.querySelector(${JSON.stringify(addTrigger)}).click()`);
+    await until(`(() => { const b = document.querySelector(${JSON.stringify(addTrigger)});
+      if (!b || b.disabled || document.querySelector('.tag-pool')) return false;
+      b.click(); return true; })()`);
     await until(`!!document.querySelector('.tag-pool')`);
   };
   // 标签池在对话框里，点选只是挂载到托盘，真正写入要等「确认挂载」。
   const pickTag = async (id) => {
     const sel = `.tag-pool [data-tag-option="${id}"]`;
-    await until(`!!document.querySelector(${JSON.stringify(sel)})`);
-    await evaluate(`document.querySelector(${JSON.stringify(sel)}).click()`);
+    await until(`(() => { const b = document.querySelector(${JSON.stringify(sel)});
+      if (!b || b.disabled) return false; b.click(); return true; })()`);
   };
   const confirmPicker = async () => {
-    await evaluate(`Array.from(document.querySelectorAll('.tag-pool ~ * button, .dialog__foot button'))
-      .find(b => b.textContent.includes('确认挂载'))?.click()`);
+    await clickWhenReady('确认挂载', '.dialog');
     await until(`!document.querySelector('.tag-pool')`);
+    // 外部色块会先乐观更新；等保存动作完成后再测试下一次编辑。
+    await evaluate(`SF.app.act(${JSON.stringify('tags:' + itemId)}, () => {}).then(() => SF.app.refreshData(true))`);
   };
   await evaluate(`document.querySelector('[data-content-id=${JSON.stringify(itemId)}]').click()`);
   await until(`!!document.querySelector('.detail')`);
@@ -143,6 +155,41 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   await until(`document.querySelectorAll('.tag-pool__mounted').length === 2`);
   await confirmPicker();
   await until(`document.querySelectorAll('.detail .tag-chip').length === 2`);
+
+  // 相同数量的替换也必须持久化：出行+美食 → 出行+摄影。
+  const photo = await tagByName('摄影');
+  await openPicker();
+  await pickTag(food.id);
+  await pickTag(photo.id);
+  await confirmPicker();
+  await until(`Array.from(document.querySelectorAll('.detail .tag-chip__text')).some(el => el.textContent === '摄影')`);
+  assert.deepEqual(new Set((await core.call('content.get', {item_id: itemId})).tags.map(t => t.id)), new Set([travel.id, photo.id]));
+  await openPicker();
+  await pickTag(photo.id);
+  await pickTag(food.id);
+  await confirmPicker();
+  await until(`Array.from(document.querySelectorAll('.detail .tag-chip__text')).some(el => el.textContent === '美食')`);
+
+  // 已挂载的停用标签留在托盘，不能作为新候选选用。
+  await evaluate(`SF.app.state.client.setTagEnabled(${JSON.stringify(food.id)}, false).then(() => SF.app.refreshData(true))`);
+  await openPicker();
+  await until(`!!document.querySelector(${JSON.stringify('.tag-pool [aria-label="取消挂载 美食"]')})`);
+  assert.equal(await evaluate(`!!document.querySelector(${JSON.stringify('.tag-pool [data-tag-option="' + food.id + '"]')})`), false);
+  await clickWhenReady('取消', '.dialog');
+  assert.equal((await core.call('content.get', {item_id: itemId})).tags.length, 2);
+  await evaluate(`SF.app.state.client.setTagEnabled(${JSON.stringify(food.id)}, true).then(() => SF.app.refreshData(true))`);
+  await openPicker();
+  await setValue('.tag-pool [aria-label="筛选或新建标签"]', '对话框新建');
+  await evaluate(`document.querySelector('.tag-pool input').dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))`);
+  await until(`Array.from(document.querySelectorAll('.tag-pool__mounted-name')).some(el => el.textContent === '对话框新建')`);
+  assert.equal((await core.call('content.get', {item_id:itemId})).tags.length, 2, '确认前不得写入内容关联');
+  await confirmPicker();
+  await until(`Array.from(document.querySelectorAll('.detail .tag-chip__text')).some(el => el.textContent === '对话框新建')`);
+  const quickCreated = await tagByName('对话框新建');
+  assert.ok((await core.call('content.get', {item_id:itemId})).tags.some(t => t.id === quickCreated.id));
+  await clickWhenReady('移除标签 对话框新建', '.detail');
+  await evaluate(`SF.app.act(${JSON.stringify('tags:' + itemId)}, () => {}).then(() => SF.app.refreshData(true))`);
+  await evaluate(`SF.app.state.client.removeTag(${JSON.stringify(quickCreated.id)}).then(() => SF.app.refreshData(true))`);
   await evaluate(`document.querySelector('.detail [aria-label="关闭对话框"]')?.click()`);
   await until(`document.querySelectorAll('[data-content-id=${JSON.stringify(itemId)}] .tag-chip').length === 2`);
 
@@ -155,16 +202,29 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
 
   /* ---------------- 筛选：任一符合 / 全部符合 / 与优先级组合 ---------------- */
 
+  const otherIds = (await core.call('content.list', {})).items.filter(item => item.id !== itemId).slice(0, 2).map(item => item.id);
+  assert.equal(otherIds.length, 2);
+  await evaluate(`SF.app.state.client.setContentTags(${JSON.stringify(otherIds[0])}, ${JSON.stringify([travel.id])})`);
+  await evaluate(`SF.app.state.client.setContentTags(${JSON.stringify(otherIds[1])}, ${JSON.stringify([food.id])}).then(() => SF.app.refreshData(true))`);
+
   await clickWhenReady('标签', '[data-view="inbox"]');
   await until(`!!document.querySelector('.tag-filter')`);
   await evaluate(`Array.from(document.querySelectorAll('.tag-filter [data-tag-filter]'))
     .find(x => x.textContent.includes('出行')).click()`);
+  await until(`document.querySelectorAll('.content-card').length === 2`);
+  assert.equal((await core.call('content.list', {tags: [travel.id]})).total, 2);
+  await evaluate(`Array.from(document.querySelectorAll('.tag-filter [data-tag-filter]'))
+    .find(x => x.textContent.includes('美食')).click()`);
+  await until(`document.querySelectorAll('.content-card').length === 3`);
+  await clickWhenReady('全部符合', '.tag-filter');
+  await until(`SF.app.state.filters.tagMode === 'all' && document.querySelectorAll('.content-card').length === 1`);
+  assert.equal((await core.call('content.list', {tags: [travel.id, food.id], tag_mode: 'all'})).total, 1);
+  await clickWhenReady('任一符合', '.tag-filter');
+  await until(`SF.app.state.filters.tagMode === 'any' && document.querySelectorAll('.content-card').length === 3`);
+  await clickWhenReady('全部符合', '.tag-filter');
   await until(`document.querySelectorAll('.content-card').length === 1`);
-  assert.equal((await core.call('content.list', {tags: [travel.id]})).total, 1);
-
-  await setValue('.tag-filter [aria-label="标签筛选方式"]', 'all');
-  await until(`document.querySelectorAll('.content-card').length === 1`);
-  assert.equal((await core.call('content.list', {tags: [travel.id], tag_mode: 'all'})).total, 1);
+  // 还原额外的样本归类，让后续使用量与删除影响断言保持可读。
+  await evaluate(`SF.app.state.client.bulkSetTags(${JSON.stringify(otherIds)}, []).then(() => SF.app.refreshData(true))`);
 
   await setValue('[aria-label="筛选优先级"]', 'high');
   await until(`document.querySelectorAll('.content-card').length === 0`);
@@ -215,6 +275,16 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   assert.equal((await core.call('content.get', {item_id: itemId})).tags.length, 1,
     '删除标签后内容不应残留悬空关联');
   assert.equal((await core.call('content.get', {item_id: itemId})).tags[0].name, '出行');
+
+  // 删除当前筛选中的美食后仍能看到并清除旧条件，不能留下隐藏筛选。
+  await evaluate(`SF.app.navigate('inbox'); SF.app.renderContent()`);
+  await until(`!!document.querySelector('.tag-filter')`);
+  await until(`Array.from(document.querySelectorAll('.tag-filter button')).some(b => b.textContent.trim() === '清除标签筛选' && !b.disabled)`);
+  assert.ok(await evaluate(`document.querySelector('.tag-filter').textContent.includes('已删除标签')`));
+  await clickWhenReady('清除标签筛选', '.tag-filter');
+  await until(`SF.app.state.filters.tags.length === 0 && document.querySelectorAll('.content-card').length === 20`);
+  await evaluate(`document.querySelector('[data-nav="tags"]').click()`);
+  await until(`document.querySelectorAll('[data-view="tags"] tbody tr').length === 2`);
 
   /* ---------------- 深色主题可读性 ---------------- */
 

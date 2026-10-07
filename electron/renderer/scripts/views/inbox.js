@@ -45,10 +45,14 @@
     return h('span.tag', {text: tag.name});
   }
 
-  /** 已选中的筛选标签。目录里已删掉的标签不再出现在面板上，但仍随筛选条件生效。 */
+  /** 保留失效条件的可见入口，避免目录变动后留下不可清除的隐藏筛选。 */
   function pickedTags(app) {
     var ids = app.filters.tags || [];
-    return allTags().filter(function (t) { return ids.indexOf(t.id) >= 0; });
+    return ids.map(function (id) {
+      return allTags().find(function (t) { return t.id === id; }) || {
+        id: id, name: tagCache.loaded && !tagCache.error ? '已删除标签' : '标签暂不可用', color: 'slate', unavailable: true
+      };
+    });
   }
 
   function query(app) {
@@ -198,6 +202,7 @@
       box.appendChild(SF.tagUi.tagEditor({
         selected: tags,
         allTags: allTags(),
+        loading: !tagCache.loaded || !!tagCache.error,
         emptyHint: '还没有标签',
         selectLabel: '为这条内容添加标签',
         /* 对话框里回车新建标签：省掉「先关掉对话框去标签页建好再回来」这一趟。 */
@@ -213,6 +218,13 @@
         },
         onChange: function (next) { save(next.map(function (t) { return t.id; })); }
       }));
+      if (tagCache.error) box.appendChild(h('div', null,
+        h('p.field__error', {text:'标签目录读取失败：' + tagCache.error.message}),
+        ui.btn('重试读取标签', {size:'sm', onClick:function () {
+          SF.views.inbox.invalidateTags();
+          ensureTags(app, function () { if (box.isConnected) paint(); });
+          paint();
+        }})));
     }
     function save(ids) {
       SF.app.act('tags:' + item.id, async function () {
@@ -244,7 +256,7 @@
 
   function tagFilterPanel(app) {
     var picked = pickedTags(app), mode = app.filters.tagMode === 'all' ? 'all' : 'any';
-    var list = allTags();
+    var list = allTags().concat(picked.filter(function (t) { return t.unavailable; }));
     return h('div.tag-filter', {role:'group', 'aria-label':'按标签筛选'},
       h('div.tag-filter__head', null,
         h('span.tag-filter__title', {text:'按标签筛选'}),
@@ -255,8 +267,8 @@
       !list.length && !tagCache.loading ? h('p.field__hint', {text:'还没有任何标签，先到标签管理里创建后再回来筛选。'}) : null,
       list.length ? h('div.tag-filter__tags', null, list.map(function (t) {
         var on = (app.filters.tags || []).indexOf(t.id) >= 0;
-        return h('button.chip.chip--tag' + (on ? '.is-active' : ''), {type:'button', 'aria-pressed':String(on),
-          title:t.name + (t.enabled === false ? '（已停用）' : ''),
+        return h('button.chip.chip--tag' + (on ? '.is-active' : ''), {type:'button', 'aria-pressed':String(on), 'data-tag-filter':t.id,
+          title:t.name + (t.unavailable ? '（点击移除筛选）' : t.enabled === false ? '（已停用）' : ''),
           onclick:function () { toggleTagFilter(app, t.id); }},
           SF.tagUi ? SF.tagUi.colorDot(t.color, 8) : null,
           h('span', {text:t.name}),

@@ -348,6 +348,8 @@
   }
   var refreshPromise, refreshAgain = false;
   function refreshData(force) {
+    // 主动写入后的刷新已经包含已提交事件，取消其延迟刷新，避免重复替换正在操作的视图。
+    if (force) clearTimeout(eventTimer);
     if (refreshPromise) { refreshAgain = refreshAgain || !!force; return refreshPromise; }
     refreshPromise = (async function () {
       try {
@@ -458,7 +460,7 @@
     app.unsubscribe.push(app.client.on("tags.changed", function () {
       if (SF.views.inbox) SF.views.inbox.invalidateTags();
       app.tagCount = null;
-      refreshData(true);
+      scheduleRefresh();
     }));
     app.unsubscribe.push(app.client.on("core.status", function (status) {
       app.coreStatus = status;

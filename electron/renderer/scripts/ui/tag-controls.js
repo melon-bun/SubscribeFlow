@@ -164,13 +164,19 @@
       size: "sm",
       onClick: function () {
         ui.tagPicker({
-          tags: pool(),
+          // 托盘必须能解析停用的已有标签；新增候选由 tagPicker 单独过滤。
+          tags: (opts.allTags || []).concat(selected.filter(function (tag) { return !findTag(tag.id); })),
           selected: selected.map(function (t) { return t.id; }),
           title: opts.selectLabel || "添加标签",
           // 回车新建的标签直接挂载，省掉「新建完还要再点一次」
-          onCreate: opts.onCreateTag || null,
+          onCreate: opts.onCreateTag ? function (name, done) {
+            opts.onCreateTag(name, function (tag) {
+              if (!findTag(tag.id)) opts.allTags.push(tag);
+              done(tag);
+            });
+          } : null,
           onConfirm: function (ids) {
-            if (ids.length === selected.length) return;
+            if (ids.length === selected.length && selected.every(function (tag) { return ids.indexOf(tag.id) >= 0; })) return;
             commit(ids);
           },
         });
@@ -198,7 +204,7 @@
           trigger
         );
       });
-      trigger.disabled = !pool().length && !selected.length;
+      trigger.disabled = !!opts.loading || (!pool().length && !selected.length);
     }
 
     paint();

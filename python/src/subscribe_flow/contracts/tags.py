@@ -4,7 +4,7 @@
 使「同一套校验及持久化逻辑」在两条路径上保持一致（计划要求）。
 """
 
-from subscribe_flow.contracts import ChannelError
+from subscribe_flow.contracts import ChannelError, Source
 
 
 # 与前端 tag-catalog.js 的 11 档色板一一对应，键名即数据库存储值。
@@ -124,8 +124,11 @@ class RecognitionInput:
         summary = payload.get('summary')
         if summary is not None and type(summary) is not str:
             summary = None
-        return cls(content['id'], content.get('channel'), content.get('source_id'),
-                   payload.get('title'), summary, payload.get('published_at'),
+        source = payload.get('source')
+        source_id = Source(**source).key if source else None
+        published = payload.get('published') or {}
+        return cls(content['id'], payload.get('channel'), source_id,
+                   payload.get('title'), summary, published.get('value'),
                    payload.get('updated_at') or content.get('updated_at'))
 
     def to_dict(self):

@@ -274,8 +274,21 @@ class TagTests(unittest.TestCase):
         self.assertEqual(request.item_id, self.item.key)
         self.assertEqual(request.channel, 'test')
         self.assertEqual(request.title, 'Title')
+        self.assertEqual(request.source_id, self.source.key)
         # 没有取到正文就是 None，不用空串或猜测值冒充。
         self.assertIsNone(request.summary)
+        self.assertIsNone(request.published_at)
+
+    def test_recognition_input_preserves_known_source_and_publication(self):
+        item = self.dated_item('dated', '2026-10-06T09:00:00+09:00')
+        content = self.repo.get_content(item.key)
+        request = RecognitionInput.from_content(content)
+        self.assertEqual(request.source_id, self.source.key)
+        self.assertEqual(request.published_at, content['published']['value'])
+        self.assertEqual(request.content_updated_at, content['updated_at'])
+        empty = RecognitionInput.from_content({'id': 'missing-fields'})
+        self.assertIsNone(empty.source_id)
+        self.assertIsNone(empty.published_at)
 
     def test_suggestions_apply_through_the_unified_service_without_creating_tags(self):
         travel = self.make_tags('旅行')[0]
