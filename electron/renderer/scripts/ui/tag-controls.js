@@ -127,60 +127,51 @@
   /* ---------------- 内容侧打标 ---------------- */
 
   /**
-   * 一条内容上的标签编辑器：已选标签可逐个移除，其余从悬浮浮层里勾选。
+   * 一条内容上的标签编辑器：已挂载标签可逐个移除，其余从对话框里点选挂载。
    *
-   * 用浮层而不是下拉：标签一多，原生下拉会被撑得很长，把详情面板顶出视口。
-   * 浮层高度有上限并在内部滚动，位置在触发按钮下方，空间不足时翻到上方。
-   * 不直接发请求，由调用方在 onChange 里调用 setContentTags / bulkSetTags。
+   * 用对话框而不是下拉：标签一多，原生下拉会被撑得很长，把详情面板顶出视口。
+   * 对话框里已挂载与标签池同时可见，标签再多也只占一块固定高度。
+   *
+   * 改动先在对话框内累积，点「确认挂载」才写入，不每点一个就存一次。
+   * 由调用方在 onChange 里调用 setContentTags / bulkSetTags。
    */
   controls.tagEditor = function (opts) {
     var selected = (opts.selected || []).slice();
-    var chosen = {};
-    selected.forEach(function (t) {
-      chosen[t.id] = true;
-    });
     var wrap = h("div.tag-editor", null);
     var chips = h("div.tag-editor__chips");
 
-    /* 停用标签不再参与新归类，但已有归类仍要能显示和移除，所以浮层里照列并标注。 */
+    /* 停用标签不再参与新归类，但已有归类仍要能显示和移除。 */
     function pool() {
       return (opts.allTags || []).filter(function (t) {
         return t.enabled !== false;
       });
     }
+    function findTag(id) {
+      return (opts.allTags || []).filter(function (t) { return t.id === id; })[0];
+    }
 
-    /* 触发按钮只建一次、常驻容器末尾。
-       重绘若把它换掉，浮层的锚点就指向了已移除的节点，
-       勾选第一个标签时锚点观察器会立刻把浮层关掉，连续多选就没法做了。 */
+    function commit(ids) {
+      selected = ids.map(function (id) {
+        var tag = findTag(id);
+        return tag || { id: id, name: id, color: "slate" };
+      });
+      paint();
+      opts.onChange(selected.slice());
+    }
+
     var trigger = ui.btn(opts.addLabel || "添加标签", {
       icon: "plus",
       size: "sm",
       onClick: function () {
-        var available = pool();
-        ui.tagPicker(trigger, {
-          tags: available,
-          selected: selected.map(function (t) {
-            return t.id;
-          }),
-          ariaLabel: opts.selectLabel || "添加标签",
-          // 打标后详情会被整块重绘，按钮节点会换新，浮层要能转挂过去继续开着
-          reanchor: "[data-tag-add]",
-          onToggle: function (id, on) {
-            if (on) {
-              var tag = available.filter(function (t) {
-                return t.id === id;
-              })[0];
-              if (!tag || chosen[id]) return;
-              chosen[id] = true;
-              selected.push({ id: tag.id, name: tag.name, color: tag.color });
-            } else {
-              selected = selected.filter(function (t) {
-                return t.id !== id;
-              });
-              delete chosen[id];
-            }
-            paint();
-            opts.onChange(selected.slice());
+        ui.tagPicker({
+          tags: pool(),
+          selected: selected.map(function (t) { return t.id; }),
+          title: opts.selectLabel || "添加标签",
+          // 回车新建的标签直接挂载，省掉「新建完还要再点一次」
+          onCreate: opts.onCreateTag || null,
+          onConfirm: function (ids) {
+            if (ids.length === selected.length) return;
+            commit(ids);
           },
         });
       },
@@ -200,18 +191,14 @@
           controls.tagChip(tag, {
             removable: true,
             onRemove: function () {
-              selected = selected.filter(function (t) {
-                return t.id !== tag.id;
-              });
-              delete chosen[tag.id];
-              paint();
-              opts.onChange(selected.slice());
+              commit(selected.filter(function (t) { return t.id !== tag.id; })
+                .map(function (t) { return t.id; }));
             }
           }),
           trigger
         );
       });
-      trigger.disabled = !pool().length;
+      trigger.disabled = !pool().length && !selected.length;
     }
 
     paint();

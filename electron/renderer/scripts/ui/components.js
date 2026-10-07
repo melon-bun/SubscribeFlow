@@ -573,29 +573,35 @@
   };
 
   /**
-   * 标签多选浮层，挂在 body 上定位在触发按钮下方，空间不足时翻到上方。
+   * 标签挂载对话框：上方是已挂载托盘，中间是搜索/新建输入框，下方是全部标签。
    *
-   * 用它而不是原生下拉：标签一多，原生下拉会被拉得很长把页面撑开，
-   * 且无法同时看到已选与未选。这里列表内部滚动，高度有上限，
-   * 选中后浮层保持打开，便于连续勾选。
+   * 用对话框而不是下拉或贴着按钮的小浮层：标签一多，下拉会被拉得很长把详情顶出
+   * 视口，而浮层盖在内容上又会挡住想对照的内容。对话框给出完整的高度和宽度，
+   * 已挂载与待选同时可见，也能边挂载边对照。
+   *
+   * 选中的改动先在本对话框内累积，点「确认挂载」才一次性交给调用方——
+   * 避免每点一个标签就整页重绘一次。
    *
    * tags:     [{id, name, color}]
-   * selected: 已选 ID 数组
-   * onToggle: (id) => void，由调用方决定写入还是撤销
-   * reanchor: 可选。锚点被上层重绘换掉时，用这个选择器找回新锚点继续开着
+   * selected: 已挂载 ID 数组
+   * onConfirm: (ids) => void，确认后调用；关闭或取消不调用
+   * onCreate: 可选。输入框回车时若没有同名标签则调用它新建并直接挂载
    */
-  ui.tagPicker = function (anchorEl, opts) {
+  ui.tagPicker = function (opts) {
     opts = opts || {};
-    var anchor = anchorEl;
     var tags = opts.tags || [];
     var selected = {};
-    (opts.selected || []).forEach(function (id) { selected[id] = true; });
+    var order = [];
+    (opts.selected || []).forEach(function (id) { selected[id] = true; order.push(id); });
     var keyword = "";
+    var closed = false;
 
-    var list = h("div.tag-picker__list", { role: "group", "aria-label": opts.ariaLabel || "选择标签" });
-    var search = null;
-    var el = h("div.tag-picker", { role: "dialog", "aria-modal": "false", "aria-label": opts.ariaLabel || "选择标签" });
-
+    function byId(id) {
+      return tags.filter(function (t) { return t.id === id; })[0];
+    }
+    function mountedTags() {
+      return order.map(byId).filter(Boolean);
+    }
     function visible() {
       var q = keyword.trim().toLowerCase();
       if (!q) return tags;
@@ -605,110 +611,132 @@
       });
     }
 
-    function paint() {
-      SF.dom.render(list);
+    var tray = h("div.tag-pool__tray", { role: "list", "aria-label": "已挂载标签" });
+    var grid = h("div.tag-pool__grid", { role: "group", "aria-label": "全部标签" });
+    var count = h("span.tag-pool__count", { "aria-live": "polite" });
+    var search = ui.searchInput(opts.searchPlaceholder || "输入以筛选标签，回车新建并挂载", "", function (value) {
+      keyword = value;
+      paint();
+    }, { ariaLabel: "筛选或新建标签" });
+
+    function mount(id) {
+      if (selected[id]) return;
+      selected[id] = true;
+      order.push(id);
+      paint();
+    }
+    function unmount(id) {
+      if (!selected[id]) return;
+      delete selected[id];
+      order = order.filter(function (x) { return x !== id; });
+      paint();
+    }
+
+    function paintTray() {
+      SF.dom.render(tray);
+      var rows = mountedTags();
+      if (!rows.length) {
+        SF.dom.append(tray, h("p.tag-pool__empty", { text: "还没有挂载标签 · 在下方标签池点选即可挂载" }));
+        return;
+      }
+      rows.forEach(function (tag) {
+        tray.appendChild(
+          h("span.tag-pool__mounted", { role: "listitem" },
+            SF.tagUi ? SF.tagUi.colorDot(tag.color) : h("span.tag-chip__dot", { "aria-hidden": "true" }),
+            h("span.tag-pool__mounted-name", { text: tag.name }),
+            ui.iconBtn("close", "取消挂载 " + tag.name, function () { unmount(tag.id); }))
+        );
+      });
+    }
+
+    function paintGrid() {
+      SF.dom.render(grid);
       var rows = visible();
       if (!rows.length) {
-        SF.dom.append(list, h("p.field__hint", { text: keyword ? "没有匹配的标签" : "没有可用标签" }));
+        SF.dom.append(grid, h("p.tag-pool__empty", {
+          text: keyword ? "没有匹配的标签 · 回车可新建「" + keyword.trim() + "」" : "没有可用标签",
+        }));
+        return;
       }
       rows.forEach(function (tag) {
         var on = !!selected[tag.id];
-        list.appendChild(
-          h("button.tag-picker__item" + (on ? ".is-on" : ""), {
+        grid.appendChild(
+          h("button.tag-pool__chip" + (on ? ".is-on" : ""), {
             type: "button",
             role: "checkbox",
             "aria-checked": on ? "true" : "false",
             // 行内只有色点和名称，读屏与自动化都需要一个稳定标识。
             "data-tag-option": tag.id,
             "aria-label": tag.name,
-            onclick: function () {
-              selected[tag.id] = !on;
-              paint();
-              opts.onToggle && opts.onToggle(tag.id, selected[tag.id]);
-            },
+            onclick: function () { on ? unmount(tag.id) : mount(tag.id); },
           },
           SF.tagUi ? SF.tagUi.colorDot(tag.color) : h("span.tag-chip__dot", { "aria-hidden": "true" }),
-          h("span.tag-picker__name", { text: tag.name }),
-          tag.enabled === false ? h("span.tag-picker__flag", { text: "已停用" }) : null,
+          h("span.tag-pool__name", { text: tag.name }),
           on ? icon("check", 13) : null)
         );
       });
     }
 
-    // 标签多到一定程度才给搜索框，否则是为不存在的问题增加一步操作。
-    if (tags.length > 8) {
-      search = ui.searchInput(opts.searchPlaceholder || "搜索标签", "", function (value) {
-        keyword = value; paint();
-      }, { ariaLabel: "搜索标签" });
+    function paint() {
+      paintTray();
+      paintGrid();
+      count.textContent = order.length + " 个已挂载 · 共 " + tags.length + " 个标签";
     }
-    SF.dom.append(el, [
-      search,
-      list,
-      h("div.tag-picker__foot", null,
-        h("span.muted", { text: "可多选" }),
-        ui.btn(opts.doneText || "完成", { size: "sm", variant: "primary", onClick: close }))
-    ]);
-    paint();
 
-    document.body.appendChild(el);
-    positionOverlay(el, anchor, "left");
-
-    function onDocDown(e) {
-      if (!el.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) close();
+    /* 回车即新建：这是最常见的下一步动作，比让人先关掉对话框去标签页建要顺手。 */
+    function onSearchKey(e) {
+      if (e.key !== "Enter") return;
+      var name = keyword.trim();
+      if (!name || !opts.onCreate) return;
+      e.preventDefault();
+      var existed = tags.filter(function (t) { return t.name === name; })[0];
+      if (existed) { mount(existed.id); return; }
+      opts.onCreate(name, function (tag) {
+        tags.push(tag);
+        mount(tag.id);
+      });
     }
-    function onKey(e) {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      close();
-      if (anchor.isConnected) anchor.focus();
-    }
-    document.addEventListener("mousedown", onDocDown, true);
-    document.addEventListener("keydown", onKey, true);
-    /* 锚点会被上层重绘换掉：打标后详情整块重绘，原来的按钮节点就没了。
-       所以这里不是「锚点没了就关浮层」，而是转挂到新按钮上继续开着——
-       否则每勾一个标签浮层就自己关掉，连续多选没法做。
-       重绘途中详情会短暂消失（清缓存→渲染→数据回来），那一刻找不到新锚点，
-       所以找不到时先缓一下再决定关不关，别在中间态就把浮层收了。
-       换成另一条内容不会走到这里：那之前先有 mousedown，浮层已被点外部关掉了。 */
-    var reanchorTimer = null;
-    var detach = new MutationObserver(function () {
-      if (anchor.isConnected) return;
-      var next = opts.reanchor && document.querySelector(opts.reanchor);
-      if (next && next !== anchor) {
-        anchor = next;
-        positionOverlay(el, anchor, "left");
-        return;
-      }
-      if (reanchorTimer) clearTimeout(reanchorTimer);
-      reanchorTimer = setTimeout(function () {
-        reanchorTimer = null;
-        if (anchor.isConnected) return;
-        var again = opts.reanchor && document.querySelector(opts.reanchor);
-        if (again) { anchor = again; positionOverlay(el, anchor, "left"); return; }
-        close();
-      }, 400);
-    });
-    detach.observe(document.body, { childList: true, subtree: true });
+    var searchInput = search.querySelector("input");
+    if (searchInput) searchInput.addEventListener("keydown", onSearchKey);
 
-    var closed = false;
     function close() {
-      // 关闭可能来自多个路径：完成按钮、Esc、外部点击、锚点被重绘移除。
-      // 不加闩会让 onClose 触发多次，调用方多存一次就白存了。
       if (closed) return;
       closed = true;
-      if (reanchorTimer) { clearTimeout(reanchorTimer); reanchorTimer = null; }
-      if (openOverlay === close) openOverlay = null;
-      document.removeEventListener("mousedown", onDocDown, true);
-      document.removeEventListener("keydown", onKey, true);
-      detach.disconnect();
-      if (el.parentNode) el.parentNode.removeChild(el);
-      opts.onClose && opts.onClose();
+      // 关闭只取消挂载，不回调 onConfirm：调用方还没拿到任何结果。
+      if (searchInput) searchInput.removeEventListener("keydown", onSearchKey);
+      layer.close();
     }
 
-    claimOverlay(close);
-    var input = search && search.querySelector("input");
-    (input || el.querySelector(".tag-picker__item") || el).focus({ preventScroll: true });
-    return { el: el, close: close };
+    function confirm() {
+      if (closed) return;
+      closed = true;
+      if (searchInput) searchInput.removeEventListener("keydown", onSearchKey);
+      layer.close();
+      opts.onConfirm && opts.onConfirm(order.slice());
+    }
+
+    var layer = ui.dialog({
+      title: opts.title || "挂载标签",
+      body: h("div.tag-pool", null,
+        h("div.tag-pool__section", null,
+          h("div.tag-pool__label", null, h("span", { text: "已挂载" }), count),
+          tray),
+        search,
+        h("div.tag-pool__section.tag-pool__section--grow", null,
+          h("div.tag-pool__label", null, h("span", { text: "标签池" }),
+            h("span.muted", { text: "点选标签即可挂载" })),
+          grid)),
+      footer: [
+        ui.btn("清空", { onClick: function () { order = []; selected = {}; paint(); } }),
+        h("div.spacer"),
+        ui.btn("取消", { onClick: close }),
+        ui.btn(opts.doneText || "确认挂载", { variant: "primary", onClick: confirm }),
+      ],
+      onClose: function () { if (!closed) { closed = true; } },
+    });
+
+    paint();
+    return { close: close, confirm: confirm };
   };
 
   /* ---------------- 统计卡 ---------------- */

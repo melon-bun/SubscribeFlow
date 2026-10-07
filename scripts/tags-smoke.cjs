@@ -113,24 +113,35 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   const itemId = await evaluate(`document.querySelector('.content-card').dataset.contentId`);
   const addTrigger = `.detail [data-tag-add]`;
   const openPicker = async () => {
-    await until(`!!document.querySelector(${JSON.stringify(addTrigger)}) && !document.querySelector('.tag-picker')`);
+    await until(`!!document.querySelector(${JSON.stringify(addTrigger)}) && !document.querySelector('.tag-pool')`);
     await evaluate(`document.querySelector(${JSON.stringify(addTrigger)}).click()`);
-    await until(`!!document.querySelector('.tag-picker')`);
+    await until(`!!document.querySelector('.tag-pool')`);
   };
+  // 标签池在对话框里，点选只是挂载到托盘，真正写入要等「确认挂载」。
   const pickTag = async (id) => {
-    const sel = `.tag-picker [data-tag-option="${id}"]`;
+    const sel = `.tag-pool [data-tag-option="${id}"]`;
     await until(`!!document.querySelector(${JSON.stringify(sel)})`);
     await evaluate(`document.querySelector(${JSON.stringify(sel)}).click()`);
+  };
+  const confirmPicker = async () => {
+    await evaluate(`Array.from(document.querySelectorAll('.tag-pool ~ * button, .dialog__foot button'))
+      .find(b => b.textContent.includes('确认挂载'))?.click()`);
+    await until(`!document.querySelector('.tag-pool')`);
   };
   await evaluate(`document.querySelector('[data-content-id=${JSON.stringify(itemId)}]').click()`);
   await until(`!!document.querySelector('.detail')`);
   await openPicker();
   await pickTag(travel.id);
+  await until(`!!document.querySelector('.tag-pool__mounted')`);
+  await confirmPicker();
   await until(`document.querySelector('.detail')?.textContent.includes('出行')`);
   assert.deepEqual((await core.call('content.get', {item_id: itemId})).tags.map(t => [t.name, t.origin]),
     [['出行', 'manual']], '人工写入的关联来源必须是 manual');
 
+  await openPicker();
   await pickTag(food.id);
+  await until(`document.querySelectorAll('.tag-pool__mounted').length === 2`);
+  await confirmPicker();
   await until(`document.querySelectorAll('.detail .tag-chip').length === 2`);
   await evaluate(`document.querySelector('.detail [aria-label="关闭对话框"]')?.click()`);
   await until(`document.querySelectorAll('[data-content-id=${JSON.stringify(itemId)}] .tag-chip').length === 2`);

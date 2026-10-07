@@ -185,8 +185,8 @@
       var suggested = tags.some(function (t) { return t.origin === 'suggested'; });
       box.appendChild(h('div.detail__section-title', {text:'标签'}));
       box.appendChild(h('p.field__hint', {text: suggested
-        ? '改动立即保存。带「识别」角标的是自动识别建议，可以直接移除，也可以保留。'
-        : '为这条内容添加标签，改动立即保存。'}));
+        ? '在对话框里点选标签，确认挂载后保存。带「识别」角标的是自动识别建议，可以直接移除，也可以保留。'
+        : '在对话框里点选标签，确认挂载后保存。'}));
       if (!SF.tagUi) {
         /* 标签控件没加载时只展示现状，不给一个点了没反应的添加入口。 */
         box.appendChild(h('div.tag-editor__chips', null, tags.length
@@ -200,6 +200,17 @@
         allTags: allTags(),
         emptyHint: '还没有标签',
         selectLabel: '为这条内容添加标签',
+        /* 对话框里回车新建标签：省掉「先关掉对话框去标签页建好再回来」这一趟。 */
+        onCreateTag: function (name, done) {
+          SF.app.act('tag:new', async function () {
+            var tag = await app.client.createTag({
+              name: name,
+              color: SF.tagCatalog.nextColor(allTags()),
+            });
+            allTags().push(tag);
+            done(tag);
+          });
+        },
         onChange: function (next) { save(next.map(function (t) { return t.id; })); }
       }));
     }
