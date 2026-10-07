@@ -64,13 +64,18 @@ async function main() {
   fs.mkdirSync(path.dirname(bundle),{recursive:true});
   const copy=spawnSync('/usr/bin/ditto',[info.bundle,bundle]);assert.equal(copy.status,0,copy.stderr?.toString());
   const resources=path.join(bundle,'Contents/Resources'),executable=path.join(resources,'core/subscribe-flow-core');
+  const expectedVersion=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version;
+  const schema=Math.max(...fs.readdirSync(path.join(root,'python/src/subscribe_flow/storage/migrations')).filter(name=>/^\d+.*\.sql$/.test(name)).map(name=>Number(name.split('_')[0])));
+  assert.equal(info.version,expectedVersion);
+  const plist=spawnSync('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString',path.join(bundle,'Contents/Info.plist')],{encoding:'utf8'});
+  assert.equal(plist.status,0);assert.equal(plist.stdout.trim(),expectedVersion);
   const {listPackage}=await import('@electron/asar');
   const entries=listPackage(path.join(resources,'app.asar'));
   assert.ok(entries.includes('/electron/renderer/index.html'));
   assert.ok(!entries.some(p=>/runtime-paths|^\/tests\/|^\/scripts\/|\.sqlite|\/diagnostics\//.test(p)));
   const dataDir=path.join(folder,'profile');fs.mkdirSync(dataDir);
   let app,core;
-  const result={packagedSmoke:'pending',platform:'macOS x64',launchServices:true,minimalPath:true,externalPythonIgnored:true,productionIgnoresTestFlags:true};
+  const result={packagedSmoke:'pending',version:expectedVersion,schema,platform:'macOS x64',launchServices:true,minimalPath:true,externalPythonIgnored:true,productionIgnoresTestFlags:true};
   try {
     // Seed through the actual frozen RPC server, using a clearly labelled test adapter response.
     let pendingRequest,entered;
@@ -79,6 +84,7 @@ async function main() {
       return {code:0,data:{page:{pn:p.page,ps:p.limit,count:3},list:{vlist:Array.from({length:3},(_,i)=>({bvid:`BV1xx411c7${i}0`,mid:946974,title:`M7 离线验收样本 ${i+1}`,created:1700000000}))}}};
     }};
     core=new CoreClient(coreOptions);await core.start();
+    assert.equal((await core.call('core.hello',{protocol_version:'1.0'})).core_version,expectedVersion);
     const sub=await core.call('subscription.add',{locator:'946974',connection_id:'bilibili:default',confirmed:true});
     const sync=async()=>{
       const job=await core.call('sync.start',{subscription_id:sub.id});
@@ -103,6 +109,10 @@ INSERT INTO content_states SELECT content_id,read,archived,deferred,updated_at F
 DROP TABLE old_states;
 ALTER TABLE subscriptions DROP COLUMN collect_items;
 ALTER TABLE subscriptions DROP COLUMN default_priority;
+DROP TABLE content_tags;
+DROP TABLE content_tag_blocks;
+DROP TABLE tags;
+ALTER TABLE jobs DROP COLUMN acquisition_metrics;
 PRAGMA user_version=2;
 ''');db.execute('UPDATE content_states SET read=1,archived=1 WHERE content_id=?',(sys.argv[2],));db.commit();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id],{encoding:'utf8'});
     assert.equal(legacy.status,0,legacy.stderr);
@@ -112,7 +122,7 @@ PRAGMA user_version=2;
     assert.equal(await app.evaluate('SF.app.state.source'),'real');
     assert.equal((await call('content.list')).total,3);
     assert.deepEqual((await call('content.get',{item_id:items[0].id})).state,{read:false,archived:true,deferred:false});
-    assert.ok(fs.existsSync(path.join(dataDir,'subscribe-flow.before-v5.backup')));
+    assert.ok(fs.existsSync(path.join(dataDir,`subscribe-flow.before-v${schema}.backup`)));
     await until(()=>app.evaluate('document.querySelectorAll(".content-card").length===2'));
     const selected=await app.evaluate('SF.app.state.selectedId');
     await app.evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()==='稍后处理').click()`);
@@ -134,6 +144,13 @@ PRAGMA user_version=2;
     await until(()=>app.evaluate(`document.querySelector('[data-priority-column="high"] .count-pill')?.textContent==='2' && document.querySelector('[data-priority-column="low"] .count-pill')?.textContent==='1'`));
     fs.writeFileSync(path.join(output,'packaged-priorities.png'),Buffer.from((await app.page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
     result.priorityBoard=true;result.priorityInheritance=true;
+    // M9 data and M10 channel capabilities must survive the shipped Core boundary.
+    const tag=await call('tag.create',{name:'0.2.0 安装包验收',color:'blue'});
+    await call('content.set_tags',{item_id:selected,tag_ids:[tag.id]});
+    assert.equal((await call('content.list',{tags:[tag.id]})).total,1);
+    const xhs=(await call('channel.list')).find(channel=>channel.channel==='xiaohongshu');
+    assert.ok(xhs);assert.equal(xhs.backend,'electron-session');
+    result.tags=true;result.xiaohongshuChannel=true;
     // Find only the frozen child of the test-launched app; never touch another instance.
     const rows=spawnSync('/bin/ps',['-axo','pid=,ppid=,comm='],{encoding:'utf8'}).stdout.split('\n');
     const child=rows.map(r=>r.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/)).find(m=>m&&Number(m[2])===app.pid&&path.basename(m[3])===path.basename(executable));
@@ -150,6 +167,8 @@ PRAGMA user_version=2;
     assert.equal((await call('subscription.list'))[0].sync_mode,'manual');
     assert.equal((await call('content.get',{item_id:selected})).priority,'low');
     assert.equal((await call('subscription.list'))[0].default_priority,'high');
+    assert.equal((await call('content.list',{tags:[tag.id]})).total,1);
+    assert.equal((await call('tag.list')).items[0].name,tag.name);
     result.priorityRestart=true;result.appRestart=true;
     await app.close();app=null;
     // Fault injection only alters this disposable copy of the package.
