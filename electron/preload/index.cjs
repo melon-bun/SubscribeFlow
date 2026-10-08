@@ -7,6 +7,8 @@ const allowed = new Set([
   'content.update', 'content.bulk_update', 'priority.set_source',
   'tag.list', 'tag.get', 'tag.create', 'tag.update', 'tag.set_enabled', 'tag.remove', 'tag.contents',
   'content.set_tags', 'content.bulk_set_tags',
+  'intake.start', 'intake.get', 'intake.cancel', 'intake.save', 'source.list',
+  'startIntake', 'getIntake', 'cancelIntake', 'saveIntake', 'listContentSources',
   'core.status', 'core.restart', 'content.open',
   'schedule.list', 'schedule.status',
   'getSession', 'getCounts', 'listPlatforms', 'listPriorities', 'getCalendar', 'listContents', 'getContent',
@@ -18,11 +20,17 @@ const allowed = new Set([
   'listTags', 'getTag', 'createTag', 'updateTag', 'setTagEnabled', 'removeTag', 'listTagContents',
   'setContentTags', 'bulkSetTags',
 ]);
-const events = new Set(['core.status', 'sync.changed', 'content.changed', 'subscription.changed', 'tags.changed', 'run', 'runs', 'content', 'channels']);
+const events = new Set(['core.status', 'sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'tags.changed', 'run', 'runs', 'content', 'channels']);
+// Plain result envelopes cross contextBridge intact. Renderer creates its own
+// Error so code/scope/retry fields are not discarded while crossing contexts.
+async function request(name, params = {}) {
+  if (!allowed.has(name)) return {ok:false,error:{code:'FORBIDDEN_METHOD',message:'不允许调用此方法'}};
+  return ipcRenderer.invoke('subscribe-flow:call', name, params);
+}
 contextBridge.exposeInMainWorld('SubscribeFlow', Object.freeze({
+  request,
   async call(name, params = {}) {
-    if (!allowed.has(name)) throw new Error('不允许调用此方法');
-    const result = await ipcRenderer.invoke('subscribe-flow:call', name, params);
+    const result = await request(name, params);
     if (!result.ok) {
       const error = new Error(result.error.message);
       Object.assign(error, result.error);

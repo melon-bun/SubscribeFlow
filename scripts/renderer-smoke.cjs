@@ -32,6 +32,21 @@ async function verify({window, core, root, mode}) {
   assert.equal(await evaluate(`SF.app.state.source`),'real');
   assert.equal(await evaluate(`typeof require`),'undefined');
   if (mode === 'offline') {
+    // M11 foundation is callable from the actual isolated Renderer. Real link
+    // readers belong to M13, so existing adapters must refuse without fetching.
+    assert.equal(await evaluate(`SF.app.state.session.capabilities.canIntake`),false);
+    const intakeErrors=await evaluate(`(async()=>{
+      const methods=[['startIntake',[{url:'https://www.bilibili.com/video/BV1xx411c700'}]],['getIntake',['missing']],['cancelIntake',['missing']],['saveIntake',['missing',{}]]];
+      const results=[];
+      for(const [name,args] of methods) { try { await SF.app.state.client[name].apply(null,args); results.push('unexpected success'); } catch(error) { results.push(error.code); } }
+      const sources=await SF.app.state.client.listContentSources();
+      const raw=await SubscribeFlow.request('intake.get',{task_id:'missing'});
+      if(raw.ok || raw.error.code!=='NOT_FOUND') throw new Error('Raw intake bridge error was lost');
+      const unsubscribe=SubscribeFlow.on('intake.changed',()=>{});unsubscribe();
+      return {results,sourceCount:sources.total};
+    })()`);
+    assert.deepEqual(intakeErrors,{results:['UNSUPPORTED_OPERATION','NOT_FOUND','NOT_FOUND','PREVIEW_EXPIRED'],sourceCount:0});
+    await require('./intake-smoke.cjs').verifyIntakeDates({evaluate,until,click,screenshot,core,root});
     // Review regression for the Minimax enhancement: a dismissed connection
     // warning must not hide a changed reason or a later task result.
     await evaluate(`window.savedConnection = SF.app.state.session.connection; SF.app.state.session.connection = {state:'blocked',dependency:'unknown',authentication:'required',detail:'验收：请登录'}; SF.app.renderContent()`);

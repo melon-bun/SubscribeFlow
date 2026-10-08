@@ -38,7 +38,7 @@
   function loadDay(app,more) {
     var current=dayCache, query=calendarQuery(app);
     delete query.month;
-    Object.assign(query,{limit:20,offset:more?current.next_offset:0,from:app.selectedDate,to:app.selectedDate+'T23:59:59Z'});
+    Object.assign(query,{limit:20,offset:more?current.next_offset:0,from:app.selectedDate,to:app.selectedDate});
     current.loading=true; current.error=null;
     app.client.listContents(query).then(function(result) {
       if(dayCache!==current) return;
@@ -64,7 +64,7 @@
     SF.dom.append(el,[buildHead(app),buildStats(app),calendarFilters(app),h('div.view__body',null,buildBody(app)),
       h('div.inbox__toolbar.calendar-legend',{'aria-label':'日历优先级图例'},
         ['high','medium','low','none'].map(function(id) { return ui.priorityTag(id); }),
-        h('span.muted',{text:'按来源发布日期归入日历；时间未知的内容保留在收件箱和优先级模式中。'}))]);
+        h('span.muted',{text:'自动采集按发布日期，手动收录按添加时间；发布时间未知的自动内容可在收件箱和看板中查看。'}))]);
     return el;
   }
   function calendarFilters(app) {
@@ -135,7 +135,7 @@
     if(app.filters.platform) q.platform=app.filters.platform;
     if(app.filters.channelId) q.channelId=app.filters.channelId;
     if(app.search) q.keyword=app.search;
-    if(app.filters.day) { q.from=app.filters.day; q.to=app.filters.day+'T23:59:59.999999Z'; }
+    if(app.filters.day) { q.from=app.filters.day; q.to=app.filters.day; }
     return q;
   }
   function loadGroup(app,id,more) {
@@ -165,7 +165,7 @@
       ui.select([{value:'',label:'全部平台'}].concat(app.platforms.map(function(p) { return {value:p.id,label:catalog.platform(p.id).name}; })),app.filters.platform||'',function(v) { app.filters.platform=v||null; SF.app.render(); },{ariaLabel:'看板平台'}),
       ui.select([{value:'',label:'全部来源'}].concat((board.sources||[]).map(function(c) { return {value:c.id,label:c.name}; })),app.filters.channelId||'',function(v) { app.filters.channelId=v||null; SF.app.renderContent(); },{ariaLabel:'看板来源'}),
       ui.select([{value:'all',label:'全部处理状态'},{value:'unread',label:'未处理'},{value:'read',label:'已读'},{value:'deferred',label:'稍后处理'},{value:'archived',label:'已归档'}],app.filters.quick,function(v) { app.filters.quick=v; SF.app.render(); },{ariaLabel:'看板处理状态'}),
-      h('label.priority-date',null,h('span',{text:'发布日期'}),h('input.input',{type:'date','aria-label':'看板发布日期',value:app.filters.day||'',onchange:function(e) { app.filters.day=e.target.value || null; SF.app.renderContent(); }})),
+      h('label.priority-date',null,h('span',{text:'日历日期'}),h('input.input',{type:'date','aria-label':'看板日期',value:app.filters.day||'',onchange:function(e) { app.filters.day=e.target.value || null; SF.app.renderContent(); }})),
       ui.select([{value:'',label:'高 / 中 / 低'}].concat(levels.map(function(id) { return {value:id,label:catalog.priority(id).name}; })),app.filters.priority||'',function(v) { app.filters.priority=v||null; SF.app.render(); },{ariaLabel:'看板优先级'}),
       ui.btn('重置筛选',{onClick:function() { app.filters={quick:'all',platform:null,channelId:null}; app.search=''; SF.app.render(); }}),
       ui.btn('设置来源优先级',{onClick:function() { SF.app.navigate('channels',{tab:'priorities'}); }}));

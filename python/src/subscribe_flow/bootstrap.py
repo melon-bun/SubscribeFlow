@@ -7,6 +7,7 @@ from subscribe_flow.channels.bilibili.electron import BilibiliElectronAdapter
 from subscribe_flow.channels.xiaohongshu.adapter import XiaohongshuAdapter
 from subscribe_flow.application.subscriptions import SubscriptionService
 from subscribe_flow.application.sync import SyncService
+from subscribe_flow.application.intake import IntakeService
 from subscribe_flow.application.content import ContentService
 from subscribe_flow.application.queries import QueryService
 from subscribe_flow.application.priorities import PriorityService
@@ -45,6 +46,9 @@ class Core:
         self.closed = False
         self.subscriptions = SubscriptionService(self.gateway, self.repository)
         self.sync = SyncService(self.gateway, self.repository, self.emit)
+        self.intake = IntakeService(self.gateway, self.repository, self.emit, self.sync.resources,
+                                    resource_gap=lambda: self.sync.resource_gap,
+                                    suspended=lambda: self.sync.suspended)
         self.content = ContentService(self.repository, self.emit)
         self.priorities = PriorityService(self.repository, self.emit)
         # 默认不注入识别提供者：人工标签完整可用，识别接口明确返回未接入。
@@ -89,6 +93,7 @@ class Core:
     async def close(self):
         if not self.closed:
             await self.scheduler.close()
+            await self.intake.close()
             await self.sync.close()
             self.database.close()
             self.lease.close()

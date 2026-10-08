@@ -63,7 +63,7 @@
     if (app.filters.platform) q.platform = app.filters.platform;
     if (app.filters.channelId) q.channelId = app.filters.channelId;
     if (app.search) q.keyword = app.search;
-    if (app.filters.day) { q.from = app.filters.day; q.to = app.filters.day + 'T23:59:59.999999Z'; }
+    if (app.filters.day) { q.from = app.filters.day; q.to = app.filters.day; }
     /* tags 为空等价于不筛选，所以只在真的选了标签时才下发。
        any 是后端默认值，不下发 tagMode，避免把默认语义写死在请求里。 */
     var tags = app.filters.tags || [];
@@ -110,7 +110,7 @@
       all:'查看所有已保存的内容，包括已读、稍后处理和已归档。',read:'已标记为已读的内容。',deferred:'已留待稍后处理的内容。',archived:'已归档的内容。'};
     var head = h('div.view__head', null,
       h('div.view__head-text', null, h('div.view__title', null, h('h1.t-h1', {text:titles[app.filters.quick] || '内容'}), ui.countPill(cache.total == null ? '—' : cache.total, 'brand')),
-        h('p.view__desc', {text:descriptions[app.filters.quick] || '按发布时间查看创作者更新。'})),
+        h('p.view__desc', {text:descriptions[app.filters.quick] || '按日期查看收录的内容。'})),
       h('div.view__actions', null, h('span.muted', {text:'最新发布'}), ui.btn('重新查询', {icon:'refresh', onClick:function () { cache = {}; SF.app.refreshData(true); }})));
     var chips = h('div.inbox__toolbar', null,
       h('div.chips', null,

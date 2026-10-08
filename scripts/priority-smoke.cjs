@@ -61,7 +61,7 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   await change('看板处理状态','all');
   await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='24'`);
   // Unknown timestamps remain visible on the board; a day filter excludes them.
-  await evaluate(`const day=document.querySelector('[aria-label="看板发布日期"]'); day.value=SF.fmt.ymd(Date.now()); day.dispatchEvent(new Event('change',{bubbles:true}));`);
+  await evaluate(`const day=document.querySelector('[aria-label="看板日期"]'); day.value=SF.fmt.ymd(Date.now()); day.dispatchEvent(new Event('change',{bubbles:true}));`);
   await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='23'`);
   await click('重置筛选');
   await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='24'`);

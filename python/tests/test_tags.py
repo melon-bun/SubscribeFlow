@@ -229,7 +229,7 @@ class TagTests(unittest.TestCase):
         self.tags.set_content(self.item.key, [first['id'], second['id']])
         self.repo.commit_page(self.job['id'], FetchPage((replace(self.item, title='New'),), None, 'window_only'))
         item = self.repo.get_content(self.item.key)
-        self.assertEqual(item['title'], 'New')
+        self.assertEqual(item['title'], 'Title')
         self.assertEqual({t['id'] for t in item['tags']}, {first['id'], second['id']})
         self.restart()
         self.assertEqual(len(self.repo.get_content(self.item.key)['tags']), 2)

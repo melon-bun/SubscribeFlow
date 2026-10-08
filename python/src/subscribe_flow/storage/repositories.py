@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from subscribe_flow.contracts import ChannelError, Connection, ContentPatch, Source, jsonable
 from subscribe_flow.contracts.priorities import validate_priority
 from subscribe_flow.contracts.tags import validate_tag_filter
+from subscribe_flow.contracts.tags import validate_tag_ids
+from subscribe_flow.storage.dates import calendar_key, calendar_order, date_boundary, display_zone
 
 
 def now() -> str:
@@ -23,6 +25,8 @@ def encode(value) -> str:
 class Repository:
     def __init__(self, database):
         self.database, self.db = database, database.connection
+        self.db.create_function('sf_calendar_key', 4, calendar_key, deterministic=True)
+        self.db.create_function('sf_calendar_order', 4, calendar_order, deterministic=True)
 
     def add_connection(self, connection: Connection):
         with self.database.transaction() as db:
@@ -168,28 +172,63 @@ class Repository:
     def recover_interrupted(self):
         self.db.execute("UPDATE jobs SET state='interrupted',updated_at=? WHERE state IN ('queued','running')", (now(),))
 
-    def _upsert_item(self, db, item):
-        if not item.external_id or not item.title or not item.url or item.channel != item.source.channel:
+    def existing_item_id(self, reference):
+        row = self.db.execute('SELECT id FROM contents WHERE channel=? AND namespace=? AND external_id=?',
+                              (reference.channel, reference.namespace, reference.external_id)).fetchone()
+        return row['id'] if row else None
+
+    def _upsert_item(self, db, item, *, intake_method='subscription', stamp=None):
+        # Both entry points call this inside BEGIN IMMEDIATE. No source, state,
+        # payload or timestamp is written on a duplicate identity.
+        if self.existing_item_id(item):
+            return 0
+        if (any(not isinstance(part, str) or not part or ':' in part
+                for part in (item.channel, item.namespace, item.external_id,
+                             item.source.kind, item.source.external_id))
+                or not item.title or not item.url or not item.source.name or not item.source.url
+                or item.channel != item.source.channel):
             raise ValueError("Invalid content contract")
         data = jsonable(item)
-        old = db.execute("SELECT payload FROM contents WHERE id=?", (item.key,)).fetchone()
-        if old:
-            prior = json.loads(old[0])
-            data["acquisition_complete"] = data["acquisition_complete"] or prior.get("acquisition_complete", False)
-            for field in ("summary", "thumbnail", "duration_seconds"):
-                if data[field] is None:
-                    data[field] = prior[field]
-            precision = {"unknown": 0, "date": 1, "minute": 2, "second": 3}
-            if precision.get(data["published"]["precision"], 0) < precision.get(prior["published"]["precision"], 0):
-                data["published"] = prior["published"]
-        stamp = now()
-        db.execute("""INSERT INTO contents VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
-                      title=excluded.title,published_at=excluded.published_at,payload=excluded.payload,updated_at=excluded.updated_at""",
-                   (item.key, item.channel, item.namespace, item.external_id, item.title, data["published"]["value"], encode(data), stamp, stamp))
+        stamp = stamp or now()
+        db.execute("""INSERT INTO contents(id,channel,namespace,external_id,title,published_at,payload,
+                      first_seen_at,updated_at,intake_method,manual_added_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                   (item.key, item.channel, item.namespace, item.external_id, item.title,
+                    data['published']['value'], encode(data), stamp, stamp, intake_method,
+                    stamp if intake_method == 'manual' else None))
         self._save_source(db, item.source)
         db.execute("INSERT OR IGNORE INTO content_sources VALUES(?,?)", (item.key, item.source.key))
         db.execute("INSERT OR IGNORE INTO content_states(content_id,updated_at) VALUES(?,?)", (item.key, stamp))
-        return int(old is None)
+        return 1
+
+    def save_manual(self, item, *, priority=None, tag_ids=None):
+        with self.database.transaction() as db:
+            existing = self.existing_item_id(item)
+            if existing:
+                return {'status': 'exists', 'item_id': existing}
+            validate_priority(priority)
+            tag_ids = validate_tag_ids(tag_ids or [])
+            self._require_tags(tag_ids, 'intake.save')
+            stamp = now()
+            self._upsert_item(db, item, intake_method='manual', stamp=stamp)
+            if priority is not None:
+                db.execute('UPDATE content_states SET priority_override=? WHERE content_id=?', (priority, item.key))
+            for tag_id in tag_ids:
+                db.execute("INSERT INTO content_tags(content_id,tag_id,origin,created_at) VALUES(?,?,'manual',?)",
+                           (item.key, tag_id, stamp))
+        return {'status': 'created', 'item_id': item.key}
+
+    def list_content_sources(self, channel=None, query=None):
+        clauses, args = ["(EXISTS(SELECT 1 FROM content_sources cs WHERE cs.source_id=r.id) "
+                         "OR EXISTS(SELECT 1 FROM subscriptions sub WHERE sub.source_id=r.id))"], []
+        if channel:
+            clauses.append('r.channel=?')
+            args.append(channel)
+        if query:
+            clauses.append('instr(lower(r.name),lower(?))>0')
+            args.append(query)
+        rows = self.db.execute("SELECT r.*,(SELECT count(*) FROM content_sources cs WHERE cs.source_id=r.id) AS content_count "
+                               "FROM sources r WHERE " + ' AND '.join(clauses) + ' ORDER BY r.name,r.id', args)
+        return {'items': [dict(row) for row in rows]}
 
     def _save_progress(self, db, job, mode, payload):
         snap = job["snapshot"]
@@ -297,8 +336,18 @@ class Repository:
             db.execute("UPDATE jobs SET state='succeeded',updated_at=? WHERE id=?", (now(), job_id))
 
     @staticmethod
-    def _content(row):
-        return {"id": row["id"], **json.loads(row["payload"]),
+    def _content(row, timezone='UTC'):
+        data = json.loads(row['payload'])
+        published = data.get('published', {})
+        manual = row['intake_method'] == 'manual'
+        value = row['manual_added_at'] if manual else row['published_at']
+        projected = calendar_key(value, 'second' if manual else published.get('precision', 'unknown'),
+                                 'UTC' if manual else published.get('timezone'), timezone)
+        return {"id": row["id"], **data,
+                'first_seen_at': row['first_seen_at'], 'intake_method': row['intake_method'],
+                'manual_added_at': row['manual_added_at'], 'calendar_at': value,
+                'calendar_date': projected[:10] if projected else None, 'calendar_timezone': timezone,
+                'calendar_basis': 'manual_added_at' if manual else 'published_at',
                 # 采集侧的更新时间：识别建议据此判断内容是否已经变化。
                 "updated_at": row["updated_at"],
                 "state": {field: bool(row[field]) for field in ("read", "archived", "deferred")},
@@ -314,15 +363,35 @@ class Repository:
     EFFECTIVE_PRIORITY = f"COALESCE(s.priority_override,{SOURCE_PRIORITY})"
     CONTENT_COLUMNS = f"c.*,s.read,s.archived,s.deferred,s.priority_override,{SOURCE_PRIORITY} AS source_priority,{EFFECTIVE_PRIORITY} AS effective_priority"
 
-    def get_content(self, key):
+    def get_content(self, key, timezone='UTC'):
+        display_zone(timezone)
         row = self.db.execute(f"SELECT {self.CONTENT_COLUMNS} FROM contents c JOIN content_states s ON s.content_id=c.id WHERE c.id=?", (key,)).fetchone()
         if not row:
             raise ChannelError("NOT_FOUND", "content.get", "内容不存在")
-        return self._with_tags([self._content(row)])[0]
+        return self._with_tags([self._content(row, timezone)])[0]
+
+    CALENDAR_VALUE = "CASE WHEN c.intake_method='manual' THEN c.manual_added_at ELSE c.published_at END"
+
+    def _calendar_expr(self, timezone='UTC', *, order=False):
+        # IANA name validation excludes SQL metacharacters. One expression is used
+        # for sorting, range filters, day grouping and previews.
+        display_zone(timezone)
+        function = 'sf_calendar_order' if order else 'sf_calendar_key'
+        return (f"{function}({self.CALENDAR_VALUE},"
+                "CASE WHEN c.intake_method='manual' THEN 'second' ELSE COALESCE(json_extract(c.payload,'$.published.precision'),'unknown') END,"
+                "CASE WHEN c.intake_method='manual' THEN 'UTC' ELSE json_extract(c.payload,'$.published.timezone') END,"
+                f"'{timezone}')")
 
     def _content_filter(self, *, channel=None, source_id=None, query=None, start=None, end=None,
-                        read=None, archived=None, deferred=None, priority=None, tags=None, tag_mode=None):
+                        read=None, archived=None, deferred=None, priority=None, tags=None, tag_mode=None,
+                        intake_method=None, timezone='UTC'):
         clauses, args = ["1=1"], []
+        date_expr = self._calendar_expr(timezone)
+        if intake_method is not None:
+            if intake_method not in {'subscription', 'manual'}:
+                raise ChannelError('INVALID_INPUT', 'content.query', '收录方式无效')
+            clauses.append('c.intake_method=?')
+            args.append(intake_method)
         if priority == 'none':
             clauses.append(f"{self.EFFECTIVE_PRIORITY} IS NULL")
         elif priority is not None:
@@ -353,8 +422,8 @@ class Repository:
             args.append(query)
         for operator, value in ((">=", start), ("<=", end)):
             if value:
-                clauses.append(f"c.published_at {operator} ?")
-                args.append(value)
+                clauses.append(f"{date_expr} {operator} ?")
+                args.append(date_boundary(value, end=operator == '<=', zone=timezone))
         base = "FROM contents c JOIN content_states s ON s.content_id=c.id WHERE " + " AND ".join(clauses)
         return base, args
 
@@ -362,9 +431,10 @@ class Repository:
         if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 1000000:
             raise ChannelError("INVALID_INPUT", "content.list", "分页参数无效")
         base, args = self._content_filter(**filters)
+        timezone = filters.get('timezone', 'UTC')
         total = self.db.execute("SELECT count(*) " + base, args).fetchone()[0]
-        records = self.db.execute(f"SELECT {self.CONTENT_COLUMNS} " + base + " ORDER BY c.published_at DESC,c.id DESC LIMIT ? OFFSET ?", (*args, limit, offset))
-        return {"items": self._with_tags([self._content(row) for row in records]), "total": total, "limit": limit, "offset": offset,
+        records = self.db.execute(f"SELECT {self.CONTENT_COLUMNS} " + base + f" ORDER BY {self._calendar_expr(timezone, order=True)} DESC,c.id DESC LIMIT ? OFFSET ?", (*args, limit, offset))
+        return {"items": self._with_tags([self._content(row, timezone) for row in records]), "total": total, "limit": limit, "offset": offset,
                 "next_offset": offset + limit if offset + limit < total else None}
 
 
@@ -374,13 +444,15 @@ class Repository:
         year, number = map(int, month.split('-'))
         if not 1 <= year <= 9999 or not 1 <= number <= 12:
             raise ChannelError('INVALID_INPUT', 'content.calendar', '月份无效')
-        end = f"{month}-{calendar.monthrange(year, number)[1]:02d}T23:59:59Z"
+        end = f"{month}-{calendar.monthrange(year, number)[1]:02d}"
         base, args = self._content_filter(start=month+'-01', end=end, **filters)
+        date_expr = self._calendar_expr(filters.get('timezone', 'UTC'))
+        order_expr = self._calendar_expr(filters.get('timezone', 'UTC'), order=True)
         levels = ('high', 'medium', 'low', 'none')
         counts = dict.fromkeys(levels, 0)
         days = {}
         # Group the entire filtered month, not an arbitrary page of content.
-        rows = self.db.execute(f"SELECT substr(c.published_at,1,10) AS day, "
+        rows = self.db.execute(f"SELECT substr({date_expr},1,10) AS day, "
                                f"{self.EFFECTIVE_PRIORITY} AS priority,count(*) AS count "
                                + base + " GROUP BY day,priority ORDER BY day", args)
         for row in rows:
@@ -392,15 +464,16 @@ class Repository:
             counts[level] += row['count']
         # Only three small previews per day cross RPC; full day lists paginate
         # via content.list with identical filters and stable ordering.
-        previews = self.db.execute(f"""SELECT id,title,day,priority FROM (
-            SELECT c.id,c.title,substr(c.published_at,1,10) AS day,
+        previews = self.db.execute(f"""SELECT id,title,day,priority,intake_method,calendar_at FROM (
+            SELECT c.id,c.title,c.intake_method,{self.CALENDAR_VALUE} AS calendar_at,substr({date_expr},1,10) AS day,
                    {self.EFFECTIVE_PRIORITY} AS priority,
-                   ROW_NUMBER() OVER (PARTITION BY substr(c.published_at,1,10)
-                                      ORDER BY c.published_at DESC,c.id DESC) AS position
+                   ROW_NUMBER() OVER (PARTITION BY substr({date_expr},1,10)
+                                      ORDER BY {order_expr} DESC,c.id DESC) AS position
             """ + base + ") WHERE position<=3 ORDER BY day,position", args)
         for row in previews:
-            days[row['day']]['items'].append({'id':row['id'], 'title':row['title'], 'priority':row['priority']})
-        return {'month':month, 'total':sum(counts.values()), 'priorities':counts, 'days':list(days.values())}
+            days[row['day']]['items'].append({'id':row['id'], 'title':row['title'], 'priority':row['priority'],
+                                             'intake_method':row['intake_method'], 'calendar_at':row['calendar_at']})
+        return {'month':month, 'timezone':filters.get('timezone', 'UTC'), 'total':sum(counts.values()), 'priorities':counts, 'days':list(days.values())}
 
     # ---------------------------------------------------------------- 标签 M9
     #
@@ -566,13 +639,14 @@ class Repository:
         if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 1000000:
             raise ChannelError("INVALID_INPUT", "tag.contents", "分页参数无效")
         base, args = self._content_filter(**filters)
+        timezone = filters.get('timezone', 'UTC')
         clause = base.replace("WHERE 1=1", f"WHERE 1=1 AND EXISTS(SELECT 1 FROM content_tags ct "
                                             f"WHERE ct.content_id=c.id AND ct.tag_id=?)", 1)
         args = [tag_id, *args]
         total = self.db.execute("SELECT count(*) " + clause, args).fetchone()[0]
         records = self.db.execute(f"SELECT {self.CONTENT_COLUMNS} " + clause +
-                                  " ORDER BY c.published_at DESC,c.id DESC LIMIT ? OFFSET ?", (*args, limit, offset))
-        return {"items": self._with_tags([self._content(row) for row in records]),
+                                  f" ORDER BY {self._calendar_expr(timezone, order=True)} DESC,c.id DESC LIMIT ? OFFSET ?", (*args, limit, offset))
+        return {"items": self._with_tags([self._content(row, timezone) for row in records]),
                 "total": total, "limit": limit, "offset": offset,
                 "next_offset": offset + limit if offset + limit < total else None}
 

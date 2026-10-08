@@ -104,11 +104,16 @@ class XHSTests(unittest.IsolatedAsyncioTestCase):
         self.core.repository.commit_page(job['id'], FetchPage((ContentItem('xiaohongshu','note',IDS[0],source,'占位','https://example.com'),),None,'window_only'))
         self.core.repository.finish_scan(job['id'], coverage='window_only')
         self.assertEqual(self.core.repository.complete_source_ids(source.key), ())
+        original = self.core.queries.content('xiaohongshu:note:'+IDS[0])
         await self.core.update_subscription(self.sub['id'], collect_items=1)
         job = await self.scan()
         self.assertEqual(job['page_budget'], 1)
         self.assertEqual(job['items'], 1)
-        self.assertTrue(self.core.queries.content('xiaohongshu:note:'+IDS[0])['acquisition_complete'])
+        # Recollection is now a no-op even for incomplete legacy content.
+        self.assertEqual(self.core.queries.content('xiaohongshu:note:'+IDS[0]), original)
+        detail = self.core.sync.start(self.sub['id'], mode='detail', item_key=original['id'])
+        self.assertEqual((await self.core.sync.wait(detail['job_id']))['state'], 'succeeded')
+        self.assertTrue(self.core.queries.content(original['id'])['acquisition_complete'])
 
     async def test_auth_failure_after_commit_retains_results_and_marks_connection(self):
         original = self.bridge.call

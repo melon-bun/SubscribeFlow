@@ -9,8 +9,8 @@ class QueryService:
     def calendar(self, month, **query):
         return self.repository.calendar_summary(month, **query)
 
-    def content(self, item_id):
-        return self.repository.get_content(item_id)
+    def content(self, item_id, timezone='UTC'):
+        return self.repository.get_content(item_id, timezone)
 
     def subscriptions(self, include_cancelled=False):
         return self.repository.list_subscriptions(include_cancelled)

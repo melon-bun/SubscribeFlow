@@ -11,7 +11,7 @@ async function verify({window,core,root,xiaohongshu,fixture}) {
     }
   };
   const click=label=>evaluate(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)} || b.getAttribute('aria-label')===${JSON.stringify(label)});if(!b || b.disabled)throw new Error('Missing button: '+${JSON.stringify(label)});b.click();})()`);
-  const output=path.join(root,'docs/verification/m10-xiaohongshu');await fs.mkdir(output,{recursive:true});
+  const output=process.env.SUBSCRIBE_FLOW_VERIFY_OUTPUT || path.join(root,'docs/verification/m10-xiaohongshu');await fs.mkdir(output,{recursive:true});
   const screenshot=async name=>{await evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');await fs.writeFile(path.join(output,name),(await window.webContents.capturePage()).toPNG());};
   await until('!!window.SF?.app.state.session');
   assert.equal((await core.call('channel.list')).length,2);

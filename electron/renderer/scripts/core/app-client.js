@@ -85,6 +85,7 @@
     "setContentTags",
     "bulkSetTags",
     "resolveSource", "searchSources", "listConnections", "checkConnection", "retryRun", "fetchDetail",
+    "startIntake", "getIntake", "cancelIntake", "saveIntake", "listContentSources",
     "on",
   ];
 
@@ -142,6 +143,17 @@
     if (!bridge || typeof bridge.call !== "function" || typeof bridge.on !== "function") {
       throw new Error("SubscribeFlow 桥缺少 call()，请检查 Preload 白名单实现");
     }
+    function invoke(name, args) {
+      if (typeof bridge.request !== 'function') return bridge.call(name, args);
+      return bridge.request(name, args).then(function (result) {
+        if (!result.ok) {
+          var error = new Error(result.error.message);
+          Object.assign(error, result.error);
+          throw error;
+        }
+        return result.value;
+      });
+    }
     var client = {
       on: function (event, handler) {
         if (typeof bridge.on !== "function") return function () {};
@@ -152,14 +164,14 @@
       if (name === "on") return;
       client[name] = function () {
         var args = Array.prototype.slice.call(arguments);
-        return bridge.call(name, args);
+        return invoke(name, args);
       };
     });
-    client.getCoreStatus = function () { return bridge.call('core.status'); };
-    client.restartCore = function () { return bridge.call('core.restart'); };
-    client.openContent = function (id) { return bridge.call('content.open', { item_id: id }); };
-    client.openChannel = function (id) { return bridge.call('source.open', { subscription_id: id }); };
-    client.loginConnection = function (id) { return bridge.call('connection.login', { connection_id: id }); };
+    client.getCoreStatus = function () { return invoke('core.status'); };
+    client.restartCore = function () { return invoke('core.restart'); };
+    client.openContent = function (id) { return invoke('content.open', { item_id: id }); };
+    client.openChannel = function (id) { return invoke('source.open', { subscription_id: id }); };
+    client.loginConnection = function (id) { return invoke('connection.login', { connection_id: id }); };
     return client;
   }
 

@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {callUI, contentDTO} = require('../electron/main/app-client.cjs');
 const {openSavedLink} = require('../electron/main/external-links.cjs');
+const DISPLAY_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 test('replacement backend capabilities drive the source UI and platform filters stay unique',async()=>{
   const descriptors=[{channel:'test',backend:'old',operations:{list_items:{supported:false}}},
@@ -33,6 +34,71 @@ test('display DTO preserves missing dates, date precision and cover without inve
   assert.equal(item.priority,null);
 });
 
+test('M11 common queries preserve intake dates and filter real sources independently of subscriptions', async () => {
+  const item={id:'test:video:1',source:{channel:'test',kind:'author',external_id:'a',name:'Author'},published:{value:'2020-01-01',precision:'date'},
+    intake_method:'manual',manual_added_at:'2026-09-30T15:30:00Z',first_seen_at:'2026-09-30T15:30:00Z',calendar_at:'2026-09-30T15:30:00Z',
+    calendar_date:'2026-10-01',calendar_timezone:'Asia/Tokyo',calendar_basis:'manual_added_at',state:{read:false}};
+  const seen=[];
+  const core={call:async(name,params)=>{
+    seen.push([name,params]);
+    if(name==='subscription.list') return [];
+    if(name==='source.list') return {items:[{id:'test:author:a',channel:'test',name:'Author',content_count:1}]};
+    return {items:[item],total:1};
+  }};
+  const result=await callUI(core,'listContents',[{sourceId:'test:author:a',intakeMethod:'manual',timezone:'Asia/Tokyo',from:'2026-10-01',to:'2026-10-01'}]);
+  assert.deepEqual(seen.find(([name])=>name==='content.list')[1],{timezone:'Asia/Tokyo',source_id:'test:author:a',intake_method:'manual',start:'2026-10-01',end:'2026-10-01'});
+  const displayed=result.items[0];
+  assert.equal(displayed.channelId,null);
+  assert.equal(displayed.sourceId,'test:author:a');
+  assert.equal(displayed.intakeMethod,'manual');
+  assert.equal(displayed.publishedAt,'2020-01-01');
+  assert.equal(displayed.calendarDate,'2026-10-01');
+  assert.equal(displayed.calendarBasis,'manual_added_at');
+  const sources=await callUI(core,'listContentSources',[{platform:'test'}]);
+  assert.equal(sources.items[0].id,'test:author:a');
+  assert.equal(sources.total,1);
+  await callUI(core,'listTagContents',['tag',{sourceId:'test:author:a',intakeMethod:'manual',timezone:'Asia/Tokyo',from:'2026-10-01',to:'2026-10-01'}]);
+  const tagged=seen.find(([name])=>name==='tag.contents')[1];
+  assert.equal(tagged.timezone,'Asia/Tokyo');assert.equal(tagged.intake_method,'manual');assert.equal(tagged.start,tagged.end);
+});
+
+test('M11 intake bridge accepts only a URL, task or authoritative preview and organizing fields', async () => {
+  const seen=[];
+  const core={call:async(name,params)=>{seen.push([name,params]);return {state:'preview'};}};
+  await callUI(core,'startIntake',[{url:'https://example.com/1',connectionId:'c'}]);
+  await callUI(core,'getIntake',['task']);
+  await callUI(core,'cancelIntake',['task']);
+  await callUI(core,'saveIntake',['preview',{priority:'low',tagIds:['tag']}]);
+  assert.deepEqual(seen,[['intake.start',{url:'https://example.com/1',connection_id:'c'}],['intake.get',{task_id:'task'}],
+    ['intake.cancel',{task_id:'task'}],['intake.save',{preview_id:'preview',priority:'low',tag_ids:['tag']}] ]);
+  await assert.rejects(callUI(core,'saveIntake',['preview',{payload:{title:'forged'}}]),e=>e.code==='UNSUPPORTED_OPERATION');
+  await assert.rejects(callUI(core,'startIntake',[{url:'https://example.com/1',platform:'test'}]),e=>e.code==='UNSUPPORTED_OPERATION');
+});
+
+test('M11 methods reach Main and preload from the real Renderer AppClient factory', async () => {
+  const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+  const names=['startIntake','getIntake','cancelIntake','saveIntake','listContentSources'];
+  const calls=[];
+  const window={SubscribeFlow:{call:async(name,args)=>{calls.push([name,args]);},on:()=>()=>{}}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../electron/renderer/scripts/core/app-client.js'),'utf8'),{window});
+  const client=window.SF.AppClient.createClient({mode:'real'}).client;
+  const {UI_METHODS}=require('../electron/main/app-client.cjs');
+  const preload=fs.readFileSync(path.join(__dirname,'../electron/preload/index.cjs'),'utf8');
+  const allowed=preload.match(/allowed = new Set\(\[([\s\S]*?)\]\)/)[1];
+  for(const name of names) {
+    assert.ok(UI_METHODS.has(name));assert.ok(allowed.includes(`'${name}'`));
+    await client[name]('test');
+  }
+  assert.deepEqual(calls.map(([name])=>name),names);
+  for(const method of ['intake.start','intake.get','intake.cancel','intake.save','source.list']) assert.ok(allowed.includes(`'${method}'`));
+  const {CORE_METHODS}=require('../electron/main/methods.cjs');
+  for(const method of ['intake.start','intake.get','intake.cancel','intake.save','source.list']) assert.ok(CORE_METHODS.has(method));
+  assert.ok(preload.match(/events = new Set\(\[([^\]]+)\]/)[1].includes("'intake.changed'"));
+  window.SubscribeFlow.request=async()=>({ok:false,error:{code:'PREVIEW_EXPIRED',message:'expired',scope:'operation',retryable:false}});
+  await assert.rejects(window.SF.AppClient.createClient({mode:'real'}).client.saveIntake('preview'),
+    error=>error.message==='expired' && error.code==='PREVIEW_EXPIRED' && error.scope==='operation' && error.retryable===false);
+});
+
 test('calendar and inbox pagination map to bounded Core queries', async () => {
   let received;
   const core={call:async (name,params)=>{
@@ -41,10 +107,10 @@ test('calendar and inbox pagination map to bounded Core queries', async () => {
     return {items:[],total:23,next_offset:20};
   }};
   const result=await callUI(core,'listContents',[{limit:20,offset:0,from:'2026-10-01',to:'2026-10-31T23:59:59Z',state:'unread'}]);
-  assert.deepEqual(received,{limit:20,offset:0,start:'2026-10-01',end:'2026-10-31T23:59:59Z',read:false,archived:false,deferred:false});
+  assert.deepEqual(received,{timezone:DISPLAY_TIMEZONE,limit:20,offset:0,start:'2026-10-01',end:'2026-10-31T23:59:59Z',read:false,archived:false,deferred:false});
   assert.equal(result.next_offset,20);
   await callUI(core,'listContents',[{priority:'high',state:'unread',limit:20,offset:20}]);
-  assert.deepEqual(received,{limit:20,offset:20,priority:'high',read:false,archived:false,deferred:false});
+  assert.deepEqual(received,{timezone:DISPLAY_TIMEZONE,limit:20,offset:20,priority:'high',read:false,archived:false,deferred:false});
   // 非法取值属于入参错误，不静默降级，否则用户会看到错的筛选结果。
   await assert.rejects(callUI(core,'listContents',[{tagMode:'sometimes'}]),{message:'标签筛选方式需为任一符合或全部符合'});
   await assert.rejects(callUI(core,'listContents',[{tags:['']}]),{message:'标签列表无效'});
@@ -58,14 +124,14 @@ test('tag filters reach the Core query and never widen an empty selection', asyn
     return name==='content.calendar' ? {month:params.month,total:0,priorities:{},days:[]} : {items:[],total:0,next_offset:null};
   }};
   await callUI(core,'listContents',[{tags:['t1'],limit:20,offset:0}]);
-  assert.deepEqual(received,{limit:20,offset:0,tags:['t1']});
+  assert.deepEqual(received,{timezone:DISPLAY_TIMEZONE,limit:20,offset:0,tags:['t1']});
   // 只有显式要求「全部符合」才下发 all；默认即任一符合，不额外传参。
   await callUI(core,'listContents',[{tags:['t1','t2'],tagMode:'all',limit:20}]);
-  assert.deepEqual(received,{limit:20,tags:['t1','t2'],tag_mode:'all'});
+  assert.deepEqual(received,{timezone:DISPLAY_TIMEZONE,limit:20,tags:['t1','t2'],tag_mode:'all'});
   await callUI(core,'listContents',[{tags:[],limit:20}]);
   assert.equal('tags' in received,false);
   await callUI(core,'getCalendar',[{month:'2026-10',tags:['t1'],tagMode:'all'}]);
-  assert.deepEqual(received,{month:'2026-10',tags:['t1'],tag_mode:'all'});
+  assert.deepEqual(received,{timezone:DISPLAY_TIMEZONE,month:'2026-10',tags:['t1'],tag_mode:'all'});
 });
 
 test('source search and resolution stay separate from confirmed creation', async () => {
@@ -90,7 +156,7 @@ test('calendar maps shared filters to a full monthly summary without pagination'
     assert.equal(name,'content.calendar'); received=params; return summary;
   }};
   assert.deepEqual(await callUI(core,'getCalendar',[{month:'2026-10',platform:'test',channelId:'sub',priority:'high',state:'unread',keyword:'Title'}]),summary);
-  assert.deepEqual(received,{month:'2026-10',channel:'test',source_id:'source',priority:'high',query:'Title',read:false,archived:false,deferred:false});
+  assert.deepEqual(received,{timezone:DISPLAY_TIMEZONE,month:'2026-10',channel:'test',source_id:'source',priority:'high',query:'Title',read:false,archived:false,deferred:false});
   await assert.rejects(callUI(core,'getCalendar',[{month:'2026-10',limit:100}]),{code:'UNSUPPORTED_OPERATION'});
 });
 

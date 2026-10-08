@@ -38,6 +38,22 @@ test('real sidecar handshake, persistent subscription, UI mapping and controlled
   });
 });
 
+test('M11 optional intake stays unsupported on existing channels through real RPC without acquisition', async () => {
+  let acquisitions=0;
+  await fixture(async core => {
+    const session=await callUI(core,'getSession',[]);
+    assert.equal(session.capabilities.canIntake,false);
+    assert.ok(session.channels.every(channel=>channel.contract_version==='1.1'));
+    await assert.rejects(callUI(core,'startIntake',[{url:'https://www.bilibili.com/video/BV1xx411c700'}]), e=>e.code==='UNSUPPORTED_OPERATION');
+    await assert.rejects(callUI(core,'getIntake',['missing']), e=>e.code==='NOT_FOUND');
+    await assert.rejects(callUI(core,'cancelIntake',['missing']), e=>e.code==='NOT_FOUND');
+    await assert.rejects(callUI(core,'saveIntake',['missing',{}]), e=>e.code==='PREVIEW_EXPIRED');
+    assert.deepEqual(await callUI(core,'listContentSources',[]),{items:[],total:0});
+    assert.equal((await core.call('content.list',{intake_method:'manual',timezone:'Asia/Tokyo'})).total,0);
+    assert.equal(acquisitions,0);
+  },async()=>{acquisitions++;throw new Error('No platform request expected');});
+});
+
 test('automatic mode persists, dispatches an overdue plan through real RPC and stops in manual mode', async () => {
   let calls=0;
   await fixture(async core=>{

@@ -5,8 +5,9 @@ import time
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any, Literal, Protocol
 
-CONTRACT_VERSION = "1.0"
-Operation = Literal["resolve_source", "search_sources", "list_items", "get_item_detail"]
+CONTRACT_VERSION = "1.1"
+Operation = Literal["resolve_source", "search_sources", "list_items", "get_item_detail",
+                    "match_item_url", "resolve_item", "read_item"]
 
 
 def jsonable(value: Any) -> Any:
@@ -144,6 +145,19 @@ class ContentPatch:
 
 
 @dataclass(frozen=True)
+class ContentReference:
+    """Adapter-confirmed identity; URL retains any channel-required share locator."""
+    channel: str
+    namespace: str
+    external_id: str
+    url: str
+
+    @property
+    def key(self) -> str:
+        return f"{self.channel}:{self.namespace}:{self.external_id}"
+
+
+@dataclass(frozen=True)
 class FetchRequest:
     mode: Literal["initial", "refresh", "backfill"] = "refresh"
     cursor: dict | None = None
@@ -207,3 +221,10 @@ class ChannelAdapter(Protocol):
     async def fetch_page(self, source: Source, request: FetchRequest, context: Context) -> FetchPage: ...
     async def search_sources(self, query: str, request: FetchRequest, context: Context) -> SourcePage: ...
     async def get_item_detail(self, item_ref: str, context: Context) -> ContentPatch: ...
+
+
+class ItemLinkAdapter(Protocol):
+    """Optional capabilities; existing subscription adapters need not implement these."""
+    def match_item_url(self, url: str) -> bool: ...
+    async def resolve_item(self, url: str, context: Context) -> ContentReference: ...
+    async def read_item(self, reference: ContentReference, context: Context) -> ContentItem: ...

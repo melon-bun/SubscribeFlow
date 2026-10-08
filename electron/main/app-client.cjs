@@ -8,6 +8,7 @@ const UI_METHODS = new Set([
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',
   'listCreators', 'getPrioritySettings', 'savePrioritySettings', 'listRules', 'createRule',
   'updateRule', 'removeRule', 'getSyncCoverage', 'resolveSource', 'searchSources', 'listConnections', 'checkConnection', 'retryRun', 'fetchDetail',
+  'startIntake', 'getIntake', 'cancelIntake', 'saveIntake', 'listContentSources',
 ]);
 // F1's “未处理” / inbox means no processing state has been set.
 const INBOX_FILTER = Object.freeze({read: false, archived: false, deferred: false});
@@ -35,6 +36,9 @@ function tagIds(value) {
   if (list.length > 100 || list.some(id => typeof id !== 'string' || !id)) throw new Error('标签列表无效');
   return list;
 }
+function displayTimezone(value) {
+  return value ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
+}
 function contentDTO(item, subscriptions) {
   const sourceKey = `${item.source.channel}:${item.source.kind}:${item.source.external_id}`;
   const sub = subscriptions.find(row => row.source_id === sourceKey);
@@ -46,6 +50,10 @@ function contentDTO(item, subscriptions) {
     state: item.state, priority: item.priority ?? null, priorityOverride: item.priority_override ?? null, sourcePriority: item.source_priority ?? null,
     tags: (item.tags || []).map(tag => ({id: tag.id, name: tag.name, color: tag.color, origin: tag.origin})),
     updatedAt: item.updated_at ?? null, contentHash: null,
+    sourceId: sourceKey, intakeMethod: item.intake_method ?? null,
+    firstSeenAt: item.first_seen_at ?? null, manualAddedAt: item.manual_added_at ?? null,
+    calendarAt: item.calendar_at ?? null, calendarDate: item.calendar_date ?? null,
+    calendarTimezone: item.calendar_timezone ?? null, calendarBasis: item.calendar_basis ?? null,
   };
 }
 function channelDTO(sub, descriptors = [], schedule = null) {
@@ -86,7 +94,8 @@ async function callUI(core, name, args) {
       return { user: { name: '本地用户' }, now: Date.now(), isDemo: false,
         capabilities: { canRefresh: channels.some(c => c.operations.list_items?.supported),
           canBackfill: channels.some(c => c.operations.list_items?.supported && c.operations.list_items.pagination !== 'none'),
-          canCancel: true, canManageChannels: true, canManagePriorities: true, canManageRules: false, canBookmark: false, canManageTags: true, canSchedule: true },
+          canCancel: true, canManageChannels: true, canManagePriorities: true, canManageRules: false, canBookmark: false, canManageTags: true, canSchedule: true,
+          canIntake: channels.some(c => ['match_item_url','resolve_item','read_item'].every(op => c.operations[op]?.supported)) },
         channels, connections, scheduler,
         connection: { state: latest?.state ?? 'unknown', detail: latest?.reason ?? '尚未检查采集环境',
           dependency: latest?.dependency, authentication: latest?.authentication, actions: latest?.actions || [] } };
@@ -115,10 +124,10 @@ async function callUI(core, name, args) {
     case 'getCalendar':
     case 'listContents': {
       const query = object(first);
-      keys(query, ['platform', 'channelId', 'state', 'keyword', 'priority', 'tags', 'tagMode',
+      keys(query, ['platform', 'channelId', 'sourceId', 'intakeMethod', 'timezone', 'state', 'keyword', 'priority', 'tags', 'tagMode',
                    ...(name === 'getCalendar' ? ['month'] : ['limit','offset','from','to'])]);
-      const params = {};
-      for (const [front, back] of [['platform', 'channel'], ['keyword', 'query'], ['limit', 'limit'], ['offset', 'offset'], ['from', 'start'], ['to', 'end'], ['priority', 'priority']]) {
+      const params = {timezone: displayTimezone(query.timezone)};
+      for (const [front, back] of [['platform', 'channel'], ['sourceId', 'source_id'], ['intakeMethod', 'intake_method'], ['keyword', 'query'], ['limit', 'limit'], ['offset', 'offset'], ['from', 'start'], ['to', 'end'], ['priority', 'priority']]) {
         if (query[front] != null && query[front] !== '') params[back] = query[front];
       }
       // 非法取值必须在这里报错：静默降级成「任一符合」会让用户看到错的筛选结果。
@@ -136,6 +145,7 @@ async function callUI(core, name, args) {
       if (query.channelId) {
         const sub = subs.find(s => s.id === query.channelId);
         if (!sub) throw new Error('订阅不存在');
+        if (query.sourceId && query.sourceId !== sub.source_id) throw new Error('来源与订阅筛选不一致');
         params.source_id = sub.source_id;
       }
       if (name === 'getCalendar') return call('content.calendar', {...params, month:query.month});
@@ -143,7 +153,7 @@ async function callUI(core, name, args) {
       return {...result, items: result.items.map(item => contentDTO(item, subs))};
     }
     case 'getContent':
-      return contentDTO(await call('content.get', {item_id: first}), await subscriptions());
+      return contentDTO(await call('content.get', {item_id: first, timezone: displayTimezone()}), await subscriptions());
     case 'updateContent': {
       const patch = contentPatch(second);
       return contentDTO(await call('content.update', {item_id: first, patch}), await subscriptions());
@@ -177,8 +187,14 @@ async function callUI(core, name, args) {
     case 'removeTag':
       return call('tag.remove', {tag_id: first});
     case 'listTagContents': {
-      const query = object(second); keys(query, ['limit', 'offset', 'state', 'priority']);
-      const params = {tag_id: first};
+      const query = object(second); keys(query, ['limit', 'offset', 'state', 'priority', 'platform', 'sourceId', 'intakeMethod', 'timezone', 'from', 'to', 'keyword', 'tags', 'tagMode']);
+      const params = {tag_id: first, timezone: displayTimezone(query.timezone)};
+      for (const [front, back] of [['platform','channel'], ['sourceId','source_id'], ['intakeMethod','intake_method'], ['from','start'], ['to','end'], ['keyword','query']]) {
+        if (query[front] != null && query[front] !== '') params[back] = query[front];
+      }
+      if (query.tags != null && query.tags.length) params.tags = tagIds(query.tags);
+      if (query.tagMode != null && query.tagMode !== '' && !['any','all'].includes(query.tagMode)) throw new Error('标签筛选方式需为任一符合或全部符合');
+      if (query.tagMode === 'all') params.tag_mode = 'all';
       if (query.limit != null) params.limit = query.limit;
       if (query.offset != null) params.offset = query.offset;
       if (query.priority) params.priority = query.priority;
@@ -257,6 +273,32 @@ async function callUI(core, name, args) {
       });
     }
     case 'listConnections': return call('connection.list');
+    case 'listContentSources': {
+      const query = object(first); keys(query, ['platform','keyword']);
+      const params = {};
+      if (query.platform) params.channel = query.platform;
+      if (query.keyword) params.query = query.keyword;
+      const result = await call('source.list', params);
+      const items = result.items.map(source => ({id:source.id, platform:source.channel, kind:source.kind,
+        externalId:source.external_id, name:source.name, link:source.url,
+        confirmed:!!source.confirmed, contentCount:source.content_count}));
+      return {items, total:items.length};
+    }
+    case 'startIntake': {
+      const input = object(first); keys(input, ['url','connectionId']);
+      const params = {url:input.url};
+      if (input.connectionId !== undefined) params.connection_id = input.connectionId;
+      return call('intake.start', params);
+    }
+    case 'getIntake': return call('intake.get', {task_id:first});
+    case 'cancelIntake': return call('intake.cancel', {task_id:first});
+    case 'saveIntake': {
+      const options = object(second); keys(options, ['priority','tagIds']);
+      const params = {preview_id:first};
+      if ('priority' in options) params.priority = options.priority;
+      if ('tagIds' in options) params.tag_ids = tagIds(options.tagIds);
+      return call('intake.save', params);
+    }
     case 'checkConnection': return call('connection.check', {connection_id: first});
     case 'retryRun': return call('sync.retry', {job_id: first});
     case 'fetchDetail': {

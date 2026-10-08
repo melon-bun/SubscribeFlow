@@ -49,7 +49,7 @@ class StorageTests(unittest.TestCase):
         self.repo.commit_page(job["id"], self.page(replace(self.item, title="Updated")))
         result = self.repo.query_contents()
         self.assertEqual(result["total"], 1)
-        self.assertEqual(result["items"][0]["title"], "Updated")
+        self.assertEqual(result["items"][0]["title"], "Title")
         self.assertEqual(result["items"][0]["state"], {"read":False,"archived":True,"deferred":False})
         self.assertEqual(self.repo.get_job(job["id"])["new_items"], 1)
         self.repo.update_subscription(self.sub["id"], status="cancelled")

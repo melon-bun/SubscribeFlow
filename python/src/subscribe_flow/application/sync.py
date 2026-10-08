@@ -20,7 +20,6 @@ class SyncService:
         self.interrupted = set()
         self.resources = ResourceCoordinator()
         self.resource_gap = 0
-        self.resource_ready = {}
         self.guard = None
 
     # The per-subscription ceiling is expressed in items. A page is one whole
@@ -94,20 +93,13 @@ class SyncService:
 
     async def _request(self, job, operation, function):
         context = self._context(job)
-        async with self.resources.acquire(context, operation):
-            key = context.connection.resource_key
-            delay = self.resource_ready.get(key, 0) - time.monotonic()
-            if delay > 0:
-                await asyncio.sleep(delay)
+        async with self.resources.acquire(context, operation, gap=self.resource_gap):
             context = self._context(job)
             if self.guard:
                 self.guard(job, operation)
-            try:
-                value = await function(context)
-                context.check(operation)
-                return value
-            finally:
-                self.resource_ready[key] = time.monotonic() + self.resource_gap
+            value = await function(context)
+            context.check(operation)
+            return value
 
     async def _run(self, job_id, budget):
         repository = self.repository
