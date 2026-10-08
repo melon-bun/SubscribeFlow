@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from subscribe_flow.acquisition.resources import ResourceCoordinator
-from subscribe_flow.contracts import (ChannelDescriptor, ChannelError, ContentItem, ContentPatch,
+from subscribe_flow.contracts import (ChannelDescriptor, ChannelError, ContentItem, ContentPatch, ContentReference,
                                      FetchPage, ItemError, OperationCapability, PublishedTime, Readiness,
                                      Source, SourcePage)
 from .parsers import source_from_locator, video_id
@@ -60,6 +60,22 @@ def title(value):
     return cleaned
 
 
+def item_link(url):
+    try:
+        u = urlparse(url)
+        if (u.scheme not in {'http','https'} or u.username or u.password or u.port not in {None, 80 if u.scheme == 'http' else 443} or len(url) > 2000
+                or any(c.isspace() or ord(c) < 32 for c in url)):
+            return None
+        if u.hostname == 'b23.tv' and re.fullmatch(r'/[A-Za-z0-9]+/?', u.path):
+            return ('short', None)
+        match = re.fullmatch(r'/video/(BV[0-9A-Za-z]{10}|av[1-9]\d{0,19})/?', u.path)
+        if u.hostname in {'bilibili.com','www.bilibili.com','m.bilibili.com'} and match:
+            return ('bv' if match[1].startswith('BV') else 'av', match[1])
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
 class BilibiliElectronAdapter:
     def __init__(self, bridge):
         self.bridge = bridge
@@ -74,7 +90,10 @@ class BilibiliElectronAdapter:
                 ordering="pubdate_requested_not_guaranteed", full_history=False,
                 notes="保留状态码与总数证据；平台页码可变，当前不承诺全部历史"),
             "get_item_detail": OperationCapability(True, dependencies=deps, notes="应用内会话补充详情"),
-        }, adapter_version="2", parser_version="2", progress_version="electron-1")
+            "match_item_url": OperationCapability(True, True, "not_required", notes="BV/AV、手机页、b23.tv；只接收链接"),
+            "resolve_item": OperationCapability(True, dependencies=deps, notes="稳定 BV 身份；官方短链有界展开"),
+            "read_item": OperationCapability(True, dependencies=deps, notes="单条视频及真实作者；无需订阅"),
+        }, adapter_version="3", parser_version="3", progress_version="electron-1")
 
     async def call(self, action, context, **params):
         async with self.resources.acquire(context, action):
@@ -176,3 +195,42 @@ class BilibiliElectronAdapter:
             return ContentPatch(f"bilibili:video:{bvid}", fields)
         except (KeyError, TypeError, ValueError):
             raise ChannelError("SCHEMA_CHANGED", "get_item_detail", "视频详情身份或标题无效") from None
+
+
+    def match_item_url(self, url):
+        return item_link(url) is not None
+
+    async def resolve_item(self, url, context):
+        context.check('resolve_item')
+        link = item_link(url)
+        if not link:
+            raise ChannelError('INVALID_INPUT', 'resolve_item', '请使用 B站视频或 b23.tv 内容链接')
+        bvid = link[1] if link[0] == 'bv' else None
+        if not bvid:
+            data = envelope(await self.call('resolve_item', context, operation='resolve', url=url), 'resolve_item')
+            try:
+                bvid = video_id(data['bvid'])
+            except (KeyError, TypeError, ValueError, ChannelError):
+                raise ChannelError('SCHEMA_CHANGED', 'resolve_item', '未取得有效的 BV 视频身份') from None
+            if link[0] == 'av' and str(data.get('aid')) != link[1][2:]:
+                raise ChannelError('SCHEMA_CHANGED', 'resolve_item', 'AV 视频身份不匹配')
+        return ContentReference('bilibili', 'video', bvid, f'https://www.bilibili.com/video/{bvid}')
+
+    async def read_item(self, reference, context):
+        if (reference.channel != 'bilibili' or reference.namespace != 'video'
+                or item_link(reference.url) != ('bv', reference.external_id)):
+            raise ChannelError('INVALID_INPUT','read_item','视频身份或地址无效')
+        data = envelope(await self.call('read_item', context, operation='detail', bvid=reference.external_id), 'read_item')
+        try:
+            if data['bvid'] != reference.external_id:
+                raise ValueError('identity mismatch')
+            owner = data['owner']
+            raw_source = source_from_locator(str(owner['mid']))
+            source = Source('bilibili','author',raw_source.external_id,title(owner['name']),raw_source.url,True)
+            return ContentItem('bilibili','video',reference.external_id,source,title(data['title']),reference.url,
+                summary=data.get('desc') if isinstance(data.get('desc'),str) else None,
+                thumbnail=picture(data.get('pic')),published=published(data.get('pubdate')),
+                duration_seconds=data.get('duration') if type(data.get('duration')) is int and data['duration'] >= 0 else None,
+                acquisition_complete=True)
+        except (KeyError, TypeError, ValueError, ChannelError):
+            raise ChannelError('SCHEMA_CHANGED','read_item','视频详情或真实作者身份无效') from None

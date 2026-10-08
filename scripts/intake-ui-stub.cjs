@@ -110,6 +110,7 @@ const stub = (() => {
           }
           return { items: [], total: 0 };
         }
+        case 'listContentSources': return {items:[],total:0};
         case 'listCreators': return { items: [], total: 0 };
         case 'listTags': return { items: TAGS, total: TAGS.length };
         case 'updateContent': return { ...DTO, id: first };

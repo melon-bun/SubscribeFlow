@@ -49,12 +49,12 @@ async function start() {
     ]},
   ]));
   app.setAboutPanelOptions({applicationName:'知流 · Subscribe Flow', applicationVersion:app.getVersion()});
-  bilibili = new BilibiliSession({offline:smoke || (!!rendererSmoke && rendererSmoke !== 'live'), onChanged:async () => {
+  bilibili = new BilibiliSession({offline:smoke || (!!rendererSmoke && !['live','intake'].includes(rendererSmoke)), onChanged:async () => {
     if (quitting || !core?.ready) return;
     try { await core.call('connection.check',{connection_id:'bilibili:default'}); send('channels',null); }
     catch { /* The connection panel can retry a failed check. */ }
   }});
-  xiaohongshu = new XiaohongshuSession({offline:smoke || rendererSmoke === 'offline', ...(rendererSmoke === 'xhs' ? {apiOptions:{delay:0,jitter:0}} : {}), onChanged:async () => {
+  xiaohongshu = new XiaohongshuSession({offline:smoke || rendererSmoke === 'offline', ...(['xhs','intake'].includes(rendererSmoke) ? {apiOptions:{delay:0,jitter:0}} : {}), onChanged:async () => {
     if (quitting || !core?.ready) return;
     try { await core.call('connection.check',{connection_id:'xiaohongshu:default'}); send('channels',null); }
     catch { /* A manual connection check remains available. */ }
@@ -62,6 +62,7 @@ async function start() {
   channels.register('bilibili',bilibili);
   channels.register('xiaohongshu',xiaohongshu);
   const xhsFixture = rendererSmoke === 'xhs' ? require('../../scripts/xiaohongshu-fixture.cjs').install(xiaohongshu.session) : null;
+  const intakeFixture = rendererSmoke === 'intake' ? await require('../../scripts/intake-fixture.cjs').install(bilibili,xiaohongshu) : null;
   core = new CoreClient({ ...runtime,
     root, dataDir: app.getPath('userData'), autoRestart:!smoke && !rendererSmoke,
     acquisition:(params,signal) => channels.request(params,signal) });
@@ -136,7 +137,8 @@ async function start() {
   catch (error) { lastStatus = {state: 'error', message: error.message}; diagnostic('core.status', lastStatus); send('core.status', lastStatus); if (smoke || rendererSmoke) throw error; }
   if (rendererSmoke) {
     try {
-      if (rendererSmoke === 'xhs') await require('../../scripts/xiaohongshu-renderer.cjs').verify({window,core,root,xiaohongshu,fixture:xhsFixture});
+      if (rendererSmoke === 'intake') await require('../../scripts/intake-renderer.cjs').verify({window,core,root,fixture:intakeFixture});
+      else if (rendererSmoke === 'xhs') await require('../../scripts/xiaohongshu-renderer.cjs').verify({window,core,root,xiaohongshu,fixture:xhsFixture});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
       await core.stop(); quitting = true; app.quit();
     } catch (error) { console.error(error); await core.stop(); app.exit(1); }

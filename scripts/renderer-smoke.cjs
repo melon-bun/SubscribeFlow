@@ -32,11 +32,10 @@ async function verify({window, core, root, mode}) {
   assert.equal(await evaluate(`SF.app.state.source`),'real');
   assert.equal(await evaluate(`typeof require`),'undefined');
   if (mode === 'offline') {
-    // M11 foundation is callable from the actual isolated Renderer. Real link
-    // readers belong to M13, so existing adapters must refuse without fetching.
-    assert.equal(await evaluate(`SF.app.state.session.capabilities.canIntake`),false);
+    // Known channels now advertise M13 intake; unsupported websites still do no I/O.
+    assert.equal(await evaluate(`SF.app.state.session.capabilities.canIntake`),true);
     const intakeErrors=await evaluate(`(async()=>{
-      const methods=[['startIntake',[{url:'https://www.bilibili.com/video/BV1xx411c700'}]],['getIntake',['missing']],['cancelIntake',['missing']],['saveIntake',['missing',{}]]];
+      const methods=[['startIntake',[{url:'https://example.com/item'}]],['getIntake',['missing']],['cancelIntake',['missing']],['saveIntake',['missing',{}]]];
       const results=[];
       for(const [name,args] of methods) { try { await SF.app.state.client[name].apply(null,args); results.push('unexpected success'); } catch(error) { results.push(error.code); } }
       const sources=await SF.app.state.client.listContentSources();
@@ -331,7 +330,7 @@ module.exports={verify};
 if(require.main === module) {
   const root=path.resolve(__dirname,'..');
   const folder=fs.mkdtempSync(path.join(os.tmpdir(),'subscribe-flow-renderer-'));
-  const mode=process.argv.includes('--xhs')?'xhs':process.argv.includes('--live')?'live':'offline';
+  const mode=process.argv.includes('--intake')?'intake':process.argv.includes('--xhs')?'xhs':process.argv.includes('--live')?'live':'offline';
   const child=spawn(require('electron'),[root],{env:{...process.env,SUBSCRIBE_FLOW_RENDERER_SMOKE:mode,SUBSCRIBE_FLOW_LIVE_SKIP_SEARCH:process.argv.includes('--uid-only')?'1':'0',SUBSCRIBE_FLOW_DATA_DIR:folder},stdio:'inherit'});
   const timer=setTimeout(()=>child.kill('SIGTERM'),180000);
   child.on('close',code=>{clearTimeout(timer);fs.rmSync(folder,{recursive:true,force:true});process.exitCode=code??1;});

@@ -44,6 +44,7 @@ function contentDTO(item, subscriptions) {
   const sub = subscriptions.find(row => row.source_id === sourceKey);
   return {
     id: item.id, title: item.title, summary: item.summary, platform: item.channel,
+    canFetchDetail: subscriptions.some(row => row.source_id === sourceKey && row.status === 'active'),
     channelId: sub?.id ?? null, channelName: sub?.name ?? item.source.name, author: sub?.name ?? item.source.name,
     publishedAt: item.published.value, publishedPrecision: item.published.precision,
     publishedTimezone: item.published.timezone, publishedLabel:item.published.raw_label || null, url: item.url, thumb: item.thumbnail, cover: item.thumbnail, publishedProvenance: item.published.provenance,
@@ -95,7 +96,7 @@ async function callUI(core, name, args) {
         capabilities: { canRefresh: channels.some(c => c.operations.list_items?.supported),
           canBackfill: channels.some(c => c.operations.list_items?.supported && c.operations.list_items.pagination !== 'none'),
           canCancel: true, canManageChannels: true, canManagePriorities: true, canManageRules: false, canBookmark: false, canManageTags: true, canSchedule: true,
-          canIntake: channels.some(c => ['match_item_url','resolve_item','read_item'].every(op => c.operations[op]?.supported)) },
+          canIntake: channels.some(c => connections.some(conn => conn.enabled && conn.channel===c.channel && conn.backend===c.backend) && ['match_item_url','resolve_item','read_item'].every(op => c.operations[op]?.supported)) },
         channels, connections, scheduler,
         connection: { state: latest?.state ?? 'unknown', detail: latest?.reason ?? '尚未检查采集环境',
           dependency: latest?.dependency, authentication: latest?.authentication, actions: latest?.actions || [] } };

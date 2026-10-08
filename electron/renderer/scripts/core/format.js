@@ -120,6 +120,11 @@
     if (!Number.isFinite(new Date(value).getTime())) return "发布时间未知";
     return value.replace("T", " ") + "（" + (item.publishedTimezone || "时区未知") + "）";
   }
+  function intakeTime(item, compact) {
+    if (item.intakeMethod !== "manual") return publication(item, compact);
+    if (!Number.isFinite(toDate(item.manualAddedAt).getTime())) return "添加时间未知";
+    return "添加于 " + (compact ? ymd(item.manualAddedAt) : absolute(item.manualAddedAt));
+  }
   function publicationDay(item) {
     if (!item.publishedAt || item.publishedPrecision === "unknown") return null;
     var day = String(item.publishedAt).slice(0, 10);
@@ -132,7 +137,7 @@
     return {history_end:"历史遍历已完成", window_only:"仅最近窗口，非全部历史", possible_gaps:"已保存部分内容，可能有缺口", refresh_interval:"刷新区间已完成"}[scope] || "覆盖范围尚未确定";
   }
   SF.fmt = {
-    publication: publication, publicationDay: publicationDay, runState: runState, coverage: coverage,
+    intakeTime: intakeTime, publication: publication, publicationDay: publicationDay, runState: runState, coverage: coverage,
     WEEK: WEEK,
     pad: pad,
     ymd: ymd,

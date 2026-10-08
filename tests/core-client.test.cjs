@@ -38,13 +38,13 @@ test('real sidecar handshake, persistent subscription, UI mapping and controlled
   });
 });
 
-test('M11 optional intake stays unsupported on existing channels through real RPC without acquisition', async () => {
+test('unsupported websites remain rejected through real RPC without acquisition', async () => {
   let acquisitions=0;
   await fixture(async core => {
     const session=await callUI(core,'getSession',[]);
-    assert.equal(session.capabilities.canIntake,false);
+    assert.equal(session.capabilities.canIntake,true);
     assert.ok(session.channels.every(channel=>channel.contract_version==='1.1'));
-    await assert.rejects(callUI(core,'startIntake',[{url:'https://www.bilibili.com/video/BV1xx411c700'}]), e=>e.code==='UNSUPPORTED_OPERATION');
+    await assert.rejects(callUI(core,'startIntake',[{url:'https://example.com/item'}]), e=>e.code==='UNSUPPORTED_OPERATION');
     await assert.rejects(callUI(core,'getIntake',['missing']), e=>e.code==='NOT_FOUND');
     await assert.rejects(callUI(core,'cancelIntake',['missing']), e=>e.code==='NOT_FOUND');
     await assert.rejects(callUI(core,'saveIntake',['missing',{}]), e=>e.code==='PREVIEW_EXPIRED');

@@ -20,6 +20,9 @@
     if(app.filters.priority) query.priority=app.filters.priority;
     if(app.filters.platform) query.platform=app.filters.platform;
     if(app.filters.channelId) query.channelId=app.filters.channelId;
+    if(app.filters.sourceId) query.sourceId=app.filters.sourceId;
+    if(app.filters.intakeMethod) query.intakeMethod=app.filters.intakeMethod;
+    if((app.filters.tags||[]).length) {query.tags=app.filters.tags;query.tagMode=app.filters.tagMode||"any";}
     if(app.filters.quick!=='all') query.state=app.filters.quick;
     if(app.search) query.keyword=app.search;
     return query;
@@ -70,13 +73,14 @@
   function calendarFilters(app) {
     if(!cache.sourcesRequested) {
       var current=cache; current.sourcesRequested=true;
-      app.client.listChannels({}).then(function(r) { if(cache===current) { current.sources=r.items; SF.app.renderContent(); } }).catch(function(err) { if(cache===current) { current.sourcesError=err.message; SF.app.renderContent(); } });
+      app.client.listContentSources({}).then(function(r) { if(cache===current) { current.sources=r.items; SF.app.renderContent(); } }).catch(function(err) { if(cache===current) { current.sourcesError=err.message; SF.app.renderContent(); } });
     }
     var counts=cache.summary && cache.summary.priorities;
     return h('div.inbox__toolbar.calendar-filters',null,
       ui.select([{value:'',label:'全部平台'}].concat(app.platforms.map(function(p) { return {value:p.id,label:catalog.platform(p.id).name}; })),app.filters.platform||'',function(v) { app.filters.platform=v||null; SF.app.render(); },{ariaLabel:'日历平台'}),
-      ui.select([{value:'',label:'全部来源'}].concat((cache.sources||[]).map(function(c) { return {value:c.id,label:c.name}; })),app.filters.channelId||'',function(v) { app.filters.channelId=v||null; SF.app.renderContent(); },{ariaLabel:'日历来源'}),
+      ui.select([{value:'',label:'全部来源'}].concat((cache.sources||[]).map(function(c) { return {value:c.id,label:catalog.platform(c.platform).name+" · "+c.name}; })),app.filters.sourceId||'',function(v) { app.filters.sourceId=v||null; app.filters.channelId=null; SF.app.renderContent(); },{ariaLabel:'日历来源'}),
       ui.select([{value:'',label:'全部优先级'}].concat(['high','medium','low','none'].map(function(id) { return {value:id,label:catalog.priority(id).name}; })),app.filters.priority||'',function(v) { app.filters.priority=v||null; SF.app.render(); },{ariaLabel:'日历优先级'}),
+      ui.select([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},{ariaLabel:'日历收录方式'}),
       ui.select([{value:'all',label:'全部处理状态'},{value:'unread',label:'未处理'},{value:'read',label:'已读'},{value:'deferred',label:'稍后处理'},{value:'archived',label:'已归档'}],app.filters.quick,function(v) { app.filters.quick=v; SF.app.render(); },{ariaLabel:'日历处理状态'}),
       h('label.priority-date',null,h('span',{text:'月份'}),h('input.input',{type:'month','aria-label':'日历月份',value:app.calendarMonth,onchange:function(e) { if(!e.target.value) return; app.calendarMonth=e.target.value; app.selectedDate=e.target.value+'-01'; SF.app.renderContent(); }})),
       ui.btn('未设置 · '+(counts?counts.none:'—'),{onClick:function() { app.filters.priority='none'; SF.app.render(); }}),
@@ -144,6 +148,9 @@
     if(app.filters.quick!=='all') q.state=app.filters.quick;
     if(app.filters.platform) q.platform=app.filters.platform;
     if(app.filters.channelId) q.channelId=app.filters.channelId;
+    if(app.filters.sourceId) q.sourceId=app.filters.sourceId;
+    if(app.filters.intakeMethod) q.intakeMethod=app.filters.intakeMethod;
+    if((app.filters.tags||[]).length) {q.tags=app.filters.tags;q.tagMode=app.filters.tagMode||"any";}
     if(app.search) q.keyword=app.search;
     if(app.filters.day) { q.from=app.filters.day; q.to=app.filters.day; }
     return q;
@@ -164,7 +171,7 @@
     levels.forEach(function(id) { if(!board[id] || (!board[id].loaded && !board[id].loading)) loadGroup(app,id,false); });
     if(!board.sourcesRequested) {
       var owner=board; board.sourcesRequested=true;
-      app.client.listChannels({}).then(function(r) { if(board===owner) { board.sources=r.items; SF.app.renderContent(); } }).catch(function(err) { if(board===owner) { board.sourcesError=err.message; SF.app.renderContent(); } });
+      app.client.listContentSources({}).then(function(r) { if(board===owner) { board.sources=r.items; SF.app.renderContent(); } }).catch(function(err) { if(board===owner) { board.sourcesError=err.message; SF.app.renderContent(); } });
     }
     var shown=app.filters.priority ? [app.filters.priority] : catalog.PRIORITY_ORDER;
     var stats=h('div.overview__filters',null,h('div.stat-row.grow',null,levels.map(function(id) {
@@ -173,7 +180,8 @@
     })));
     var filters=h('div.inbox__toolbar.priority-filters',null,
       ui.select([{value:'',label:'全部平台'}].concat(app.platforms.map(function(p) { return {value:p.id,label:catalog.platform(p.id).name}; })),app.filters.platform||'',function(v) { app.filters.platform=v||null; SF.app.render(); },{ariaLabel:'看板平台'}),
-      ui.select([{value:'',label:'全部来源'}].concat((board.sources||[]).map(function(c) { return {value:c.id,label:c.name}; })),app.filters.channelId||'',function(v) { app.filters.channelId=v||null; SF.app.renderContent(); },{ariaLabel:'看板来源'}),
+      ui.select([{value:'',label:'全部来源'}].concat((board.sources||[]).map(function(c) { return {value:c.id,label:catalog.platform(c.platform).name+" · "+c.name}; })),app.filters.sourceId||'',function(v) { app.filters.sourceId=v||null; app.filters.channelId=null; SF.app.renderContent(); },{ariaLabel:'看板来源'}),
+      ui.select([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},{ariaLabel:'看板收录方式'}),
       ui.select([{value:'all',label:'全部处理状态'},{value:'unread',label:'未处理'},{value:'read',label:'已读'},{value:'deferred',label:'稍后处理'},{value:'archived',label:'已归档'}],app.filters.quick,function(v) { app.filters.quick=v; SF.app.render(); },{ariaLabel:'看板处理状态'}),
       h('label.priority-date',null,h('span',{text:'日历日期'}),h('input.input',{type:'date','aria-label':'看板日期',value:app.filters.day||'',onchange:function(e) { app.filters.day=e.target.value || null; SF.app.renderContent(); }})),
       ui.select([{value:'',label:'高 / 中 / 低'}].concat(levels.map(function(id) { return {value:id,label:catalog.priority(id).name}; })),app.filters.priority||'',function(v) { app.filters.priority=v||null; SF.app.render(); },{ariaLabel:'看板优先级'}),
@@ -182,7 +190,7 @@
     var unknown=board.none;
     return h('div.view',{'data-view':'overview'},buildHead(app),stats,filters,
       board.sourcesError ? h('p.field__error',{role:'alert',text:'来源筛选读取失败：'+board.sourcesError}) : null,
-      h('div.priority-scope',null,h('span.muted',{text:'统计当前条件下的全部匹配内容；每栏按最新发布排列并独立加载。'}),
+      h('div.priority-scope',null,h('span.muted',{text:'统计当前条件下的全部匹配内容；每栏按日历时间排列并独立加载。'}),
         ui.btn('未设置 · '+(unknown && unknown.total!=null ? unknown.total : '—'),{onClick:function() { app.filters.priority='none'; SF.app.render(); }})),
       h('div.view__body.priority-body',null,h('div.kanban'+(shown.length===1?'.kanban--single':''),null,shown.map(function(id) { return priorityColumn(app,id); }))));
   }

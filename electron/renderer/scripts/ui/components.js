@@ -236,8 +236,9 @@
           ),
           ui.platformTag(item.platform),
           ui.priorityTag(item.priority),
+          h("span.tag", {text:item.intakeMethod === "manual" ? "手动收录" : "自动采集"}),
           h("span.content-card__dot", { text: "·" }),
-          h("span.content-card__time", { text: fmt.publication(item, true) })
+          h("span.content-card__time", { text: fmt.intakeTime(item, true) })
         ),
         item.tags && item.tags.length
           ? h(
@@ -289,7 +290,7 @@
           ui.platformTag(item.platform),
           ui.priorityTag(item.priority),
           h("span.spacer"),
-          h("span", { text: fmt.publication(item, true) })
+          h("span", { text: fmt.intakeTime(item, true) })
         ),
         item.tags && item.tags.length
           ? h(

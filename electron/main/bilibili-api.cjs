@@ -1,5 +1,7 @@
 const {createHash} = require('node:crypto');
 
+const {expandItemLink} = require('./item-link.cjs');
+
 const API = 'https://api.bilibili.com';
 // WBI's public permutation, used by Bilibili's web client.
 const MIXIN = [46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52];
@@ -8,14 +10,25 @@ class AcquisitionError extends Error {
     super(message); Object.assign(this, {code, retryable, retryAfter});
   }
 }
+function parseItemURL(raw) {
+  let u; try { u=new URL(raw); } catch { throw new AcquisitionError('INVALID_INPUT','B站内容链接无效'); }
+  if (typeof raw !== 'string' || raw.length>2000 || /[\s\x00-\x1f]/.test(raw) || !['http:','https:'].includes(u.protocol) || u.username || u.password || u.port)
+    throw new AcquisitionError('INVALID_INPUT','B站内容链接无效');
+  u.protocol='https:'; u.hash='';
+  if (u.hostname==='b23.tv' && /^\/[A-Za-z0-9]+\/?$/.test(u.pathname)) return {short:true,url:u.href};
+  const match=['bilibili.com','www.bilibili.com','m.bilibili.com'].includes(u.hostname) && u.pathname.match(/^\/video\/(BV[0-9A-Za-z]{10}|av[1-9]\d{0,19})\/?$/);
+  if (!match) throw new AcquisitionError('INVALID_INPUT','请使用 B站视频或 b23.tv 内容链接');
+  return {short:false,url:`https://www.bilibili.com/video/${match[1]}`,bvid:match[1].startsWith('BV')?match[1]:null,aid:match[1].startsWith('av')?match[1].slice(2):null};
+}
 function validateRequest(p) {
   if (!p || typeof p !== 'object' || Array.isArray(p)) throw new AcquisitionError('INVALID_INPUT', '采集参数无效');
-  const fields = {check: [], list: ['uid','page','limit'], search: ['query','limit'], detail: ['bvid']}[p.operation];
+  const fields = {check: [], list: ['uid','page','limit'], search: ['query','limit'], detail: ['bvid'], resolve: ['url']}[p.operation];
   if (!fields || Object.keys(p).some(k => !['operation', ...fields].includes(k)) || fields.some(k => !(k in p))) throw new AcquisitionError('INVALID_INPUT', '采集操作或参数无效');
   if (p.operation === 'list' && (typeof p.uid !== 'string' || !/^[1-9]\d{0,19}$/.test(p.uid) || !Number.isInteger(p.page) || p.page < 1 || p.page > 100000)) throw new AcquisitionError('INVALID_INPUT', '作者或页码无效');
   if ('limit' in p && (!Number.isInteger(p.limit) || p.limit < 1 || p.limit > 50)) throw new AcquisitionError('INVALID_INPUT', '采集页大小无效');
   if (p.operation === 'search' && (typeof p.query !== 'string' || !p.query.trim() || p.query.length > 200)) throw new AcquisitionError('INVALID_INPUT', '搜索词无效');
   if (p.operation === 'detail' && (typeof p.bvid !== 'string' || !/^BV[0-9A-Za-z]{10}$/.test(p.bvid))) throw new AcquisitionError('INVALID_INPUT', '视频编号无效');
+  if (p.operation === 'resolve') parseItemURL(p.url);
   return p;
 }
 function signedQuery(params, nav, now = Date.now()) {
@@ -67,6 +80,11 @@ class BilibiliAPI {
         throw new AcquisitionError('ACCESS_FAILED', '应用内 B站网络连接失败，请稍后重试', true);
       }
     };
+    if (p.operation === 'resolve') {
+      const link=await expandItemLink(p.url,parseItemURL,this.fetch,signal,AcquisitionError);
+      if (link.bvid) return {code:0,data:{bvid:link.bvid}};
+      return get('/x/web-interface/view',new URLSearchParams({aid:link.aid}).toString());
+    }
     if (p.operation === 'detail') return get('/x/web-interface/view', new URLSearchParams({bvid:p.bvid}).toString());
     const nav = await get('/x/web-interface/nav');
     if (p.operation === 'check') {
@@ -79,4 +97,4 @@ class BilibiliAPI {
     return get(p.operation === 'list' ? '/x/space/wbi/arc/search' : '/x/web-interface/wbi/search/type', signedQuery(params,nav));
   }
 }
-module.exports = {BilibiliAPI, AcquisitionError, validateRequest, signedQuery, readJSON};
+module.exports = {BilibiliAPI, AcquisitionError, validateRequest, signedQuery, readJSON, parseItemURL};

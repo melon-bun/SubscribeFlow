@@ -62,6 +62,8 @@
     if (app.filters.priority) q.priority = app.filters.priority;
     if (app.filters.platform) q.platform = app.filters.platform;
     if (app.filters.channelId) q.channelId = app.filters.channelId;
+    if (app.filters.sourceId) q.sourceId = app.filters.sourceId;
+    if (app.filters.intakeMethod) q.intakeMethod = app.filters.intakeMethod;
     if (app.search) q.keyword = app.search;
     if (app.filters.day) { q.from = app.filters.day; q.to = app.filters.day; }
     /* tags 为空等价于不筛选，所以只在真的选了标签时才下发。
@@ -111,7 +113,7 @@
     var head = h('div.view__head', null,
       h('div.view__head-text', null, h('div.view__title', null, h('h1.t-h1', {text:titles[app.filters.quick] || '内容'}), ui.countPill(cache.total == null ? '—' : cache.total, 'brand')),
         h('p.view__desc', {text:descriptions[app.filters.quick] || '按日期查看收录的内容。'})),
-      h('div.view__actions', null, h('span.muted', {text:'最新发布'}),
+      h('div.view__actions', null, h('span.muted', {text:'按日历时间排列'}),
         ui.btn('添加内容', {variant:'primary', icon:'plus', disabled:!app.session.capabilities.canIntake,
           title: app.session.capabilities.canIntake ? '粘贴链接收录单条内容' : '当前渠道尚未支持单条链接收录',
           onClick:function () { SF.intakeDialog.open(app); }}),
@@ -124,8 +126,16 @@
           return h('button.chip' + (app.filters.platform === p.id ? '.is-active' : ''), {type:'button', onclick:function () { app.filters.platform = p.id; SF.app.render(); }},
             h('span', {text:SF.catalog.platform(p.id).name}), h('span.chip__count', {text:String(p.count || 0)}));
         }),
-        app.filters.channelId || app.filters.day ? ui.btn('清除来源 / 日期筛选', {onClick:function () { app.filters.channelId = null; delete app.filters.day; SF.app.render(); }}) : null));
+        app.filters.channelId || app.filters.sourceId || app.filters.day ? ui.btn('清除来源 / 日期筛选', {onClick:function () { app.filters.channelId = null; app.filters.sourceId = null; delete app.filters.day; SF.app.render(); }}) : null));
     chips.appendChild(ui.select([{value:'',label:'全部优先级'}].concat(['high','medium','low','none'].map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), app.filters.priority || '', function(value) { app.filters.priority=value || null; SF.app.render(); }, {ariaLabel:'筛选优先级'}));
+    if (!cache.sourcesRequested) {
+      var sourceOwner=cache; sourceOwner.sourcesRequested=true;
+      app.client.listContentSources({}).then(function(r) {if(cache===sourceOwner) {sourceOwner.sources=r.items; SF.app.renderContent();}})
+        .catch(function(err) {if(cache===sourceOwner) {sourceOwner.sourcesError=err; SF.app.renderContent();}});
+    }
+    chips.appendChild(ui.select([{value:'',label:'全部来源'}].concat((cache.sources||[]).map(function(s) {return {value:s.id,label:SF.catalog.platform(s.platform).name+' · '+s.name};})), app.filters.sourceId||'',function(v) {app.filters.sourceId=v||null;app.filters.channelId=null;SF.app.render();},{ariaLabel:'筛选来源'}));
+    chips.appendChild(ui.select([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},{ariaLabel:'筛选收录方式'}));
+    if(cache.sourcesError) chips.appendChild(ui.btn('重试来源筛选',{size:'sm',title:cache.sourcesError.message,onClick:function() {cache.sourcesRequested=false;cache.sourcesError=null;SF.app.renderContent();}}));
     /* 标签筛选入口紧跟优先级，和其它筛选项同属一条工具栏；面板展开时插在工具栏下方。 */
     var picked = pickedTags(app);
     chips.appendChild(ui.btn('标签' + (picked.length ? ' · ' + picked.length : ''), {icon:'tag', onClick:function () { tagPanelOpen = !tagPanelOpen; SF.app.renderContent(); }}));
@@ -360,12 +370,12 @@
   /* ---------------- 详情 ---------------- */
 
   function detailBody(app, item, repaint) {
-    var canDetail = app.session.channels.some(function (c) { return c.channel === item.platform && c.operations.get_item_detail && c.operations.get_item_detail.supported; });
+    var canDetail = item.canFetchDetail !== false && !!item.channelId && app.session.channels.some(function (c) { return c.channel === item.platform && c.operations.get_item_detail && c.operations.get_item_detail.supported; });
     return h('div.detail-preview', null,
       item.cover ? h('div.detail__cover', null, h('img', {src:item.cover, alt:'', referrerPolicy:'no-referrer'})) : null,
       h('h2.detail__title', {text:item.title}),
       h('div.detail__byline', null, ui.avatar(item.channelName, null, 'md'), h('div.detail__byline-text', null,
-        h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform)), h('div.detail__byline-time', {text:fmt.publication(item)}))),
+        h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform),h('span.tag',{text:item.intakeMethod==='manual'?'手动收录':'自动采集'})), h('div.detail__byline-time', {text:'原始发布 · '+fmt.publication(item)}), item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
       h('div.detail__section', null, h('div.detail__section-title', {text:'内容摘要'}), h('p.detail__summary', {text:item.summary || '此内容尚未提供摘要，可补充详情或打开原文。'})),
       priorityControls(app,item,repaint),
       tagControls(app, item, repaint),

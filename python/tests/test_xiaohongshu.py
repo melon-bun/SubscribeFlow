@@ -195,7 +195,7 @@ class XHSTests(unittest.IsolatedAsyncioTestCase):
         class Replacement:
             def describe(inner):
                 from dataclasses import replace
-                return replace(self.adapter.describe(),backend='replacement',progress_version='replacement-1',scan_overhead_budget=0,budget_unit='pages')
+                return replace(self.adapter.describe(),operations={k:v for k,v in self.adapter.describe().operations.items() if k not in {'match_item_url','resolve_item','read_item'}},backend='replacement',progress_version='replacement-1',scan_overhead_budget=0,budget_unit='pages')
             async def fetch_page(inner, src, request, context):
                 return FetchPage((ContentItem('xiaohongshu','note','333333333333333333333333',src,'替换后端的笔记',
                     'https://www.xiaohongshu.com/explore/333333333333333333333333',kind='note',published=PublishedTime('2026-01-03','date'),acquisition_complete=True),),None,'window_only',True,'fixture end')

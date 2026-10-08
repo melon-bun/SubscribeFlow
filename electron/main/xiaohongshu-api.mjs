@@ -1,3 +1,4 @@
+import itemLinks from './item-link.cjs';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {scriptFor} from './xiaohongshu-page.mjs';
@@ -15,6 +16,18 @@ export function trustedURL(value, kind = 'page') {
     throw new XHSError('INVALID_INPUT', '笔记地址无效');
   return u.href;
 }
+export function parseItemURL(raw) {
+  let u; try {u=new URL(raw);} catch {throw new XHSError('INVALID_INPUT','小红书内容链接无效');}
+  if(typeof raw!=='string' || raw.length>2000 || /[\s\x00-\x1f]/.test(raw) || !['http:','https:'].includes(u.protocol) || u.username || u.password || u.port)
+    throw new XHSError('INVALID_INPUT','小红书内容链接无效');
+  u.protocol='https:'; u.hash='';
+  if(['xhslink.com','www.xhslink.com'].includes(u.hostname) && /^\/(?:[A-Za-z0-9]+\/)*[A-Za-z0-9]+\/?$/.test(u.pathname)) return {short:true,url:u.href};
+  const m=u.hostname==='www.xiaohongshu.com' && (u.pathname.match(/^\/(?:explore|search_result|discovery\/item)\/([a-fA-F0-9]{24})\/?$/) || u.pathname.match(/^\/user\/profile\/[a-fA-F0-9]{24}\/([a-fA-F0-9]{24})\/?$/));
+  if(!m) throw new XHSError('INVALID_INPUT','请使用小红书笔记或 xhslink.com 内容链接');
+  const id=m[1].toLowerCase(); u.pathname=`/explore/${id}`;
+  if(u.searchParams.getAll('xsec_token').length>1) throw new XHSError('INVALID_INPUT','笔记链接签名参数重复');
+  return {short:false,id,url:u.href};
+}
 export function shareURL(text,id) {
   const raw=typeof text==='string' && text.match(/https:\/\/www\.xiaohongshu\.com\/discovery\/item\/[a-f0-9]{24}[^\s<>"“”]*/)?.[0];
   if(!raw)throw new XHSError('SCHEMA_CHANGED','分享未提供可用链接，请稍后补充详情或重试');
@@ -27,9 +40,13 @@ export function shareURL(text,id) {
 }
 export function validateRequest(p) {
   const fields = {check:['channel','operation'], search:['channel','operation','query','limit'],
-    scan:['channel','operation','uid','job_id','cursor','limit','mode','known_ids'], detail:['channel','operation','uid','id']};
+    scan:['channel','operation','uid','job_id','cursor','limit','mode','known_ids'], detail:['channel','operation','uid','id'], resolve:['channel','operation','url'], read:['channel','operation','url','id']};
   if (!p || typeof p !== 'object' || Array.isArray(p) || p.channel !== 'xiaohongshu' || !fields[p.operation] || Object.keys(p).some(k => !fields[p.operation].includes(k)))
     throw new XHSError('INVALID_INPUT', '小红书请求无效');
+  if (p.operation==='resolve' || p.operation==='read') {
+    const link=parseItemURL(p.url);
+    if(p.operation==='read' && (link.short || link.id!==p.id)) throw new XHSError('INVALID_INPUT','笔记身份和读取地址不匹配');
+  }
   if ('uid' in p && !ID.test(p.uid)) throw new XHSError('INVALID_INPUT', '作者 ID 无效');
   if ('id' in p && !ID.test(p.id)) throw new XHSError('INVALID_INPUT', '笔记 ID 无效');
   if ('limit' in p && (!Number.isInteger(p.limit) || p.limit < 1 || p.limit > 50)) throw new XHSError('INVALID_INPUT', '读取条数需为 1 到 50');
@@ -49,9 +66,9 @@ function gate(s, login = false) {
 // Each scan call discovers one profile batch OR reads one detail. Core persists
 // that result before asking for the next one, so cancellation never drops a batch.
 export class XiaohongshuAPI {
-  constructor(page, {delay = 9000, jitter = 4000, readTimeout = 20000, waitTimeout = 18000} = {}) {
+  constructor(page, {delay = 9000, jitter = 4000, readTimeout = 20000, waitTimeout = 18000, fetch} = {}) {
     Object.assign(this, {page, delay, jitter, readTimeout, waitTimeout});
-    this.scans = new Map(); this.authors = new Map(); this.lastNavigation = 0;
+    this.fetch=fetch; this.scans = new Map(); this.authors = new Map(); this.lastNavigation = 0;
   }
   async bounded(promise, signal, ms = this.readTimeout) {
     signal?.throwIfAborted();
@@ -94,9 +111,17 @@ export class XiaohongshuAPI {
       this.scans.delete(key);
       if (p.operation === 'scan' && p.cursor?.startsWith(key+':')) throw new XHSError('TIMEOUT','本轮达到 10 分钟上限，已保存结果保留');
     }
+    if(p.operation==='resolve') {
+      const link=await itemLinks.expandItemLink(p.url,parseItemURL,this.fetch,signal,XHSError);
+      return {id:link.id,url:link.url};
+    }
     const s = await this.status(signal);
     if (p.operation === 'check') return {authenticated:s.loggedIn === true};
     gate(s,true);
+    if(p.operation==='read') {
+      const link=parseItemURL(p.url);
+      return {note:await this.detail({id:link.id,url:link.url},null,signal)};
+    }
     if (p.operation === 'search') {
       await this.goto(`https://www.xiaohongshu.com/search_result/?keyword=${encodeURIComponent(p.query.trim())}&source=web_search_result_notes&type=51`,signal);
       await this.pause(signal); await this.read('user-tab',signal); await this.pause(signal);
@@ -127,15 +152,16 @@ export class XiaohongshuAPI {
     if (s.authorId !== uid || !Array.isArray(s.notes)) throw new XHSError('SCHEMA_CHANGED','作者主页身份或笔记列表不匹配');
   }
   async detail(n,uid,signal) {
-    if (!n.url || !new URL(trustedURL(n.url,'note')).searchParams.get('xsec_token')) throw new XHSError('SCHEMA_CHANGED','主页未提供完整的笔记访问链接，保留待重试');
+    if (!n.url || (uid && !new URL(trustedURL(n.url,'note')).searchParams.get('xsec_token'))) throw new XHSError('SCHEMA_CHANGED','主页未提供完整的笔记访问链接，保留待重试');
     await this.goto(n.url,signal);
     const d = await this.wait('detail',s => s.unavailable || (s.ready && s.contentPresent !== false),signal);
     if (d.unavailable) throw new XHSError('SCHEMA_CHANGED','笔记已删除、私密或不可访问');
-    if (d.id?.toLowerCase() !== n.id.toLowerCase() || d.authorId?.toLowerCase() !== uid) throw new XHSError('SCHEMA_CHANGED','无法确认笔记身份与作者归属');
+    if (d.id?.toLowerCase() !== n.id.toLowerCase() || !ID.test(d.authorId?.toLowerCase() || '') || (uid && d.authorId.toLowerCase() !== uid)) throw new XHSError('SCHEMA_CHANGED','无法确认笔记身份与作者归属');
+    const authorId=d.authorId.toLowerCase();
     const url=await this.share(n.id.toLowerCase(),signal);
     const range = publicationRange(d);
     const date = range?.exact ? new Date(range.start).toISOString() : range?.source === 'date-label' ? new Date(range.start+8*3600000).toISOString().slice(0,10) : null;
-    return {id:n.id.toLowerCase(),authorId:uid,author:d.author || '',title:d.title || n.title || d.content?.slice(0,80) || '无标题笔记',
+    return {id:n.id.toLowerCase(),authorId,author:d.author || '',title:d.title || n.title || d.content?.slice(0,80) || '无标题笔记',
       content:d.content || '',url,type:d.type || 'normal',
       images:(d.images || []).slice(0,30),tags:(d.tags || []).slice(0,100),
       published:{value:date,precision:range?.exact ? 'second' : date ? 'date' : 'unknown',provenance:range?.source || 'unavailable',timezone:'Asia/Shanghai',raw_label:d.dateText || null},

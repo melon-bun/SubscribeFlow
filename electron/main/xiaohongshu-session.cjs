@@ -37,7 +37,7 @@ class XiaohongshuSession {
       void this.session.cookies.flushStore().then(()=>this.onChanged()).catch(()=>{});
     });
     this.host.on('closed',()=>{if(!wc.isDestroyed())wc.close();});
-    this.api=new XiaohongshuAPI({url:()=>wc.getURL(),evaluate:script=>wc.executeJavaScript(script),goto:url=>wc.loadURL(url)},this.apiOptions);
+    this.api=new XiaohongshuAPI({url:()=>wc.getURL(),evaluate:script=>wc.executeJavaScript(script),goto:url=>wc.loadURL(url)},{...this.apiOptions,fetch:(url,options)=>this.session.fetch(url,options)});
   }
   async request(params,outerSignal) {
     params={...params,channel:'xiaohongshu'};

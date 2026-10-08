@@ -33,7 +33,7 @@ async function verifyCalendar({evaluate,until,click,screenshot,core,window,first
   await until(`${stats}==='0,0,0,0' && document.querySelector('.day-panel')?.textContent.includes('这一天没有匹配内容')`);
   await change('日历处理状态','read');
   await until(`${stats}==='1,0,0,1' && document.querySelectorAll('[data-calendar-item]').length===1`);
-  await change('日历来源',sub.id);
+  await change('日历来源',sub.source_id);
   await until(`${stats}==='1,0,0,1'`);
   // Editing within calendar detail refreshes its summary and removes it from
   // the active low filter, while leaving the processing state untouched.

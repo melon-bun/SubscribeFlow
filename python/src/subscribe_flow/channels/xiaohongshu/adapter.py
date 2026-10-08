@@ -1,9 +1,9 @@
 import re
 from datetime import date, datetime, timezone
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlunparse
 
 from subscribe_flow.acquisition.resources import ResourceCoordinator
-from subscribe_flow.contracts import (ChannelDescriptor, ChannelError, ContentItem, ContentPatch,
+from subscribe_flow.contracts import (ChannelDescriptor, ChannelError, ContentItem, ContentPatch, ContentReference,
     FetchPage, ItemError, OperationCapability, PublishedTime, Readiness, Source, SourcePage)
 
 CHANNEL = "xiaohongshu"
@@ -73,6 +73,23 @@ def item_from_row(row, source):
         summary=row["content"][:200000], thumbnail=thumbnail, acquisition_complete=True)
 
 
+def item_link(url):
+    try:
+        u = urlparse(url)
+        if (u.scheme not in {'http','https'} or u.username or u.password or u.port not in {None, 80 if u.scheme == 'http' else 443} or len(url) > 2000
+                or any(c.isspace() or ord(c) < 32 for c in url)):
+            return None
+        if u.hostname in {'xhslink.com','www.xhslink.com'} and re.fullmatch(r'/(?:[A-Za-z0-9]+/)*[A-Za-z0-9]+/?',u.path):
+            return ('short', None, url)
+        m = re.fullmatch(r'/(?:explore|search_result|discovery/item)/([a-fA-F0-9]{24})/?',u.path) or re.fullmatch(r'/user/profile/[a-fA-F0-9]{24}/([a-fA-F0-9]{24})/?',u.path)
+        if u.hostname == 'www.xiaohongshu.com' and m and len(parse_qs(u.query).get('xsec_token',[])) <= 1:
+            identity = m[1].lower()
+            return ('note',identity,urlunparse(('https','www.xiaohongshu.com','/explore/'+identity,'',u.query,'')))
+    except (TypeError,ValueError):
+        pass
+    return None
+
+
 class XiaohongshuAdapter:
     """Maps the page backend to the shared contract, without accessing a database.
 
@@ -91,7 +108,10 @@ class XiaohongshuAdapter:
             "list_items": OperationCapability(True, dependencies=deps, authentication="required", pagination="bounded_profile_scan",
                 ordering="pinned_and_unordered", full_history=False, notes="按主页顺序检查限定条数，已收录也占名额；有界扫描不保证全部历史"),
             "get_item_detail": OperationCapability(True, dependencies=deps, authentication="required", notes="重新从作者主页取得访问链接后补充详情"),
-        }, adapter_version="3", parser_version="2", progress_version=VERSION, content_types=("note",),
+            "match_item_url": OperationCapability(True, True, "not_required", notes="官方笔记页／分享链接、xhslink.com；只接收链接"),
+            "resolve_item": OperationCapability(True, dependencies=deps, authentication="required", notes="稳定笔记 ID；官方短链有界展开"),
+            "read_item": OperationCapability(True, dependencies=deps, authentication="required", notes="保留签名、单条读取真实作者；无需订阅"),
+        }, adapter_version="4", parser_version="3", progress_version=VERSION, content_types=("note",),
             page_size=1, default_refresh_budget=8, default_backfill_budget=30, scan_overhead_budget=13, budget_unit="items")
 
     async def call(self, action, context, **params):
@@ -199,3 +219,35 @@ class XiaohongshuAdapter:
                                           "published":item.published, "url":item.url, "acquisition_complete":True})
         except (ValueError, TypeError, KeyError):
             raise ChannelError("SCHEMA_CHANGED", "get_item_detail", "笔记详情身份或数据无效") from None
+
+
+    def match_item_url(self, url):
+        return item_link(url) is not None
+
+    async def resolve_item(self, url, context):
+        context.check('resolve_item')
+        link = item_link(url)
+        if not link:
+            raise ChannelError('INVALID_INPUT','resolve_item','小红书笔记链接无效')
+        if link[0] == 'short':
+            data = await self.call('resolve_item',context,operation='resolve',url=url)
+            link = item_link(data.get('url'))
+            if not link or link[0] != 'note' or link[1] != data.get('id'):
+                raise ChannelError('SCHEMA_CHANGED','resolve_item','短链未返回有效的笔记身份或官方地址')
+        return ContentReference(CHANNEL,'note',link[1],link[2])
+
+    async def read_item(self, reference, context):
+        link = item_link(reference.url)
+        if (reference.channel != CHANNEL or reference.namespace != 'note' or not link
+                or link[0] != 'note' or link[1] != reference.external_id):
+            raise ChannelError('INVALID_INPUT','read_item','笔记身份或地址无效')
+        data = await self.call('read_item',context,operation='read',url=link[2],id=reference.external_id)
+        try:
+            row = data['note']
+            raw_source = source_from_locator(row['authorId'])
+            if not isinstance(row['author'],str) or not row['author'].strip() or row['id'] != reference.external_id:
+                raise ValueError('invalid author or note')
+            source = Source(CHANNEL,'author',raw_source.external_id,row['author'].strip()[:200],raw_source.url,True)
+            return item_from_row(row,source)
+        except (KeyError,TypeError,ValueError,ChannelError):
+            raise ChannelError('SCHEMA_CHANGED','read_item','笔记详情或真实作者身份无效') from None

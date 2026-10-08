@@ -113,6 +113,7 @@
   function intakeChannels(app) {
     return ((app.session || {}).channels || []).filter(function (channel) {
       var ops = channel.operations || {};
+      if (!((app.session || {}).connections || []).some(function(c) {return c.enabled && c.channel===channel.channel && c.backend===channel.backend;})) return false;
       return ["match_item_url", "resolve_item", "read_item"].every(function (op) {
         return ops[op] && ops[op].supported;
       });
@@ -573,6 +574,7 @@
             ui.btn("查看全部内容", {
               onClick: function () {
                 close();
+                app.search = "";
                 app.filters = { quick: "all", platform: null, channelId: null };
                 SF.app.navigate("inbox");
                 SF.app.render();
@@ -841,6 +843,7 @@
         await SF.app.refreshData(true);
         // 保存后把新内容直接选中，用户接着就能整理它。
         if (result.item_id) {
+          app.search = "";
           app.filters = { quick: "unread", platform: null, channelId: null };
           app.selectedId = result.item_id;
           SF.app.navigate("inbox");
