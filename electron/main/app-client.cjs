@@ -43,7 +43,7 @@ function contentDTO(item, subscriptions) {
   const sourceKey = `${item.source.channel}:${item.source.kind}:${item.source.external_id}`;
   const sub = subscriptions.find(row => row.source_id === sourceKey);
   return {
-    id: item.id, title: item.title, summary: item.summary, platform: item.channel,
+    id: item.id, title: item.title, summary: item.summary, platform: item.channel, kind: item.kind,
     canFetchDetail: subscriptions.some(row => row.source_id === sourceKey && row.status === 'active'),
     channelId: sub?.id ?? null, channelName: sub?.name ?? item.source.name, author: sub?.name ?? item.source.name,
     publishedAt: item.published.value, publishedPrecision: item.published.precision,
@@ -67,13 +67,14 @@ function channelDTO(sub, descriptors = [], schedule = null) {
     pageSize:descriptor.page_size || 20, defaultRefreshBudget:descriptor.default_refresh_budget || 1,
     defaultBackfillBudget:descriptor.default_backfill_budget || 10, incrementalDetails:['details','items'].includes(descriptor.budget_unit),
     checkedItems:descriptor.budget_unit === 'items',
+    contentNoun: descriptor.content_types?.includes('pin') ? '想法' : descriptor.content_types?.includes('note') ? '笔记' : '内容',
     capabilities: { canRefresh: !!operations.list_items?.supported,
       canBackfill: !!operations.list_items?.supported && operations.list_items.pagination !== 'none',
       fullHistory: !!operations.list_items?.full_history, canFetchDetail: !!operations.get_item_detail?.supported } };
 }
 function runDTO(job, subscriptions) {
   const metrics = job.acquisition_metrics || {};
-  const scanMessage = Object.keys(metrics).length ? `主页读取 ${metrics.profile_reads || 0} 次，检查 ${metrics.discovered || 0} 条笔记，跳过已收录 ${metrics.skipped || 0} 条，详情读取 ${metrics.detail_requests || 0} 次；新增 ${job.new_items} 条` : null;
+  const scanMessage = Object.keys(metrics).length ? `主页读取 ${metrics.profile_reads || 0} 次，检查 ${metrics.discovered || 0} 条内容，跳过已收录 ${metrics.skipped || 0} 条，详情读取 ${metrics.detail_requests || 0} 次；新增 ${job.new_items} 条` : null;
   return { id: job.id, channelId: job.subscription_id,
     channelName: subscriptions.find(sub => sub.id === job.subscription_id)?.name ?? '',
     kind: job.mode, scope: job.coverage, trigger:job.trigger,

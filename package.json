@@ -11,6 +11,8 @@
     "test": "node --test tests/*.test.cjs",
     "smoke:desktop": "node scripts/desktop-smoke.cjs",
     "smoke:renderer": "node scripts/renderer-smoke.cjs",
+    "smoke:zhihu:session": "node scripts/zhihu-session-smoke.cjs",
+    "smoke:zhihu": "node scripts/renderer-smoke.cjs --zhihu",
     "smoke:intake": "node scripts/renderer-smoke.cjs --intake",
     "smoke:intake:ui": "electron scripts/intake-ui-smoke.cjs",
     "smoke:renderer:live": "node scripts/renderer-smoke.cjs --live",

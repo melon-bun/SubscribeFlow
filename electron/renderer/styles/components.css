@@ -1995,3 +1995,9 @@ textarea.input {
 .tag-pool__name {
   white-space: nowrap;
 }
+
+.tag--zhihu { color: #1772e8; background: #e8f1ff; }
+.plat--zhihu { color: #1772e8; background: #e8f1ff; }
+:root[data-theme="dark"] .tag--zhihu, :root[data-theme="dark"] .plat--zhihu { color: #87b9ff; background: #203752; }
+
+.detail__body { white-space: pre-wrap; overflow-wrap: anywhere; }

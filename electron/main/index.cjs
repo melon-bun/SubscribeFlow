@@ -7,6 +7,7 @@ const { UI_METHODS, callUI } = require('./app-client.cjs');
 const {openSavedLink} = require('./external-links.cjs');
 const {BilibiliSession} = require('./bilibili-session.cjs');
 const {XiaohongshuSession} = require('./xiaohongshu-session.cjs');
+const {ZhihuSession} = require('./zhihu-session.cjs');
 const {ChannelSessions} = require('./channel-sessions.cjs');
 const {resolveRuntime} = require('./runtime.cjs');
 const {createDiagnostics} = require('./diagnostics.cjs');
@@ -27,7 +28,7 @@ else app.whenReady().then(start).catch(() => {
   app.exit(1);
 });
 
-let window, core, bilibili, xiaohongshu;
+let window, core, bilibili, xiaohongshu, zhihu;
 const channels = new ChannelSessions();
 let lastStatus = {state: 'starting'};
 let quitting = false;
@@ -45,7 +46,7 @@ async function start() {
     {label:'帮助', submenu:[
       {label:'打开应用数据目录', click:()=>void shell.openPath(app.getPath('userData'))},
       {label:'打开诊断记录', click:async()=>{const folder=path.join(app.getPath('userData'),'diagnostics'); await fs.mkdir(folder,{recursive:true}); await shell.openPath(folder);}},
-      {label:'使用与备份说明', click:()=>void dialog.showMessageBox(window,{type:'info',title:'知流使用说明',message:'订阅、同步与备份',detail:'在渠道管理中登录 B站或小红书，按昵称搜索并确认作者后添加订阅，再手动刷新。默认手动，可切换自动；间隔默认 24 小时，最大 72 小时。自动采集需要应用保持运行。\n\n备份：退出所有知流窗口后，复制整个应用数据目录。升级前会自动备份数据库。恢复前先退出应用并另存当前目录，再还原备份。不要把旧版数据库文件与当前 WAL 文件混用。\n\n登录会话独立于 Chrome。登录过期时在应用内重新登录。可在渠道管理设置来源默认优先级，在内容详情单独设置，并在内容总览切换优先级模式。可创建人工标签并筛选内容。标签规则与完整历史覆盖暂不支持。'})},
+      {label:'使用与备份说明', click:()=>void dialog.showMessageBox(window,{type:'info',title:'知流使用说明',message:'订阅、同步与备份',detail:'在渠道管理中登录 B站、小红书或知乎，按昵称搜索并确认作者后添加订阅，再手动刷新。默认手动，可切换自动；间隔默认 24 小时，最大 72 小时。自动采集需要应用保持运行。\n\n备份：退出所有知流窗口后，复制整个应用数据目录。升级前会自动备份数据库。恢复前先退出应用并另存当前目录，再还原备份。不要把旧版数据库文件与当前 WAL 文件混用。\n\n登录会话独立于 Chrome。登录过期时在应用内重新登录。可在渠道管理设置来源默认优先级，在内容详情单独设置，并在内容总览切换优先级模式。可创建人工标签并筛选内容。标签规则与完整历史覆盖暂不支持。'})},
     ]},
   ]));
   app.setAboutPanelOptions({applicationName:'知流 · Subscribe Flow', applicationVersion:app.getVersion()});
@@ -59,12 +60,20 @@ async function start() {
     try { await core.call('connection.check',{connection_id:'xiaohongshu:default'}); send('channels',null); }
     catch { /* A manual connection check remains available. */ }
   }});
+  zhihu = new ZhihuSession({offline:smoke || (!!rendererSmoke && rendererSmoke !== 'zhihu'),
+    ...(rendererSmoke === 'zhihu' ? {apiOptions:{delay:0}} : {}), onChanged:async () => {
+      if (quitting || !core?.ready) return;
+      try {await core.call('connection.check',{connection_id:'zhihu:default'});send('channels',null);}catch {}
+    }});
+  channels.register('zhihu',zhihu);
   channels.register('bilibili',bilibili);
   channels.register('xiaohongshu',xiaohongshu);
   const xhsFixture = rendererSmoke === 'xhs' ? require('../../scripts/xiaohongshu-fixture.cjs').install(xiaohongshu.session) : null;
   const intakeFixture = rendererSmoke === 'intake' ? await require('../../scripts/intake-fixture.cjs').install(bilibili,xiaohongshu) : null;
+  const zhihuFixture = rendererSmoke === 'zhihu' ? await require('../../scripts/zhihu-fixture.cjs').install(zhihu.session) : null;
   core = new CoreClient({ ...runtime,
     root, dataDir: app.getPath('userData'), autoRestart:!smoke && !rendererSmoke,
+    ...(rendererSmoke === 'zhihu' ? {schedulePolicy:{resource_gap:0}} : {}),
     acquisition:(params,signal) => channels.request(params,signal) });
   const updatePower = () => {
     const value = suspended;
@@ -137,10 +146,11 @@ async function start() {
   catch (error) { lastStatus = {state: 'error', message: error.message}; diagnostic('core.status', lastStatus); send('core.status', lastStatus); if (smoke || rendererSmoke) throw error; }
   if (rendererSmoke) {
     try {
-      if (rendererSmoke === 'intake') await require('../../scripts/intake-renderer.cjs').verify({window,core,root,fixture:intakeFixture});
+      if (rendererSmoke === 'zhihu') await require('../../scripts/zhihu-renderer.cjs').verify({window,core,root,zhihu,fixture:zhihuFixture});
+      else if (rendererSmoke === 'intake') await require('../../scripts/intake-renderer.cjs').verify({window,core,root,fixture:intakeFixture});
       else if (rendererSmoke === 'xhs') await require('../../scripts/xiaohongshu-renderer.cjs').verify({window,core,root,xiaohongshu,fixture:xhsFixture});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
-      await core.stop(); quitting = true; app.quit();
+      await core.stop(); await channels.close(); quitting = true; app.quit();
     } catch (error) { console.error(error); await core.stop(); app.exit(1); }
     return;
   }

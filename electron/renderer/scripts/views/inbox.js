@@ -376,7 +376,7 @@
       h('h2.detail__title', {text:item.title}),
       h('div.detail__byline', null, ui.avatar(item.channelName, null, 'md'), h('div.detail__byline-text', null,
         h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform),h('span.tag',{text:item.intakeMethod==='manual'?'手动收录':'自动采集'})), h('div.detail__byline-time', {text:'原始发布 · '+fmt.publication(item)}), item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
-      h('div.detail__section', null, h('div.detail__section-title', {text:'内容摘要'}), h('p.detail__summary', {text:item.summary || '此内容尚未提供摘要，可补充详情或打开原文。'})),
+      h('div.detail__section', null, h('div.detail__section-title', {text:item.kind==='pin' ? '想法正文' : '内容摘要'}), h('p.detail__summary'+(item.kind==='pin' ? '.detail__body' : ''), {text:item.summary || (item.kind==='pin' ? '这条想法没有文字正文，可打开原文查看。' : '此内容尚未提供摘要，可补充详情或打开原文。')})),
       priorityControls(app,item,repaint),
       tagControls(app, item, repaint),
       h('div.detail__section', null, h('div.detail__section-title', {text:'整理内容（单选）'}),

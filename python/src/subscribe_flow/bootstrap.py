@@ -5,6 +5,7 @@ from subscribe_flow.channels.bilibili.adapter import BilibiliAdapter
 from subscribe_flow.channels.bilibili.backends.opencli import BilibiliOpenCLIBackend
 from subscribe_flow.channels.bilibili.electron import BilibiliElectronAdapter
 from subscribe_flow.channels.xiaohongshu.adapter import XiaohongshuAdapter
+from subscribe_flow.channels.zhihu.adapter import ZhihuAdapter
 from subscribe_flow.application.subscriptions import SubscriptionService
 from subscribe_flow.application.sync import SyncService
 from subscribe_flow.application.intake import IntakeService
@@ -25,6 +26,7 @@ def build_gateway(opencli_path: str = "opencli", browser_bridge=None) -> Channel
     if browser_bridge is not None:
         gateway.register(BilibiliElectronAdapter(browser_bridge))
         gateway.register(XiaohongshuAdapter(browser_bridge))
+        gateway.register(ZhihuAdapter(browser_bridge))
     else:
         gateway.register(BilibiliAdapter(BilibiliOpenCLIBackend(CLITransport(ResourceCoordinator()), opencli_path)))
     return gateway

@@ -14,7 +14,7 @@ async function verify({window,core,root,xiaohongshu,fixture}) {
   const output=process.env.SUBSCRIBE_FLOW_VERIFY_OUTPUT || path.join(root,'docs/verification/m10-xiaohongshu');await fs.mkdir(output,{recursive:true});
   const screenshot=async name=>{await evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');await fs.writeFile(path.join(output,name),(await window.webContents.capturePage()).toPNG());};
   await until('!!window.SF?.app.state.session');
-  assert.equal((await core.call('channel.list')).length,2);
+  assert.ok((await core.call('channel.list')).some(d=>d.channel==='xiaohongshu' && d.backend==='electron-session'));
   await evaluate("SF.app.navigate('channels')");await until("!!document.querySelector('.channels__toolbar')");
   await click('添加渠道或创作者');
   await evaluate("(()=>{document.querySelector('[data-connection-id=\"xiaohongshu:default\"]').click();document.querySelector('#source-input').value='同名作者';document.querySelector('#source-input').dispatchEvent(new Event('input',{bubbles:true}));})()");
@@ -72,7 +72,7 @@ async function verify({window,core,root,xiaohongshu,fixture}) {
   assert.equal((await core.call('content.list')).total,3);
   assert.ok(!fixture.visits.some(u=>u.includes('444444444444444444444444')));
   let saved=await core.call('content.get',{item_id:key});assert.equal(saved.state.read,true);assert.equal(saved.priority,'high');assert.equal(saved.tags[0].id,tag.id);
-  const platforms=await evaluate('SF.app.state.session.channels.map(c=>c.channel)');assert.deepEqual(platforms,['bilibili','xiaohongshu']);
+  const platforms=await evaluate('SF.app.state.session.channels.map(c=>c.channel)');assert.ok(platforms.includes('bilibili') && platforms.includes('xiaohongshu'));
   await screenshot('channels-light.png');
   await evaluate("document.documentElement.dataset.theme='dark'");await screenshot('channels-dark.png');
   window.setSize(1024,760);await screenshot('channels-compact.png');
