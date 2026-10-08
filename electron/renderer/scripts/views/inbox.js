@@ -111,7 +111,11 @@
     var head = h('div.view__head', null,
       h('div.view__head-text', null, h('div.view__title', null, h('h1.t-h1', {text:titles[app.filters.quick] || '内容'}), ui.countPill(cache.total == null ? '—' : cache.total, 'brand')),
         h('p.view__desc', {text:descriptions[app.filters.quick] || '按日期查看收录的内容。'})),
-      h('div.view__actions', null, h('span.muted', {text:'最新发布'}), ui.btn('重新查询', {icon:'refresh', onClick:function () { cache = {}; SF.app.refreshData(true); }})));
+      h('div.view__actions', null, h('span.muted', {text:'最新发布'}),
+        ui.btn('添加内容', {variant:'primary', icon:'plus', disabled:!app.session.capabilities.canIntake,
+          title: app.session.capabilities.canIntake ? '粘贴链接收录单条内容' : '当前渠道尚未支持单条链接收录',
+          onClick:function () { SF.intakeDialog.open(app); }}),
+        ui.btn('重新查询', {icon:'refresh', onClick:function () { cache = {}; SF.app.refreshData(true); }})));
     var chips = h('div.inbox__toolbar', null,
       h('div.chips', null,
         h('button.chip' + (!app.filters.platform ? '.is-active' : ''), {type:'button', onclick:function () { app.filters.platform = null; SF.app.render(); }},

@@ -111,7 +111,17 @@
         h("h1", { class: "t-h1", text: "内容总览" }),
         h("p.view__desc", { text: "按日期回顾更新，或按优先级安排阅读。" })
       ),
-      h("div.view__actions", null, modes)
+      h(
+        "div.view__actions",
+        null,
+        ui.btn("添加内容", {
+          variant: "primary", icon: "plus",
+          disabled: !app.session.capabilities.canIntake,
+          title: app.session.capabilities.canIntake ? "粘贴链接收录单条内容" : "当前渠道尚未支持单条链接收录",
+          onClick: function () { SF.intakeDialog.open(app); },
+        }),
+        modes
+      )
     );
   }
 

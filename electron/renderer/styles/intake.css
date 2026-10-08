@@ -1,0 +1,470 @@
+/* ==========================================================================
+   自主添加对话框（M13）
+   --------------------------------------------------------------------------
+   只服务于「添加内容」这一个对话框：两步流程、预览卡、优先级与标签编辑。
+   颜色、间距、字号一律引用 tokens.css 的既有变量，这里不新增设计令牌——
+   稿子（2026-10-08）是现有设计系统的忠实渲染，另起一套会让同一个应用里
+   出现两种视觉语言。
+
+   结构分工：
+     .intake-*   对话框私有布局
+     .step-*     步骤条（识别 → 确认）
+     其余复用 .dialog / .field / .priority-opt / .tag-chip 等共享组件
+   ========================================================================== */
+
+/* 对话框比普通对话框略宽：预览卡要并排放封面与标题/作者/摘要，520px 会挤。 */
+.dialog--intake {
+  width: min(600px, 100%);
+}
+
+/* 稿子里各区块之间留白比普通对话框更松：这个对话框一屏要放链接、预览、
+   优先级和标签，挤在一起会让人分不清哪一段属于哪个字段。 */
+.dialog--intake .dialog__body {
+  gap: var(--s-6);
+}
+
+/* ---- 副标题：说明这个对话框做什么，而不是复述标题 ---- */
+.intake__lede {
+  font-size: var(--fs-cap);
+  color: var(--c-text-2);
+  line-height: 1.6;
+}
+
+/* ---------------- 步骤条 ---------------- */
+
+/* 编号在这里是真实状态：识别可能失败、超时或命中重复，两步不是装饰性分段。 */
+.steps {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4) 0 var(--s-2);
+}
+
+.steps__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: var(--fs-cap);
+  color: var(--c-text-3);
+  transition: color var(--dur-1) var(--ease);
+}
+
+.steps__num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: var(--r-full);
+  border: 1px solid var(--c-border-strong);
+  background: var(--c-surface);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-text-3);
+  transition: all var(--dur-1) var(--ease);
+}
+
+.steps__item.is-active {
+  color: var(--c-brand);
+  font-weight: 500;
+}
+
+.steps__item.is-active .steps__num {
+  background: var(--c-brand);
+  border-color: var(--c-brand);
+  color: var(--c-text-inverse);
+}
+
+.steps__item.is-done {
+  color: var(--c-text-2);
+}
+
+.steps__item.is-done .steps__num {
+  background: var(--c-brand-weak);
+  border-color: var(--c-brand-border);
+  color: var(--c-brand);
+}
+
+.steps__arrow {
+  color: var(--c-text-4);
+  flex: none;
+}
+
+.steps__arrow svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---------------- 链接输入 ---------------- */
+
+.intake__url {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 40px;
+  padding: 0 var(--s-5);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+
+.intake__url:focus-within {
+  border-color: var(--c-brand);
+  box-shadow: 0 0 0 3px var(--c-brand-weak);
+}
+
+.intake__url:focus-within .intake__url-icon {
+  color: var(--c-brand);
+}
+
+.intake__url-icon {
+  color: var(--c-text-3);
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.intake__url-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: none;
+  font-size: var(--fs-base);
+}
+
+.intake__url-input:focus {
+  outline: none;
+}
+
+.intake__url-input::placeholder {
+  color: var(--c-text-4);
+}
+
+.intake__url-clear {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: var(--r-full);
+  color: var(--c-text-3);
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+
+.intake__url-clear:hover {
+  background: var(--c-surface-3);
+  color: var(--c-text-2);
+}
+
+.intake__url-clear svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* 已识别后输入框只读：链接已解析成稳定身份，再改会让人以为改了目标内容。 */
+.intake__url.is-locked .intake__url-input {
+  color: var(--c-text-2);
+}
+
+/* 识别中锁住整行，避免用户改链接而结果仍属于上一个链接。 */
+.intake__url.is-busy {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* ---------------- 预览卡 ---------------- */
+
+/* 预览是「这条内容确实是你要的那条」的证据，所以给它独立卡片和真实封面，
+   而不是一行文字摘要。缺失的字段显式留白，不用占位图标假装有。 */
+.intake-preview {
+  display: flex;
+  gap: var(--s-5);
+  padding: var(--s-5);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+}
+
+.intake-preview__cover {
+  width: var(--thumb-lg);
+  height: calc(var(--thumb-lg) * 0.667);
+  flex: none;
+  border-radius: var(--r-sm);
+  background: var(--c-surface-3);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  color: var(--c-text-4);
+}
+
+.intake-preview__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.intake-preview__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.intake-preview__title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--c-text);
+}
+
+.intake-preview__author {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+
+.intake-preview__summary {
+  font-size: var(--fs-cap);
+  color: var(--c-text-2);
+  line-height: 1.65;
+}
+
+.intake-preview__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+
+.intake-preview__published {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.intake-preview__published svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* 手动收录按添加时间进日历，与自动采集按发布日期不同——这是本次收录唯一
+   会让用户事后觉得意外的时间规则，所以直接写在预览里而不是藏进帮助。 */
+.intake-preview__calendar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-left: auto;
+  padding: var(--s-2) var(--s-4);
+  border-radius: var(--r-sm);
+  background: var(--c-brand-weak);
+  color: var(--c-brand);
+  font-size: var(--fs-sm);
+}
+
+.intake-preview__calendar svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+/* 「未订阅」是这个流程的常态而不是异常：单条收录不要求先订阅作者。 */
+.intake-preview__unsubscribed {
+  padding: 0 var(--s-3);
+  height: 20px;
+  border-radius: var(--r-xs);
+  background: var(--c-surface-3);
+  color: var(--c-text-3);
+  font-size: var(--fs-xs);
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---------------- 优先级 ---------------- */
+
+/* 4 档而非详情面板的 3 档：这里允许显式「未设置」，新内容默认不该被猜一个优先级。 */
+.intake-priority {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--s-3);
+}
+
+.intake-priority__opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-4) var(--s-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  transition: all var(--dur-1) var(--ease);
+}
+
+.intake-priority__opt:hover {
+  border-color: var(--c-border-strong);
+}
+
+.intake-priority__icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-full);
+  border: 1.5px solid var(--c-border-strong);
+  color: var(--c-text-3);
+}
+
+.intake-priority__icon svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.2;
+}
+
+.intake-priority__name {
+  font-size: var(--fs-cap);
+  color: var(--c-text-2);
+}
+
+.intake-priority__opt--high .intake-priority__icon {
+  background: var(--c-high);
+  border-color: var(--c-high);
+  color: #fff;
+}
+
+.intake-priority__opt--medium .intake-priority__icon {
+  background: var(--c-mid);
+  border-color: var(--c-mid);
+  color: #fff;
+}
+
+.intake-priority__opt--low .intake-priority__icon {
+  background: var(--c-low);
+  border-color: var(--c-low);
+  color: #fff;
+}
+
+.intake-priority__opt.is-active {
+  border-color: var(--c-brand);
+  box-shadow: 0 0 0 1px var(--c-brand) inset;
+  background: var(--c-brand-weak-2);
+}
+
+.intake-priority__opt.is-active .intake-priority__name {
+  color: var(--c-brand);
+  font-weight: 500;
+}
+
+.intake-priority__opt.is-active.intake-priority__opt--high .intake-priority__name,
+.intake-priority__opt.is-active.intake-priority__opt--medium .intake-priority__name,
+.intake-priority__opt.is-active.intake-priority__opt--low .intake-priority__name {
+  color: var(--c-brand);
+}
+
+/* ---------------- 标签行 ---------------- */
+
+.intake-tags {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+
+/* 对话框里的标签紧跟内容流，不该像详情面板那样把「添加标签」推到最右。 */
+.intake-tags .tag-editor {
+  margin-top: 0;
+}
+
+.intake-tags .tag-editor__chips .btn--sm {
+  margin-left: 0;
+}
+
+/* ---------------- 状态区 ---------------- */
+
+/* 识别中：进度是真实的等待，不放假动画假装在动。 */
+.intake-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-6) 0;
+}
+
+.intake-status__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: var(--fs-cap);
+  color: var(--c-text-2);
+}
+
+.intake-status__row .progress {
+  flex: 1;
+}
+
+/* 「已收录」分支：这不是错误，但必须能直接跳到已有记录，
+   否则用户只能关掉对话框再自己找一遍。 */
+.intake-exists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  padding: var(--s-5);
+  border: 1px solid var(--c-brand-border);
+  border-radius: var(--r-md);
+  background: var(--c-brand-weak-2);
+}
+
+.intake-exists__title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.intake-exists__actions {
+  display: flex;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+
+/* 预览失效（5 分钟 TTL / 连接变化 / 取消）后仍要能重试，不能只留一个死按钮。 */
+.intake-expired {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  padding: var(--s-6) 0;
+}
+
+/* 深色模式：品牌弱底在深色下已由 tokens 覆盖，这里只需保证边框层级。 */
+:root[data-theme="dark"] .intake-preview {
+  background: var(--c-surface-2);
+}
+
+:root[data-theme="dark"] .intake-exists {
+  background: var(--c-brand-weak-2);
+}
+
+@media (max-width: 720px) {
+  .intake-preview {
+    flex-direction: column;
+  }
+
+  .intake-preview__cover {
+    width: 100%;
+    height: 160px;
+  }
+
+  .intake-priority {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .intake-preview__calendar {
+    margin-left: 0;
+  }
+}
