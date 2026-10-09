@@ -64,7 +64,7 @@ async function verify({window,core,root,fixture}) {
   assert.ok(saved.summary.includes('第二段完整正文'));
   assert.equal((await core.call('subscription.list')).length,0,'保存不创建订阅');
   assert.equal((await core.call('sync.list')).length,0,'保存不创建同步任务');
-  assert.ok(await evaluate(`document.querySelector('.detail-preview').textContent.includes('文章正文') && getComputedStyle(document.querySelector('.detail__body')).whiteSpace==='pre-wrap'`));
+  assert.ok(await evaluate(`document.querySelector('.detail-preview').textContent.includes('文章正文') && getComputedStyle(document.querySelector('.detail__text')).whiteSpace==='pre-wrap'`));
   assert.equal(await evaluate(`[...document.querySelectorAll('.detail button')].some(b=>b.textContent.trim()==='补充详情')`),false,'微信内容不提供依赖订阅的补充详情');
   await shot('m14-wechat-saved-detail.png');
 
@@ -92,10 +92,33 @@ async function verify({window,core,root,fixture}) {
   await until(`document.querySelectorAll('.content-card').length===2`);
   assert.ok(await evaluate(`[...document.querySelectorAll('.content-card')].every(c=>c.dataset.contentId.startsWith('wechat:article:'))`));
 
+  // 正文超过 20 行才折叠，并可展开/收起；短正文不给这个按钮。
+  await evaluate(`SF.app.state.filters={quick:'all',platform:'wechat'};SF.app.navigate('inbox');SF.app.refreshData(true)`);
+  await until(`document.querySelectorAll('.content-card').length===2`);
+  await evaluate(`[...document.querySelectorAll('.content-card')].find(c=>c.textContent.includes('M14 隔离验收文章')).click()`);
+  await until(`!!document.querySelector('.detail__text')`);
+  assert.equal(await evaluate(`!!document.querySelector('.detail__more-btn:not([hidden])')`),false,'短正文不显示展开按钮');
+  await recognize('https://mp.weixin.qq.com/s/m14FixtureLongArticle');
+  await until(`!!document.querySelector('.intake-preview')`);
+  await click('保存内容');
+  await until(`!!document.querySelector('.detail__text.is-clamped')`);
+  assert.equal(await evaluate(`!!document.querySelector('.detail__more-btn:not([hidden])')`),true,'超过 20 行显示展开按钮');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.detail__text')).webkitLineClamp`),'20');
+  await shot('m14-long-body-collapsed.png');
+  await click('展开内容');
+  await until(`!document.querySelector('.detail__text.is-clamped')`);
+  assert.equal(await evaluate(`document.querySelector('.detail__more-btn').textContent`),'收起内容');
+  assert.equal(await evaluate(`document.querySelector('.detail__more-btn').getAttribute('aria-expanded')`),'true');
+  assert.ok((await evaluate(`document.querySelector('.detail__text').textContent`)).includes('第 26 段'),'展开后能看到末尾');
+  await shot('m14-long-body-expanded.png');
+  await click('收起内容');
+  await until(`!!document.querySelector('.detail__text.is-clamped')`);
+  assert.equal(await evaluate(`document.querySelector('.detail__more-btn').textContent`),'展开内容');
+
   // W08: manual articles enter the calendar by first-added time.
   await evaluate(`SF.app.state.filters={quick:'all',intakeMethod:'manual'};SF.app.navigate('overview',{mode:'calendar'});SF.app.refreshData(true)`);
   await until(`!!document.querySelector('.calendar-grid')`);await click('今天');
-  await until(`document.querySelectorAll('[data-calendar-item]').length===2`);
+  await until(`document.querySelectorAll('[data-calendar-item]').length===3`);
   await shot('m14-wechat-calendar.png');
 
   // W13: a verification page stops the read, keeps nothing and is not retried.
@@ -109,24 +132,24 @@ async function verify({window,core,root,fixture}) {
   assert.ok(notice.includes('出口 IP')&&notice.includes('User-Agent')&&notice.includes('未保存任何内容'));
   assert.equal(await evaluate(`[...document.querySelectorAll('.dialog button')].some(b=>b.textContent.includes('应用内登录'))`),false,'拦截提示不引导登录');
   assert.equal(fixture.visits.length,visitsBefore+1,'拦截后不重试、不轮询');
-  assert.equal((await core.call('content.list')).total,2,'拦截不产生任何记录');
+  assert.equal((await core.call('content.list')).total,3,'拦截不产生任何记录');
   await shot('m14-wechat-blocked.png');
   fixture.control.mode='param';
   await input('#intake-url','https://mp.weixin.qq.com/s/m14FixtureUnknownPage');await click('重新识别');
   await until(`!!document.querySelector('.dialog .notice__title')`);
   assert.equal(await evaluate(`document.querySelector('.dialog .notice__title').textContent`),'无法识别这个链接');
-  assert.equal((await core.call('content.list')).total,2,'错误页不产生任何记录');
+  assert.equal((await core.call('content.list')).total,3,'错误页不产生任何记录');
   fixture.control.mode='normal';
 
   // Restart and reload keep the manual articles and create no subscription.
   await core.restart();
-  assert.equal((await core.call('content.list',{channel:'wechat'})).total,2);
+  assert.equal((await core.call('content.list',{channel:'wechat'})).total,3);
   assert.equal((await core.call('subscription.list')).length,0);
   await evaluate(`SF.app.navigate('inbox');SF.app.refreshData(true)`);
-  await until(`SF.app.state.counts.total===2`);
+  await until(`SF.app.state.counts.total===3`);
   console.log(JSON.stringify({wechatRenderer:'passed',realBridge:true,realCore:true,realPlatform:false,intakeOnlyChannel:true,
     capabilityFilter:true,connectionCheck:true,previewNoWrite:true,accountSource:true,originalTime:true,manualCalendar:true,
     aliasSameKey:true,samePushSeparate:true,noSubscriptionOrJob:true,filtersAndCalendar:true,blockedPageStops:true,
-    errorPageNotSaved:true,restartPersisted:true,contents:2}));
+    errorPageNotSaved:true,restartPersisted:true,contents:3,longBodyCollapse:true}));
 }
 module.exports={verify};

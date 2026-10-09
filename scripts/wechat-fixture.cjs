@@ -7,14 +7,14 @@ const IDS=[{mid:'2247551517',idx:1},{mid:'2247551518',idx:2}];
 const ARTICLES=IDS.map(({mid,idx})=>`${ACCOUNT}_${mid}_${idx}`);
 const CONTROL={mode:'normal'};
 
-function page({mid='2247551517',idx=1,account=ACCOUNT,name='M14 隔离公众号',byline='署名甲',ct='1780656700',body}={}) {
+function page({mid='2247551517',idx=1,account=ACCOUNT,name='M14 隔离公众号',byline='署名甲',ct='1780656700',title='M14 隔离验收文章',body}={}) {
   return `<!doctype html><html><head><meta property="og:title" content="页面标题" />
 <script>
   var nickname = htmlDecode("${name}");
   var round_head_img = "http://mmbiz.qpic.cn/mmbiz_png/fixture-avatar.png";
   var ct = "${ct}";
   var user_name = "gh_m14fixture";
-  var msg_title = 'M14 隔离验收文章';
+  var msg_title = '${title}';
   var msg_desc = htmlDecode("摘要");
   var author = "${byline}";
   var biz = "${account}" || "";
@@ -44,6 +44,8 @@ async function install(session) {
     // A token without its own article answers with the "second article" page,
     // so a same-account, same-push pair can be told apart in acceptance.
     const second=u.pathname.endsWith('m14FixtureSecondArticle')||(u.pathname==='/s' && u.searchParams.get('idx')==='2');
+    // 一篇明显超长的文章：用来验证详情正文 20 行折叠与展开。
+    if(u.pathname.endsWith('m14FixtureLongArticle'))return html(page({mid:'2247551519',title:'M14 长正文验收文章',body:Array.from({length:26},(_,i)=>`<p>M14 长正文第 ${i+1} 段，用于验证超过 20 行后需要展开才能看全。</p>`).join('')}));
     return html(second?page2:page());
   });
   return {SHORT,ACCOUNT,OTHER_ACCOUNT,ARTICLES,IDS,visits,control:CONTROL};

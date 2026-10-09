@@ -371,6 +371,41 @@
 
   // 想法和公众号文章带的是完整正文，不是简介：按整段换行排版。
   function fullText(item) { return item.kind === 'pin' || item.kind === 'article'; }
+  var BODY_LINES = 20;
+  /**
+   * 正文超过 20 行时先折叠，避免一篇文章把整个右侧详情挤爆。
+   * 折叠与否按**挂载后**的高度判断：20 行是触发线，但窄窗口下一行会折行，
+   * 真正被截断才显示「展开内容」，不给一个点了没反应的按钮。
+   */
+  function bodySection(item, whole) {
+    var fallback = whole ? '这条内容没有文字正文，可打开原文查看。' : '此内容尚未提供摘要，可补充详情或打开原文。';
+    var text = item.summary || fallback;
+    var lines = text.split('\n').filter(function (line) { return line.trim(); }).length;
+    var section = h('div.detail__section', null,
+      h('div.detail__section-title', {text:whole ? (item.kind==='pin' ? '想法正文' : '文章正文') : '内容摘要'}));
+    if (!whole || !item.summary || lines <= BODY_LINES) {
+      section.appendChild(h('p.detail__summary'+(whole ? '.detail__text' : ''), {text:text}));
+      return section;
+    }
+    var para = h('p.detail__summary.detail__text.is-clamped', {text:text});
+    var toggle = h('button.detail__more-btn', {type:'button','aria-expanded':'false',hidden:true});
+    var setExpanded = function (value) {
+      para.classList.toggle('is-clamped', !value);
+      toggle.textContent = value ? '收起内容' : '展开内容';
+      toggle.setAttribute('aria-expanded', String(value));
+    };
+    toggle.addEventListener('click', function () { setExpanded(toggle.getAttribute('aria-expanded') !== 'true'); });
+    setExpanded(false);
+    // 折行多少与窗口宽度有关，只有挂载后才知道要不要给这个按钮。
+    requestAnimationFrame(function () {
+      if (!para.isConnected) return;
+      if (para.scrollHeight > para.clientHeight + 1) toggle.hidden = false;
+      else para.classList.remove('is-clamped');
+    });
+    section.appendChild(para);
+    section.appendChild(h('div.detail__more', null, toggle));
+    return section;
+  }
   function detailBody(app, item, repaint) {
     var canDetail = item.canFetchDetail !== false && !!item.channelId && app.session.channels.some(function (c) { return c.channel === item.platform && c.operations.get_item_detail && c.operations.get_item_detail.supported; });
     var whole = fullText(item);
@@ -379,7 +414,7 @@
       h('h2.detail__title', {text:item.title}),
       h('div.detail__byline', null, ui.avatar(item.channelName, null, 'md'), h('div.detail__byline-text', null,
         h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform),h('span.tag',{text:item.intakeMethod==='manual'?'手动收录':'自动采集'})), h('div.detail__byline-time', {text:'原始发布 · '+fmt.publication(item)}), item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
-      h('div.detail__section', null, h('div.detail__section-title', {text:whole ? (item.kind==='pin' ? '想法正文' : '文章正文') : '内容摘要'}), h('p.detail__summary'+(whole ? '.detail__body' : ''), {text:item.summary || (whole ? '这条内容没有文字正文，可打开原文查看。' : '此内容尚未提供摘要，可补充详情或打开原文。')})),
+      bodySection(item, whole),
       priorityControls(app,item,repaint),
       tagControls(app, item, repaint),
       h('div.detail__section', null, h('div.detail__section-title', {text:'整理内容（单选）'}),

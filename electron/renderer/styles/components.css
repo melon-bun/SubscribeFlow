@@ -2001,3 +2001,26 @@ textarea.input {
 :root[data-theme="dark"] .tag--zhihu, :root[data-theme="dark"] .plat--zhihu { color: #87b9ff; background: #203752; }
 
 .detail__body { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 正文段落自身的类名：.detail__body 已经被详情滚动容器占用，不能复用。 */
+.detail__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 长正文默认只露出 20 行；展开后回到自然高度。 */
+.detail__text.is-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 20;
+  overflow: hidden;
+}
+.detail__more { display: flex; justify-content: center; margin-top: var(--s-3); }
+.detail__more-btn {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--c-text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 4px var(--s-4);
+  cursor: pointer;
+}
+.detail__more-btn[hidden] { display: none; }
+.detail__more-btn:hover { background: var(--c-surface-3); color: var(--c-text); }
+.detail__more-btn:focus-visible { border-color: var(--c-brand); box-shadow: 0 0 0 3px var(--c-brand-weak); }
