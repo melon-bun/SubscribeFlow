@@ -35,11 +35,14 @@
    * 把错误分成「发生了什么」和「下一步做什么」两段，不拼成一整句。
    * 平台返回的 reason 已经包含它自己的建议，再往上追加一句只会得到
    * 「请稍后重试 稍等片刻再试」这种重复文案。
+   *
+   * loginNeeded 按渠道区分：只支持单条读取的渠道（如微信）根本没有登录
+   * 入口，把它提示成「请在应用内登录」会让用户去找一个不存在的按钮。
    */
-  function failureText(error) {
+  function failureText(error, loginNeeded) {
     var code = (error && error.code) || "";
     var message = (error && error.message) || "内容识别失败，请重试。";
-    if (code === "AUTH_REQUIRED" || code === "AUTH_EXPIRED" || code === "INTERACTION_REQUIRED") {
+    if ((code === "AUTH_REQUIRED" || code === "AUTH_EXPIRED" || code === "INTERACTION_REQUIRED") && loginNeeded) {
       return {
         title: code === "AUTH_EXPIRED" ? "登录已失效" : "需要登录后才能读取",
         message: message,
@@ -47,6 +50,15 @@
         tone: "warn",
         action: "login",
       };
+    }
+    if (code === "INTERACTION_REQUIRED") {
+      return { title: "平台要求人工验证", message: message, hint: "本次采集已停止，没有保存任何内容。可更换网络或稍后重新识别。", tone: "warn", retry: true };
+    }
+    if (code === "ACCESS_FAILED") {
+      return { title: "平台没有返回正文", message: message, hint: "本次采集已停止，没有保存任何内容。可以稍后重新识别。", tone: "warn", retry: true };
+    }
+    if (code === "AUTH_REQUIRED" || code === "AUTH_EXPIRED") {
+      return { title: code === "AUTH_EXPIRED" ? "登录已失效" : "需要登录后才能读取", message: message, hint: "这个渠道暂不支持自动读取该链接。", tone: "warn" };
     }
     if (code === "RATE_LIMITED") {
       return { title: "平台访问过于频繁", message: message, hint: "等待一段时间后可以重新识别。", tone: "warn", retry: true };
@@ -120,6 +132,18 @@
     });
   }
 
+  /**
+   * 这个渠道有没有登录入口。只有支持 resolve_source 的渠道才有账号会话
+   * 和登录窗口；只支持单条读取的渠道（如微信）对登录提示没有意义。
+   */
+  function loginNeeded(app, channelId) {
+    if (!channelId) return true; // 还没识别出来时保持原有的登录提示
+    return (app.session || {}).channels.some(function (channel) {
+      var ops = channel.operations || {};
+      return channel.channel === channelId && ops.resolve_source && ops.resolve_source.supported;
+    });
+  }
+
   function supportedHint(app) {
     var names = intakeChannels(app).map(function (channel) {
       return catalog.platform(channel.channel).name;
@@ -146,6 +170,7 @@
       taskId: null,
       previewId: null,
       connectionId: null,
+      channel: null,
       ticket: 0,
       preview: null,
       priority: null,
@@ -365,6 +390,9 @@
         : icon("file-text", 20);
 
       var subscribed = subscriptionState(subsCache, preview);
+      // 不支持订阅的渠道（如微信）永远没有「订阅」这个状态，显示「未订阅」
+      // 会让用户去找一个不存在的关系。
+      var showUnsubscribed = subscribed === false && loginNeeded(app, preview.channel);
 
       var previewCard = h(
         "div.intake-preview",
@@ -380,7 +408,7 @@
             ui.avatar(source.name, source.avatar),
             h("span", { text: source.name || "未知作者" }),
             h("span.tag.tag--" + channel.id, { text: channel.name }),
-            subscribed === false ? h("span.intake-preview__unsubscribed", {
+            showUnsubscribed ? h("span.intake-preview__unsubscribed", {
               text: "未订阅",
               title: "收录这条内容不会订阅该作者",
             }) : null
@@ -588,7 +616,7 @@
     /* ---------------- 失败 / 失效 ---------------- */
 
     function problemStep() {
-      var info = failureText(state.error);
+      var info = failureText(state.error, loginNeeded(app, state.channel));
       return [
         stepRail(1),
         h(
@@ -623,7 +651,7 @@
     }
 
     function problemBlock() {
-      var info = failureText(state.error);
+      var info = failureText(state.error, loginNeeded(app, state.channel));
       return h("div", null, [
         ui.notice({ tone: info.tone, icon: "alert", title: info.title, text: info.message }),
         h("p.field__hint", { text: info.hint }),
@@ -733,6 +761,7 @@
     function applyTask(task, ticket) {
       if (closed || ticket !== state.ticket) return;
       if (task.connection_id) state.connectionId = task.connection_id;
+      if (task.channel) state.channel = task.channel;
       if (task.state === "preview" && task.preview) {
         stopPolling();
         state.previewId = task.preview_id;

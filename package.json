@@ -13,6 +13,8 @@
     "smoke:renderer": "node scripts/renderer-smoke.cjs",
     "smoke:zhihu:session": "node scripts/zhihu-session-smoke.cjs",
     "smoke:zhihu": "node scripts/renderer-smoke.cjs --zhihu",
+    "smoke:wechat": "node scripts/renderer-smoke.cjs --wechat",
+    "smoke:wechat:live": "node scripts/wechat-live.cjs",
     "smoke:intake": "node scripts/renderer-smoke.cjs --intake",
     "smoke:intake:ui": "electron scripts/intake-ui-smoke.cjs",
     "smoke:renderer:live": "node scripts/renderer-smoke.cjs --live",

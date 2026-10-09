@@ -301,7 +301,16 @@ async function callUI(core, name, args) {
       if ('tagIds' in options) params.tag_ids = tagIds(options.tagIds);
       return call('intake.save', params);
     }
-    case 'checkConnection': return call('connection.check', {connection_id: first});
+    case 'checkConnection': {
+      // 检查必须挑该连接真正支持的操作：只支持单条读取的渠道（例如微信）
+      // 不支持 list_items，用默认操作会把可用的渠道误报成不可用。
+      const [rows, descriptors] = await Promise.all([call('connection.list'), call('channel.list')]);
+      const connection = rows.find(c => c.id === first);
+      if (!connection) throw new Error('连接不存在');
+      const operations = (descriptors.find(d => d.channel === connection.channel && d.backend === connection.backend) || {}).operations || {};
+      const operation = ['list_items', 'read_item', 'resolve_item'].find(op => operations[op] && operations[op].supported);
+      return operation ? call('connection.check', {connection_id: first, operation}) : call('connection.check', {connection_id: first});
+    }
     case 'retryRun': return call('sync.retry', {job_id: first});
     case 'fetchDetail': {
       const item = await call('content.get', {item_id: first});

@@ -113,7 +113,10 @@ class CoreClient extends EventEmitter {
       response = {result:await this.acquisition(message.params,controller.signal)};
       if (Buffer.byteLength(JSON.stringify(response)) > 3 * 1024 * 1024) throw new Error('Oversized acquisition response');
     } catch (error) {
-      const known = ['INVALID_INPUT','DEPENDENCY_UNAVAILABLE','AUTH_REQUIRED','INTERACTION_REQUIRED','RATE_LIMITED','SCHEMA_CHANGED','ACCESS_FAILED','TIMEOUT','CANCELLED'].includes(error.code);
+      // Channel codes the user can act on must survive the hop. A NOT_FOUND from
+      // a platform ("this article was deleted") must not arrive as an anonymous
+      // "采集失败" that reads like a bug.
+      const known = ['INVALID_INPUT','DEPENDENCY_UNAVAILABLE','AUTH_REQUIRED','INTERACTION_REQUIRED','RATE_LIMITED','SCHEMA_CHANGED','ACCESS_FAILED','NOT_FOUND','UNSUPPORTED_OPERATION','TIMEOUT','CANCELLED'].includes(error.code);
       response = {error:{code:-32000,message:known ? error.message : '应用内采集失败',data:{code:known ? error.code : 'ACCESS_FAILED',retryable:known && !!error.retryable,retry_after:error.retryAfter ?? null}}};
     } finally { if (this.acquiring.get(message.id) === controller) this.acquiring.delete(message.id); }
     if (this.child === child && child && !child.killed && !child.stdin.destroyed) child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:message.id,...response}) + '\n');

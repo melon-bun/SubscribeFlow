@@ -330,7 +330,7 @@ module.exports={verify};
 if(require.main === module) {
   const root=path.resolve(__dirname,'..');
   const folder=fs.mkdtempSync(path.join(os.tmpdir(),'subscribe-flow-renderer-'));
-  const mode=process.argv.includes('--zhihu')?'zhihu':process.argv.includes('--intake')?'intake':process.argv.includes('--xhs')?'xhs':process.argv.includes('--live')?'live':'offline';
+  const mode=process.argv.includes('--zhihu')?'zhihu':process.argv.includes('--wechat')?'wechat':process.argv.includes('--intake')?'intake':process.argv.includes('--xhs')?'xhs':process.argv.includes('--live')?'live':'offline';
   const child=spawn(require('electron'),[root],{env:{...process.env,SUBSCRIBE_FLOW_RENDERER_SMOKE:mode,SUBSCRIBE_FLOW_LIVE_SKIP_SEARCH:process.argv.includes('--uid-only')?'1':'0',SUBSCRIBE_FLOW_DATA_DIR:folder},stdio:'inherit'});
   const timer=setTimeout(()=>child.kill('SIGKILL'),180000);
   child.on('close',code=>{clearTimeout(timer);fs.rmSync(folder,{recursive:true,force:true});process.exitCode=code??1;});

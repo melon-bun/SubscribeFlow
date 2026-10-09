@@ -8,6 +8,7 @@ const {openSavedLink} = require('./external-links.cjs');
 const {BilibiliSession} = require('./bilibili-session.cjs');
 const {XiaohongshuSession} = require('./xiaohongshu-session.cjs');
 const {ZhihuSession} = require('./zhihu-session.cjs');
+const {WechatSession} = require('./wechat-session.cjs');
 const {ChannelSessions} = require('./channel-sessions.cjs');
 const {resolveRuntime} = require('./runtime.cjs');
 const {createDiagnostics} = require('./diagnostics.cjs');
@@ -28,7 +29,7 @@ else app.whenReady().then(start).catch(() => {
   app.exit(1);
 });
 
-let window, core, bilibili, xiaohongshu, zhihu;
+let window, core, bilibili, xiaohongshu, zhihu, wechat;
 const channels = new ChannelSessions();
 let lastStatus = {state: 'starting'};
 let quitting = false;
@@ -68,9 +69,14 @@ async function start() {
   channels.register('zhihu',zhihu);
   channels.register('bilibili',bilibili);
   channels.register('xiaohongshu',xiaohongshu);
+  // 微信只做单条文章读取：没有登录窗口，也不参与任何其他渠道的调度。
+  wechat = new WechatSession({offline: smoke || (!!rendererSmoke && !['wechat','intake'].includes(rendererSmoke)),
+    ...(['wechat','intake'].includes(rendererSmoke) ? {apiOptions:{minGap:0}} : {})});
+  channels.register('wechat',wechat);
   const xhsFixture = rendererSmoke === 'xhs' ? require('../../scripts/xiaohongshu-fixture.cjs').install(xiaohongshu.session) : null;
   const intakeFixture = rendererSmoke === 'intake' ? await require('../../scripts/intake-fixture.cjs').install(bilibili,xiaohongshu) : null;
   const zhihuFixture = rendererSmoke === 'zhihu' ? await require('../../scripts/zhihu-fixture.cjs').install(zhihu.session) : null;
+  const wechatFixture = rendererSmoke === 'wechat' ? await require('../../scripts/wechat-fixture.cjs').install(wechat.session) : null;
   core = new CoreClient({ ...runtime,
     root, dataDir: app.getPath('userData'), autoRestart:!smoke && !rendererSmoke,
     ...(rendererSmoke === 'zhihu' ? {schedulePolicy:{resource_gap:0}} : {}),
@@ -147,6 +153,7 @@ async function start() {
   if (rendererSmoke) {
     try {
       if (rendererSmoke === 'zhihu') await require('../../scripts/zhihu-renderer.cjs').verify({window,core,root,zhihu,fixture:zhihuFixture});
+      else if (rendererSmoke === 'wechat') await require('../../scripts/wechat-renderer.cjs').verify({window,core,root,wechat,fixture:wechatFixture});
       else if (rendererSmoke === 'intake') await require('../../scripts/intake-renderer.cjs').verify({window,core,root,fixture:intakeFixture});
       else if (rendererSmoke === 'xhs') await require('../../scripts/xiaohongshu-renderer.cjs').verify({window,core,root,xiaohongshu,fixture:xhsFixture});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});

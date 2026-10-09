@@ -369,14 +369,17 @@
 
   /* ---------------- 详情 ---------------- */
 
+  // 想法和公众号文章带的是完整正文，不是简介：按整段换行排版。
+  function fullText(item) { return item.kind === 'pin' || item.kind === 'article'; }
   function detailBody(app, item, repaint) {
     var canDetail = item.canFetchDetail !== false && !!item.channelId && app.session.channels.some(function (c) { return c.channel === item.platform && c.operations.get_item_detail && c.operations.get_item_detail.supported; });
+    var whole = fullText(item);
     return h('div.detail-preview', null,
       item.cover ? h('div.detail__cover', null, h('img', {src:item.cover, alt:'', referrerPolicy:'no-referrer'})) : null,
       h('h2.detail__title', {text:item.title}),
       h('div.detail__byline', null, ui.avatar(item.channelName, null, 'md'), h('div.detail__byline-text', null,
         h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform),h('span.tag',{text:item.intakeMethod==='manual'?'手动收录':'自动采集'})), h('div.detail__byline-time', {text:'原始发布 · '+fmt.publication(item)}), item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
-      h('div.detail__section', null, h('div.detail__section-title', {text:item.kind==='pin' ? '想法正文' : '内容摘要'}), h('p.detail__summary'+(item.kind==='pin' ? '.detail__body' : ''), {text:item.summary || (item.kind==='pin' ? '这条想法没有文字正文，可打开原文查看。' : '此内容尚未提供摘要，可补充详情或打开原文。')})),
+      h('div.detail__section', null, h('div.detail__section-title', {text:whole ? (item.kind==='pin' ? '想法正文' : '文章正文') : '内容摘要'}), h('p.detail__summary'+(whole ? '.detail__body' : ''), {text:item.summary || (whole ? '这条内容没有文字正文，可打开原文查看。' : '此内容尚未提供摘要，可补充详情或打开原文。')})),
       priorityControls(app,item,repaint),
       tagControls(app, item, repaint),
       h('div.detail__section', null, h('div.detail__section-title', {text:'整理内容（单选）'}),

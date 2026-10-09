@@ -4,6 +4,15 @@
   var SF = global.SF, h = SF.dom.h, ui = SF.ui, fmt = SF.fmt;
   var cache = {}, keyword = '', searchTimer;
   function reload() { cache = {}; SF.app.renderContent(); }
+  function descriptorFor(app, connection) {
+    return (app.session.channels || []).filter(function (d) { return d.channel === connection.channel && d.backend === connection.backend; })[0] || {};
+  }
+  // 只有能定位来源的渠道才出现在「添加渠道或创作者」里。微信只支持自主
+  // 添加，把它放进订阅表单只会让用户走进一个注定失败的流程。
+  function subscribable(app, connection) {
+    var ops = descriptorFor(app, connection).operations || {};
+    return !!(ops.resolve_source && ops.resolve_source.supported);
+  }
   function render(app) {
     if (!cache.loaded && !cache.loading) {
       var current = cache; current.loading = true;
@@ -141,14 +150,17 @@
   function bottomPanels(app) {
     return h('div.channels__bottom',null,
       h('section.panel.live-panel',null,h('h2.t-h2',{text:'渠道与连接'}),app.session.connections.map(function (c) {
-        var r = c.readiness;
+        var r = c.readiness, ops = descriptorFor(app, c).operations || {};
+        var intakeOnly = !(ops.resolve_source && ops.resolve_source.supported);
         return h('div.connection-card',null,h('h3',{text:SF.catalog.platform(c.channel).name}),
-          c.backend === 'electron-session' ? h('p.muted',{text:'使用应用内独立会话，无需启动 Chrome。登录后关闭登录窗口，再检查连接。'}) : null,
+          intakeOnly
+            ? h('p.muted',{text:'仅支持自主添加：在收件箱粘贴文章链接即可收录，无需登录，也不订阅公众号。'})
+            : (c.backend === 'electron-session' ? h('p.muted',{text:'使用应用内独立会话，无需启动 Chrome。登录后关闭登录窗口，再检查连接。'}) : null),
           h('p',{text:r ? r.reason : '尚未检查采集环境'}),
           h('p.muted',{text:'认证：' + ({unknown:'尚未确认',required:'需要登录',available:'已有可用会话',not_required:'无需登录'}[r && r.authentication] || '尚未确认')}),
           r ? h('p.muted',{text:'检查时间：' + fmt.absolute(r.checked_at)}) : null,
           h('div.row.row-gap-3',null,
-            c.backend === 'electron-session' ? ui.btn('应用内登录 ' + SF.catalog.platform(c.channel).name,{onClick:function () { SF.app.act('login:' + c.id,function () { return app.client.loginConnection(c.id); }); }}) : null,
+            !intakeOnly && c.backend === 'electron-session' ? ui.btn('应用内登录 ' + SF.catalog.platform(c.channel).name,{onClick:function () { SF.app.act('login:' + c.id,function () { return app.client.loginConnection(c.id); }); }}) : null,
             ui.btn('检查连接',{onClick:function () { SF.app.act('check:' + c.id,async function () { await app.client.checkConnection(c.id); await SF.app.refreshData(true); }); }})));
       }),h('p.field__hint',{text:'自动采集遇到登录或访问验证会暂停，处理后检查连接即可恢复。采集失败时仍可查看本地内容。'})),
       h('section.panel.live-panel',null,h('h2.t-h2',{text:'最近任务（最多 100 条）'}),
@@ -164,8 +176,8 @@
         })) : h('p.muted',{text:'还没有采集任务'})));
   }
   function addDialog(app) {
-    var connections = app.session.connections.filter(function (c) { return c.enabled; });
-    if (!connections.length) { ui.toast('没有可用的渠道连接','error'); return; }
+    var connections = app.session.connections.filter(function (c) { return c.enabled && subscribable(app, c); });
+    if (!connections.length) { ui.toast('没有可添加来源的渠道；微信公众号请在收件箱用「添加内容」','error'); return; }
     var connectionId = connections[0].id, chosen = null, requestId = 0, busy = false, closed = false, searchLocked = false;
     var disabledBefore = new Map();
     var input = h('input.input',{id:'source-input',placeholder:'输入作者 UID、主页链接或搜索名称',autocomplete:'off'});
