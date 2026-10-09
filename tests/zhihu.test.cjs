@@ -6,26 +6,54 @@ const {UID,OTHER,TOKEN,IDS}=require('../scripts/zhihu-fixture.cjs');
 const root=path.resolve(__dirname,'..'),runtime=JSON.parse(fs.readFileSync(path.join(root,'.runtime-paths.json')));
 async function fixture(options={}) {
   const {ZhihuAPI}=await import('../electron/main/zhihu-api.mjs');
-  let url='about:blank';const visits=[],control={mode:'normal',end:true,pins:IDS.slice(0,4),failDetail:null};
-  const author={id:UID,url_token:TOKEN,name:'真实作者',headline:'简介'};
-  const page={url:()=>url,goto:async value=>{url=value;visits.push(value);},evaluate:async script=>{
+  const visits=[];
+  const control={mode:'normal',end:true,pins:IDS.slice(0,4),failDetail:null};
+  const author={id:UID,url_token:TOKEN,name:'真实作者',headline:'简介',avatar_url:'https://picx.zhimg.com/a.jpg'};
+  // Mirrors the official /pins feed: rows carry identity, author and the content block array.
+  const row=id=>({id,type:'pin',state:'normal',is_deleted:false,created:946684800,
+    author,url:`/pins/${id}`,content:[{type:'text',content:'<p>想法第一段</p><p>完整第二段</p>'},{type:'image',url:'https://picx.zhimg.com/100/v2-x_720w.jpg'}]});
+  const page={url:()=>'about:blank',goto:async value=>{visits.push(value);},evaluate:async script=>{
     const action=JSON.parse(script.slice(script.lastIndexOf(')(')+2,-1));
     if(control.mode==='risk')return {risk:true};
-    if(action==='profile')return {ready:true,token:TOKEN,pins:control.pins.map(id=>({id})),invalid:[],end:control.end};
-    if(action==='detail' && url.endsWith('/'+control.failDetail))return {unavailable:true};
-    if(action==='detail')return {ready:true,contentPresent:true,id:url.split('/').pop(),author:{id:UID,urlToken:TOKEN,name:'真实作者'},content:'想法第一段\n\n完整第二段',images:[],created:946684800,dateText:'编辑于昨天'};
-    return {};
+    return {url:'https://www.zhihu.com/people/'+TOKEN,risk:false,loginWall:false};
   }};
   const api=new ZhihuAPI(page,{delay:0,readTimeout:100,waitTimeout:5,fetch:async value=>{
+    visits.push(value);
     if(control.mode==='rate')return new Response('{}',{status:429,headers:{'content-type':'application/json'}});
     if(control.mode==='auth')return new Response('{}',{status:401,headers:{'content-type':'application/json'}});
-    const u=new URL(value),data=u.pathname.includes('search_v3') ? {data:[{type:'search_result',object:author}]} : author;
-    return new Response(JSON.stringify(data),{headers:{'content-type':'application/json'}});
+    const u=new URL(value);
+    const json=d=>new Response(JSON.stringify(d),{headers:{'content-type':'application/json'}});
+    if(u.hostname==='api.zhihu.com')return json({data:[{type:'search_result',object:author}]});
+    if(u.pathname==='/api/v4/me')return json(author);
+    const list=u.pathname.match(/^\/api\/v4\/members\/([^/]+)\/pins$/);
+    if(list) {
+      const offset=Number(u.searchParams.get('offset')||0);
+      const size=Number(u.searchParams.get('limit')||20);
+      const all=control.pins.map(row);
+      const slice=all.slice(offset,offset+size);
+      // is_end must reflect real exhaustion so an empty feed terminates instead of spinning.
+      const isEnd=offset+slice.length>=all.length;
+      return json({paging:{is_end:control.end?isEnd:false,totals:all.length},data:slice});
+    }
+    const one=u.pathname.match(/^\/api\/v4\/pins\/(\d+)$/);
+    if(one) {
+      if(one[1]===control.failDetail)return json({id:one[1],is_deleted:true,state:'deleted'});
+      const found=control.pins.find(id=>String(id)===one[1]);
+      return found?json(row(found)):json({id:one[1],is_deleted:true,state:'deleted'});
+    }
+    return json({error:{message:'unexpected',code:1}});
   },...options});
   return {api,visits,control};
 }
 test('Zhihu link/author validation and original publication preserve unknown precision',async()=>{
-  const {parseItemURL,authorToken,validateRequest,publication}=await import('../electron/main/zhihu-api.mjs');
+  const {parseItemURL,authorToken,validateRequest,publication,pinText}=await import('../electron/main/zhihu-api.mjs');
+  // Rich-text blocks must reach Core as plain text: no markup, entities decoded, paragraphs kept.
+  assert.equal(pinText('<p>第一段</p><p class="ztext-empty-paragraph"><br></p><p>第二段</p>'),'第一段\n\n第二段','空段落不产生多余空行');
+  assert.equal(pinText('a &amp; b &lt;c&gt; &#65;'),'a & b <c> A');
+  assert.equal(pinText('<p>  多余   空格 </p>'),'多余 空格');
+  assert.equal(pinText(''),'');
+  assert.equal(pinText(null),'');
+  assert.equal(/[<>]/.test(pinText('<div>带<b>标签</b></div>')),false,'正文不得残留任何标签');
   for(const host of ['www.zhihu.com','zhihu.com'])assert.deepEqual(parseItemURL(`http://${host}/pin/${IDS[0]}/?utm_source=x#share`),{id:IDS[0],url:'https://www.zhihu.com/pin/'+IDS[0]});
   for(const u of ['https://www.zhihu.com/question/1','https://zhuanlan.zhihu.com/p/1','https://zhihu.com.evil/pin/1','https://user@www.zhihu.com/pin/1','https://www.zhihu.com:99/pin/1','file:///pin/1','https://www.zhihu.com/pin/1 x'])assert.throws(()=>parseItemURL(u));
   assert.equal(authorToken('https://www.zhihu.com/people/'+TOKEN),TOKEN);assert.throws(()=>authorToken('https://evil.com/people/'+TOKEN));
@@ -53,7 +81,11 @@ test('Zhihu auth/risk/rate/timeout/cancellation do not masquerade as empty succe
   const f=await fixture();f.control.mode='auth';assert.deepEqual(await f.api.request({channel:'zhihu',operation:'check'}),{authenticated:false});
   await assert.rejects(f.api.request({channel:'zhihu',operation:'search',query:'作者',limit:5}),e=>e.code==='AUTH_REQUIRED');
   f.control.mode='rate';await assert.rejects(f.api.request({channel:'zhihu',operation:'search',query:'作者',limit:5}),e=>e.code==='RATE_LIMITED');
-  f.control.mode='risk';await assert.rejects(f.api.request({channel:'zhihu',operation:'read',id:IDS[0],url:'https://www.zhihu.com/pin/'+IDS[0]}),e=>e.code==='INTERACTION_REQUIRED');
+  // A page-level risk wall is still surfaced instead of being reported as an empty result.
+  f.control.mode='risk';await assert.rejects(f.api.read('status'),e=>e.code==='INTERACTION_REQUIRED');
+  f.control.mode='normal';
+  const missing='9'.repeat(19);
+  await assert.rejects(f.api.request({channel:'zhihu',operation:'read',id:missing,url:'https://www.zhihu.com/pin/'+missing}),e=>e.code==='NOT_FOUND');
   await assert.rejects(f.api.bounded(new Promise(()=>{}),undefined,5),e=>e.code==='TIMEOUT');
   const c=new AbortController();const pending=f.api.bounded(new Promise(()=>{}),c.signal,100);c.abort();await assert.rejects(pending,e=>e.code==='CANCELLED');
 });
@@ -88,13 +120,39 @@ test('actual Zhihu adapter/Core: manual/auto duplicate both orders, filters, ide
 
 test('Zhihu stalled scans retain gaps; failed detail stays inside the selected window',async()=>{
   const f=await fixture(),p={channel:'zhihu',operation:'scan',uid:UID,url:'https://www.zhihu.com/people/'+TOKEN,job_id:'d'.repeat(32),limit:2,mode:'backfill'};
-  f.control.pins=[];f.control.end=false;
+  // Author exists and has pins, but the feed stops handing back new identities before is_end:
+  // the scan must stop on its own bound and report gaps, never claim a complete history.
+  f.control.pins=[IDS[0]];f.control.end=false;
   let page=await f.api.request(p);
-  for(let i=0;i<2;i++)page=await f.api.request({...p,cursor:page.cursor});
-  assert.equal(page.terminal,true);assert.equal(page.end_evidence,'scan_bound');assert.equal(page.items.length,0);
+  for(let i=0;i<6 && !page.terminal;i++)page=await f.api.request({...p,cursor:page.cursor});
+  assert.equal(page.terminal,true);assert.equal(page.end_evidence,'scan_bound');
   f.control.pins=[IDS[0],IDS[0],IDS[1],IDS[2]];f.control.end=true;f.control.failDetail=IDS[0];
   page=await f.api.request(p);assert.equal(page.metrics.discovered,2);
   page=await f.api.request({...p,cursor:page.cursor});assert.equal(page.errors[0].code,'NOT_FOUND');
   page=await f.api.request({...p,cursor:page.cursor});assert.equal(page.items[0].id,IDS[1]);assert.equal(page.terminal,true);
-  assert.equal(f.visits.some(u=>u.endsWith('/'+IDS[2])),false,'失败不向窗口外补位');
+  assert.equal(f.visits.some(u=>u.includes('/pins/'+IDS[2])),false,'失败不向窗口外补位');
+});
+test('Zhihu discovery reads the official pins feed and never parses profile DOM',async()=>{
+  const f=await fixture(),p={channel:'zhihu',operation:'scan',uid:UID,url:'https://www.zhihu.com/people/'+TOKEN,job_id:'e'.repeat(32),limit:3,mode:'refresh'};
+  const first=await f.api.request(p);
+  assert.equal(first.metrics.profile_reads,1);assert.equal(first.metrics.discovered,3);
+  assert.ok(f.visits.some(u=>u.includes('/api/v4/members/'+TOKEN+'/pins')),'发现阶段走接口分页');
+  assert.equal(f.visits.some(u=>u.includes('/activities')),false,'不再依赖已失效的 activities');
+  assert.equal(f.visits.some(u=>u.includes('/people/')),false,'不再导航作者主页做 DOM 解析');
+  let done=await f.api.request({...p,cursor:first.cursor});
+  const collected=[...done.items];
+  while(!done.terminal){done=await f.api.request({...p,cursor:done.cursor});collected.push(...done.items);}
+  assert.equal(collected.length,3,'窗口内的三条想法全部取回');
+  assert.equal(collected[0].content,'想法第一段\n\n完整第二段','富文本正文必须转成纯文本并保留段落');
+  assert.equal(collected[0].images[0],'https://picx.zhimg.com/100/v2-x_720w.jpg');
+  assert.equal(collected[0].url,'https://www.zhihu.com/pin/'+IDS[0],'列表的 /pins/ 必须归一化为 /pin/');
+  assert.equal(collected[0].published.precision,'second');
+  assert.equal(collected[0].author.id,UID,'详情必须携带真实作者稳定 ID');
+});
+test('an author with an empty feed is a zero-result window, not a failure',async()=>{
+  const f=await fixture(),p={channel:'zhihu',operation:'scan',uid:UID,url:'https://www.zhihu.com/people/'+TOKEN,job_id:'f'.repeat(32),limit:5,mode:'refresh'};
+  f.control.pins=[];
+  const page=await f.api.request(p);
+  assert.equal(page.terminal,true);assert.equal(page.end_evidence,'profile_end');
+  assert.equal(page.items.length,0);assert.equal(page.cursor,null);
 });
