@@ -45,22 +45,22 @@
   flex: none;
 }
 
+/* 品牌标记直接用应用图标 assets/brand.png，与 Dock 图标同源同构：白底方块 + 彩色流动标记。
+   旧版是蓝色渐变底 + 白色内联 glyph（icons.js 的 brand），两者视觉上不是同一个标识。 */
 .brand__mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 32px;
   height: 32px;
   flex: none;
   border-radius: var(--r-md);
-  color: #fff;
-  background: linear-gradient(135deg, #4f7cff 0%, #2563eb 100%);
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.32);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--c-border), 0 1px 3px rgba(15, 23, 42, 0.14);
 }
 
-.brand__mark svg {
-  width: 18px;
-  height: 18px;
-  stroke-width: 1.8;
+.brand__mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .brand__text {

@@ -97,7 +97,7 @@
     var brand = h(
       "div.sidebar__brand",
       null,
-      h("div.brand__mark", { "aria-hidden": "true" }, icon("brand", 18)),
+      h("div.brand__mark", { "aria-hidden": "true" }, h("img.brand__logo", { src: "assets/brand.png", alt: "", draggable: "false" })),
       h(
         "div.brand__text",
         null,
