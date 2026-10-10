@@ -1241,6 +1241,12 @@
 @media (max-width: 900px) { .view__head { flex-wrap: wrap; } .view__actions { margin-left: 0; } }
 .side-row__icon:not(.plat) { color: var(--c-text-3); }
 .side-row.is-active .side-row__icon:not(.plat) { color: var(--c-brand); }
+/* 优先级三档图标形状一致，只能靠颜色区分；侧栏原本统一染成灰/品牌蓝，
+   这里补回档位语义色，选中态同样保持该档位色，否则高/中/低在侧栏完全无法分辨。
+   与上一行同特异性，靠后出现以覆盖选中态的品牌蓝。 */
+.side-row[data-quick="high"] .side-row__icon:not(.plat) { color: var(--c-high); }
+.side-row[data-quick="medium"] .side-row__icon:not(.plat) { color: var(--c-mid); }
+.side-row[data-quick="low"] .side-row__icon:not(.plat) { color: var(--c-low); }
 .content-card__meta, .row-card__meta { flex-wrap: wrap; row-gap: 6px; }
 .content-card__author { min-width: 70px; }
 /* The shell owns the status strip; do not apply F1's compact row style here. */

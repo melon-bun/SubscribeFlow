@@ -20,9 +20,9 @@
   var QUICK_FILTERS = [
     { id: "all", name: "全部更新", icon: "all-update", countKey: "total" },
     { id: "unread", name: "未处理", icon: "circle-check", countKey: "unread" },
-    { id: "high", name: "高优先级", icon: "chevron-up", countKey: "high" },
-    { id: "medium", name: "中优先级", icon: "chevron-top", countKey: "medium" },
-    { id: "low", name: "低优先级", icon: "chevron-bottom", countKey: "low" },
+    { id: "high", name: "高优先级", icon: "priority-set", countKey: "high" },
+    { id: "medium", name: "中优先级", icon: "priority-set", countKey: "medium" },
+    { id: "low", name: "低优先级", icon: "priority-set", countKey: "low" },
     { id: "deferred", name: "稍后处理", icon: "flag", countKey: "deferred" },
     { id: "read", name: "已读", icon: "check", countKey: "read" },
     { id: "archived", name: "已归档", icon: "archive", countKey: "archived" },

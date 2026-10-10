@@ -28,12 +28,14 @@
       '<path d="M20.3 12a8.3 8.3 0 1 1-2.5-5.9"/><path d="M20.6 4.2v4.4h-4.4"/>',
     "circle-check":
       '<circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.1l2.5 2.5 4.7-5"/>',
-    "chevron-up":
-      '<path d="M6.6 14.6 12 9.2l5.4 5.4"/><path d="M6.6 19.4 12 14l5.4 5.4"/>',
-    "chevron-top":
-      '<path d="M6.6 19.4 12 14l5.4 5.4"/><path d="M6.6 14.6 12 9.2l5.4 5.4"/>',
-    "chevron-bottom":
-      '<path d="M6.6 9.4 12 14.8l5.4-5.4"/><path d="M6.6 4.6 12 10l5.4-5.4"/>',
+    /* 优先级档位：单上箭头 + 浅色菱形。
+       三个档位形状完全一致，按设计稿靠语义色区分，来源 assets/icons/priority/{high,mid,low}.svg。
+       描边宽度直接写进元素，覆盖全局与 .side-row__icon / .priority-opt__icon 的常规字重，
+       保持设计稿的粗线条观感；菱形用半透明填充近似设计稿里的浅色调。 */
+    "priority-set":
+      '<path d="M6.8 11.4 12 6.2l5.2 5.2" stroke-width="3.4"/>' +
+      '<rect x="9.6" y="12.5" width="4.8" height="4.8" rx="1.2" transform="rotate(45 12 14.9)"' +
+      ' fill="currentColor" stroke="none" opacity=".45"/>',
     "chevrons-down":
       '<path d="M6.6 9.4 12 14.8l5.4-5.4"/><path d="M6.6 4.6 12 10l5.4-5.4"/>',
     flag: '<path d="M5.4 20.4V4.2M5.4 4.9h11.9l-1.9 3.6 1.9 3.6H5.4"/>',
