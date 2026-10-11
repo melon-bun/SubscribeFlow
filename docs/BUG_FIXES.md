@@ -533,3 +533,13 @@
 - 修复范围：`zhihu-api.mjs` 主页发现改为官方 `GET /api/v4/members/<url_token>/pins?limit&offset` 分页，单条详情改为 `GET /api/v4/pins/<id>`，作者稳定 ID 直接取自 pins 响应的 `author`（不再依赖 403 的 members 接口），昵称搜索改用 `api.zhihu.com/search_v3`；仅平台自身 `paging.is_end` 才判定 `profile_end`，空批次不宣告页末，空作者按零结果窗口正常结束而不报失败；接口 `content[]` 富文本统一转纯文本并保留段落；列表返回的 `/pins/<id>` 归一为 `/pin/<id>`。`zhihu-page.mjs` 仅保留风控与登录墙检测（真实页面验证仍有效）。Core、契约 1.1、schema v8 不变。
 - 验证：真实登录态（`persist:zhihu` 副本）端到端通过——登录检查、昵称搜索、作者解析、订阅扫描 3/3 条、0 错误、单条链接读取全部成功，正文为干净纯文本，作者与 `pin.created` 秒级发布时间正确。Node 53 项、Python 131 项全量回归通过。
 - 状态：已修复并验证通过（真实平台）。
+
+## BUG-055：0.3.0 安装包验收的旧版数据库样本未清理三期字段
+
+- 现象与复现：对 0.3.0 运行 `npm run smoke:packaged`，冻结 Core 的基础检查通过，但应用启动后提示数据库升级失败，验收等待超时。
+- 预期行为：验收脚本构造真实的 schema v2 样本，再由安装包升级至 v8，保留内容与整理状态并生成备份。
+- 原因：脚本从当前 v8 数据库回退生成 v2 样本时，只清理了 v3–v7 对象，保留 `intake_method`、`manual_added_at`、`content_intake_timeline` 和 `content_intake_immutable`；重新执行 v8 迁移会重复创建已有字段。
+- 修复范围：仅 `scripts/packaged-smoke.cjs` 的隔离旧版数据构造，先移除 v8 触发器、索引与字段，再标记为 v2。不修改产品迁移逻辑或安装包，不操作日常数据库与登录会话。
+- 验证结果：修复前正式安装包状态与隔离日志确认数据库升级失败；修复后真实安装包隔离验收通过，版本 0.3.0／schema v8，覆盖冻结 Core 去重与取消、v2→v8 升级及备份、标签、优先级、重启与异常恢复。证据：`docs/verification/v0.3.0/result.json`。
+- 状态：已修复并验证。
+- 相关提交：`e4f4c47`（`fix(test): construct a clean v2 database for packaged acceptance`）。
