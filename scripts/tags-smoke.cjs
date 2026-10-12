@@ -254,8 +254,14 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   await evaluate(`Array.from(document.querySelectorAll('.tags-tab')).find(t => /AI/.test(t.textContent)).click()`);
   await until(`SF.app.state.tagTab === 'ai'`);
   assert.ok(await evaluate(`!!document.querySelector('[data-view="tags"]').textContent.trim()`), 'AI 页签不应是空白页');
-  assert.ok(await evaluate(`!/模型选择|API Key|Base URL/.test(document.querySelector('[data-view="tags"]').textContent)`),
-    '未接入识别时不应出现模型配置入口');
+  // M9：未接入识别时本页不得出现可用的模型配置控件——放一个填了也没人用的表单，
+  // 比诚实地说明「还没有这个功能」更糟。M15 起配置改到设置页，这里只保留入口。
+  assert.ok(await evaluate(`!document.querySelector('[data-view="tags"] input, [data-view="tags"] select, [data-view="tags"] textarea')`),
+    '未接入识别时不应出现模型配置控件');
+  assert.ok(await evaluate(`Array.from(document.querySelectorAll('[data-view="tags"] button')).some(b => /去设置/.test(b.textContent))`),
+    '应提供通往设置页的配置入口');
+  assert.ok(await evaluate(`!/模型选择|Base URL/.test(document.querySelector('[data-view="tags"]').textContent)`),
+    '未接入识别时不应出现内联模型配置项');
   await screenshot('m9-tags-ai.png');
   await evaluate(`Array.from(document.querySelectorAll('.tags-tab')).find(t => /列表/.test(t.textContent)).click()`);
   await until(`SF.app.state.tagTab === 'list'`);
