@@ -78,6 +78,12 @@ class Dispatcher:
                              "tags": list, "tag_mode": str, "intake_method": str, "timezone": str}),
             "content.set_tags": (c.tags.set_content, {"item_id": str, "tag_ids": list}, {}),
             "content.bulk_set_tags": (c.tags.bulk_set, {"item_ids": list, "tag_ids": list}, {}),
+            # M15 设置：只读非敏感配置；写入由主进程先落好受保护密钥再提交引用。
+            "settings.get": (c.settings.snapshot, {}, {}),
+            "settings.update": (c.settings.update, {"section": str, "patch": dict}, {"credential_refs": dict}),
+            # 私有凭据桥接：只由主进程调用，不在 Renderer 方法白名单内。
+            "credential.provide": (c.credentials.provide, {"reference": str, "secret": str}, {}),
+            "credential.revoke": (c.credentials.revoke, {"reference": str}, {}),
         }
 
     async def handle(self, message):

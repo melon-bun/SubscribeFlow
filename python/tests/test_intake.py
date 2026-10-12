@@ -239,6 +239,10 @@ class IntakeStorageTests(unittest.TestCase):
         self.assertEqual((manual['status'], auto['new_items']), ('created', 0) if item['intake_method']=='manual' else ('exists', 1))
         self.assertEqual(item['title'], 'Manual winner' if item['intake_method']=='manual' else 'Auto winner')
 
+    def latest_schema_version(self):
+        migrations = Path(database_module.__file__).parent / 'migrations'
+        return max(int(p.name.split('_')[0]) for p in migrations.glob('[0-9]*.sql'))
+
     def legacy(self, filename):
         path = Path(self.temp.name) / filename
         migrations = Path(database_module.__file__).parent / 'migrations'
@@ -269,7 +273,7 @@ class IntakeStorageTests(unittest.TestCase):
                     rows = [row[:-2] for row in rows]
                 self.assertEqual(rows, original[table])
             self.assertEqual(repo.calendar_summary('2020-01')['total'], 1)
-            with sqlite3.connect(path.with_suffix('.before-v8.backup')) as backup:
+            with sqlite3.connect(path.with_suffix(f'.before-v{self.latest_schema_version()}.backup')) as backup:
                 self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0], 7)
                 self.assertEqual(list(backup.execute('SELECT * FROM contents')), original['contents'])
             repo.save_manual(replace(ITEM, external_id='new'))
@@ -297,7 +301,7 @@ class IntakeStorageTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT title FROM contents').fetchone()[0], ITEM.title)
         db = Database(path)
         db.close()
-        with sqlite3.connect(path.with_suffix('.before-v8.backup')) as backup:
+        with sqlite3.connect(path.with_suffix(f'.before-v{self.latest_schema_version()}.backup')) as backup:
             self.assertEqual(backup.execute('PRAGMA user_version').fetchone()[0], 7)
 
 

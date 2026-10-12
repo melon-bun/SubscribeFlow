@@ -14,10 +14,13 @@ from subscribe_flow.application.content import ContentService
 from subscribe_flow.application.queries import QueryService
 from subscribe_flow.application.priorities import PriorityService
 from subscribe_flow.application.tags import TagService
+from subscribe_flow.application.settings import SettingsService
+from subscribe_flow.application.credentials import CredentialBroker
 from subscribe_flow.application.scheduler import Scheduler
 from subscribe_flow.contracts import Connection
 from subscribe_flow.storage.database import Database
 from subscribe_flow.storage.repositories import Repository
+from subscribe_flow.storage.settings import SettingsStore
 from subscribe_flow.storage.lease import CoreLease
 import logging
 
@@ -58,6 +61,9 @@ class Core:
         # 默认不注入识别提供者：人工标签完整可用，识别接口明确返回未接入。
         self.tags = TagService(self.repository, self.emit, recognition_provider)
         self.queries = QueryService(self.repository, self.gateway)
+        # M15：非敏感设置与凭据引用在这里；密钥始终留在主进程的凭据服务里。
+        self.settings = SettingsService(SettingsStore(self.database))
+        self.credentials = CredentialBroker()
         for descriptor in self.gateway.describe():
             resource = f"browser:electron-{descriptor.channel}" if descriptor.backend == "electron-session" else "browser:opencli-default"
             self.repository.add_connection(Connection(f"{descriptor.channel}:default", descriptor.channel, descriptor.backend, resource))

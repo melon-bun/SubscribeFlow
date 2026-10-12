@@ -9,6 +9,7 @@ const UI_METHODS = new Set([
   'listCreators', 'getPrioritySettings', 'savePrioritySettings', 'listRules', 'createRule',
   'updateRule', 'removeRule', 'getSyncCoverage', 'resolveSource', 'searchSources', 'listConnections', 'checkConnection', 'retryRun', 'fetchDetail',
   'startIntake', 'getIntake', 'cancelIntake', 'saveIntake', 'listContentSources',
+  'getSettings', 'saveSettings', 'getNotificationStatus', 'sendTestNotification',
 ]);
 // F1's “未处理” / inbox means no processing state has been set.
 const INBOX_FILTER = Object.freeze({read: false, archived: false, deferred: false});
@@ -84,7 +85,9 @@ function runDTO(job, subscriptions) {
     startedAt: Date.parse(job.created_at), updatedAt: job.updated_at, error: job.error };
 }
 
-async function callUI(core, name, args) {
+// context 由主入口注入（M15：受保护密钥与桌面通知）。单测可以省略，
+// 省略时设置类方法如实报未接入，不返回任何伪造结果。
+async function callUI(core, name, args, context) {
   if (!Array.isArray(args) || args.length > 2) throw new Error('AppClient 参数必须是最多两个元素的数组');
   const [first, second] = args;
   const call = (method, params = {}) => core.call(method, params);
@@ -301,6 +304,19 @@ async function callUI(core, name, args) {
       if ('tagIds' in options) params.tag_ids = tagIds(options.tagIds);
       return call('intake.save', params);
     }
+    case 'getSettings':
+      if (!context?.settings) unsupported('设置尚未接入');
+      return context.settings.read();
+    case 'saveSettings': {
+      if (!context?.settings) unsupported('设置尚未接入');
+      const request = object(first);
+      keys(request, ['section', 'patch', 'credentials']);
+      return context.settings.write(request);
+    }
+    case 'getNotificationStatus':
+      return require('./notifications.cjs').notificationStatus();
+    case 'sendTestNotification':
+      return require('./notifications.cjs').sendTestNotification();
     case 'checkConnection': {
       // 检查必须挑该连接真正支持的操作：只支持单条读取的渠道（例如微信）
       // 不支持 list_items，用默认操作会把可用的渠道误报成不可用。

@@ -77,8 +77,18 @@
         params[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || "");
       });
     }
+    if (name === "settings") {
+      // 分区始终带回路由参数：直接改哈希进来时左栏与正文必须对得上。
+      return { name: name, params: { section: params.section === "reminder" ? "reminder" : "tagging" } };
+    }
     if (!NAV.some(function (n) { return n.id === name; })) name = "inbox";
     return { name: name, params: params };
+  }
+
+  /** 记住来处，设置页关闭时回到原处，而不是一律跳回收件箱。 */
+  function openSettings(section) {
+    app.settingsReturn = app.route.name === "settings" ? app.settingsReturn : app.route.name;
+    navigate("settings", section ? { section: section } : undefined);
   }
 
   function navigate(name, params) {
@@ -248,11 +258,15 @@
         ),
         themeBtn,
         h(
-          "div.user-chip",
-          { "aria-label": "本地用户" },
+          "button.user-chip",
+          {
+            type: "button",
+            "aria-label": "本地用户，打开设置",
+            title: "设置",
+            onclick: openSettings,
+          },
           ui.avatar((s.user || {}).name || "用户", (s.user || {}).avatar),
-          h("span.user-chip__name", { text: (s.user || {}).name || "用户" }),
-          null
+          h("span.user-chip__name", { text: (s.user || {}).name || "用户" })
         )
       )
     );
@@ -273,6 +287,11 @@
   function render() {
     var root = document.getElementById("app");
     if (!root) return;
+    // 设置是整页大面板：参考图里就是独立窗口式布局，不再套侧栏与顶栏。
+    if (app.route.name === "settings") {
+      SF.dom.renderWithScroll(root, [SF.views.settings.render(app)], scrollPositions);
+      return;
+    }
     SF.dom.renderWithScroll(root, [
       h("div.app", null, [
         buildSidebar(),
@@ -394,6 +413,10 @@
   }
 
   function renderContent() {
+    if (app.route.name === "settings") {
+      render();
+      return;
+    }
     var host = document.querySelector(".shell__body");
     if (!host) return;
     SF.tooltip.hide(); // 锚点会被整体替换，旧提示要跟着收掉
@@ -472,7 +495,29 @@
       else if (app.session) renderContent();
       else showStartup("核心服务" + (status.state === "starting" ? "正在启动…" : "不可用"), status.message || "请重新查询或重启服务。");
     }));
-    global.addEventListener("hashchange", function () { refreshRoute(); app.selectedId = null; if (app.session) render(); });
+    global.addEventListener("hashchange", function () {
+      var was = app.route.name;
+      refreshRoute();
+      // 带着未保存的草稿离开设置页（包括浏览器后退）先问保存还是放弃。
+      if (was === "settings" && app.route.name !== "settings" && SF.views.settings.dirtySections().length) {
+        SF.views.settings.confirmLeave(app).then(function (proceed) {
+          if (proceed) {
+            app.selectedId = null;
+            if (app.session) render();
+          } else {
+            // 留在设置页：把哈希拉回来，用户继续编辑刚才的草稿。
+            var section = SF.views.settings.currentSection() === "reminder" ? "reminder" : "tagging";
+            refreshRoute();
+            app.route.name = "settings";
+            location.hash = "#/settings" + (section === "tagging" ? "" : "?section=" + section);
+            if (app.session) render();
+          }
+        });
+        return;
+      }
+      app.selectedId = null;
+      if (app.session) render();
+    });
     global.addEventListener("keydown", function (e) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault(); var input = document.querySelector(".topbar__search input"); if (input) input.focus();
@@ -488,7 +533,14 @@
   }
 
   function refreshRoute() {
+    var previous = app.route.name;
     app.route = parseHash();
+    if (app.route.name === "settings") {
+      if (previous !== "settings") {
+        app.settingsReturn = NAV.some(function (n) { return n.id === previous; }) ? previous : "inbox";
+      }
+      SF.views.settings.setSection(app.route.params.section);
+    }
     if (app.route.name === "overview") {
       app.overviewMode = app.route.params.mode === "priority" ? "priority" : "calendar";
     }
@@ -516,6 +568,7 @@
 
   SF.app = {
     state: app,
+    openSettings: openSettings,
     act: act,
     refreshData: refreshData,
     restart: restart,

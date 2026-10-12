@@ -12,6 +12,9 @@ const {WechatSession} = require('./wechat-session.cjs');
 const {ChannelSessions} = require('./channel-sessions.cjs');
 const {resolveRuntime} = require('./runtime.cjs');
 const {createDiagnostics} = require('./diagnostics.cjs');
+const {CredentialService} = require('./credentials.cjs');
+const {SettingsBridge} = require('./settings-bridge.cjs');
+const {notificationStatus, sendTestNotification} = require('./notifications.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const APP_URL = 'app://subscribe-flow/index.html';
@@ -81,6 +84,8 @@ async function start() {
     root, dataDir: app.getPath('userData'), autoRestart:!smoke && !rendererSmoke,
     ...(rendererSmoke === 'zhihu' ? {schedulePolicy:{resource_gap:0}} : {}),
     acquisition:(params,signal) => channels.request(params,signal) });
+  // M15：非敏感设置走 Core，密钥只留在主进程并用系统保护能力加密。
+  const settingsBridge = new SettingsBridge({core, credentials: new CredentialService({dir: app.getPath('userData')})});
   const updatePower = () => {
     const value = suspended;
     powerUpdate = powerUpdate.catch(() => {}).then(() => core.ready && core.call('system.power',{suspended:value}));
@@ -88,7 +93,9 @@ async function start() {
   };
   powerMonitor.on('suspend', () => { suspended = true; updatePower(); });
   powerMonitor.on('resume', () => { suspended = false; updatePower(); });
-  core.on('status', status => { diagnostic('core.status', status); lastStatus = status; send('core.status', status); if (status.state === 'ready' && suspended) updatePower(); });
+  core.on('status', status => { diagnostic('core.status', status); lastStatus = status; send('core.status', status); if (status.state === 'ready' && suspended) updatePower();
+    // Core 重启后内存里的密钥就没了，重新推送一次，运行时才不会以为没有密钥。
+    if (status.state === 'ready') settingsBridge.sync().catch(() => {}); });
   core.on('notification', (event, data) => {
     if (!['sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'scheduler.changed', 'tags.changed'].includes(event)) return;
     send(event, data);
@@ -120,7 +127,7 @@ async function start() {
       if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url.split('#')[0] !== APP_URL) throw new Error('请求来源无效');
       if (typeof name !== 'string' || ![CORE_METHODS, DESKTOP_METHODS, UI_METHODS].some(set => set.has(name))) throw new Error('不允许调用此方法');
       if (Buffer.byteLength(JSON.stringify(params) ?? '') > 60000) throw new Error('参数超过大小限制');
-      if (UI_METHODS.has(name)) return {ok: true, value: await callUI(core, name, params)};
+      if (UI_METHODS.has(name)) return {ok: true, value: await callUI(core, name, params, {settings: settingsBridge})};
       if (!params || typeof params !== 'object' || Array.isArray(params)) throw new Error('业务参数必须是对象');
       let value;
       if (name === 'core.status') value = lastStatus;
@@ -131,7 +138,8 @@ async function start() {
       }
       else if (name === 'content.open' || name === 'source.open') {
         value = await openSavedLink(core, name, params, url => shell.openExternal(url));
-      } else value = await core.call(name, params);
+      }
+      else value = await core.call(name, params);
       return {ok: true, value};
     } catch (error) {
       return {ok: false, error: {code: error.code || 'DESKTOP_ERROR', message: error.message, ...(error.data || {})}};
@@ -156,6 +164,7 @@ async function start() {
       else if (rendererSmoke === 'wechat') await require('../../scripts/wechat-renderer.cjs').verify({window,core,root,wechat,fixture:wechatFixture});
       else if (rendererSmoke === 'intake') await require('../../scripts/intake-renderer.cjs').verify({window,core,root,fixture:intakeFixture});
       else if (rendererSmoke === 'xhs') await require('../../scripts/xiaohongshu-renderer.cjs').verify({window,core,root,xiaohongshu,fixture:xhsFixture});
+      else if (rendererSmoke === 'settings') await require('../../scripts/settings-renderer.cjs').verify({window,core,root});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
       await core.stop(); await channels.close(); quitting = true; app.quit();
     } catch (error) { console.error(error); await core.stop(); app.exit(1); }

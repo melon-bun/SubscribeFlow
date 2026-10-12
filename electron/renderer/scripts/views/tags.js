@@ -1060,14 +1060,27 @@
         h("h2.tags-empty__title", { text: "AI 自动识别尚未接入" }),
         h("p.tags-empty__desc", {
           text:
-            "让模型直接读懂内容并自动打标签，不用自己维护规则。这一部分还没有接入：" +
-            "后端没有配置识别提供者，现在调用只会直接返回「自动识别尚未接入，人工标签不受影响」，不会给出任何猜测结果。",
+            "模型识别还没有接入：这一页不会出现排队、运行或失败的任务，因为后台并没有在跑识别，" +
+            "现在也不会产生任何自动标签。人工标签不受影响，随时可用。",
         }),
+        h(
+          "div.ai-status",
+          null,
+          aiStatusRow("自动打标开关", "待配置", "neutral", "开关与模型配置在设置页；识别功能接入后才会真正开始处理内容。"),
+          aiStatusRow("后台任务", "未开始", "neutral", "排队、运行、成功与失败会在识别接入后出现在这一页。"),
+          aiStatusRow("历史内容补打", "未开始", "neutral", "开启自动打标后，可以在这里对之前收录的内容主动补打。")
+        ),
         h(
           "div.tags-empty__actions",
           null,
-          ui.btn("回到标签列表", {
+          ui.btn("去设置 AI 模型配置", {
             variant: "primary",
+            icon: "sliders",
+            onClick: function () {
+              SF.app.openSettings("tagging");
+            },
+          }),
+          ui.btn("回到标签列表", {
             icon: "tag",
             onClick: function () {
               SF.app.navigate("tags", { tab: "list" });
@@ -1085,11 +1098,22 @@
             null,
             h("p.tags-empty__note-t", { text: "现在可以做的" }),
             h("p", { text: "创建、重命名、改色和维护别名标签，并查看每个标签用在了多少条内容上。" }),
-            h("p.tags-empty__note-t", { text: "后续会补上的" }),
-            h("p", { text: "模型自动识别。接入时间待定，到时这一页会给出真正的操作入口；现在已可在内容详情里手动打标。" })
+            h("p.tags-empty__note-t", { text: "设置页现在能做的" }),
+            h("p", { text: "保存自动打标开关与识别方式、填写模型接口与 API Key，以及设置提醒间隔。密钥用系统保护能力加密保存，保存后不再回显。" })
           )
         )
       )
+    );
+  }
+
+  /** 状态徽章顺带说清「为什么是这个状态」，避免只丢一个词让用户猜。 */
+  function aiStatusRow(name, text, tone, note) {
+    return h(
+      "div.ai-status__row",
+      null,
+      h("span.ai-status__name", { text: name }),
+      h("span.badge.badge--" + tone, { text: text }),
+      h("span.ai-status__note", { text: note })
     );
   }
 

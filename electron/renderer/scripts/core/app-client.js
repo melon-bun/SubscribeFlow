@@ -41,6 +41,10 @@
      listTagContents(id, q)  → { items, total }            该标签下的内容
      setContentTags(id, ids) → ContentItem                 内容打标
      bulkSetTags(ids, ids)   → { updated }                 批量打标
+     getSettings()           → Settings                    脱敏设置（M15）
+     saveSettings(request)      → Settings                    按页保存 {section,patch,credentials}
+     getNotificationStatus() → NotificationStatus          通知支持情况（M15）
+     sendTestNotification()  → NotificationStatus          测试通知（M15）
      on(event, handler)      → unsubscribe                 进度等事件
    ========================================================================== */
 (function (global) {
@@ -86,8 +90,10 @@
     "bulkSetTags",
     "resolveSource", "searchSources", "listConnections", "checkConnection", "retryRun", "fetchDetail",
     "startIntake", "getIntake", "cancelIntake", "saveIntake", "listContentSources",
+    "getSettings", "saveSettings", "getNotificationStatus", "sendTestNotification",
     "on",
   ];
+
 
   /**
    * 校验一个实现是否满足契约。返回缺失方法名数组。

@@ -11,6 +11,8 @@ const allowed = new Set([
   'startIntake', 'getIntake', 'cancelIntake', 'saveIntake', 'listContentSources',
   'core.status', 'core.restart', 'content.open',
   'schedule.list', 'schedule.status',
+  // M15 设置：密钥明文只在提交这一刻经过 Preload，任何读取都拿不到密钥。
+  'getSettings', 'saveSettings', 'getNotificationStatus', 'sendTestNotification',
   'getSession', 'getCounts', 'listPlatforms', 'listPriorities', 'getCalendar', 'listContents', 'getContent',
   'updateContent', 'bulkUpdate', 'listChannels', 'createChannel', 'updateChannel',
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',
