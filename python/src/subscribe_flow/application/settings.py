@@ -23,13 +23,13 @@ INTERVAL_MIN = 5
 INTERVAL_MAX = 1440
 DEFAULT_INTERVAL = 60
 
-# 官方默认值只作为表单初始值展示，用户可以改；保存后以保存值为准。
+# 初始设置含官方默认值；用户明确清空后仍保留空值，不在界面偷偷恢复。
 OFFICIAL_DEFAULTS = {
     "jev": {"endpoint": "https://api.typesafe.ai/v1/systemone", "model": "jev-latest"},
 }
 
 REFERENCE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
-MODEL_PATTERN = re.compile(r"^[^\s/?#]{1,120}$")
+MODEL_PATTERN = re.compile(r"^[^\s\x00-\x1f\x7f]{1,256}$")
 
 DEFAULTS = {
     "tagging": {
@@ -37,7 +37,7 @@ DEFAULTS = {
         "mode": "llm",
         "enabledSince": None,
         "providers": {
-            "jev": {"endpoint": "", "model": "", "credentialRef": None},
+            "jev": {**OFFICIAL_DEFAULTS["jev"], "credentialRef": None},
             "llm": {"endpoint": "", "model": "", "credentialRef": None},
         },
     },
@@ -50,11 +50,22 @@ def _fail(message, scope="operation", scope_key=None):
 
 
 def _validate_endpoint(value, scope_key):
-    endpoint = (value or "").strip()
+    if not isinstance(value, str):
+        _fail("接口地址必须是文本", "field", scope_key)
+    endpoint = value.strip()
     if not endpoint:
-        _fail("接口地址不能为空", "field", scope_key)
-    parsed = urlparse(endpoint)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return ""
+    if re.search(r"[\s\x00-\x1f\x7f]", endpoint):
+        _fail("接口地址不能包含空格或控制字符", "field", scope_key)
+    try:
+        parsed = urlparse(endpoint)
+        valid = parsed.scheme in ("http", "https") and bool(parsed.hostname)
+        # 访问 port 属性才能捕获非数字或越界端口；凭据不得藏在普通配置的 URL 中。
+        port = parsed.port
+        valid = valid and (port is None or port > 0) and parsed.username is None and parsed.password is None
+    except ValueError:
+        valid = False
+    if not valid:
         _fail("接口地址必须是完整的 http(s) 地址", "field", scope_key)
     if len(endpoint) > 2000:
         _fail("接口地址过长", "field", scope_key)
@@ -62,11 +73,13 @@ def _validate_endpoint(value, scope_key):
 
 
 def _validate_model(value, scope_key):
-    model = (value or "").strip()
+    if not isinstance(value, str):
+        _fail("模型标识必须是文本", "field", scope_key)
+    model = value.strip()
     if not model:
-        _fail("模型标识不能为空", "field", scope_key)
-    if not MODEL_PATTERN.match(model):
-        _fail("模型标识不能包含空格或路径分隔符", "field", scope_key)
+        return ""
+    if not MODEL_PATTERN.fullmatch(model):
+        _fail("模型标识不能包含空格或控制字符，长度不能超过 256", "field", scope_key)
     return model
 
 
@@ -178,12 +191,9 @@ class SettingsService:
                     _fail("包含不支持的识别配置字段", "field", "providers")
                 target = merged["providers"][mode]
                 if "endpoint" in fields:
-                    if not fields["endpoint"]:
-                        target["endpoint"] = ""
-                    else:
-                        target["endpoint"] = _validate_endpoint(fields["endpoint"], mode + ".endpoint")
+                    target["endpoint"] = _validate_endpoint(fields["endpoint"], mode + ".endpoint")
                 if "model" in fields:
-                    target["model"] = _validate_model(fields["model"], mode + ".model") if fields["model"] else ""
+                    target["model"] = _validate_model(fields["model"], mode + ".model")
         # 凭据引用由 Main 在写入受保护密钥之后给出；引用缺失说明这一版不换密钥。
         merged = self._apply_references(merged, credential_refs, "tagging")
         if merged["enabled"] and merged["enabledSince"] is None:

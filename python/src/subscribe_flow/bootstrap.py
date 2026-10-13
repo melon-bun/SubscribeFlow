@@ -61,7 +61,7 @@ class Core:
         # 默认不注入识别提供者：人工标签完整可用，识别接口明确返回未接入。
         self.tags = TagService(self.repository, self.emit, recognition_provider)
         self.queries = QueryService(self.repository, self.gateway)
-        # M15：非敏感设置与凭据引用在这里；密钥始终留在主进程的凭据服务里。
+        # M15：配置只存引用；Main 私有桥推送的明文只在 credentials 内存容器中使用。
         self.settings = SettingsService(SettingsStore(self.database))
         self.credentials = CredentialBroker()
         for descriptor in self.gateway.describe():

@@ -14,7 +14,6 @@ const {resolveRuntime} = require('./runtime.cjs');
 const {createDiagnostics} = require('./diagnostics.cjs');
 const {CredentialService} = require('./credentials.cjs');
 const {SettingsBridge} = require('./settings-bridge.cjs');
-const {notificationStatus, sendTestNotification} = require('./notifications.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const APP_URL = 'app://subscribe-flow/index.html';
@@ -84,7 +83,7 @@ async function start() {
     root, dataDir: app.getPath('userData'), autoRestart:!smoke && !rendererSmoke,
     ...(rendererSmoke === 'zhihu' ? {schedulePolicy:{resource_gap:0}} : {}),
     acquisition:(params,signal) => channels.request(params,signal) });
-  // M15：非敏感设置走 Core，密钥只留在主进程并用系统保护能力加密。
+  // M15：普通配置走 Core；Main 加密保管密钥，只经私有桥推送到 Core 内存。
   const settingsBridge = new SettingsBridge({core, credentials: new CredentialService({dir: app.getPath('userData')})});
   const updatePower = () => {
     const value = suspended;

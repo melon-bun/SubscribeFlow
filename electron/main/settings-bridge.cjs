@@ -6,8 +6,8 @@
  *
  * 1. 编排保存顺序——先把新密钥用系统保护能力加密存好，再把「引用」提交给 Core。
  *    提交失败就只清理这次刚写入、无人引用的版本，Core 仍指向的旧密钥原样保留，
- *    不会出现「页面显示已保存、实际运行还是旧配置」的状态。
- * 2. 保管密钥——密钥只存在主进程，取用只发生在向 Core 推送的那一次调用里。
+ *    已提交后的清理/同步失败仅报告警告，不能回滚已生效的凭据。
+ * 2. 保管密钥——主进程解密后只经私有桥推送到 Core 内存，普通设置只保存引用。
  *    Renderer 拿到的永远是「配没配」，不是密钥。
  */
 const crypto = require('node:crypto');
@@ -19,14 +19,24 @@ class SettingsBridge {
     this.core = core;
     this.credentials = credentials;
     this.pushed = new Set();
+    this.pending = Promise.resolve();
   }
 
-  async read() {
-    return this._decorate(await this.core.call('settings.get'));
+  _enqueue(operation) {
+    const result = this.pending.then(operation);
+    this.pending = result.catch(() => {});
+    return result;
+  }
+
+  read() {
+    return this._enqueue(async () => {
+      const settings = await this.core.call('settings.get');
+      return this._decorate(settings, await this._reconcile(settings));
+    });
   }
 
   /** 合并 Core 的非敏感设置与主进程侧的密钥状态；引用不出现在给界面的结果里。 */
-  async _decorate(settings) {
+  async _decorate(settings, warnings = []) {
     const { protection, entries } = await this.credentials.status();
     const known = new Map(entries.map((entry) => [entry.reference, entry]));
     const providers = {};
@@ -61,17 +71,26 @@ class SettingsBridge {
       tagging,
       reminder: settings.reminder,
       credentials: { protection, providers },
+      warnings,
     };
   }
 
-  async write(params) {
+  write(params) {
+    return this._enqueue(() => this._write(params));
+  }
+
+  async _write(params) {
     const { section, patch } = params;
     const secrets = params.credentials;
     if (secrets !== undefined && (secrets === null || typeof secrets !== 'object' || Array.isArray(secrets))) {
       throw new Error('密钥参数无效');
     }
+    if (secrets && (Object.keys(secrets).some((mode) => !PROVIDERS.includes(mode)) || section !== 'tagging')) {
+      throw new Error('当前分区不接受这些密钥参数');
+    }
     const staged = [];
     const refs = {};
+    let saved;
     try {
       for (const mode of PROVIDERS) {
         const value = secrets ? secrets[mode] : undefined;
@@ -85,21 +104,38 @@ class SettingsBridge {
         staged.push(reference);
         refs[mode] = reference;
       }
-      const saved = await this.core.call('settings.update', {
+      saved = await this.core.call('settings.update', {
         section,
         patch,
         ...(Object.keys(refs).length ? { credential_refs: refs } : {}),
       });
-      // 提交成功后才裁剪：此时新引用一定已被设置指向，删掉的只有真正的孤儿版本。
-      await this.credentials.prune(this._references(saved));
-      await this.sync(saved);
-      return this._decorate(saved);
     } catch (error) {
+      // RPC 报错也可能已经提交（响应丢失）。只有重新读到权威引用后才允许清理。
+      // Core 离线时保留加密孤儿，下一次读取/重启同步再清理，不能猜测提交是否成功。
+      const current = await this.core.call('settings.get').catch(() => null);
+      const referenced = current ? new Set(this._references(current)) : null;
       for (const reference of staged) {
-        await this.credentials.remove(reference).catch(() => {});
+        if (referenced && !referenced.has(reference)) await this.credentials.remove(reference).catch(() => {});
       }
       throw error;
     }
+    // 提交边界之后不可再删除本次的新凭据。重试同步不需要用户重复输入密钥。
+    return this._decorate(saved, await this._reconcile(saved));
+  }
+
+  async _reconcile(settings) {
+    const warnings = [];
+    try {
+      await this._sync(settings);
+    } catch {
+      warnings.push('配置已保存，运行时密钥尚未同步。重新打开设置或重启核心服务后会重试。');
+    }
+    try {
+      await this.credentials.prune(this._references(settings));
+    } catch {
+      warnings.push('配置已保存，旧密钥暂未清理。重新打开设置后会重试。');
+    }
+    return warnings;
   }
 
   _references(settings) {
@@ -110,22 +146,27 @@ class SettingsBridge {
    * 把当前设置引用的密钥推进 Core 内存。Core 重启后内存是空的，
    * 因此每次 Core 重新就绪都要再推一次，否则运行时会认为「没有密钥」。
    */
-  async sync(settings) {
-    let current = settings;
-    if (!current) current = await this.core.call('settings.get').catch(() => null);
-    if (!current) return;
-    const wanted = new Set(this._references(current));
+  sync() {
+    return this._enqueue(async () => {
+      const current = await this.core.call('settings.get');
+      return this._reconcile(current);
+    });
+  }
+
+  async _sync(current) {
+    const wanted = new Set();
     for (const mode of PROVIDERS) {
       const reference = current.tagging.providers[mode].credentialRef;
       if (!reference) continue;
       const secret = await this.credentials.get(reference);
       if (!secret) continue;
+      wanted.add(reference);
       await this.core.call('credential.provide', { reference, secret });
       this.pushed.add(reference);
     }
     for (const reference of [...this.pushed]) {
       if (wanted.has(reference)) continue;
-      await this.core.call('credential.revoke', { reference }).catch(() => {});
+      await this.core.call('credential.revoke', { reference });
       this.pushed.delete(reference);
     }
   }

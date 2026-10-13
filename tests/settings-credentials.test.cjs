@@ -156,6 +156,7 @@ test('提交失败：保留旧引用，只清理这次刚写入的版本', async
 
   core.call = async (method, params) => {
     if (method === 'settings.update') throw new Error('Core 拒绝保存');
+    if (method === 'settings.get') return core.settings;
     return null;
   };
   await assert.rejects(() => bridge.write({ section: 'tagging', patch: { mode: 'llm' }, credentials: { jev: 'second_secret' } }));
@@ -207,4 +208,87 @@ test('解不开的密钥按「没有可用密钥」处理，不伪装成可用',
   assert.equal(await reader.get('jev-a'), null);
   const status = await reader.status();
   assert.equal(status.entries[0].usable, false);
+});
+
+test('Core 已提交后同步失败仍保留新密钥，并报告可恢复的同步状态', async () => {
+  const dir = await tempDir();
+  const credentials = new CredentialService({ dir, storage: fakeStorage() });
+  const core = fakeCore(BASE_SETTINGS);
+  const bridge = new SettingsBridge({ core, credentials });
+  const call = core.call.bind(core);
+  core.call = async (method, params) => {
+    if (method === 'credential.provide') throw new Error('Core 暂时断开');
+    return call(method, params);
+  };
+  const result = await bridge.write({ section: 'tagging', patch: {mode: 'jev'}, credentials: {jev: 'new-key'} });
+  const ref = core.settings.tagging.providers.jev.credentialRef;
+  assert.equal(await new CredentialService({dir, storage: fakeStorage()}).get(ref), 'new-key');
+  assert.ok(result.warnings.length, '保存成功但同步失败必须可见');
+  core.call = call;
+  assert.deepEqual((await bridge.read()).warnings, [], '重新读取可恢复凭据同步');
+});
+
+test('Core 提交成功但响应丢失时不得删除正在被引用的密钥', async () => {
+  const dir = await tempDir();
+  const credentials = new CredentialService({dir, storage: fakeStorage()});
+  const core = fakeCore(BASE_SETTINGS);
+  const bridge = new SettingsBridge({core, credentials});
+  const call = core.call.bind(core);
+  core.call = async (method, params) => {
+    const result = await call(method, params);
+    if (method === 'settings.update') throw new Error('回复丢失');
+    return result;
+  };
+  await assert.rejects(bridge.write({section: 'tagging', patch: {mode: 'jev'}, credentials: {jev: 'persisted-key'}}));
+  assert.equal(await new CredentialService({dir, storage: fakeStorage()}).get(core.settings.tagging.providers.jev.credentialRef), 'persisted-key');
+});
+
+test('旧密钥清理失败不能撤销已经提交的新密钥', async () => {
+  const dir = await tempDir();
+  const credentials = new CredentialService({dir, storage: fakeStorage()});
+  const core = fakeCore(BASE_SETTINGS);
+  const bridge = new SettingsBridge({core, credentials});
+  credentials.prune = async () => {throw new Error('磁盘暂时不可写');};
+  const result = await bridge.write({section: 'tagging', patch: {mode: 'jev'}, credentials: {jev: 'kept-key'}});
+  assert.ok(result.warnings.length);
+  assert.equal(await credentials.get(core.settings.tagging.providers.jev.credentialRef), 'kept-key');
+});
+
+test('并发保存两种密钥不会相互裁剪，重启后都能取回', async () => {
+  const dir = await tempDir();
+  const credentials = new CredentialService({dir, storage: fakeStorage()});
+  const core = fakeCore(BASE_SETTINGS);
+  const bridge = new SettingsBridge({core, credentials});
+  await Promise.all([
+    bridge.write({section: 'tagging', patch: {mode: 'jev'}, credentials: {jev: 'jev-key'}}),
+    bridge.write({section: 'tagging', patch: {mode: 'llm'}, credentials: {llm: 'llm-key'}}),
+    bridge.sync(),
+  ]);
+  const reader = new CredentialService({dir, storage: fakeStorage()});
+  assert.equal(await reader.get(core.settings.tagging.providers.jev.credentialRef), 'jev-key');
+  assert.equal(await reader.get(core.settings.tagging.providers.llm.credentialRef), 'llm-key');
+});
+
+test('凭据写盘失败不改变已成功保存的内存快照', async () => {
+  const dir = await tempDir();
+  const credentials = new CredentialService({dir, storage: fakeStorage()});
+  await credentials.put('jev-old', 'old-key');
+  const persist = credentials.persist.bind(credentials);
+  credentials.persist = async () => {throw new Error('disk full');};
+  await assert.rejects(credentials.put('jev-new', 'new-key'));
+  await assert.rejects(credentials.remove('jev-old'));
+  assert.deepEqual(await credentials.references(), ['jev-old']);
+  credentials.persist = persist;
+  assert.equal(await credentials.get('jev-old'), 'old-key');
+});
+
+test('结构损坏的凭据文件必须保留并报告，不能当作空库覆盖', async () => {
+  for (const raw of ['{"version":2,"entries":{}}', '{"version":1,"entries":[]}', '{"version":1,"entries":{"jev-a":{"cipher":null}}}']) {
+    const dir = await tempDir();
+    const file = path.join(dir, 'credentials.json');
+    await fs.writeFile(file, raw);
+    const credentials = new CredentialService({dir, storage: fakeStorage()});
+    await assert.rejects(credentials.put('jev-new', 'new-key'), {code: 'CREDENTIAL_STORE_UNREADABLE'});
+    assert.equal(await fs.readFile(file, 'utf8'), raw);
+  }
 });

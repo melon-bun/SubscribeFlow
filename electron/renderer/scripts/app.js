@@ -263,7 +263,7 @@
             type: "button",
             "aria-label": "本地用户，打开设置",
             title: "设置",
-            onclick: openSettings,
+            onclick: function () { openSettings(); },
           },
           ui.avatar((s.user || {}).name || "用户", (s.user || {}).avatar),
           h("span.user-chip__name", { text: (s.user || {}).name || "用户" })
@@ -364,7 +364,8 @@
   }
 
   function invalidate() {
-    Object.values(SF.views).forEach(function (view) { view.reset(); });
+    // 内容/任务刷新与设置草稿无关；设置在重新进入页面时单独读取。
+    Object.entries(SF.views).forEach(function (entry) { if (entry[0] !== "settings") entry[1].reset(); });
   }
   var refreshPromise, refreshAgain = false;
   function refreshData(force) {
@@ -379,10 +380,12 @@
         app.now = Date.now(); app.notice = null;
         if (!app.selectedDate) app.selectedDate = fmt.ymd(app.now);
         if (changed) invalidate();
+        if (app.route.name === "settings" && document.querySelector(".settings")) return;
         if (!document.querySelector(".shell__body")) render();
         else { refreshSidebarCounts(); if (changed) renderContent(); }
       } catch (err) {
         app.notice = err.message;
+        if (app.route.name === "settings" && document.querySelector(".settings")) return;
         if (app.session) renderContent(); else showStartup("无法读取本地服务", err.message);
       } finally {
         refreshPromise = null;
@@ -495,26 +498,32 @@
       else if (app.session) renderContent();
       else showStartup("核心服务" + (status.state === "starting" ? "正在启动…" : "不可用"), status.message || "请重新查询或重启服务。");
     }));
+    var leavingSettings = false;
     global.addEventListener("hashchange", function () {
+      if (leavingSettings) return;
       var was = app.route.name;
-      refreshRoute();
       // 带着未保存的草稿离开设置页（包括浏览器后退）先问保存还是放弃。
-      if (was === "settings" && app.route.name !== "settings" && SF.views.settings.dirtySections().length) {
+      // 确认期间仍保留 settings 路由，后台刷新不能提前把表单替换成目标页面。
+      if (was === "settings" && parseHash().name !== "settings") {
+        leavingSettings = true;
         SF.views.settings.confirmLeave(app).then(function (proceed) {
+          leavingSettings = false;
           if (proceed) {
+            SF.views.settings.reset();
+            refreshRoute();
             app.selectedId = null;
             if (app.session) render();
           } else {
             // 留在设置页：把哈希拉回来，用户继续编辑刚才的草稿。
             var section = SF.views.settings.currentSection() === "reminder" ? "reminder" : "tagging";
+            history.replaceState(null, "", "#/settings?section=" + section);
             refreshRoute();
-            app.route.name = "settings";
-            location.hash = "#/settings" + (section === "tagging" ? "" : "?section=" + section);
             if (app.session) render();
           }
         });
         return;
       }
+      refreshRoute();
       app.selectedId = null;
       if (app.session) render();
     });
@@ -537,6 +546,7 @@
     app.route = parseHash();
     if (app.route.name === "settings") {
       if (previous !== "settings") {
+        SF.views.settings.reset();
         app.settingsReturn = NAV.some(function (n) { return n.id === previous; }) ? previous : "inbox";
       }
       SF.views.settings.setSection(app.route.params.section);

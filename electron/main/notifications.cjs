@@ -7,11 +7,12 @@
  * 这里不做任何定时逻辑，也不假设通知一定会被显示。
  */
 const { Notification } = require('electron');
+const activeNotifications = new Set();
 
-function notificationStatus() {
+function notificationStatus(NotificationClass = Notification) {
   let supported = false;
   try {
-    supported = !!Notification.isSupported();
+    supported = !!NotificationClass.isSupported();
   } catch {
     supported = false;
   }
@@ -26,20 +27,39 @@ function notificationStatus() {
   };
 }
 
-function sendTestNotification() {
-  const status = notificationStatus();
+async function sendTestNotification({ NotificationClass = Notification, timeoutMs = 5000 } = {}) {
+  const status = notificationStatus(NotificationClass);
   if (!status.supported) {
     return { ...status, sent: false, message: '当前系统不支持桌面通知，无法发送测试通知。' };
   }
-  try {
-    new Notification({
-      title: '知流 · 测试通知',
-      body: '这是一条测试通知。看到它说明系统通知能正常显示，它不代表正式提醒已经开启。',
-    }).show();
-  } catch (error) {
-    return { ...status, sent: false, message: `测试通知发送失败：${error.message}` };
-  }
-  return { ...status, sent: true, message: '已发送测试通知。没有看到的话，请检查系统设置里知流的通知权限与专注模式。' };
+  return new Promise(resolve => {
+    let notification;
+    let timeout;
+    let settled = false;
+    const finish = (delivery, message) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      // 保持通知对象存活，避免 show 后即被回收。测试通知最多保留一分钟。
+      if (delivery === 'failed') activeNotifications.delete(notification);
+      else setTimeout(() => activeNotifications.delete(notification), 60000).unref();
+      resolve({ ...status, sent: delivery !== 'failed', delivery, message });
+    };
+    try {
+      notification = new NotificationClass({
+        title: '知流 · 测试通知',
+        body: '这是一条测试通知。看到它说明系统通知能正常显示，它不代表正式提醒已经开启。',
+      });
+      activeNotifications.add(notification);
+      notification.once('close', () => activeNotifications.delete(notification));
+      notification.once('show', () => finish('shown', '系统已报告测试通知显示。如果没有看到，请检查通知中心与专注模式。'));
+      notification.once('failed', (_event, error) => finish('failed', `测试通知发送失败：${error || '系统未提供原因，请检查通知权限。'}`));
+      timeout = setTimeout(() => finish('unknown', '已提交测试通知，但未获得显示确认。请检查系统通知权限与专注模式。'), timeoutMs);
+      notification.show();
+    } catch (error) {
+      finish('failed', `测试通知发送失败：${error.message}`);
+    }
+  });
 }
 
 module.exports = { notificationStatus, sendTestNotification };

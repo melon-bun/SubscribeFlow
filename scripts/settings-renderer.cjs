@@ -43,6 +43,8 @@ async function verify({window, core, root}) {
   await evaluate(`document.querySelector('.user-chip').click()`);
   await until(`!!document.querySelector('.settings')`);
   await until(`!!document.querySelector('.setting-block input')`);
+  assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '未编辑的默认设置不应有草稿');
+  assert.equal(await evaluate(`location.hash.includes('object')`), false, '入口不能把点击事件写入路由');
   assert.equal(await evaluate(`!!document.querySelector('.sidebar')`), false, '设置是整页大面板，不套侧栏');
   const navLabels = await evaluate(`Array.from(document.querySelectorAll('.settings-nav__label')).map(n => n.textContent)`);
   assert.deepEqual(navLabels, ['AI 模型配置', '提醒设置']);
@@ -58,6 +60,15 @@ async function verify({window, core, root}) {
   })()`);
   assert.equal(await evaluate(`document.querySelector('.settings__foot-hint').textContent`), '有未保存的修改');
   assert.equal(await evaluate(`document.querySelector('.settings-nav__dot') !== null`), true, '左栏要标出未保存');
+  await evaluate(`(() => {
+    const input = document.querySelector('input[type=password]');
+    input.value = 'unsaved-draft-key';
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    input.focus();
+    window.__draftInput = input;
+  })()`);
+  await evaluate(`SF.app.refreshData(true)`);
+  assert.equal(await evaluate(`window.__draftInput === document.activeElement && window.__draftInput.isConnected && window.__draftInput.value === 'unsaved-draft-key'`), true, '后台内容刷新必须保留草稿和焦点');
   const disabledBeforeSave = await evaluate(`document.body.innerText.includes('测试连接') && !!Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === '测试连接' && b.disabled)`);
   assert.equal(disabledBeforeSave, true, 'M15 没有真实 Provider，连接测试必须明确不可用');
 
@@ -98,7 +109,19 @@ async function verify({window, core, root}) {
     select.value = '15';
     select.dispatchEvent(new Event('change', {bubbles: true}));
   })()`);
+  await evaluate(`(() => {
+    window.__originalSave = SF.app.state.client.saveSettings.bind(SF.app.state.client);
+    window.__saveCalls = 0;
+    SF.app.state.client.saveSettings = params => {
+      window.__saveCalls++;
+      return new Promise(resolve => {window.__releaseSave = () => resolve(window.__originalSave(params));});
+    };
+  })()`);
   await click('保存设置');
+  assert.equal(await evaluate(`document.querySelector('.settings__body').disabled && Array.from(document.querySelectorAll('.settings-nav__item')).every(b => b.disabled)`), true, '保存期间锁定表单和分区导航');
+  await evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === '保存设置').click()`);
+  assert.equal(await evaluate(`window.__saveCalls`), 1, '重复点击不能并发提交');
+  await evaluate(`window.__releaseSave(); SF.app.state.client.saveSettings = window.__originalSave; void 0`);
   await until(`document.querySelector('.settings__foot-hint')?.textContent !== '正在保存…'`);
   await until(`document.querySelector('.settings__foot-hint')?.textContent !== '有未保存的修改'`);
   let settings = await core.call('settings.get');
@@ -112,6 +135,10 @@ async function verify({window, core, root}) {
   })()`);
   await click('取消');
   assert.equal((await core.call('settings.get')).reminder.enabled, true, '取消不能写入');
+  await click('AI 模型配置');
+  assert.equal(await evaluate(`document.querySelector('input[type=password]').value`), 'unsaved-draft-key', '保存或取消提醒设置都不能清掉 AI 密钥草稿');
+  assert.equal(await evaluate(`document.querySelector('.setting-block input').value`), 'https://example.com/draft-only');
+  await click('提醒设置');
 
   // 无效间隔：前端允许填，后端拒绝，错误要落到输入框下方且草稿保留
   await evaluate(`(() => {
@@ -143,9 +170,9 @@ async function verify({window, core, root}) {
 
   /* ---------- 两页都有草稿时，弹窗要说清只保存当前页 ---------- */
   await evaluate(`(() => {
-    const select = document.querySelector('.setting-inline select');
-    select.value = '90';
-    select.dispatchEvent(new Event('change', {bubbles: true}));
+    const input = document.querySelector('.setting-inline__custom input');
+    input.value = '90';
+    input.dispatchEvent(new Event('input', {bubbles: true}));
   })()`);
   assert.equal(await evaluate(`document.querySelector('.settings-nav__dot') !== null`), true);
   // 当前页（提醒）有草稿、AI 页也有草稿：弹窗要说明只会保存当前页
@@ -153,13 +180,16 @@ async function verify({window, core, root}) {
   await until(`!!document.querySelector('.settings-leave__note')`);
   assert.ok((await evaluate(`document.querySelector('.settings-leave__note').textContent`)).includes('只会保存'));
   assert.ok((await evaluate(`document.querySelector('.settings-leave__note').textContent`)).includes('AI 模型配置'));
-  await click('放弃修改');
+  await click('保存并离开');
   await until(`!!document.querySelector('.sidebar')`);
-  assert.equal((await core.call('settings.get')).reminder.intervalMinutes, 45, '放弃修改不得写入未保存的值');
+  assert.equal((await core.call('settings.get')).reminder.intervalMinutes, 90, '保存并离开只保存当前页');
+  assert.equal((await core.call('settings.get')).tagging.providers.jev.credentialRef, null, '另一页草稿不能被提交');
 
   // 另一页有草稿、当前页干净：保存按钮必须不可点，并说清保存写不进东西
   await evaluate(`location.hash = '#/settings?section=tagging'`);
   await until(`!!document.querySelector('.settings') && document.querySelector('.settings__title').textContent === 'AI 模型配置'`);
+  await until(`!!document.querySelector('.setting-block input')`);
+  assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '保存并离开须放弃其他页草稿');
   await evaluate(`(() => {
     const input = Array.from(document.querySelectorAll('.setting-block input'))[0];
     input.value = 'https://example.com/second-draft';
@@ -224,6 +254,57 @@ async function verify({window, core, root}) {
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('input[type=\"password\"]')).length`), 1, '未配置的方式仍要能输入密钥');
   await screenshot('m15-settings-credentials.png');
 
+  // 放弃“清除密钥”后不能遗留清除标记，下一次保存必须保留原引用。
+  const savedReference = settings.tagging.providers.jev.credentialRef;
+  await click('清除');
+  await evaluate(`location.hash = '#/inbox'`);
+  await until(`!!document.querySelector('.dialog')`);
+  await click('放弃修改');
+  await until(`!!document.querySelector('.sidebar')`);
+  await evaluate(`location.hash = '#/settings'`);
+  await until(`document.body.innerText.includes('已保存（不回显）')`);
+  assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '放弃密钥清除后应没有残留修改');
+  await evaluate(`(() => {
+    const input = document.querySelector('.setting-block input');
+    input.value = '  https://api.typesafe.ai/v1/systemone  ';
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+  })()`);
+  await click('保存设置');
+  await until(`document.querySelector('.settings__foot-hint')?.textContent !== '正在保存…'`);
+  assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '规范化后的地址应成为新基线');
+  assert.equal((await core.call('settings.get')).tagging.providers.jev.credentialRef, savedReference);
+
+  // 用脱敏状态替身模拟系统账户变化：真实保护系统不应被验收脚本修改。
+  await evaluate(`location.hash = '#/inbox'`);
+  await until(`!!document.querySelector('.sidebar')`);
+  await evaluate(`(() => {
+    window.__originalGet = SF.app.state.client.getSettings.bind(SF.app.state.client);
+    SF.app.state.client.getSettings = async () => {
+      const settings = await window.__originalGet();
+      settings.credentials.providers.jev.usable = false;
+      return settings;
+    };
+    location.hash = '#/settings';
+  })()`);
+  await until(`document.body.innerText.includes('已保存的密钥无法解密')`);
+  await click('重新输入');
+  assert.equal(await evaluate(`document.querySelectorAll('.setting-grid .setting-block')[0].querySelector('input[type=password]') !== null`), true, '不可用密钥必须能重新输入');
+  await evaluate(`SF.app.state.client.getSettings = window.__originalGet; location.hash = '#/inbox'`);
+  await until(`!!document.querySelector('.sidebar')`);
+
+  // 读取失败必须停在可重试错误页，不因重绘形成循环请求。
+  await evaluate(`(() => {
+    window.__getCalls = 0;
+    SF.app.state.client.getSettings = async () => {window.__getCalls++; throw new Error('模拟暂时离线');};
+    location.hash = '#/settings';
+  })()`);
+  await until(`document.body.innerText.includes('无法读取设置')`);
+  await evaluate(`SF.app.refreshData(true); SF.app.renderContent(); SF.app.renderContent()`);
+  assert.equal(await evaluate(`window.__getCalls`), 1, '读取失败后应等待手动重试');
+  await evaluate(`SF.app.state.client.getSettings = window.__originalGet; void 0`);
+  await click('重新读取');
+  await until(`document.body.innerText.includes('已保存（不回显）')`);
+
   /* ---------- 重启后配置与凭据仍在 ---------- */
   await evaluate(`Array.from(document.querySelectorAll('.settings-nav__item')).find(b => b.textContent.includes('提醒设置')).click()`);
   await core.restart();
@@ -240,6 +321,9 @@ async function verify({window, core, root}) {
   /* ---------- 深色主题 ---------- */
   await evaluate(`SF.app.state.theme = 'dark'; document.documentElement.setAttribute('data-theme','dark'); SF.app.renderContent()`);
   await screenshot('m15-settings-dark.png');
+  window.setSize(900, 760);
+  await screenshot('m15-settings-minimum.png');
+  assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth && document.querySelector('.settings__body').scrollHeight > document.querySelector('.settings__body').clientHeight`), true, '小窗口不能横向溢出，表单应可滚动');
   await evaluate(`SF.app.state.theme = 'light'; document.documentElement.setAttribute('data-theme','light'); SF.app.renderContent()`);
 
   /* ---------- 离开设置 ---------- */

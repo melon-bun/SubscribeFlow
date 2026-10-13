@@ -12,6 +12,7 @@
  */
 const { promises: fs } = require('node:fs');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 const { safeStorage } = require('electron');
 
 const REFERENCE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -24,6 +25,13 @@ class CredentialService {
     this.platform = platform;
     this.now = now;
     this.cache = null;
+    this.pending = Promise.resolve();
+  }
+
+  mutate(operation) {
+    const result = this.pending.then(operation);
+    this.pending = result.catch(() => {});
+    return result;
   }
 
   /** 当前系统的保护能力。不满足就明确说清楚，绝不假装可以安全保存。 */
@@ -59,16 +67,19 @@ class CredentialService {
     let entries = {};
     try {
       const raw = JSON.parse(await fs.readFile(this.file, 'utf8'));
-      if (raw && raw.version === 1 && raw.entries && typeof raw.entries === 'object') {
-        for (const [reference, entry] of Object.entries(raw.entries)) {
-          if (!REFERENCE.test(reference) || !entry || typeof entry.cipher !== 'string' || !entry.cipher) continue;
-          entries[reference] = { cipher: entry.cipher, updatedAt: typeof entry.updatedAt === 'string' ? entry.updatedAt : null };
+      if (!raw || raw.version !== 1 || !raw.entries || typeof raw.entries !== 'object' || Array.isArray(raw.entries)) {
+        throw new Error('Invalid credential store');
+      }
+      for (const [reference, entry] of Object.entries(raw.entries)) {
+        if (!REFERENCE.test(reference) || !entry || typeof entry.cipher !== 'string' || !entry.cipher) {
+          throw new Error('Invalid credential entry');
         }
+        entries[reference] = { cipher: entry.cipher, updatedAt: typeof entry.updatedAt === 'string' ? entry.updatedAt : null };
       }
     } catch (error) {
       if (error.code !== 'ENOENT') {
         // 文件损坏时不覆盖它：先让上层看到「读不出来」，避免静默清空已保存的密钥。
-        const failure = new Error('已保存的密钥无法读取，请重新输入并保存');
+        const failure = new Error('凭据文件无法读取，已保留原文件。请恢复有效备份后重新读取设置');
         failure.code = 'CREDENTIAL_STORE_UNREADABLE';
         throw failure;
       }
@@ -79,9 +90,13 @@ class CredentialService {
 
   async persist(store) {
     const payload = JSON.stringify({ version: 1, entries: store.entries });
-    const temporary = `${this.file}.tmp`;
-    await fs.writeFile(temporary, payload, { mode: 0o600 });
-    await fs.rename(temporary, this.file);
+    const temporary = `${this.file}.${randomUUID()}.tmp`;
+    try {
+      await fs.writeFile(temporary, payload, { mode: 0o600, flag: 'wx' });
+      await fs.rename(temporary, this.file);
+    } finally {
+      await fs.unlink(temporary).catch(() => {});
+    }
     this.cache = store;
   }
 
@@ -95,13 +110,16 @@ class CredentialService {
       error.code = 'PROTECTION_UNAVAILABLE';
       throw error;
     }
-    const store = await this.load();
-    store.entries[reference] = { cipher: this.storage.encryptString(secret).toString('base64'), updatedAt: this.now() };
-    await this.persist(store);
+    return this.mutate(async () => {
+      const store = await this.load();
+      const entry = { cipher: this.storage.encryptString(secret).toString('base64'), updatedAt: this.now() };
+      await this.persist({ version: 1, entries: { ...store.entries, [reference]: entry } });
+    });
   }
 
   /** 只在主进程内部使用：取回明文。调用点只有模型调用前的凭据桥接。 */
   async get(reference) {
+    if (!this.protection().available) return null;
     const store = await this.load();
     const entry = store.entries[reference];
     if (!entry) return null;
@@ -113,24 +131,30 @@ class CredentialService {
   }
 
   async remove(reference) {
-    const store = await this.load();
-    if (!(reference in store.entries)) return;
-    delete store.entries[reference];
-    await this.persist(store);
+    return this.mutate(async () => {
+      const store = await this.load();
+      if (!(reference in store.entries)) return;
+      const entries = { ...store.entries };
+      delete entries[reference];
+      await this.persist({ version: 1, entries });
+    });
   }
 
   /** 删除不再被设置引用的版本，避免旧密钥无限堆积在磁盘上。 */
   async prune(keep) {
-    const store = await this.load();
-    const wanted = new Set([...(keep || [])].filter((reference) => REFERENCE.test(String(reference || ''))));
-    let changed = false;
-    for (const reference of Object.keys(store.entries)) {
-      if (!wanted.has(reference)) {
-        delete store.entries[reference];
-        changed = true;
+    return this.mutate(async () => {
+      const store = await this.load();
+      const entries = { ...store.entries };
+      const wanted = new Set([...(keep || [])].filter((reference) => REFERENCE.test(String(reference || ''))));
+      let changed = false;
+      for (const reference of Object.keys(entries)) {
+        if (!wanted.has(reference)) {
+          delete entries[reference];
+          changed = true;
+        }
       }
-    }
-    if (changed) await this.persist(store);
+      if (changed) await this.persist({ version: 1, entries });
+    });
   }
 
   /** 界面可见的状态：只有「配没配」，没有密钥，也没有任何可用于还原的片段。 */

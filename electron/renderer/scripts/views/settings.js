@@ -78,7 +78,10 @@
     cleared: { jev: false, llm: false }, // 是否已勾选清除
     notification: null,
     testing: false,
+    notificationLoading: false,
   };
+  var generation = 0;
+  var savePromise = null;
 
   function emptyDraft() {
     return {
@@ -94,7 +97,7 @@
     };
   }
 
-  /** 用读到的设置铺草稿：未保存过的字段显示官方默认值，用户一眼知道该填什么。 */
+  /** 草稿必须与保存基线一致；官方默认值由 Core 的初始设置提供。 */
   function draftFrom(settings) {
     var draft = emptyDraft();
     var tagging = settings.tagging;
@@ -102,9 +105,8 @@
     draft.tagging.mode = tagging.mode;
     MODES.forEach(function (mode) {
       var saved = tagging.providers[mode] || {};
-      var defaults = (MODE_META[mode].defaults) || {};
-      draft.tagging.providers[mode].endpoint = saved.endpoint || defaults.endpoint || "";
-      draft.tagging.providers[mode].model = saved.model || defaults.model || "";
+      draft.tagging.providers[mode].endpoint = saved.endpoint || "";
+      draft.tagging.providers[mode].model = saved.model || "";
     });
     var interval = settings.reminder.intervalMinutes;
     draft.reminder.enabled = !!settings.reminder.enabled;
@@ -116,6 +118,7 @@
   }
 
   function reset() {
+    generation++;
     cache.loaded = false;
     cache.loading = false;
     cache.error = null;
@@ -127,34 +130,42 @@
     cache.editing = { jev: false, llm: false };
     cache.cleared = { jev: false, llm: false };
     cache.testing = false;
+    cache.notification = null;
+    cache.notificationLoading = false;
+    savePromise = null;
   }
 
   function load(app, opts) {
     opts = opts || {};
     if (cache.loading) return Promise.resolve();
-    if (cache.loaded && !opts.force) return Promise.resolve();
+    if ((cache.loaded || cache.error) && !opts.force) return Promise.resolve();
+    var epoch = generation;
     cache.loading = true;
     cache.error = null;
     paint(app);
     return app.client
       .getSettings()
       .then(function (settings) {
+        if (epoch !== generation) return;
         cache.saved = settings;
         cache.loaded = true;
         // 只有在没有草稿时才重新铺：加载失败后重试不能吃掉用户正在输入的内容。
         if (!cache.draft) cache.draft = draftFrom(settings);
+        if (settings.warnings && settings.warnings.length) cache.notice = { tone: "warn", text: settings.warnings.join(" ") };
       })
       .catch(function (err) {
+        if (epoch !== generation) return;
         cache.error = err.message;
       })
       .then(function () {
+        if (epoch !== generation) return;
         cache.loading = false;
         paint(app);
       });
   }
 
   function paint(app) {
-    SF.app.renderContent();
+    if (app.route.name === "settings") SF.app.renderContent();
   }
 
   /* ---------------- 草稿与脏检查 ---------------- */
@@ -224,26 +235,28 @@
   }
 
   function saveSection(app, section) {
+    if (savePromise) return savePromise;
+    var epoch = generation;
     var params = buildSaveParams(section);
     cache.saving = section;
     cache.notice = null;
     cache.errors = {};
     paint(app);
-    return app.client
+    savePromise = app.client
       .saveSettings(params)
       .then(function (settings) {
+        if (epoch !== generation) return false;
         cache.saved = settings;
         cache.loaded = true;
-        // 密钥明文只在输入与提交期间存在：保存成功立刻从草稿里抹掉。
-        MODES.forEach(function (mode) {
-          cache.draft.tagging.providers[mode].secret = "";
-          cache.cleared[mode] = false;
-          cache.editing[mode] = false;
-        });
-        cache.notice = { tone: "success", text: "已保存设置" };
+        // 只重建刚提交的分区，清除其中的密钥明文，并使用服务端规范化后的值。
+        discardSection(section);
+        cache.notice = settings.warnings && settings.warnings.length
+          ? { tone: "warn", text: settings.warnings.join(" ") }
+          : { tone: "success", text: "设置已保存。" };
         return true;
       })
       .catch(function (err) {
+        if (epoch !== generation) return false;
         // 保存失败保留全部输入，原因落到对应输入框下方，顶栏再给一条整体说明。
         cache.notice = { tone: "danger", text: err.message };
         // Core 用 scope_key 报错，跨桥后原样带过来；两种写法都认，避免只在横幅里报。
@@ -252,20 +265,36 @@
         return false;
       })
       .then(function (ok) {
+        if (epoch !== generation) return false;
         cache.saving = null;
+        savePromise = null;
         paint(app);
         return ok;
       });
+    return savePromise;
+  }
+
+  function discardSection(section) {
+    cache.draft[section] = draftFrom(cache.saved)[section];
+    if (section === "tagging") {
+      MODES.forEach(function (mode) {
+        cache.editing[mode] = false;
+        cache.cleared[mode] = false;
+      });
+    }
+  }
+
+  function discardAll() {
+    SECTIONS.forEach(function (section) { discardSection(section.id); });
+    cache.errors = {};
+    cache.notice = null;
   }
 
   function cancelSection(app, section) {
-    cache.draft = draftFrom(cache.saved);
+    if (cache.saving) return;
+    discardSection(section);
     cache.errors = {};
     cache.notice = null;
-    MODES.forEach(function (mode) {
-      cache.editing[mode] = false;
-      cache.cleared[mode] = false;
-    });
     paint(app);
   }
 
@@ -276,6 +305,7 @@
   }
 
   function confirmLeave(app) {
+    if (savePromise) return savePromise.then(function (ok) { return ok ? confirmLeave(app) : false; });
     var dirty = dirtySections();
     if (!dirty.length) return Promise.resolve(true);
     var current = currentSection();
@@ -312,16 +342,16 @@
       }
       layer = ui.dialog({
         title: "还有未保存的修改",
+        beforeClose: function () { return !cache.saving; },
         body: body,
         footer: [
           h("div.spacer"),
-          ui.btn("继续编辑", { onClick: function () { done(false); layer.close(); } }),
+          ui.btn("继续编辑", { onClick: function () { if (cache.saving) return; done(false); layer.close(); } }),
           ui.btn("放弃修改", {
             variant: "danger",
             onClick: function () {
-              cache.draft = draftFrom(cache.saved);
-              cache.errors = {};
-              cache.notice = null;
+              if (cache.saving) return;
+              discardAll();
               done(true);
               layer.close();
             },
@@ -331,7 +361,10 @@
             // 当前页没有草稿时不给可点的保存：按页保存，点了也写不进任何东西。
             disabled: !currentDirty || cache.saving === current,
             onClick: function () {
+              if (cache.saving) return;
+              layer.el.querySelectorAll("button").forEach(function (button) { button.disabled = true; });
               saveSection(app, current).then(function (ok) {
+                if (ok) discardAll();
                 done(ok);
                 layer.close();
               });
@@ -408,7 +441,7 @@
     var state = (cache.saved && cache.saved.credentials.providers[mode]) || { configured: false, usable: false, unresolved: false };
     var protection = (cache.saved && cache.saved.credentials.protection) || { available: false, reason: "正在读取保护能力" };
     var active = cache.draft.tagging.mode === mode;
-    var status = providerStatus(state, protection);
+    var status = providerStatus(state, protection, cache.saved.tagging.providers[mode]);
 
     var keyRow = buildKeyField(app, mode, state, protection, draft);
     var children = [
@@ -440,7 +473,7 @@
         }),
         {
           hint: meta.defaults
-            ? "官方默认地址与模型已预填，可以直接使用，也可以改成你自己的地址。"
+            ? "可以使用官方默认值，也可以改成你自己的地址。"
             : "填写与本期适配器兼容的聊天接口地址；具体协议在自动打标接入时确定。",
           error: cache.errors[mode + ".endpoint"],
           errorKey: mode + ".endpoint",
@@ -478,14 +511,14 @@
     return h("section.setting-block" + (active ? "" : ".setting-block--idle"), null, children);
   }
 
-  function providerStatus(state, protection) {
+  function providerStatus(state, protection, provider) {
     if (state.unresolved) {
       return { tone: "danger", text: "密钥缺失", note: "设置指向的密钥在凭据文件里找不到，请重新输入并保存。" };
     }
     if (state.configured && !state.usable) {
       return { tone: "danger", text: "密钥不可用", note: "已保存的密钥无法解密（系统密钥环可能已更换账户），请重新输入并保存。" };
     }
-    if (state.configured) {
+    if (state.configured && provider.configured) {
       return { tone: "success", text: "已保存", note: "配置完整。" + (state.updatedAt ? "最近更新：" + fmt.absolute(state.updatedAt) : "") };
     }
     if (!protection.available) {
@@ -507,7 +540,7 @@
         { hint: hint }
       );
     }
-    if (state.unresolved || (state.configured && !state.usable)) {
+    if ((state.unresolved || (state.configured && !state.usable)) && !cache.editing[mode]) {
       return field(
         label,
         h("div.setting-key", null,
@@ -590,6 +623,11 @@
     }
     var next = buildFoot(app);
     previous.parentNode.replaceChild(next, previous);
+    document.querySelectorAll(".settings-nav__item").forEach(function (item, index) {
+      var dot = item.querySelector(".settings-nav__dot");
+      if (isDirty(SECTIONS[index].id) && !dot) item.appendChild(h("span.settings-nav__dot", { "aria-label": "有未保存的修改" }));
+      else if (!isDirty(SECTIONS[index].id) && dot) dot.remove();
+    });
   }
 
   /**
@@ -618,7 +656,7 @@
         null,
         switchRow(
           "启用自动打标",
-          "接在信息采集之后执行。" + boundary,
+          "自动打标尚未接入，当前仅保存配置。接入后：" + boundary,
           t.enabled,
           function (next) {
             t.enabled = next;
@@ -732,7 +770,7 @@
         null,
         switchRow(
           "启用定时提醒",
-          "按下面设置的时间间隔提醒未处理数量。",
+          "当前仅保存偏好；定时提醒接入后，按下面设置的间隔提醒未处理数量。",
           r.enabled,
           function (next) {
             r.enabled = next;
@@ -809,7 +847,7 @@
             "div",
             null,
             h("h3.setting-block__title", { text: "后台运行" }),
-            h("p.setting-block__desc", { text: "关闭主窗口目前会退出应用，提醒随之停止。关闭窗口后在托盘常驻属于后续版本的能力，本期不自动开机启动。" })
+            h("p.setting-block__desc", { text: "定时提醒与托盘常驻尚未接入。当前关闭主窗口会退出应用；后续支持关闭窗口后留在托盘运行。" })
           )
         )
       ),
@@ -845,16 +883,25 @@
         "div.setting-block__foot",
         null,
         ui.btn("发送测试通知", {
-          disabled: !status || !status.supported,
+          disabled: cache.testing || !status || !status.supported,
           onClick: function () {
+            if (cache.testing) return;
+            var epoch = generation;
+            cache.testing = true;
+            paint(app);
             SF.app.act("notification:test", async function () {
-              cache.notification = await app.client.sendTestNotification();
-              ui.toast(cache.notification.message);
-              paint(app);
+              try {
+                var result = await app.client.sendTestNotification();
+                if (epoch !== generation) return;
+                cache.notification = result;
+                ui.toast(result.message);
+              } finally {
+                if (epoch === generation) { cache.testing = false; paint(app); }
+              }
             });
           },
         }),
-        status && status.sent
+        status && status.message
           ? h("span.field__hint", { text: status.message })
           : null
       )
@@ -863,14 +910,20 @@
   }
 
   function loadNotificationStatus(app) {
-    if (cache.notification) return;
+    if (cache.notification || cache.notificationLoading) return;
+    cache.notificationLoading = true;
+    var epoch = generation;
     app.client
       .getNotificationStatus()
       .then(function (status) {
+        if (epoch !== generation) return;
+        cache.notificationLoading = false;
         cache.notification = status;
         paint(app);
       })
       .catch(function (err) {
+        if (epoch !== generation) return;
+        cache.notificationLoading = false;
         cache.notification = { supported: false, permission: "unknown", detail: "读取通知支持情况失败：" + err.message };
         paint(app);
       });
@@ -887,7 +940,7 @@
         null,
         ui.iconBtn("close", "关闭设置", function () {
           SF.app.navigate(app.settingsReturn || "inbox");
-        }, { ariaLabel: "关闭设置" })
+        }, { ariaLabel: "关闭设置", disabled: !!cache.saving })
       ),
       h(
         "nav.settings__nav-list",
@@ -898,9 +951,12 @@
             "button.settings-nav__item" + (active ? ".is-active" : ""),
             {
               type: "button",
+              disabled: !!cache.saving,
               "aria-current": active ? "page" : null,
               onclick: function () {
                 cache.section = section.id;
+                app.route.params.section = section.id;
+                history.replaceState(null, "", "#/settings?section=" + section.id);
                 cache.notice = null;
                 paint(app);
               },
@@ -919,7 +975,7 @@
   function buildFoot(app) {
     var section = currentSection();
     var dirty = isDirty(section);
-    var saving = cache.saving === section;
+    var saving = !!cache.saving;
     footEl = h(
       "footer.settings__foot",
       null,
@@ -963,9 +1019,9 @@
   function buildNotice() {
     if (!cache.notice) return null;
     return ui.notice({
-      tone: cache.notice.tone === "success" ? "success" : "danger",
-      title: cache.notice.tone === "success" ? "已保存" : "没有保存",
-      text: cache.notice.tone === "success" ? "设置已经生效。" : cache.notice.text,
+      tone: cache.notice.tone,
+      title: cache.notice.tone === "danger" ? "没有保存" : cache.notice.tone === "warn" ? "已保存，仍需处理" : "已保存",
+      text: cache.notice.text,
     });
   }
 
@@ -1014,7 +1070,7 @@
         "section.settings__main",
         null,
         buildHead(),
-        h("div.settings__body.scroll-y", null, buildBody(app)),
+        h("fieldset.settings__body.scroll-y", { disabled: !!cache.saving }, buildBody(app)),
         buildFoot(app)
       )
     );

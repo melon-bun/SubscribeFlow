@@ -74,7 +74,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_enabling_requires_complete_configuration(self):
         with self.assertRaises(ChannelError) as caught:
-            self.service.update('tagging', {'enabled': True, 'mode': 'jev'})
+            self.service.update('tagging', {'enabled': True, **self.provider_patch(endpoint='', model='')})
         message = caught.exception.message
         self.assertIn('Jev', message)
         for missing in ('接口地址', '模型标识', 'API Key'):
@@ -132,6 +132,23 @@ class SettingsTests(unittest.TestCase):
             self.service.update('tagging', {'providers': {'llm': {'model': 'has space'}}})
         self.assertEqual(caught.exception.scope, 'field')
         self.assertEqual(caught.exception.scope_key, 'llm.model')
+
+    def test_model_identifiers_may_contain_provider_namespaces(self):
+        for model in ('vendor/model-name', 'org/model:revision', 'plain-model'):
+            self.service.update('tagging', {'providers': {'llm': {'model': model}}})
+            self.assertEqual(self.service.snapshot()['tagging']['providers']['llm']['model'], model)
+
+    def test_provider_field_types_and_malformed_urls_are_field_errors(self):
+        for field, values in {
+            'model': [0, False, None, {}, ['model'], 'bad\x00model'],
+            'endpoint': [0, False, None, {}, ['https://example.com'], 'https://[broken',
+                         'https://example.com:bad', 'https://user:secret@example.com', 'https://host name/v1'],
+        }.items():
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    with self.assertRaises(ChannelError) as caught:
+                        self.service.update('tagging', {'providers': {'llm': {field: value}}})
+                    self.assertEqual(caught.exception.scope_key, 'llm.' + field)
 
     def test_secrets_never_reach_storage(self):
         self.service.update('tagging', self.provider_patch(), {'jev': 'jev-abc'})
