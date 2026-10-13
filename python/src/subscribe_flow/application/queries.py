@@ -9,6 +9,12 @@ class QueryService:
     def calendar(self, month, **query):
         return self.repository.calendar_summary(month, **query)
 
+    def reminder_state(self):
+        return self.repository.load_reminder_state()
+
+    def save_reminder_state(self, **state):
+        return self.repository.save_reminder_state(**state)
+
     def reminder_summary(self, timezone='UTC'):
         return self.repository.reminder_summary(timezone)
 

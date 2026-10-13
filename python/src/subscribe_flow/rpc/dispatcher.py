@@ -81,6 +81,11 @@ class Dispatcher:
             # M15 设置：只读非敏感配置；写入由主进程先落好受保护密钥再提交引用。
             # M17：统计与列表同源，通知里说的两个数和页面看到的是同一批内容。
             "reminder.summary": (c.queries.reminder_summary, {}, {"timezone": str}),
+            "reminder.state": (c.queries.reminder_state, {}, {}),
+            "reminder.state.save": (c.queries.save_reminder_state, {},
+                                      {"signature": str, "generation": int, "next_check_at": int,
+                                       "last_handled_at": int, "last_result": str,
+                                       "notification_error": str, "backoff_index": int}),
             "settings.get": (c.settings.snapshot, {}, {}),
             "settings.update": (c.settings.update, {"section": str, "patch": dict}, {"credential_refs": dict}),
             # 私有凭据桥接：只由主进程调用，不在 Renderer 方法白名单内。

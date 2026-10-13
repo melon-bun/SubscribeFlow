@@ -451,6 +451,37 @@ class Repository:
                 "next_offset": offset + limit if offset + limit < total else None}
 
 
+    def save_reminder_state(self, *, signature, generation=0, next_check_at=None, last_handled_at=None,
+                            last_result=None, notification_error=None, backoff_index=0):
+        """原子维护提醒运行状态（计划 §5）。
+
+        signature 是提醒配置身份：配置切换后旧记录不得再被当成当前状态使用。
+        """
+        if not isinstance(signature, str) or not signature:
+            raise ChannelError('INVALID_INPUT', 'reminder.state', '缺少提醒配置身份')
+        with self.database.transaction() as db:
+            db.execute(
+                "INSERT INTO reminder_run_state(id,signature,generation,next_check_at,last_handled_at,"
+                "last_result,notification_error,backoff_index,updated_at) VALUES(1,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(id) DO UPDATE SET signature=excluded.signature,generation=excluded.generation,"
+                "next_check_at=excluded.next_check_at,last_handled_at=excluded.last_handled_at,"
+                "last_result=excluded.last_result,notification_error=excluded.notification_error,"
+                "backoff_index=excluded.backoff_index,updated_at=excluded.updated_at",
+                (signature, int(generation), next_check_at, last_handled_at, last_result,
+                 notification_error, int(backoff_index), now()))
+        return self.load_reminder_state()
+
+    def load_reminder_state(self):
+        row = self.db.execute(
+            "SELECT signature,generation,next_check_at,last_handled_at,last_result,notification_error,"
+            "backoff_index,updated_at FROM reminder_run_state WHERE id=1").fetchone()
+        if row is None:
+            return None
+        return {'signature': row['signature'], 'generation': row['generation'],
+                'nextCheckAt': row['next_check_at'], 'lastHandledAt': row['last_handled_at'],
+                'lastResult': row['last_result'], 'notificationError': row['notification_error'],
+                'backoffIndex': row['backoff_index'], 'updatedAt': row['updated_at']}
+
     def reminder_summary(self, timezone='UTC'):
         """待处理与高优先级未归档的数量（R01/R02）。
 

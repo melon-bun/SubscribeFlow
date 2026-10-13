@@ -157,3 +157,39 @@ class ReminderRpcTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class ReminderStatePersistenceTests(unittest.TestCase):
+    """提醒运行状态必须真的落到 SQLite，而不是一个空 persist 函数。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.db = Database(Path(self.temp.name) / 'm17-state.sqlite3')
+        self.repo = Repository(self.db)
+
+    def tearDown(self):
+        self.db.close()
+        self.temp.cleanup()
+
+    def test_state_round_trips_through_a_new_core_instance(self):
+        self.assertIsNone(self.repo.load_reminder_state(), '首次运行没有记录')
+        self.repo.save_reminder_state(signature='1:30', generation=2, next_check_at=1_800_000,
+                                      last_handled_at=1_000, last_result='checked',
+                                      notification_error='系统通知提交失败', backoff_index=1)
+        reopened = Repository(Database(Path(self.temp.name) / 'm17-state.sqlite3'))
+        saved = reopened.load_reminder_state()
+        self.assertEqual(saved['signature'], '1:30')
+        self.assertEqual(saved['nextCheckAt'], 1_800_000, '退出后仍要留有到期时间')
+        self.assertEqual(saved['generation'], 2)
+        self.assertEqual(saved['notificationError'], '系统通知提交失败')
+        self.assertEqual(saved['backoffIndex'], 1)
+
+    def test_missing_signature_is_rejected(self):
+        with self.assertRaises(ChannelError):
+            self.repo.save_reminder_state(signature='')
+
+    def test_saving_twice_keeps_one_row(self):
+        for index in range(3):
+            self.repo.save_reminder_state(signature='1:60', generation=index, next_check_at=index)
+        rows = self.db.connection.execute('SELECT count(*) FROM reminder_run_state').fetchone()[0]
+        self.assertEqual(rows, 1)
+        self.assertEqual(self.repo.load_reminder_state()['generation'], 2)
