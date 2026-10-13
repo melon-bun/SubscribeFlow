@@ -22,7 +22,7 @@ const allowed = new Set([
   'listTags', 'getTag', 'createTag', 'updateTag', 'setTagEnabled', 'removeTag', 'listTagContents',
   'setContentTags', 'bulkSetTags',
 ]);
-const events = new Set(['core.status', 'sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'tags.changed', 'run', 'runs', 'content', 'channels']);
+const events = new Set(['core.status', 'sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'tags.changed', 'run', 'runs', 'content', 'channels', 'reminder.navigate']);
 // Plain result envelopes cross contextBridge intact. Renderer creates its own
 // Error so code/scope/retry fields are not discarded while crossing contexts.
 async function request(name, params = {}) {

@@ -503,6 +503,17 @@
       app.tagCount = null;
       scheduleRefresh();
     }));
+    /* M17：通知点击。主进程会先恢复窗口再下发意图；这里清空旧过滤并打开
+       对应口径的统一列表——不还原通知里那个可能已经过时的数量。 */
+    app.unsubscribe.push(app.client.on("reminder.navigate", function (intent) {
+      if (!intent) return;
+      if (intent.view === "settings") { openSettings("tagging"); return; }
+      // 清空旧过滤，避免通知说 23 条而页面只显示当前平台下的 2 条。
+      app.filters = {quick: null, platform: null, channelId: null};
+      app.reminderView = intent.view === "high_unarchived" ? "high_unarchived" : "pending";
+      SF.app.navigate("inbox", {});
+      if (app.session) refreshData(true);
+    }));
     app.unsubscribe.push(app.client.on("core.status", function (status) {
       app.coreStatus = status;
       if (status.state === "ready") refreshData(true);
