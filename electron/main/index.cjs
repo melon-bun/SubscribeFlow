@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, protocol, shell, powerMonitor, Menu, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, shell, powerMonitor, Menu, dialog, Notification } = require('electron');
 const { promises: fs } = require('node:fs');
 const path = require('node:path');
 const { CoreClient } = require('./core-client.cjs');
@@ -14,6 +14,9 @@ const {resolveRuntime} = require('./runtime.cjs');
 const {createDiagnostics} = require('./diagnostics.cjs');
 const {CredentialService} = require('./credentials.cjs');
 const {SettingsBridge} = require('./settings-bridge.cjs');
+const {ReminderScheduler} = require('./reminders.cjs');
+const {TrayController} = require('./tray.cjs');
+const {WindowLifecycle} = require('./lifecycle.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const APP_URL = 'app://subscribe-flow/index.html';
@@ -85,6 +88,86 @@ async function start() {
     acquisition:(params,signal) => channels.request(params,signal) });
   // M15：普通配置走 Core；Main 加密保管密钥，只经私有桥推送到 Core 内存。
   const settingsBridge = new SettingsBridge({core, credentials: new CredentialService({dir: app.getPath('userData')})});
+
+  // M17：提醒调度器。计时在 Main，Renderer 隐藏／重载／崩溃都不影响。
+  // 统计走 Core 的 reminder.summary，运行状态经 reminder.state 持久化。
+  const scheduler = new ReminderScheduler({
+    now: () => Date.now(),
+    summary: () => core.call('reminder.summary'),
+    notify: (summary, context) => postReminder(summary, context),
+    persist: (state) => core.call('reminder.state.save', {
+      signature: state.signature,
+      generation: state.generation,
+      next_check_at: state.nextCheckAt,
+      last_handled_at: state.lastHandledAt,
+      last_result: state.lastResult,
+      notification_error: state.notificationError,
+      backoff_index: state.backoffIndex,
+    }).catch(() => {}),
+  });
+  let reminderNotification = null;
+
+  /** 单条汇总通知的生命周期：有内容就更新同一条，全零就关掉它。 */
+  function postReminder(summary, context) {
+    if (!Notification.isSupported()) return {status: 'unsupported'};
+    try {
+      if (context.kind === 'clear') {
+        if (reminderNotification) { reminderNotification.close(); reminderNotification = null; }
+        return {status: 'cleared'};
+      }
+      const parts = [];
+      if (summary.pendingCount) parts.push(`${summary.pendingCount} 条内容未处理`);
+      if (summary.highUnarchivedCount) parts.push(`${summary.highUnarchivedCount} 条高优先级内容尚未归档`);
+      const body = `你有 ${parts.join('；')}。`;
+      if (reminderNotification) {
+        // 尽量更新同一条，避免通知中心堆积。
+        reminderNotification.body = body;
+        reminderNotification.show();
+        return {status: 'updated'};
+      }
+      reminderNotification = new Notification({title: '知流', body});
+      reminderNotification.on('close', () => { reminderNotification = null; });
+      reminderNotification.on('click', () => { if (lifecycle) void lifecycle.navigateFromNotification(summary.pendingCount ? 'pending' : 'high_unarchived'); });
+      reminderNotification.show();
+      return {status: 'shown'};
+    } catch (error) {
+      // 显示失败单独记录，不让提醒本身停摆。
+      return {status: 'failed', error: error.message};
+    }
+  }
+
+  const lifecycle = new WindowLifecycle({
+    getWindow: () => window,
+    createWindow: () => createWindow(),
+    onQuitTasks: () => scheduler.halt(),
+    closeResources: () => [core.stop(), channels.close()],
+    destroyTray: () => { if (tray) { tray.destroy(); tray = null; } },
+    hardQuit: () => { quitting = true; app.exit(0); },
+  });
+
+  let tray = null;
+  function ensureTray() {
+    if (tray) return tray;
+    try {
+      tray = new TrayController({
+        summary: () => core.call('reminder.summary'),
+        showWindow: () => { void lifecycle.restore(); },
+        openList: (view) => { void lifecycle.navigateFromNotification(view); },
+        openSettings: () => { void lifecycle.restore(); send('reminder.navigate', {view: 'settings'}); },
+        quit: () => { void lifecycle.quit(); },
+        iconPath: path.join(__dirname, '../../assets/icon.png'),
+        now: () => Date.now(),
+      });
+      tray.create();
+    } catch (error) {
+      // 托盘建立失败：保留可访问的主窗口并说明原因，绝不隐藏成找不回来的进程。
+      tray = null;
+      lifecycle.canHide = false;
+      diagnostic('tray.create', {error: error.message});
+      send('tray.status', {available: false, message: '托盘不可用，关闭主窗口会退出应用：' + error.message});
+    }
+    return tray;
+  }
   const updatePower = () => {
     const value = suspended;
     powerUpdate = powerUpdate.catch(() => {}).then(() => core.ready && core.call('system.power',{suspended:value}));
@@ -154,7 +237,17 @@ async function start() {
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('will-attach-webview', event => event.preventDefault());
   await window.loadURL(APP_URL);
-  window.on('closed', () => { window = null; app.quit(); });
+  // M17：托盘与提醒在窗口就绪后建立，失败不阻断启动。
+  ensureTray();
+  void core.call('settings.get').then((settings) => {
+    scheduler.applySettings(settings);
+    if (!smoke && !rendererSmoke) {
+      // 启动时先加载持久运行状态，再决定恢复还是合并一次过期检查。
+      return core.call('reminder.state').then((state) => scheduler.restore(state));
+    }
+  }).catch(() => {});
+  window.on('closed', () => { window = null; });
+  window.on('close', event => { if (lifecycle) lifecycle.interceptClose(event); });
   try { await core.start(); }
   catch (error) { lastStatus = {state: 'error', message: error.message}; diagnostic('core.status', lastStatus); send('core.status', lastStatus); if (smoke || rendererSmoke) throw error; }
   if (rendererSmoke) {
@@ -203,12 +296,18 @@ async function start() {
     }
   }
 }
-app.on('second-instance', () => { if (window && !window.isDestroyed()) { window.show(); window.focus(); } });
-app.on('window-all-closed', () => app.quit());
+// M17：托盘常驻时关闭全部窗口不退出；托盘未建立时才退出，避免应用无法找回。
+app.on('second-instance', () => { if (lifecycle) void lifecycle.restore(); });
+app.on('activate', () => { if (lifecycle) void lifecycle.restore(); });
+app.on('window-all-closed', () => { if (!lifecycle || !lifecycle.canHide) app.quit(); });
 app.on('before-quit', event => {
   if (quitting || !core) return;
   event.preventDefault();
   quitting = true;
   diagnostic('app.quit');
-  Promise.allSettled([core.stop(), channels.close()]).finally(() => app.quit());
+  // M17：提醒调度器一并停掉；明确退出的清理走 lifecycle 的有界流程。
+  if (scheduler) scheduler.halt();
+  Promise.allSettled([core.stop(), channels.close()])
+    .then(() => { if (tray) tray.destroy(); })
+    .finally(() => app.quit());
 });

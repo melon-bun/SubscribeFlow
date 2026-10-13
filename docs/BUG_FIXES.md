@@ -768,7 +768,8 @@
 - 原因：`electron/main/reminders.cjs` 的 applySettings 调用无参数 arm()，arm 对 undefined 做 Math.max 得到 NaN，Node 将 setTimeout(NaN) 按 1ms 处理。现有测试手动调用 run，未真正测试定时器到期。
 - 修复范围：由 MiniMax 修复真实定时器的计算／调度，并增加实际 timer 或可注入 timer 的到期断言，不用手动 run 冒充计时验收。
 - 验证：`verification/m17-review/scheduler-before.json` 第一例 actualCalls=1、expectedCalls=0；出现 TimeoutNaNWarning。
-- 状态：待修复，已复现。修复提交待 MiniMax 补充。
+- 状态：已修复并验证；相关源码提交 `aa731f7`。
+- 验证：真实定时器路径覆盖：启用 60 分钟后断言定时器延迟为 21600000ms 且为有限数，推进时钟到 30ms 与 59 分钟后通知次数恒为 0，真正到期才触发一次并排出下一周期。回归用例使用可注入假定时器驱动到期，不再以手动调用 run() 冒充计时验收。Node 112 项通过。提交 `aa731f7`。
 
 ## BUG-072：M17 配置切换和迟到通知回执覆盖当前运行状态
 
@@ -779,7 +780,8 @@
 - 修复范围：由 MiniMax 增加单调版本／代际，在全部异步边界检查；为持久状态写入也提供版本保护，防止迟到写入。已提交给系统的通知无法撤回投递事实时如实处理，但不能继续改写新状态。
 - 验证：`verification/m17-review/scheduler-before.json` 第二、三例均复现；实际旧通知 1 次，停用后 timer 又存在。
 - 修复验收：开→关→开（相同间隔）、通知在途修改间隔、查询迟到失败、退出中的回执，以及配置变化恰逢 timer 触发；新配置保持正确，后续新周期仍能执行。
-- 状态：待修复，已复现。修复提交待 MiniMax 补充。
+- 状态：已修复并验证；相关源码提交 `aa731f7`。
+- 验证：覆盖五条：开→关→开（相同间隔）作废在途查询；通知在途改间隔后迟到回执不改写 nextCheckAt、lastResult 与定时器；停用后在途回执不重建定时器；迟到失败不污染新配置状态也不带进退避；无关 AI 保存不推进代际。提交 `aa731f7`。
 
 ## BUG-073：M17 退出清空下次到期时间，不能恢复原提醒周期
 
@@ -790,4 +792,5 @@
 - 修复范围：由 MiniMax 修复持久契约与启动顺序，并接入计划要求的 Core 持久存储；配置身份、下一时间、通知结果原子维护，旧状态不能覆盖新配置。
 - 验证：`verification/m17-review/scheduler-before.json` 第四例 actualSavedDue=null。现有 restore 同时 arm(0) 和主动 run，还应验证慢／快异步返回下均只合并一轮。
 - 修复验收：到期前退出再开保留原时间；过期重开／连续 resume 只检查一次；停用后的旧记录不激活提醒；重启不丢退避状态；配置不符的旧状态不恢复。
-- 状态：待修复，已复现。修复提交待 MiniMax 补充。
+- 状态：已修复并验证；相关源码提交 `aa731f7`（Core 持久层 `14c9cea`）。
+- 验证：退出只释放进程内 timer，持久 nextCheckAt 原样保留；恢复先校验 signature，配置不符的旧记录返回 false 且不激活提醒；过期周期连续 restore 三次只触发一次查询。Core 侧新增迁移 010_reminder_state 与 reminder.state／reminder.state.save 两条 RPC，跨 Core 实例往返验证通过（提交 `14c9cea`）。提交 `aa731f7`。
