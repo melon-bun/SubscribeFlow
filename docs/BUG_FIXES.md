@@ -5,7 +5,7 @@
 功能增强另见 [Minimax 增强记录](ENHANCEMENTS_minimax.md)，模块进度见 [PROGRESS.md](PROGRESS.md)。
 
 维护规则：每项使用稳定编号，记录现象、复现步骤、预期、原因、修复范围、验证证据和提交。
-状态使用“待定位 / 修复中 / 待验证 / 已修复 / 外部阻塞 / 重新打开”；验证未完成不能记为已修复。
+状态使用“待定位 / 待修复 / 修复中 / 待验证 / 已修复 / 外部阻塞 / 重新打开”；验证未完成不能记为已修复。
 复发时在原条目追加日期和新证据，不新建重复条目。测试必须使用隔离数据，不修改用户实际内容或登录状态。
 
 | 编号 | 问题 | 状态 |
@@ -29,6 +29,16 @@
 | BUG-016 | M8 遗漏日历模式的优先级可视化与完整统计 | 已修复，源码验收通过 |
 | BUG-046 | M11 日期投影编写时精确时间转换分支位置错误 | 已修复，提交前验证通过 |
 | BUG-047 | contextBridge 丢失业务错误 code／scope 等字段 | 已修复 |
+| BUG-061 | M16 只有独立识别包，未接入自动打标业务流程 | 待修复，P1 |
+| BUG-062 | 模型 HTTP 重定向向其他来源转发认证头 | 待修复，P1 |
+| BUG-063 | 模型服务原始错误正文进入异常与 CLI 输出 | 待修复，P1 |
+| BUG-064 | Jev 非法答案被当成正常无匹配 | 待修复，P2 |
+| BUG-065 | LLM 接受不在输入目录中的已有标签 ID | 待修复，P2 |
+| BUG-066 | LLM 输出校验异常被误报为用户输入错误 | 待修复，P2 |
+| BUG-067 | HTTP 超时没有约束整个请求的执行时间 | 待修复，P2 |
+| BUG-068 | HTTP 响应中途断开时泄出底层异常 | 待修复，P2 |
+| BUG-069 | Jev 批大小与概率门槛未校验，错误配置返回成功 | 待修复，P2 |
+| BUG-070 | Jev 未返回模型版本时用请求别名冒充实际版本 | 待修复，P2 |
 
 ## BUG-001：收件箱操作后未移出
 
@@ -630,3 +640,123 @@
 - 修复范围：Main 测试通知服务、状态反馈与事件替身测试。
 - 验证：3 项通知事件测试通过（异步 show／failed、同步异常／不支持、无事件有界返回），包含在全量 Node 81 项中；真实系统显示未做人工确认，不以替身结果代替。依据 [Electron Notification 的 show／failed 事件契约](https://www.electronjs.org/docs/latest/api/notification)。
 - 状态：已修复并验证；相关源码提交 `a061d3c`。
+
+## BUG-061：M16 只有独立识别包，未接入自动打标业务流程
+
+- 发现日期／优先级：2026-10-13，M16 审查，P1。
+- 现象与复现：按设置开启自动打标后，订阅首次保存或手动确认保存都没有通向新识别包的调用链；“测试连接”仍禁用，“标签 → AI 自动识别”仍显示未接入。审查提交相对父提交仅增加 `python/src/tagging_engine/` 的 8 个文件及 1 个测试文件，没有 Core、存储、RPC 或 Renderer 接入修改。
+- 预期：四期计划 §3、§6 和 A02／A05–A11 要求的持久事件、可恢复任务、配置／凭据桥接、标签应用、状态／重试／补打和连接测试均应完成；独立包属于 M16 的一部分。
+- 原因与定位：`python/src/subscribe_flow/bootstrap.py:41` 的 `recognition_provider` 默认仍为 `None`，第 62 行传给旧 TagService；业务源码中没有导入 `tagging_engine`，没有 `content.created` 持久事件或自动打标任务迁移。`application/tags.py:93` 仍调用旧 `suggest()` 契约，第 121–127 行仍只回报新标签、不创建。`electron/renderer/scripts/views/settings.js:755` 禁用连接测试；`views/tags.js:1060` 显示未接入。
+- 建议修复范围：保留独立包边界，在 Core 组装处映射契约并注入 Provider；按计划补齐持久事件／任务、事务内标签应用和 UI／RPC。不能直接在采集 Adapter 里同步调用模型。LLM 新建标签、别名／禁用标签规则、人工移除保护、过期结果与崩溃恢复都需要实际接入。
+- 验证结果：本轮通过提交差异、全库引用和现有业务入口静态确认缺口；191 项 Python 通过不能证明这条尚不存在的链路完成。没有冒充执行端到端验收。
+- 修复验收：隔离库分别走订阅和手动保存；验证一次入队、重复 no-op、标签写入与状态持久化、关闭／切换配置、失败重试、重启恢复、人工保护、历史补打；正式设置连接测试复用同一 Provider。真实调用、中文质量和桌面凭据桥分别保留证据，托盘相关验收留到 M17。
+- 状态：待修复，已确认交付缺口；用户要求仅记录，交 minimax 处理。
+- 相关提交：审查 `12e2713`，本轮无修复提交。
+
+## BUG-062：模型 HTTP 重定向向其他来源转发认证头
+
+- 发现日期／优先级：2026-10-13，M16 审查，P1。
+- 现象与复现：配置的模型地址返回 302，指向另一来源；`HttpTransport.post_json` 自动跟随，目的服务收到原 `Authorization: Bearer …`。两个本机不同端口的隔离服务已复现。另对默认 redirect handler 的纯内存验证确认，HTTPS → 另一主机的 HTTP 也保留认证头，无需真实联网即可检查此行为。
+- 预期：认证信息只发送到明确配置并允许的来源；跨来源跳转和 HTTPS 降级不得带出 Key。
+- 原因与定位：`python/src/tagging_engine/transport.py:74–79` 把认证头作为普通 header 加入 Request，随后直接使用 `urllib.request.urlopen` 的默认重定向策略，没有来源／协议约束。
+- 建议修复范围：传输层默认拒绝 API 重定向，或明确约束允许的同来源跳转、协议和方法；跨来源与降级不能转发认证头。不要通过关闭 TLS 校验解决。
+- 验证结果：`verification/m16-review/reproductions.json` 中 `http_cross_origin_redirect` 的 `destination_received_authorization=true`；`default_redirect_https_downgrade` 的 `authorization_retained=true`。只使用人工占位 Key，没有泄露真实凭据。
+- 修复验收：本机替身覆盖跨主机／跨端口／HTTPS 降级；断言目标端收不到认证头或根本不收到请求；若支持同来源重定向，还需验证 POST 的方法和载荷语义。
+- 状态：待修复，已复现；交 minimax。
+- 相关提交：引入于 `12e2713`，本轮无修复提交。
+
+## BUG-063：模型服务原始错误正文进入异常与 CLI 输出
+
+- 发现日期／优先级：2026-10-13，M16 审查，P1。
+- 现象与复现：服务返回 HTTP 400，`error.message` 含回显的 Key 或原文；`RecognitionError.message` 原样含这些字段，CLI 的 `error.to_dict()` 又直接打印。401／403／429 的固定消息分支不受此例影响，其余 4xx／5xx 存在该路径。
+- 预期：错误契约、CLI、后续任务状态与日志只含脱敏、长度受限的原因，不能依赖供应商保证错误正文安全。
+- 原因与定位：`python/src/tagging_engine/transport.py:87–91` 直接拼接远端 `error.message`；`__main__.py:67–69` 直接输出。与该模块“密钥不进异常”的约定冲突。
+- 建议修复范围：传输边界使用固定分类消息及允许公开的有限字段；不得原样携带认证信息或完整输入。错误正文解析／读取也应有大小限制，保留状态码即可辅助诊断。
+- 验证结果：本机替身 `http_error_echo` 的错误消息包含人工占位 Key 和 `synthetic-private-text`，见 `verification/m16-review/reproductions.json`；没有使用个人内容或真实 Key。
+- 修复验收：400 和 500 等响应回显假认证头、假原文、长错误时，异常、CLI JSON 和接入后的任务／日志均不出现这些值，仍保留正确分类与可重试标志。
+- 状态：待修复，已复现；交 minimax。
+- 相关提交：引入于 `12e2713`，本轮无修复提交。
+
+## BUG-064：Jev 非法答案被当成正常无匹配
+
+- 发现日期／优先级：2026-10-13，M16 审查，P2。
+- 现象与复现：答案包含请求 ID，但缺 `noul`、类型为 `choice`、概率为 1.4／布尔值／NaN，或整个答案为 null，Provider 均正常返回 `no_match`。混合有效与无效答案时还可能返回部分 `matched`，掩盖未完成的分类。
+- 预期：只有合法且低于门槛的答案可算无匹配；缺项、错误类型、非有限或越界概率必须报 `invalid_response`，不能作为成功任务或连接测试通过。四期方案 §7.2 与 [TypeSafe 官方答案契约](https://docs.typesafe.ai/api)要求答案类型对应问题且 Noul 值位于 0–1。
+- 原因与定位：`python/src/tagging_engine/providers/jev.py:119–129` 对非法答案返回 `None`，第 59–60 行跳过；`_answers` 仅检查缺少 ID。`python/tests/test_tagging_engine.py:114–119` 反而将这类非法响应断言为 `no_match`，固化了错误行为。
+- 建议修复范围：严格校验完整答案映射、类型与有限概率，失败统一抛 `RecognitionError('invalid_response', …)`；同步修正上述错误测试预期。
+- 验证结果：独立复现中的 6 个 `jev_*` 非法答案用例均返回 `no_match`；现有 23 项识别包测试通过，因此不能用现有绿灯否定此问题。
+- 修复验收：每种非法答案及“一个有效＋一个非法”都整体失败；合法 0、1、低于门槛与空候选目录仍按契约返回；错误／多余问题 ID 也应校验。
+- 状态：待修复，已复现；交 minimax。
+- 相关提交：引入于 `12e2713`，本轮无修复提交。
+
+## BUG-065：LLM 接受不在输入目录中的已有标签 ID
+
+- 发现日期／优先级：2026-10-13，M16 审查，P2。
+- 现象与复现：输入候选仅含 `t1`，LLM 返回 `{"tags":[{"tagId":"outside-catalog"}]}`，Provider 正常输出 `matched`，把任意字符串当成合法已有标签身份。
+- 预期：已有标签 ID 必须来自本次候选目录；自由生成只能提出通过校验的名称。Engine 先检查请求范围，Core 落库时再检查目录版本和当前启用状态，二者职责不能互相替代。
+- 原因与定位：`python/src/tagging_engine/providers/llm.py:107–110` 只调用通用字段校验，没有与 `request.candidates` 对照；`contracts.py:189–202` 对 ID 仅检查非空字符串。
+- 建议修复范围：Provider 拒绝目录外 ID；若 LLM 协议只允许名称，则明确拒绝返回 ID，而不是隐式接受。若支持返回已有 ID，提示词须传入稳定 ID，并建立对应的输出校验。
+- 验证结果：`verification/m16-review/reproductions.json` 的 `llm_unknown_id` 输出 `matched` 和目录外 ID。当前未接入落库，因此本轮不声称已写入错误关联。
+- 修复验收：有效已有 ID、新名称正常；未知 ID、空 ID、恶意伪造 ID 返回 `invalid_response`，不生成可应用结果；集成后同时验证禁用／删除／目录版本变化。
+- 状态：待修复，已复现；交 minimax。
+- 相关提交：引入于 `12e2713`，本轮无修复提交。
+
+## BUG-066：LLM 输出校验异常被误报为用户输入错误
+
+- 发现日期／优先级：2026-10-13，M16 审查，P2。
+- 现象与复现：合法输入下，模型返回 41 字名称、6 个标签或非对象条目，Provider 抛普通 `ValueError`；独立 CLI 将其输出为 `invalid_input`、退出码 2，而非模型的 `invalid_response`。这些错误也没有约定的 `retryable` 字段。
+- 预期：区分用户输入错误与模型响应错误；调用方可只依赖 `RecognitionError` 处理模型失败。
+- 原因与定位：`python/src/tagging_engine/providers/llm.py:107–110` 未转换 `check_candidates` 的 `ValueError`；`__main__.py:70–72` 将所有此类异常视为输入错误。
+- 建议修复范围：在 Provider 的响应解析边界捕获候选校验错误，转换为脱敏的 `RecognitionError('invalid_response', …)`；保留真正输入错误的独立分类，不在 CLI 笼统改写全部 ValueError。
+- 验证结果：`llm_name_too_long`、`llm_too_many_tags`、`llm_invalid_entry` 均抛 `ValueError`；`llm_invalid_response_cli` 实际退出码 2，JSON code 为 `invalid_input`。
+- 修复验收：以上模型输出返回 `invalid_response`、不可重试及退出码 1；坏输入仍为 `invalid_input`、退出码 2；正常空标签仍是合法无匹配。
+- 状态：待修复，已复现；交 minimax。
+- 相关提交：引入于 `12e2713`，本轮无修复提交。
+
+## BUG-067：HTTP 超时没有约束整个请求的执行时间
+
+- 发现日期／优先级：2026-10-13，M16 审查，P2。
+- 现象与复现：设置 timeout=0.08 秒，本机服务每 0.02 秒发送一个字节；请求约 0.691 秒后仍成功返回。服务持续缓慢送字节时，总时间可以不断延长，不能兑现传输层注释所称的硬边界。
+- 预期：执行耗时受明确的总预算约束；后续有界 worker 不能被慢响应长期占满，取消／退出也不能仅丢弃等待结果而留下永不结束的工作线程。
+- 原因与定位：`python/src/tagging_engine/transport.py:77–79` 只把超时传给 socket 阻塞操作，再一次性 `response.read()`；没有总 deadline。Jev 顺序分批也没有共享识别预算。
+- 建议修复范围：明确区分单次网络等待和整个识别的时间预算，并在传输读取／批处理及 Core 调度边界落实；超预算释放连接并返回 `timeout`。只给 future 设置等待超时不足以证明底层调用终止。
+- 验证结果：`verification/m16-review/reproductions.json` 的 `http_slow_response_timeout` 保存了配置值、实际耗时和成功响应；只访问本机服务。
+- 修复验收：慢速分块、错误响应正文慢速传输、连续多批及停止操作均在约定预算和合理调度余量内结束；后续正常任务仍有执行容量。
+- 状态：待修复，已复现；交 minimax。
+- 相关提交：引入于 `12e2713`，本轮无修复提交。
+
+## BUG-068：HTTP 响应中途断开时泄出底层异常
+
+- 发现日期／优先级：2026-10-13，M16 审查，P2。
+- 现象与复现：服务宣告 `Content-Length: 100`，只发送 2 字节便关闭；`HttpTransport` 泄出 `http.client.IncompleteRead`，没有 `code` 或 `retryable`。CLI 未捕获该类型，将以 traceback 结束，无法按统一网络失败恢复。
+- 预期：连接中断、读取不完整等传输错误应转成脱敏且可重试的 `RecognitionError('network_failed', …)`；调用者不应依赖具体 HTTP 库异常。
+- 原因与定位：`python/src/tagging_engine/transport.py:79` 的读取可能抛 HTTP 读取／连接异常，而第 80–106 行只覆盖 HTTPError、URLError、SSL 验证和 TimeoutError。HTTPError 分支读取错误正文也没有独立保护。
+- 建议修复范围：在网络边界补齐实际读写异常分类，保持超时、认证、协议校验等既有类别，不要用一个宽泛捕获把程序错误全部变成可重试网络错误。
+- 验证结果：`http_truncated_response` 实际异常 `IncompleteRead(2 bytes read, 98 more expected)`；见 `verification/m16-review/reproductions.json`。
+- 修复验收：提前 EOF、连接重置、响应头之前断开、错误正文中途断开均输出约定结构；任务接入后验证有界重试、最终失败及资源释放。
+- 状态：待修复，已复现；交 minimax。
+- 相关提交：引入于 `12e2713`，本轮无修复提交。
+
+## BUG-069：Jev 批大小与概率门槛未校验，错误配置返回成功
+
+- 发现日期／优先级：2026-10-13，M16 审查，P2。
+- 现象与复现：通过公开工厂／独立入口传入 `batch=-1`，非空候选目录一次请求也不发送却返回正常 `no_match`；传入 `threshold=1.2`，即使概率 0.99 也全部无匹配；NaN 门槛同样被接受。
+- 预期：错误配置在请求前失败，不应伪装为已经评估过的合法结果。
+- 原因与定位：`python/src/tagging_engine/registry.py:33–38` 直接传参数；`providers/jev.py:29–33` 直接保存，第 51 行的负步长 range 为空，第 60 行直接比较门槛。该问题可从独立包公开入口触发，不依赖未来高级设置 UI。
+- 建议修复范围：在公共构造边界统一校验 batch 为正整数且排除布尔值，threshold 为有限的 0–1 数值；同时检查公开 timeout 参数为正有限数。工厂与直接 Provider 构造都应遵守约束。
+- 验证结果：`jev_negative_batch` 记录 `calls=0` 和 `no_match`；`jev_out_of_range_threshold`、`jev_nan_threshold` 记录调用后 `no_match`。
+- 修复验收：负数、零／非整数批大小、布尔值、非有限／越界门槛在调用 transport 前被拒绝；合法批大小仍覆盖所有候选，合法门槛边界行为明确。
+- 状态：待修复，已复现；交 minimax。
+- 相关提交：引入于 `12e2713`，本轮无修复提交。
+
+## BUG-070：Jev 未返回模型版本时用请求别名冒充实际版本
+
+- 发现日期／优先级：2026-10-13，M16 审查，P2。
+- 现象与复现：请求模型为 `jev-latest`，响应含合法答案但没有 `model`；结果仍声称 `model='jev-latest'`。无法区分服务已确认模型与客户端请求别名，影响计划要求的真实验收报告。
+- 预期：结果的 model 只记录服务实际返回的标识；缺失则按严格协议拒绝，或明确为未提供，不用请求别名填充。请求模型可独立记录。
+- 原因与定位：`python/src/tagging_engine/providers/jev.py:50–55` 以 `self.model` 初始化 resolved，响应没有 model 时保留。与 `RecognitionResult` 的字段约定及四期计划 §7.2 不一致。
+- 建议修复范围：分离请求模型与实际返回模型；分批结果中不同／缺失模型的处理应明确，不能无声以最后一个非空模型概括全部结果。
+- 验证结果：`verification/m16-review/reproductions.json` 的 `jev_missing_actual_model` 返回 `matched` 及请求别名 `jev-latest`。
+- 修复验收：服务返回实际标识时正确记录；缺失时不回填别名；多批模型不一致或部分缺失时，报告不得宣称一次确认了同一底层版本。
+- 状态：待修复，已复现；交 minimax。
+- 相关提交：引入于 `12e2713`，本轮无修复提交。
