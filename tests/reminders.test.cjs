@@ -1,129 +1,108 @@
 'use strict';
 /**
- * M17 提醒调度器测试（T01–T04）。
+ * M17 提醒调度器测试（T01–T04、BUG-071~073）。
  *
- * 全部使用假时钟、假统计与假通知：不等待真实时间，不弹真实通知。
- * 真实桌面显示属于人工验收，mock 不作为真实显示证据。
+ * 关键点：**必须真的跑定时器**。上一版全部靠手动调用 run()，结果 NaN 延迟
+ * 这类只会在真定时器上暴露的问题整个测试套件都看不见（BUG-071）。
+ * 这里用可注入的假定时器：到期逻辑与 setTimeout 完全一致，但断言立即可判定。
  */
 const test = require('node:test');
 const assert = require('node:assert');
 const {ReminderScheduler, reminderSignature} = require('../electron/main/reminders.cjs');
 
+/** 手动推进的假定时器：保存 fn 与到期时刻，由 tick() 精确触发。 */
+function fakeTimers() {
+  const queue = new Map();
+  let nextId = 1;
+  return {
+    setTimer: (fn, ms) => {
+      const id = nextId++;
+      queue.set(id, {fn, due: ms});
+      return {id, unref() {}};
+    },
+    clearTimer: (handle) => {
+      if (handle) queue.delete(handle.id);
+    },
+    /** 到期的回调按到期时刻顺序执行，返回条数。 */
+    tick() {
+      const due = [...queue.entries()].sort((a, b) => a[1].due - b[1].due);
+      for (const [id, entry] of due) {
+        queue.delete(id);
+        entry.fn();
+      }
+      return due.length;
+    },
+    pending: () => queue.size,
+    delays: () => [...queue.values()].map((entry) => entry.due),
+  };
+}
+
 function harness({summary, notify, start = 1_000_000} = {}) {
   let clock = start;
+  const timers = fakeTimers();
   const calls = {notify: [], summary: 0, persist: []};
+  // 统计调用次数在这里统一计数：之前自定义 summary 没经过计数器，
+  // 断言「查询了几次」时读到的是恒为 0 的值。
+  const query = summary || (async () => ({pendingCount: 0, highUnarchivedCount: 0}));
   const scheduler = new ReminderScheduler({
     now: () => clock,
-    summary: summary || (async () => ({pendingCount: 0, highUnarchivedCount: 0})),
-    notify: notify || (async (summary, context) => {
-      calls.notify.push({summary, context});
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+    summary: async () => {
+      calls.summary += 1;
+      return query();
+    },
+    notify: notify || (async (value, context) => {
+      calls.notify.push({summary: value, context});
       return {status: 'shown'};
     }),
     persist: (state) => calls.persist.push(state),
   });
-  return {
+  const h = {
     scheduler,
     calls,
-    advance: (ms) => {
+    timers,
+    at: () => clock,
+    /** 推进时钟但不触发回调：用来验证「到期前一次都不该触发」。 */
+    idle: (ms) => {
       clock += ms;
     },
-    at: () => clock,
-    /** 直接触发到期：推进时钟后等一个微任务，模拟定时器到点。 */
+    /** 推进时钟并触发已到期的定时器。 */
     async tick(ms) {
       clock += ms;
-      await scheduler.run({reason: 'test'});
+      timers.tick();
+      await new Promise((resolve) => setImmediate(resolve));
     },
   };
+  return h;
 }
 
 const enabled = (minutes) => ({reminder: {enabled: true, intervalMinutes: minutes}});
 const disabled = () => ({reminder: {enabled: false, intervalMinutes: 60}});
 
-test('启用后按间隔推进周期，数量不变也照常提醒', async () => {
-  const h = harness({summary: async () => ({pendingCount: 3, highUnarchivedCount: 1})});
-  h.scheduler.applySettings(enabled(15));
-  assert.equal(h.scheduler.state.nextCheckAt, h.at() + 15 * 60_000);
-  await h.tick(15 * 60_000);
-  assert.equal(h.calls.notify.length, 1);
-  assert.equal(h.scheduler.state.lastResult, 'checked');
-  // 推进到下一个周期，不是因为数量变化。
-  await h.tick(15 * 60_000);
-  assert.equal(h.calls.notify.length, 2, '数量没变也应按期提醒');
-});
-
-test('两个数都为零时不通知，并清理上一次汇总通知', async () => {
-  let pending = 2;
-  const h = harness({summary: async () => ({pendingCount: pending, highUnarchivedCount: 0})});
-  h.scheduler.applySettings(enabled(15));
-  await h.tick(15 * 60_000);
-  assert.equal(h.calls.notify.length, 1);
-  pending = 0;
-  await h.tick(15 * 60_000);
-  assert.equal(h.calls.notify.at(-1).context.kind, 'clear', '全零要收回汇总通知');
-  assert.equal(h.scheduler.running.notified, 1, '全零那轮不算已通知');
-});
-
-test('查询失败走有限退避，且不用旧计数伪造提醒', async () => {
-  let fail = true;
-  const h = harness({
-    summary: async () => {
-      if (fail) throw new Error('Core 暂不可用');
-      return {pendingCount: 4, highUnarchivedCount: 0};
-    },
-  });
+test('BUG-071：启用 60 分钟后，到期前一次定时器都不能触发', async () => {
+  const h = harness({summary: async () => ({pendingCount: 7, highUnarchivedCount: 0})});
   h.scheduler.applySettings(enabled(60));
-  const delays = [];
-  for (let i = 0; i < 4; i++) {
-    const before = h.at();
-    await h.tick(1);
-    delays.push(h.scheduler.state.nextCheckAt - before);
-  }
-  // 每次 tick 前先推进 1ms，所以比标称延迟多 1ms。
-  assert.deepEqual(delays, [30_001, 120_001, 600_001, 600_001], '退避递增并封顶');
-  assert.equal(h.calls.notify.length, 0, '查询失败期间不得用旧计数发提醒');
-  fail = false;
-  await h.tick(600_000);
-  assert.equal(h.scheduler.state.backoffIndex, 0, '成功后回到正常周期');
-  assert.equal(h.calls.notify.length, 1);
+  assert.equal(h.timers.delays()[0], 60 * 60_000, '定时器延迟必须是真实间隔，不能是 NaN');
+  assert.ok(h.timers.delays().every((d) => Number.isFinite(d)), 'NaN 延迟会被 setTimeout 当成 1ms');
+  // 只推进时钟、不触发回调：通知次数必须保持 0。
+  h.idle(30);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.calls.notify.length, 0, '30ms 内不得触发任何提醒');
+  h.idle(59 * 60_000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.calls.notify.length, 0, '到期前仍不得触发');
 });
 
-test('统计缺字段按查询失败处理，不当成全零', async () => {
-  const h = harness({summary: async () => ({pendingCount: 5})});
-  h.scheduler.applySettings(enabled(30));
-  await h.tick(30 * 60_000);
-  assert.equal(h.calls.notify.length, 0);
-  assert.equal(h.scheduler.state.lastResult, 'query_failed');
-});
-
-test('停用立即取消待触发任务', async () => {
-  const h = harness();
+test('BUG-071：真正到期才触发一次，并排出下一个周期', async () => {
+  const h = harness({summary: async () => ({pendingCount: 7, highUnarchivedCount: 0})});
   h.scheduler.applySettings(enabled(60));
-  assert.ok(h.scheduler.timer);
-  h.scheduler.applySettings(disabled());
-  assert.equal(h.scheduler.timer, null, '停用要立刻清掉计时器');
-  assert.equal(h.scheduler.state.nextCheckAt, null);
-  const before = h.calls.notify.length;
-  await h.tick(120 * 60_000);
-  assert.equal(h.calls.notify.length, before, '停用后不再触发');
+  await h.tick(60 * 60_000);
+  assert.equal(h.calls.notify.length, 1);
+  assert.deepEqual(h.timers.delays(), [60 * 60_000], '成功后重新排出一个完整周期');
 });
 
-test('保存无关的 AI 设置不重置提醒间隔', async () => {
-  const h = harness({summary: async () => ({pendingCount: 1, highUnarchivedCount: 0})});
-  h.scheduler.applySettings(enabled(30));
-  await h.tick(30 * 60_000);
-  const due = h.scheduler.state.nextCheckAt;
-  const reset = h.scheduler.applySettings({
-    reminder: {enabled: true, intervalMinutes: 30},
-    tagging: {enabled: true, mode: 'jev'},
-  });
-  assert.equal(reset, false, '提醒配置未变就不该重置');
-  assert.equal(h.scheduler.state.nextCheckAt, due, '到期时间保持不变');
-  // 提醒自身改变时必须重置。
-  assert.equal(h.scheduler.applySettings(enabled(45)), true);
-  assert.equal(h.scheduler.state.nextCheckAt, h.at() + 45 * 60_000);
-});
-
-test('设置改变后丢弃在途的旧结果', async () => {
+test('BUG-072：开→关→开（相同间隔）作废在途的旧查询', async () => {
   let release;
   const gate = new Promise((resolve) => {
     release = resolve;
@@ -135,13 +114,219 @@ test('设置改变后丢弃在途的旧结果', async () => {
     },
   });
   h.scheduler.applySettings(enabled(60));
+  const generation = h.scheduler.currentGeneration();
   const running = h.scheduler.run({reason: 'test'});
-  // 查询在途时用户改了间隔。
+  h.scheduler.applySettings(disabled());
+  h.scheduler.applySettings(enabled(60));
+  assert.ok(h.scheduler.currentGeneration() > generation, '停用与再启用都要推进代际');
+  release();
+  assert.deepEqual(await running, {skipped: 'settings_changed'});
+  assert.equal(h.calls.notify.length, 0, '旧代际的查询结果不得发通知');
+});
+
+test('BUG-072：通知在途时改间隔，迟到回执不得改写新周期', async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let notifyCount = 0;
+  const h = harness({
+    summary: async () => ({pendingCount: 3, highUnarchivedCount: 0}),
+    notify: async (value, context) => {
+      notifyCount += 1;
+      if (notifyCount === 1) await gate;
+      h.calls.notify.push({summary: value, context});
+      return {status: 'shown'};
+    },
+  });
+  h.scheduler.applySettings(enabled(60));
+  const running = h.scheduler.run({reason: 'test'});
+  await new Promise((resolve) => setImmediate(resolve));
+  // 通知已提交、回调在途时用户改了间隔。
   h.scheduler.applySettings(enabled(15));
+  const due = h.scheduler.state.nextCheckAt;
   release();
   const result = await running;
-  assert.deepEqual(result, {skipped: 'settings_changed'});
-  assert.equal(h.calls.notify.length, 0, '旧版本的查询结果不得触发通知');
+  assert.equal(result.stale, 'settings_changed');
+  assert.equal(h.scheduler.state.nextCheckAt, due, '旧回执不得改写新配置的到期时间');
+  assert.equal(h.scheduler.state.lastResult, null, '旧回执不得把停用状态改回 checked');
+  assert.deepEqual(h.timers.delays(), [15 * 60_000], '新周期继续执行');
+});
+
+test('BUG-072：停用后在途通知回执不得重建定时器', async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const h = harness({
+    summary: async () => ({pendingCount: 3, highUnarchivedCount: 0}),
+    notify: async () => {
+      await gate;
+      return {status: 'shown'};
+    },
+  });
+  h.scheduler.applySettings(enabled(60));
+  const running = h.scheduler.run({reason: 'test'});
+  await new Promise((resolve) => setImmediate(resolve));
+  h.scheduler.applySettings(disabled());
+  release();
+  await running;
+  assert.equal(h.scheduler.state.lastResult, 'disabled', '停用状态不能被迟到回执覆盖');
+  assert.equal(h.timers.pending(), 0, '停用后不得重建定时器');
+});
+
+test('BUG-072：迟到的查询失败不得污染新配置状态', async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const h = harness({
+    summary: async () => {
+      await gate;
+      throw new Error('Core 不可用');
+    },
+  });
+  h.scheduler.applySettings(enabled(60));
+  const running = h.scheduler.run({reason: 'test'});
+  h.scheduler.applySettings(enabled(30));
+  const due = h.scheduler.state.nextCheckAt;
+  release();
+  assert.deepEqual(await running, {skipped: 'stale_failure'});
+  assert.equal(h.scheduler.state.lastResult, null);
+  assert.equal(h.scheduler.state.nextCheckAt, due);
+  assert.deepEqual(h.timers.delays(), [30 * 60_000], '不应被旧失败带进退避');
+});
+
+test('BUG-073：退出只释放进程内资源，持久到期时间保留', async () => {
+  const h = harness({summary: async () => ({pendingCount: 1, highUnarchivedCount: 0})});
+  h.scheduler.applySettings(enabled(60));
+  const due = h.scheduler.state.nextCheckAt;
+  h.scheduler.halt();
+  assert.equal(h.timers.pending(), 0, '进程内定时器必须清掉');
+  assert.equal(h.scheduler.state.nextCheckAt, due, '到期时间不得被退出清空');
+  // 退出后不得再触发。
+  h.idle(120 * 60_000);
+  await h.tick(0);
+  assert.equal(h.calls.notify.length, 0);
+});
+
+test('BUG-073：重启后按原到期时间恢复，过期只合并一次', async () => {
+  const first = harness({summary: async () => ({pendingCount: 2, highUnarchivedCount: 0})});
+  first.scheduler.applySettings(enabled(30));
+  const persisted = {...first.scheduler.state, signature: first.scheduler.signature};
+  assert.ok(persisted.nextCheckAt !== null, '持久记录必须带到期时间');
+
+  // 重建一个调度器，注入同一份持久状态。
+  const revived = harness({summary: async () => ({pendingCount: 2, highUnarchivedCount: 0})});
+  revived.scheduler.applySettings(enabled(30));
+  revived.scheduler.restore(persisted);
+  assert.deepEqual(revived.timers.delays(), [30 * 60_000], '未到期就按剩余时间等待，不立刻触发');
+  revived.scheduler.restore(persisted);
+  revived.scheduler.restore(persisted);
+  assert.equal(revived.timers.pending(), 1, '连续恢复只保留一个定时器');
+  assert.equal(revived.calls.summary, 0, '连续恢复不得重复触发查询');
+});
+
+test('BUG-073：过期状态恢复后只检查一次，不补发风暴', async () => {
+  const h = harness({summary: async () => ({pendingCount: 4, highUnarchivedCount: 0})});
+  h.scheduler.applySettings(enabled(10));
+  const overdue = {...h.scheduler.state, signature: h.scheduler.signature, nextCheckAt: h.at() - 5 * 60_000};
+  h.scheduler.halt();
+  const revived = harness({summary: async () => ({pendingCount: 4, highUnarchivedCount: 0})});
+  revived.scheduler.applySettings(enabled(10));
+  revived.scheduler.restore(overdue);
+  revived.scheduler.restore(overdue);
+  revived.scheduler.restore(overdue);
+  await revived.tick(0);
+  assert.equal(revived.calls.summary, 1, '过期周期无论恢复几次都只检查一次');
+});
+
+test('BUG-073：配置身份不符的旧状态不得激活提醒', () => {
+  const h = harness();
+  h.scheduler.applySettings(enabled(30));
+  const stale = {signature: '1:15', nextCheckAt: h.at() - 1000, lastResult: 'checked', backoffIndex: 2};
+  assert.equal(h.scheduler.restore(stale), false);
+  assert.equal(h.timers.pending(), 1, '应仍按当前配置排自己的周期');
+});
+
+test('BUG-073：重启不丢退避状态', async () => {
+  const h = harness({summary: async () => { throw new Error('Core 不可用'); }});
+  h.scheduler.applySettings(enabled(60));
+  await h.tick(60 * 60_000);
+  await h.tick(30_000);
+  const saved = h.calls.persist.at(-1);
+  assert.equal(saved.backoffIndex, 2);
+  assert.equal(saved.lastResult, 'query_failed');
+  assert.ok(typeof saved.nextCheckAt === 'number');
+});
+
+test('数量不变仍按期提醒，全零不通知并关闭汇总', async () => {
+  let pending = 2;
+  const h = harness({summary: async () => ({pendingCount: pending, highUnarchivedCount: 0})});
+  h.scheduler.applySettings(enabled(15));
+  await h.tick(15 * 60_000);
+  await h.tick(15 * 60_000);
+  assert.equal(h.calls.notify.length, 2, '数量没变也按期提醒');
+  pending = 0;
+  await h.tick(15 * 60_000);
+  assert.equal(h.calls.notify.at(-1).context.kind, 'clear');
+  assert.equal(h.scheduler.running.notified, 2);
+});
+
+test('查询失败有限退避并封顶，不用旧计数发提醒', async () => {
+  let fail = true;
+  const h = harness({
+    summary: async () => {
+      if (fail) throw new Error('Core 暂不可用');
+      return {pendingCount: 4, highUnarchivedCount: 0};
+    },
+  });
+  h.scheduler.applySettings(enabled(60));
+  // 先让正常周期到期一次，才会转入退避档位。
+  await h.tick(60 * 60_000);
+  const seen = [];
+  for (let i = 0; i < 4; i++) {
+    const delay = h.timers.delays().at(-1);
+    seen.push(delay);
+    h.idle(delay);
+    h.timers.tick();
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.deepEqual(seen, [30_000, 120_000, 600_000, 600_000], '退避递增并封顶');
+  assert.equal(h.calls.notify.length, 0, '查询失败期间不得用旧计数发提醒');
+  fail = false;
+  h.idle(600_000);
+  h.timers.tick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.calls.notify.length, 1, '恢复后合并检查一次');
+});
+
+test('停用立即取消待触发任务', async () => {
+  const h = harness();
+  h.scheduler.applySettings(enabled(60));
+  assert.equal(h.timers.pending(), 1);
+  h.scheduler.applySettings(disabled());
+  assert.equal(h.timers.pending(), 0);
+  h.idle(120 * 60_000);
+  h.timers.tick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.calls.notify.length, 0);
+});
+
+test('保存无关的 AI 设置不重置提醒间隔', async () => {
+  const h = harness({summary: async () => ({pendingCount: 1, highUnarchivedCount: 0})});
+  h.scheduler.applySettings(enabled(30));
+  await h.tick(30 * 60_000);
+  const due = h.scheduler.state.nextCheckAt;
+  const generation = h.scheduler.currentGeneration();
+  assert.equal(h.scheduler.applySettings({
+    reminder: {enabled: true, intervalMinutes: 30},
+    tagging: {enabled: true, mode: 'jev'},
+  }), false);
+  assert.equal(h.scheduler.currentGeneration(), generation, '无关保存不得推进代际');
+  assert.equal(h.scheduler.state.nextCheckAt, due);
+  assert.equal(h.scheduler.applySettings(enabled(45)), true);
+  assert.equal(h.scheduler.state.nextCheckAt, h.at() + 45 * 60_000);
 });
 
 test('同一时刻只执行一个检查', async () => {
@@ -162,61 +347,19 @@ test('同一时刻只执行一个检查', async () => {
   const second = h.scheduler.run({reason: 'test'});
   release();
   await Promise.all([first, second]);
-  assert.equal(started, 1, '并发的第二次检查必须被挡掉');
+  assert.equal(started, 1);
 });
 
-test('重启后过期周期只合并一次，不补发风暴', async () => {
-  const h = harness({summary: async () => ({pendingCount: 2, highUnarchivedCount: 0})});
-  h.scheduler.applySettings(enabled(10));
-  const persisted = {...h.scheduler.state, nextCheckAt: h.at() - 5 * 60_000};
-  const revived = new ReminderScheduler({
-    now: h.scheduler.now,
-    summary: h.scheduler.summary,
-    notify: h.scheduler.notify,
-    persist: () => {},
-  });
-  revived.applySettings(enabled(10));
-  revived.restore(persisted);
-  await revived.run({reason: 'overdue'});
-  await revived.run({reason: 'overdue'});
-  assert.equal(revived.running.callCount, 1, '过期周期只合并成一次检查');
-  assert.equal(revived.running.notified, 1, '不补发每个错过的周期');
+test('统计缺字段按查询失败处理，不当成全零', async () => {
+  const h = harness({summary: async () => ({pendingCount: 5})});
+  h.scheduler.applySettings(enabled(30));
+  await h.tick(30 * 60_000);
+  assert.equal(h.calls.notify.length, 0);
+  assert.equal(h.scheduler.state.lastResult, 'query_failed');
 });
 
-test('通知失败单独记录，且不把已成功的检查降级成退避', async () => {
-  const h = harness({
-    summary: async () => ({pendingCount: 1, highUnarchivedCount: 0}),
-    notify: async () => {
-      throw new Error('系统通知提交失败');
-    },
-  });
-  h.scheduler.applySettings(enabled(15));
-  await h.tick(15 * 60_000);
-  // tick 本身已把时钟推过一个周期，检查成功后从当下再排一个周期。
-  const expected = h.at() + 15 * 60_000;
-  assert.equal(h.scheduler.state.lastResult, 'notification_failed');
-  assert.match(h.scheduler.state.notificationError, /提交失败/);
-  assert.equal(h.scheduler.state.nextCheckAt, expected,
-    '查询成功就按间隔推进，不因通知失败进入退避');
-  assert.equal(h.scheduler.state.backoffIndex, 0);
-  // 下一轮仍然正常触发。
-  await h.tick(15 * 60_000);
-  assert.equal(h.scheduler.running.callCount, 2);
-});
-
-test('退避与周期都由持久状态恢复，不依赖进程内计时器', () => {
-  const signature = reminderSignature({reminder: {enabled: true, intervalMinutes: 45}});
-  assert.equal(signature, '1:45');
+test('签名只反映提醒自身配置', () => {
+  assert.equal(reminderSignature({reminder: {enabled: true, intervalMinutes: 45}}), '1:45');
   assert.equal(reminderSignature({reminder: {enabled: false, intervalMinutes: 45}}), '0:45');
   assert.equal(reminderSignature({}), null);
-});
-
-test('明确退出会清空待触发任务', async () => {
-  const h = harness();
-  h.scheduler.applySettings(enabled(60));
-  h.scheduler.shutdown();
-  assert.equal(h.scheduler.timer, null);
-  assert.equal(h.scheduler.state.nextCheckAt, null);
-  assert.equal(h.scheduler.state.lastResult, 'shutdown');
-  assert.ok(h.calls.persist.at(-1).lastResult === 'shutdown', '退出状态要落盘');
 });

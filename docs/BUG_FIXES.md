@@ -760,3 +760,34 @@
 - 修复验收：服务返回实际标识时正确记录；缺失时不回填别名；多批模型不一致或部分缺失时，报告不得宣称一次确认了同一底层版本。
 - 状态：待修复，已复现；交 minimax。
 - 相关提交：引入于 `12e2713`，本轮无修复提交。
+
+## BUG-071：M17 启用提醒后立即触发，未等待用户间隔
+
+- 发现日期／优先级：2026-10-13，Codex 审查 `28e73ac`，P1。
+- 复现：创建正式 ReminderScheduler，applySettings 开启 60 分钟提醒，等待 30ms，已经调用通知一次；预期到期前零调用。
+- 原因：`electron/main/reminders.cjs` 的 applySettings 调用无参数 arm()，arm 对 undefined 做 Math.max 得到 NaN，Node 将 setTimeout(NaN) 按 1ms 处理。现有测试手动调用 run，未真正测试定时器到期。
+- 修复范围：由 MiniMax 修复真实定时器的计算／调度，并增加实际 timer 或可注入 timer 的到期断言，不用手动 run 冒充计时验收。
+- 验证：`verification/m17-review/scheduler-before.json` 第一例 actualCalls=1、expectedCalls=0；出现 TimeoutNaNWarning。
+- 状态：待修复，已复现。修复提交待 MiniMax 补充。
+
+## BUG-072：M17 配置切换和迟到通知回执覆盖当前运行状态
+
+- 发现日期／优先级：2026-10-13，Codex 审查 `28e73ac`，P1。
+- 复现：① 查询在途时停用再以相同间隔启用，释放旧查询，仍发送旧通知。② notify 在途时停用，释放通知回执后 nextCheckAt 从 null 变回 3601000、lastResult 从 disabled 变回 checked，并重新建 timer。
+- 预期：每次有效提醒配置变更和停止都递增独立代际；无关 AI 保存不影响提醒。旧查询、旧错误及旧通知回执都不能发送新通知或覆盖新配置状态。
+- 原因：调度器仅用 enabled:interval 字符串作为版本，无法区分停用后重新启用；只在 summary 成功后检查一次，在 await notify 之后及 catch 中没有复核。
+- 修复范围：由 MiniMax 增加单调版本／代际，在全部异步边界检查；为持久状态写入也提供版本保护，防止迟到写入。已提交给系统的通知无法撤回投递事实时如实处理，但不能继续改写新状态。
+- 验证：`verification/m17-review/scheduler-before.json` 第二、三例均复现；实际旧通知 1 次，停用后 timer 又存在。
+- 修复验收：开→关→开（相同间隔）、通知在途修改间隔、查询迟到失败、退出中的回执，以及配置变化恰逢 timer 触发；新配置保持正确，后续新周期仍能执行。
+- 状态：待修复，已复现。修复提交待 MiniMax 补充。
+
+## BUG-073：M17 退出清空下次到期时间，不能恢复原提醒周期
+
+- 发现日期／优先级：2026-10-13，Codex 审查 `28e73ac`，P2。
+- 复现：启用后 nextCheckAt=3601000，调用 shutdown，persist 收到 nextCheckAt=null。重启后没有原到期时间可恢复，只能重算周期，错过“过期最多合并一次”的要求。
+- 预期：退出只清理进程内 timer／资源，持久记录保留有效到期时间；启动先加载与当前提醒配置对应的状态，再决定恢复／合并，不以默认初始化覆盖旧记录。
+- 原因：ReminderScheduler.shutdown 直接把 nextCheckAt 清空并持久化；restore 也不检查保存状态的配置身份。真实持久层尚未接入，现有测试把清空持久时间作为正确行为。
+- 修复范围：由 MiniMax 修复持久契约与启动顺序，并接入计划要求的 Core 持久存储；配置身份、下一时间、通知结果原子维护，旧状态不能覆盖新配置。
+- 验证：`verification/m17-review/scheduler-before.json` 第四例 actualSavedDue=null。现有 restore 同时 arm(0) 和主动 run，还应验证慢／快异步返回下均只合并一轮。
+- 修复验收：到期前退出再开保留原时间；过期重开／连续 resume 只检查一次；停用后的旧记录不激活提醒；重启不丢退避状态；配置不符的旧状态不恢复。
+- 状态：待修复，已复现。修复提交待 MiniMax 补充。
