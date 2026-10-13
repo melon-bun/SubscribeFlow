@@ -40,7 +40,8 @@ class ReminderScheduler {
     this.persist = persist || (() => {});
     this.timer = null;
     this.signature = null;
-    this.state = {nextCheckAt: null, lastHandledAt: null, lastResult: null, backoffIndex: 0};
+    this.state = {nextCheckAt: null, lastHandledAt: null, lastResult: null,
+                  notificationError: null, backoffIndex: 0};
     this.inFlight = false;
     this.stopped = false;
     /** 最近一次已通知的摘要，用来维护单条汇总通知的生命周期。 */
@@ -126,11 +127,20 @@ class ReminderScheduler {
         throw new Error('统计结果缺少必需字段');
       }
       this.state.backoffIndex = 0;
-      const result = await this.dispatch(summary, intervalMinutes);
-      // 成功即推进周期：即使通知发不出去，提醒也照常按间隔运行。
+      // 查询成功与通知成功是两件事（计划 §4.2）。通知提交或显示失败要单独记录，
+      // 但不能把已成功的检查降级成退避——否则系统通知一坏，提醒就跟着停摆。
+      let result;
+      let notificationFailure = null;
+      try {
+        result = await this.dispatch(summary, intervalMinutes);
+      } catch (error) {
+        notificationFailure = String((error && error.message) || error);
+        result = {notified: false, reason: 'notification_failed', notificationError: notificationFailure};
+      }
       this.state.lastHandledAt = this.now();
       this.state.nextCheckAt = this.now() + intervalMinutes * 60_000;
-      this.state.lastResult = result;
+      this.state.lastResult = notificationFailure ? 'notification_failed' : 'checked';
+      this.state.notificationError = notificationFailure;
       this.persist({...this.state});
       this.arm(intervalMinutes * 60_000);
       return result;

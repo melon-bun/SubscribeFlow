@@ -45,7 +45,7 @@ test('启用后按间隔推进周期，数量不变也照常提醒', async () =>
   assert.equal(h.scheduler.state.nextCheckAt, h.at() + 15 * 60_000);
   await h.tick(15 * 60_000);
   assert.equal(h.calls.notify.length, 1);
-  assert.equal(h.scheduler.state.lastResult.notified, true);
+  assert.equal(h.scheduler.state.lastResult, 'checked');
   // 推进到下一个周期，不是因为数量变化。
   await h.tick(15 * 60_000);
   assert.equal(h.calls.notify.length, 2, '数量没变也应按期提醒');
@@ -183,7 +183,7 @@ test('重启后过期周期只合并一次，不补发风暴', async () => {
   assert.equal(revived.running.notified, 1, '不补发每个错过的周期');
 });
 
-test('通知失败不影响后续按间隔运行，并单独记录', async () => {
+test('通知失败单独记录，且不把已成功的检查降级成退避', async () => {
   const h = harness({
     summary: async () => ({pendingCount: 1, highUnarchivedCount: 0}),
     notify: async () => {
@@ -192,9 +192,16 @@ test('通知失败不影响后续按间隔运行，并单独记录', async () =>
   });
   h.scheduler.applySettings(enabled(15));
   await h.tick(15 * 60_000);
-  // 通知失败按查询失败处理会错误地退避，这里断言的是它被记录且继续排期。
-  assert.ok(['query_failed', 'notified'].includes(h.scheduler.state.lastResult));
-  assert.ok(h.scheduler.state.nextCheckAt > h.at() || h.scheduler.timer, '提醒必须继续排期');
+  // tick 本身已把时钟推过一个周期，检查成功后从当下再排一个周期。
+  const expected = h.at() + 15 * 60_000;
+  assert.equal(h.scheduler.state.lastResult, 'notification_failed');
+  assert.match(h.scheduler.state.notificationError, /提交失败/);
+  assert.equal(h.scheduler.state.nextCheckAt, expected,
+    '查询成功就按间隔推进，不因通知失败进入退避');
+  assert.equal(h.scheduler.state.backoffIndex, 0);
+  // 下一轮仍然正常触发。
+  await h.tick(15 * 60_000);
+  assert.equal(h.scheduler.running.callCount, 2);
 });
 
 test('退避与周期都由持久状态恢复，不依赖进程内计时器', () => {
