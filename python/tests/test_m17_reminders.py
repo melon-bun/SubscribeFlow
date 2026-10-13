@@ -7,12 +7,16 @@
 各写一套谓词」这种错误。
 """
 
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
 
 from subscribe_flow.application.queries import QueryService
-from subscribe_flow.contracts import Connection, ContentItem, PublishedTime, Source
+from subscribe_flow.bootstrap import Core
+from subscribe_flow.channels.gateway import ChannelGateway
+from subscribe_flow.contracts import ChannelError, Connection, ContentItem, PublishedTime, Source
+from subscribe_flow.rpc.dispatcher import Dispatcher
 from subscribe_flow.storage.database import Database
 from subscribe_flow.storage.repositories import Repository
 
@@ -106,6 +110,49 @@ class ReminderSummaryTests(unittest.TestCase):
         self.assertEqual(self.queries.reminder_summary()['pendingCount'], 1)
         self.assertEqual(self.queries.contents(state='pending', limit=10)['total'], 1)
         self.assertEqual(self.queries.contents(view='high_unarchived', limit=10)['total'], 1)
+
+
+class ReminderRpcTests(unittest.IsolatedAsyncioTestCase):
+    """经真实 RPC 分发器验证：Main 侧调得到，且没有进 Renderer 白名单的捷径。"""
+
+    async def asyncSetUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.core = Core(Path(self.temp.name) / 'm17-rpc.sqlite3', gateway=ChannelGateway())
+        self.rpc = Dispatcher(self.core, asyncio.Event().set)
+
+    async def call(self, method, params=None):
+        return await self.rpc.handle(
+            {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}})
+
+    async def hello(self):
+        # JSON-RPC 约定先握手：未握手时任何方法都返回 -32001。
+        response = await self.call("core.hello", {"protocol_version": "1.0"})
+        self.assertIn("result", response)
+
+    async def asyncTearDown(self):
+        await self.core.close()
+        self.temp.cleanup()
+
+    async def test_summary_and_perspective_lists_over_rpc(self):
+        await self.hello()
+        summary = (await self.call('reminder.summary'))['result']
+        self.assertEqual(summary['pendingCount'], 0)
+        self.assertEqual(summary['highUnarchivedCount'], 0)
+        self.assertTrue(summary['observedAt'])
+
+        pending = (await self.call('content.list', {'state': 'pending', 'limit': 10}))['result']
+        high = (await self.call('content.list', {'view': 'high_unarchived', 'limit': 10}))['result']
+        self.assertEqual(pending['total'], summary['pendingCount'])
+        self.assertEqual(high['total'], summary['highUnarchivedCount'])
+
+    async def test_unknown_perspective_is_rejected_at_the_boundary(self):
+        await self.hello()
+        for params in ({'state': 'everything'}, {'view': 'low'}):
+            with self.subTest(params=params):
+                response = await self.call('content.list', dict(limit=10, **params))
+                self.assertIn('error', response)
+                self.assertEqual(response['error']['code'], -32000, '入参错误必须如实回报')
+                self.assertEqual(response['error']['data']['code'], 'INVALID_INPUT')
 
 
 if __name__ == '__main__':
