@@ -12,6 +12,7 @@ const assert = require('node:assert/strict');
  * 新建标签走对话框而非行内编辑器。
  */
 async function verifyTags({evaluate, until, click, screenshot, core, window, firstId}) {
+  const {selectContent} = require('./renderer-actions.cjs').rendererActions({evaluate, until});
   const tagByName = async name => (await core.call('tag.list', {})).items.filter(t => t.name === name)[0];
   /** 等到某个按钮可点再点：视图可能在异步数据到达后重画，测试不能假设 DOM 静止。 */
   const clickWhenReady = async (label, scope) => {
@@ -120,7 +121,7 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   await until(`!!document.querySelector('[data-view="inbox"]')`);
   await evaluate(`document.querySelector('[data-quick="all"]').click()`);
   await until(`document.querySelectorAll('.content-card').length > 0`);
-  const itemId = await evaluate(`document.querySelector('.content-card').dataset.contentId`);
+  const itemId = await until(`document.querySelector('.content-card')?.dataset.contentId`);
   const addTrigger = `.detail [data-tag-add]`;
   const openPicker = async () => {
     await until(`(() => { const b = document.querySelector(${JSON.stringify(addTrigger)});
@@ -140,7 +141,7 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
     // 外部色块会先乐观更新；等保存动作完成后再测试下一次编辑。
     await evaluate(`SF.app.act(${JSON.stringify('tags:' + itemId)}, () => {}).then(() => SF.app.refreshData(true))`);
   };
-  await evaluate(`document.querySelector('[data-content-id=${JSON.stringify(itemId)}]').click()`);
+  await selectContent(itemId);
   await until(`!!document.querySelector('.detail')`);
   await openPicker();
   await pickTag(travel.id);

@@ -169,10 +169,30 @@
     return {main:h('div.view', {'data-view':'inbox'}, head, h('div.view__body.inbox', null, chips, tagPanel, bulk, body, pager)),
       aside:item && !cache.error ? h('aside.detail', {'aria-label':'内容详情'},
         h('div.detail__head', null, h('span', {text:'内容详情'}), h('div.spacer'), ui.iconBtn('close', '关闭详情', function () { app.selectedId = null; SF.app.renderContent(); })),
-        h('div.detail__body.scroll-y', {'data-scroll-key':'detail:' + item.id}, detailBody(app, item, function (fresh) { var i = cache.items.findIndex(function (c) { return c.id === fresh.id; }); if (i >= 0) cache.items[i] = fresh; SF.app.renderContent(); }))) : null};
+        h('div.detail__body.scroll-y', {'data-scroll-key':'detail:' + item.id}, detailBody(app, item, function (fresh, settled) { repaintContent(app, fresh, settled); }))) : null};
+  }
+  function repaintContent(app, fresh, settled) {
+    // 写入等待期间列表可能失效或离开此页，迟到回执不能访问已清空的缓存。
+    var index = (cache.items || []).findIndex(function (item) { return item.id === fresh.id; });
+    if (index >= 0 && !settled) cache.items[index] = fresh;
+    if (app.route.name === 'inbox') SF.app.renderContent();
+  }
+  function contentPending(id) { return SF.app.isPending('content:' + id); }
+  function saveContent(app, item, patch, repaint) {
+    if (contentPending(item.id)) return SF.app.act('content:' + item.id, function () {});
+    var fresh = item;
+    var saving = SF.app.act('content:' + item.id, async function () {
+      fresh = await app.client.updateContent(item.id, patch);
+      if (repaint) repaint(fresh);
+      await SF.app.refreshData(true);
+    });
+    // 数据可先回显，但控件要等整个写入/刷新动作结束才重新可用。
+    if (repaint) repaint(fresh);
+    return saving.then(function () { if (repaint) repaint(fresh, true); });
   }
   function update(app, id, state) {
-    return SF.app.act('content:' + id, async function () { await app.client.updateContent(id, {state:state}); await SF.app.refreshData(true); });
+    var item = (cache.items || []).find(function (entry) { return entry.id === id; });
+    return saveContent(app, item || {id:id}, {state:state}, function (fresh, settled) { repaintContent(app, fresh, settled); });
   }
 
   /* ---------------- 卡片上的标签 ---------------- */
@@ -199,12 +219,12 @@
       h('p.field__hint',{text:item.priorityOverride ? '此内容已单独设置，不受来源默认值变化影响。' : '跟随来源 · 当前' + SF.catalog.priority(item.priority).name}),
       h('div.priority-grid',{'aria-label':'内容优先级'}, SF.catalog.PRIORITY_ORDER.map(function(id) {
         var meta=SF.catalog.priority(id);
-        return h('button.priority-opt.priority-opt--'+id+(item.priorityOverride===id?'.is-active':''),{type:'button','aria-pressed':String(item.priorityOverride===id),onclick:function() { save(id); }},
+        return h('button.priority-opt.priority-opt--'+id+(item.priorityOverride===id?'.is-active':''),{type:'button',disabled:contentPending(item.id),'aria-pressed':String(item.priorityOverride===id),onclick:function() { save(id); }},
           h('span.priority-opt__icon',null,icon(meta.icon,14)),h('span.priority-opt__name',{text:meta.name}));
       })),
-      ui.btn('跟随来源',{size:'sm',disabled:!item.priorityOverride,onClick:function() { save(null); }}));
+      ui.btn('跟随来源',{size:'sm',disabled:contentPending(item.id)||!item.priorityOverride,onClick:function() { save(null); }}));
     function save(priority) {
-      SF.app.act('content:'+item.id,async function() { var fresh=await app.client.updateContent(item.id,{priority:priority}); if(repaint) repaint(fresh); await SF.app.refreshData(true); });
+      saveContent(app, item, {priority:priority}, repaint);
     }
   }
 
@@ -421,9 +441,9 @@
         h('p.field__hint', {text:'选择一项会取消其他状态，再次点击可取消。'}),
         h('div.op-grid', {role:'group','aria-label':'整理内容（单选）'},
         [['read','已读','check'],['deferred','稍后处理','clock'],['archived','归档','archive']].map(function (entry) {
-          return h('button.op-btn', {type:'button', 'aria-pressed':String(item.state[entry[0]]), onclick:function () {
+          return h('button.op-btn', {type:'button', disabled:contentPending(item.id), 'aria-pressed':String(item.state[entry[0]]), onclick:function () {
             var state = {}; state[entry[0]] = !item.state[entry[0]];
-            SF.app.act('content:' + item.id, async function () { var fresh = await app.client.updateContent(item.id, {state:state}); if (repaint) repaint(fresh); await SF.app.refreshData(true); });
+            saveContent(app, item, {state:state}, repaint);
           }}, icon(entry[2],18), h('span',{text:entry[1]}));
         }))),
       h('div.detail__section.col', {style:{gap:'12px'}},

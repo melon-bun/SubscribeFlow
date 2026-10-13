@@ -11,15 +11,18 @@ async function verify({window, core, root, mode}) {
   };
   const until = async (expression, timeout = 15000) => {
     const start = Date.now();
-    while (!(await evaluate(expression))) {
+    while (true) {
+      const result = await evaluate(expression);
+      if (result) return result;
       if (Date.now() - start > timeout) throw new Error('Timed out: ' + expression + '\n' + await evaluate('document.body.innerText'));
       await new Promise(resolve => setTimeout(resolve, 70));
     }
   };
-  const click = async label => evaluate(`(() => {
+  const {clickSelector, selectContent, checkContent, contentAction} = require('./renderer-actions.cjs').rendererActions({evaluate, until});
+  const click = async label => until(`(() => {
     const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === ${JSON.stringify(label)} || b.getAttribute('aria-label') === ${JSON.stringify(label)});
-    if (!b || b.disabled) throw new Error('Missing/enabled button: ' + ${JSON.stringify(label)});
-    b.click();
+    if (!b || b.disabled) return false;
+    b.click(); return true;
   })()`);
   const screenshot = async name => {
     await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
@@ -126,9 +129,9 @@ async function verify({window, core, root, mode}) {
     assert.equal((await core.call('subscription.list'))[0].interval_seconds,259200);
     assert.equal(await evaluate(`SubscribeFlow.call('system.power',{suspended:true}).then(()=>false,()=>true)`),true);
   }
-  await evaluate(`document.querySelector('[role="switch"]').click()`);
+  await clickSelector('[role="switch"]');
   await until(`document.querySelector('[role="switch"]')?.getAttribute('aria-checked') === 'false'`);
-  await evaluate(`document.querySelector('[role="switch"]').click()`);
+  await clickSelector('[role="switch"]');
   await until(`document.querySelector('[role="switch"]')?.getAttribute('aria-checked') === 'true'`);
   await click('刷新来源');
   await until(`SF.app.state.runs.length > 0 && ['waiting','failed','succeeded','partial'].includes(SF.app.state.runs[0].state)`,90000);
@@ -167,6 +170,7 @@ async function verify({window, core, root, mode}) {
     await until(`!!document.querySelector('.detail-preview') && !!document.querySelector('.content-card')`);
   }
   await screenshot(mode==='live'?'m5-live-inbox.png':'m5-offline-inbox.png');
+  if(mode==='offline') await require('./renderer-race-smoke.cjs').verifyRendererRaces({evaluate,until,core});
   if(mode==='offline') await require('./list-state-smoke.cjs').verifyListState({evaluate,until,click,screenshot,core,window});
   const firstId=await evaluate('SF.app.state.selectedId');
   const total=(await core.call('content.list',{limit:1})).total;
@@ -174,7 +178,7 @@ async function verify({window, core, root, mode}) {
   const absent=id=>`!document.querySelector(${JSON.stringify(card(id))})`;
   const title=()=>evaluate(`document.querySelector('.view__title h1').textContent`);
   assert.equal(await evaluate('SF.app.state.filters.quick'),'unread');
-  await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b => b.textContent.trim()==='已读').click()`);
+  await contentAction('已读');
   await until(`SF.app.state.counts.unread === ${total-1} && document.querySelectorAll('.content-card').length > 0 && ${absent(firstId)}`);
   assert.equal(await evaluate(`document.querySelector('[data-nav="inbox"] .count-pill').textContent`),String(total-1));
   assert.equal((await core.call('content.get',{item_id:firstId})).state.read,true);
@@ -191,15 +195,13 @@ async function verify({window, core, root, mode}) {
     // Each independent processing action leaves inbox, and undo returns it.
     for(const [field,label,heading] of [['deferred','稍后处理','稍后处理'],['archived','归档','已归档']]) {
       const id=await evaluate('SF.app.state.selectedId');
-      // 检查与点击必须在同一次求值里完成：处理后该内容离开列表，详情会随之关闭。
-      await until(`(() => { const b = Array.from(document.querySelectorAll('.detail .op-btn'))
-        .find(b => b.textContent.trim()===${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`);
+      await contentAction(label, id);
       await until(`SF.app.state.counts.unread === 23 && document.querySelectorAll('.content-card').length > 0 && ${absent(id)}`);
       assert.equal((await core.call('content.get',{item_id:id})).state[field],true);
       await evaluate(`document.querySelector('[data-quick="${field}"]').click()`);
       await until(`document.querySelectorAll('.content-card').length === 1 && !!document.querySelector(${JSON.stringify(card(id))})`);
       assert.equal(await title(),heading);
-      await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b => b.textContent.trim()===${JSON.stringify(label)}).click()`);
+      await contentAction(label, id);
       await until(`SF.app.state.counts.unread === 24 && document.querySelectorAll('.content-card').length === 0 && !!document.querySelector('.view__body .state')`);
       await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
       await until(`document.querySelectorAll('.content-card').length === 20 && !!document.querySelector(${JSON.stringify(card(id))})`);
@@ -220,8 +222,7 @@ async function verify({window, core, root, mode}) {
     const lastPage=await evaluate(`Array.from(document.querySelectorAll('.content-card')).map(c=>c.dataset.contentId)`);
     // 勾选逐个进行：每次点击都会重绘列表，下标要在点击前确认存在。
     for(let i=0;i<4;i++) {
-      await until(`!!document.querySelectorAll('.content-selection > [role="checkbox"]')[${i}]`);
-      await evaluate(`document.querySelectorAll('.content-selection > [role="checkbox"]')[${i}].click()`);
+      await checkContent(lastPage[i]);
       await until(`document.querySelectorAll('.content-selection > [role="checkbox"][aria-checked="true"]').length===${i+1}`);
     }
     await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='归档').click()`);
@@ -245,10 +246,9 @@ async function verify({window, core, root, mode}) {
   assert.equal(await title(),'全部更新');
   if(mode === 'offline') {
     // BUG-005: processing choices replace one another on the same note.
-    await evaluate(`document.querySelector(${JSON.stringify(card(firstId))}).click()`);
+    await selectContent(firstId);
     for(const [field,label] of [['deferred','稍后处理'],['archived','归档']]) {
-      await until(`Array.from(document.querySelectorAll('.detail .op-btn')).some(b=>b.textContent.trim()===${JSON.stringify(label)})`);
-      await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()===${JSON.stringify(label)}).click()`);
+      await contentAction(label, firstId);
       await until(`SF.app.state.selectedId === ${JSON.stringify(firstId)} && document.querySelectorAll('.detail .op-btn[aria-pressed="true"]').length === 1 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === ${JSON.stringify(label)}`);
       assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:false,archived:field==='archived',deferred:field==='deferred'});
     }
@@ -258,12 +258,10 @@ async function verify({window, core, root, mode}) {
     await click('标记为已读');
     await until(`SF.app.state.counts.read === 1 && SF.app.state.counts.archived === 4 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
     assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:true,archived:false,deferred:false});
-    await until(`Array.from(document.querySelectorAll('.detail .op-btn')).some(b=>b.textContent.trim()==='已读')`);
-    await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()==='已读').click()`);
+    await contentAction('已读', firstId);
     await until(`SF.app.state.counts.unread === 21 && document.querySelectorAll('.detail .op-btn[aria-pressed="true"]').length === 0`);
     assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:false,archived:false,deferred:false});
-    await until(`Array.from(document.querySelectorAll('.detail .op-btn')).some(b=>b.textContent.trim()==='已读')`);
-    await evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()==='已读').click()`);
+    await contentAction('已读', firstId);
     await until(`SF.app.state.counts.unread === 20 && SF.app.state.counts.read === 1 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
     assert.equal(await evaluate(`document.querySelectorAll('.content-card').length`),20);
     await click('下一页');

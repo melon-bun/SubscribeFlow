@@ -373,23 +373,34 @@
     if (force) clearTimeout(eventTimer);
     if (refreshPromise) { refreshAgain = refreshAgain || !!force; return refreshPromise; }
     refreshPromise = (async function () {
+      var mustRefresh = !!force;
       try {
-        var results = await Promise.all([app.client.getSession(), app.client.getCounts(), app.client.listPlatforms(), app.client.getRuns()]);
-        var changed = force || JSON.stringify(app.runs) !== JSON.stringify(results[3]) || JSON.stringify(app.counts) !== JSON.stringify(results[1]) || JSON.stringify(app.session && app.session.connection) !== JSON.stringify(results[0].connection);
-        app.session = results[0]; app.counts = results[1]; app.platforms = results[2]; app.runs = results[3];
-        app.now = Date.now(); app.notice = null;
-        if (!app.selectedDate) app.selectedDate = fmt.ymd(app.now);
-        if (changed) invalidate();
-        if (app.route.name === "settings" && document.querySelector(".settings")) return;
-        if (!document.querySelector(".shell__body")) render();
-        else { refreshSidebarCounts(); if (changed) renderContent(); }
-      } catch (err) {
-        app.notice = err.message;
-        if (app.route.name === "settings" && document.querySelector(".settings")) return;
-        if (app.session) renderContent(); else showStartup("无法读取本地服务", err.message);
+        do {
+          refreshAgain = false;
+          try {
+            var results = await Promise.all([app.client.getSession(), app.client.getCounts(), app.client.listPlatforms(), app.client.getRuns()]);
+            // 读取期间又有写入/失效：这批快照已过期。先完成下一轮，避免把旧列表
+            // 短暂显示为已就绪；所有等待者共用覆盖整个刷新队列的 Promise。
+            if (refreshAgain) { mustRefresh = true; continue; }
+            var changed = mustRefresh || JSON.stringify(app.runs) !== JSON.stringify(results[3]) || JSON.stringify(app.counts) !== JSON.stringify(results[1]) || JSON.stringify(app.session && app.session.connection) !== JSON.stringify(results[0].connection);
+            app.session = results[0]; app.counts = results[1]; app.platforms = results[2]; app.runs = results[3];
+            app.now = Date.now(); app.notice = null;
+            if (!app.selectedDate) app.selectedDate = fmt.ymd(app.now);
+            if (changed) invalidate();
+            if (!(app.route.name === "settings" && document.querySelector(".settings"))) {
+              if (!document.querySelector(".shell__body")) render();
+              else { refreshSidebarCounts(); if (changed) renderContent(); }
+            }
+          } catch (err) {
+            if (refreshAgain) { mustRefresh = true; continue; }
+            app.notice = err.message;
+            if (!(app.route.name === "settings" && document.querySelector(".settings"))) {
+              if (app.session) renderContent(); else showStartup("无法读取本地服务", err.message);
+            }
+          }
+        } while (refreshAgain);
       } finally {
         refreshPromise = null;
-        if (refreshAgain) { refreshAgain = false; refreshData(true); }
       }
     })();
     return refreshPromise;
@@ -580,6 +591,7 @@
     state: app,
     openSettings: openSettings,
     act: act,
+    isPending: function (key) { return pending.has(key); },
     refreshData: refreshData,
     restart: restart,
     boot: boot,

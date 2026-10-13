@@ -2,16 +2,15 @@ const assert = require('node:assert/strict');
 
 // Uses the formal desktop bridge and an isolated SQLite fixture, never user data.
 async function verifyListState({evaluate, until, click, screenshot, core, window}) {
+  const {selectContent:select, checkContent, contentAction:arrange} = require('./renderer-actions.cjs').rendererActions({evaluate, until});
   const list = '.inbox__grid.scroll-y';
-  const ids = () => evaluate(`Array.from(document.querySelectorAll('.content-card')).map(c=>c.dataset.contentId)`);
-  const scroll = selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollTop`);
+  const ids = () => until(`document.querySelector('.content-card') && Array.from(document.querySelectorAll('.content-card')).map(c=>c.dataset.contentId)`);
+  const scroll = async selector => (await until(`(() => { const el=document.querySelector(${JSON.stringify(selector)}); return el ? {top:el.scrollTop} : false; })()`)).top;
   const setScroll = async (selector, top = 350) => {
-    const actual = await evaluate(`(() => { const el=document.querySelector(${JSON.stringify(selector)}); el.scrollTop=${top}; return el.scrollTop; })()`);
-    assert.equal(actual, top, 'Fixture must really overflow');
-    return actual;
+    const actual = await until(`(() => { const el=document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.scrollTop=${top}; return {top:el.scrollTop}; })()`);
+    assert.equal(actual.top, top, 'Fixture must really overflow');
+    return actual.top;
   };
-  const select = async id => evaluate(`document.querySelector('[data-content-id='+${JSON.stringify(JSON.stringify(id))}+']').click()`);
-  const arrange = async label => evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()===${JSON.stringify(label)}).click()`);
   const absent = id => `!document.querySelector('[data-content-id='+${JSON.stringify(JSON.stringify(id))}+']')`;
   const loaded = count => until(`document.querySelectorAll('.content-card').length===${count}`);
   const original = (await core.call('content.list', {limit:50})).items;
@@ -29,7 +28,7 @@ async function verifyListState({evaluate, until, click, screenshot, core, window
     await setScroll(list);
     await select((await ids())[5]);
     assert.equal(await scroll(list),350,'Selecting a card preserves scroll');
-    await evaluate(`document.querySelectorAll('.content-selection > [role="checkbox"]')[5].click()`);
+    await checkContent((await ids())[5]);
     assert.equal(await scroll(list),350,'Checking a card preserves scroll');
     await click('取消选择');
     await evaluate('SF.app.render()');
@@ -62,7 +61,7 @@ async function verifyListState({evaluate, until, click, screenshot, core, window
     // A batch can remove the immediate successor as well; pick the next survivor.
     const batch=await ids();
     await select(batch[5]);
-    for (const index of [5,6]) await evaluate(`document.querySelectorAll('.content-selection > [role="checkbox"]')[${index}].click()`);
+    for (const id of [batch[5],batch[6]]) await checkContent(id);
     await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='已读').click()`);
     await until(`SF.app.state.selectedId===${JSON.stringify(batch[7])} && ${absent(batch[5])} && ${absent(batch[6])}`);
     await screenshot('bug-043-044-list-after-processing.png');
@@ -80,7 +79,7 @@ async function verifyListState({evaluate, until, click, screenshot, core, window
     await select(tail[3]);
     await arrange('归档');
     await until(`SF.app.state.selectedId===${JSON.stringify(tail[2])} && document.querySelectorAll('.content-card').length===3`);
-    for (let index=0;index<3;index++) await evaluate(`document.querySelectorAll('.content-selection > [role="checkbox"]')[${index}].click()`);
+    for (const id of tail.slice(0,3)) await checkContent(id);
     const preceding=(await core.call('content.list', {read:false,archived:false,deferred:false,limit:20})).items[19].id;
     await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='归档').click()`);
     await until(`document.querySelectorAll('.content-card').length===20 && SF.app.state.selectedId===${JSON.stringify(preceding)} && document.body.innerText.includes('第 1 页')`);
