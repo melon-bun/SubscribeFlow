@@ -171,13 +171,17 @@ class RecognitionResult:
     provider: str
     status: str
     candidates: tuple[Candidate, ...] = ()
+    # model 只记录服务实际返回的标识；缺失就是 None，不用请求别名冒充。
     model: str | None = None
+    # requested_model 是我们发出的模型标识（可能是别名），与实际版本分开保存。
+    requested_model: str | None = None
     usage: dict | None = None
     detail: str | None = None
     error: dict | None = None
 
     def to_dict(self) -> dict:
         return {'provider': self.provider, 'status': self.status, 'model': self.model,
+                'requestedModel': self.requested_model,
                 'candidates': [c.to_dict() for c in self.candidates],
                 'usage': self.usage, 'detail': self.detail, 'error': self.error}
 

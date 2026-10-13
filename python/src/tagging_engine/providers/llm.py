@@ -49,13 +49,17 @@ class LlmProvider:
 
     def recognize(self, request: RecognitionRequest) -> RecognitionResult:
         if not request.has_enough_text():
-            return RecognitionResult(self.name, STATUS_INSUFFICIENT_TEXT, detail='可用文本过短，未调用模型')
+            return RecognitionResult(self.name, STATUS_INSUFFICIENT_TEXT, detail='可用文本过短，未调用模型',
+                                     requested_model=self.model)
         body = self._ask(request)
         content = self._content(body)
         candidates = self._parse(content, request)
+        model, usage = self._model(body), self._usage(body)
         if not candidates:
-            return RecognitionResult(self.name, STATUS_NO_MATCH, (), self._model(body), self._usage(body))
-        return RecognitionResult(self.name, STATUS_MATCHED, candidates, self._model(body), self._usage(body))
+            return RecognitionResult(self.name, STATUS_NO_MATCH, (), model=model, usage=usage,
+                                     requested_model=self.model)
+        return RecognitionResult(self.name, STATUS_MATCHED, candidates, model=model, usage=usage,
+                                 requested_model=self.model)
 
     def _ask(self, request: RecognitionRequest) -> dict:
         system = SYSTEM_PROMPT % (request.limit, 40)
@@ -105,10 +109,31 @@ class LlmProvider:
             except ValueError:
                 continue
             if isinstance(value, dict) and isinstance(value.get('tags'), list):
-                return check_candidates(value['tags'], allow_new=True, limit=request.limit)
+                return self._check(value['tags'], request)
             if isinstance(value, list):
-                return check_candidates(value, allow_new=True, limit=request.limit)
+                return self._check(value, request)
         raise RecognitionError('invalid_response', '模型服务返回的内容里没有可解析的标签 JSON')
+
+    def _check(self, values, request: RecognitionRequest) -> tuple:
+        """候选校验。
+
+        校验失败属于「模型给了不合规的输出」，不是用户输入错误——两者的处理
+        完全不同，必须在这里就转成 RecognitionError，不能让 ValueError 漏到
+        CLI 和调用方那里变成输入错误。
+        """
+        try:
+            candidates = check_candidates(values, allow_new=True, limit=request.limit)
+        except ValueError as error:
+            raise RecognitionError('invalid_response', f'模型返回的标签不符合约定：{error}',
+                                   retryable=False) from None
+        known = {tag.id for tag in request.candidates}
+        for candidate in candidates:
+            # 已有标签身份必须来自本次目录，否则模型可以凭空捏造一个 ID 指向
+            # 未知标签；新建只能给名称。
+            if candidate.tag_id is not None and candidate.tag_id not in known:
+                raise RecognitionError('invalid_response', '模型返回了不在本次候选目录中的标签 ID',
+                                       retryable=False)
+        return candidates
 
     @staticmethod
     def _from_fence(text: str) -> str | None:

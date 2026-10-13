@@ -64,6 +64,7 @@ class JevProviderTests(unittest.TestCase):
         self.assertEqual([c.tag_id for c in result.candidates], ['t1'])
         # 请求的是别名，返回的必须是服务实际模型；用量按服务给的记。
         self.assertEqual(result.model, 'jev-1.13.0')
+        self.assertEqual(result.requested_model, 'jev-latest')
         self.assertEqual(result.usage, {'input_tokens': 300, 'output_tokens': 50})
         self.assertEqual(result.candidates[0].score_kind, 'noul')
 
@@ -111,12 +112,71 @@ class JevProviderTests(unittest.TestCase):
             self.provider(transport).recognize(request())
         self.assertEqual(caught.exception.code, 'invalid_response')
 
-    def test_out_of_range_and_missing_probability_do_not_count_as_match(self):
+    def test_any_invalid_answer_fails_the_whole_recognition(self):
+        """非法答案必须让整次识别失败，不能记成「没有匹配」。
+
+        混在有效答案里的坏数据同样致命：否则一次失败的调用看起来像一次
+        完成了的分类。
+        """
+        cases = {
+            '超出 0-1': {'t1': {'type': 'noul', 'noul': 1.4}, 't2': {'type': 'noul', 'noul': 0.1},
+                        't3': {'type': 'noul', 'noul': 0.1}},
+            '缺 noul 字段': {'t1': {'type': 'noul'}, 't2': {'type': 'noul', 'noul': 0.1},
+                          't3': {'type': 'noul', 'noul': 0.1}},
+            '答案类型不符': {'t1': {'type': 'choice', 'choice': 'x'}, 't2': {'type': 'noul', 'noul': 0.1},
+                          't3': {'type': 'noul', 'noul': 0.1}},
+            '整个答案为 null': {'t1': None, 't2': {'type': 'noul', 'noul': 0.1},
+                           't3': {'type': 'noul', 'noul': 0.1}},
+            '布尔值冒充概率': {'t1': {'type': 'noul', 'noul': True}, 't2': {'type': 'noul', 'noul': 0.1},
+                           't3': {'type': 'noul', 'noul': 0.1}},
+        }
+        for label, answers in cases.items():
+            with self.subTest(case=label):
+                with self.assertRaises(RecognitionError) as caught:
+                    self.provider(FakeTransport([{'model': 'v', 'answers': answers}])).recognize(request())
+                self.assertEqual(caught.exception.code, 'invalid_response')
+                self.assertFalse(caught.exception.retryable)
+
+    def test_extra_unrequested_answers_are_rejected(self):
         transport = FakeTransport([{'model': 'v', 'answers': {
-            't1': {'type': 'noul', 'noul': 1.4}, 't2': {'type': 'noul'}, 't3': {'type': 'choice', 'choice': 'x'}}}])
+            't1': {'type': 'noul', 'noul': 0.9}, 't2': {'type': 'noul', 'noul': 0.9},
+            't3': {'type': 'noul', 'noul': 0.9}, 't9': {'type': 'noul', 'noul': 0.9}}}])
+        with self.assertRaises(RecognitionError) as caught:
+            self.provider(transport).recognize(request())
+        self.assertEqual(caught.exception.code, 'invalid_response')
+
+    def test_legitimate_boundary_answers_still_work(self):
+        for value, expected in ((0.0, 'no_match'), (0.79, 'no_match'), (1.0, 'matched')):
+            with self.subTest(value=value):
+                transport = FakeTransport([{'model': 'v', 'answers': {
+                    f't{i}': {'type': 'noul', 'noul': value} for i in (1, 2, 3)}}])
+                result = self.provider(transport).recognize(request())
+                self.assertEqual(result.status, expected)
+
+    def test_missing_actual_model_is_not_filled_with_the_requested_alias(self):
+        transport = FakeTransport([{'answers': {f't{i}': {'type': 'noul', 'noul': 0.9} for i in (1, 2, 3)}}])
         result = self.provider(transport).recognize(request())
-        self.assertEqual(result.status, 'no_match')
-        self.assertEqual(result.candidates, ())
+        self.assertIsNone(result.model, '服务没返回实际版本时不能拿请求别名冒充')
+        self.assertEqual(result.requested_model, 'jev-latest', '请求模型单独记录')
+
+    def test_batches_with_differing_models_do_not_claim_one_version(self):
+        transport = FakeTransport([
+            {'model': 'jev-1.13.0', 'answers': {f't{i}': {'type': 'noul', 'noul': 0.9} for i in range(3)}},
+            {'model': 'jev-1.14.0', 'answers': {f't{i}': {'type': 'noul', 'noul': 0.9} for i in range(3, 6)}},
+        ])
+        result = self.provider(transport, batch=3).recognize(
+            request(candidates=[{'id': f't{i}', 'name': f'标签{i}'} for i in range(6)]))
+        self.assertIsNone(result.model, '各批版本不一致时不能宣称确认了同一个版本')
+
+    def test_invalid_options_fail_before_any_request(self):
+        for options in ({'batch': -1}, {'batch': 0}, {'batch': 2.5}, {'batch': True},
+                        {'threshold': 1.2}, {'threshold': -0.1}, {'threshold': float('nan')},
+                        {'threshold': True}, {'timeout': 0}, {'timeout': -5}, {'timeout': float('inf')}):
+            with self.subTest(options=options):
+                transport = FakeTransport([])
+                with self.assertRaises(RecognitionError):
+                    self.provider(transport, **options)
+                self.assertEqual(transport.requests, [], '错误配置不得发出请求')
 
     def test_short_text_skips_the_model(self):
         transport = FakeTransport([])
@@ -187,6 +247,47 @@ class LlmProviderTests(unittest.TestCase):
             with self.subTest(code=code):
                 error = RecognitionError(code, 'x')
                 self.assertEqual(error.retryable, retryable)
+
+
+class LlmOutputValidationTests(unittest.TestCase):
+    """模型输出越界必须是 invalid_response，不能变成用户输入错误。"""
+
+    @staticmethod
+    def reply(content):
+        return {'model': 'm', 'choices': [{'message': {'content': content}}]}
+
+    def provider(self, content):
+        return LlmProvider(endpoint='https://api.example.com/v1', model='m', api_key='k',
+                           transport=FakeTransport([self.reply(content)]))
+
+    def test_tag_id_outside_the_catalogue_is_rejected(self):
+        provider = self.provider('{"tags":[{"tagId":"outside-catalog"}]}')
+        with self.assertRaises(RecognitionError) as caught:
+            provider.recognize(request(mode='llm', candidates=[{'id': 't1', 'name': 'Python'}]))
+        self.assertEqual(caught.exception.code, 'invalid_response')
+
+    def test_blank_tag_id_is_rejected(self):
+        with self.assertRaises(RecognitionError) as caught:
+            self.provider('{"tags":[{"tagId":""}]}').recognize(request(mode='llm'))
+        self.assertEqual(caught.exception.code, 'invalid_response')
+
+    def test_known_tag_id_is_accepted(self):
+        result = self.provider('{"tags":[{"tagId":"t1"}]}').recognize(
+            request(mode='llm', candidates=[{'id': 't1', 'name': 'Python'}]))
+        self.assertEqual([c.tag_id for c in result.candidates], ['t1'])
+
+    def test_output_violations_are_model_errors_not_input_errors(self):
+        cases = {
+            '名称过长': json.dumps({'tags': [{'name': '长' * 41}]}),
+            '标签过多': json.dumps({'tags': [{'name': f'标签{i}'} for i in range(6)]}),
+            '条目不是对象': json.dumps({'tags': ['just-a-string']}),
+        }
+        for label, content in cases.items():
+            with self.subTest(case=label):
+                with self.assertRaises(RecognitionError) as caught:
+                    self.provider(content).recognize(request(mode='llm'))
+                self.assertEqual(caught.exception.code, 'invalid_response')
+                self.assertFalse(caught.exception.retryable)
 
 
 class RegistryTests(unittest.TestCase):
