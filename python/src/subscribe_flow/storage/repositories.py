@@ -382,11 +382,24 @@ class Repository:
                 "CASE WHEN c.intake_method='manual' THEN 'UTC' ELSE json_extract(c.payload,'$.published.timezone') END,"
                 f"'{timezone}')")
 
+    # M17 统一口径。列表与统计复用同一段谓词，避免「通知说 23 条、页面只剩 2 条」。
+    # 收件箱的原义不变：pending 比它多包含「稍后处理」，不靠改名实现。
+    PENDING_CLAUSE = "((s.read=0 AND s.archived=0 AND s.deferred=0) OR s.deferred=1)"
+    HIGH_UNARCHIVED_CLAUSE = f"({EFFECTIVE_PRIORITY}='high' AND s.archived=0)"
+
     def _content_filter(self, *, channel=None, source_id=None, query=None, start=None, end=None,
                         read=None, archived=None, deferred=None, priority=None, tags=None, tag_mode=None,
-                        intake_method=None, timezone='UTC'):
+                        intake_method=None, timezone='UTC', state=None, view=None):
         clauses, args = ["1=1"], []
         date_expr = self._calendar_expr(timezone)
+        if state is not None:
+            if state != 'pending':
+                raise ChannelError('INVALID_INPUT', 'content.query', '内容口径无效')
+            clauses.append(self.PENDING_CLAUSE)
+        if view is not None:
+            if view != 'high_unarchived':
+                raise ChannelError('INVALID_INPUT', 'content.query', '内容视图无效')
+            clauses.append(self.HIGH_UNARCHIVED_CLAUSE)
         if intake_method is not None:
             if intake_method not in {'subscription', 'manual'}:
                 raise ChannelError('INVALID_INPUT', 'content.query', '收录方式无效')
@@ -437,6 +450,20 @@ class Repository:
         return {"items": self._with_tags([self._content(row, timezone) for row in records]), "total": total, "limit": limit, "offset": offset,
                 "next_offset": offset + limit if offset + limit < total else None}
 
+
+    def reminder_summary(self, timezone='UTC'):
+        """待处理与高优先级未归档的数量（R01/R02）。
+
+        两个数出自同一次读取：不渲染 UI、不缓存、不依赖当前筛选，因此不会
+        出现通知与列表对不上。按内容行计数，同一内容关联多个来源不会重复累加。
+        """
+        display_zone(timezone)
+        row = self.db.execute(
+            "SELECT count(*) FILTER (WHERE " + self.PENDING_CLAUSE + ") AS pending,"
+            " count(*) FILTER (WHERE " + self.HIGH_UNARCHIVED_CLAUSE + ") AS high"
+            " FROM contents c JOIN content_states s ON s.content_id=c.id").fetchone()
+        return {'pendingCount': row['pending'], 'highUnarchivedCount': row['high'],
+                'observedAt': now(), 'timezone': timezone}
 
     def calendar_summary(self, month, **filters):
         if not isinstance(month, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}", month):

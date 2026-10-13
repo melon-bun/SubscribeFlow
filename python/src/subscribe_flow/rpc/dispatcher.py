@@ -57,7 +57,7 @@ class Dispatcher:
             "sync.get": (repo.get_job, {"job_id": str}, {}),
             "sync.list": (c.queries.jobs, {}, {"limit": int, "offset": int}),
             "sync.coverage": (c.queries.coverage, {"subscription_id": str}, {}),
-            "content.list": (c.queries.contents, {}, {"limit": int, "offset": int, "channel": str, "source_id": str, "query": str, "start": str, "end": str,
+            "content.list": (c.queries.contents, {}, {"limit": int, "offset": int, "channel": str, "source_id": str, "query": str, "start": str, "end": str, "state": str, "view": str,
                                                       "read": bool, "archived": bool, "deferred": bool, "priority": str,
                                                       "tags": list, "tag_mode": str, "intake_method": str, "timezone": str}),
             "priority.set_source": (c.priorities.set_source, {"subscription_id": str, "priority": (str, type(None))}, {}),
@@ -79,6 +79,8 @@ class Dispatcher:
             "content.set_tags": (c.tags.set_content, {"item_id": str, "tag_ids": list}, {}),
             "content.bulk_set_tags": (c.tags.bulk_set, {"item_ids": list, "tag_ids": list}, {}),
             # M15 设置：只读非敏感配置；写入由主进程先落好受保护密钥再提交引用。
+            # M17：统计与列表同源，通知里说的两个数和页面看到的是同一批内容。
+            "reminder.summary": (c.queries.reminder_summary, {}, {"timezone": str}),
             "settings.get": (c.settings.snapshot, {}, {}),
             "settings.update": (c.settings.update, {"section": str, "patch": dict}, {"credential_refs": dict}),
             # 私有凭据桥接：只由主进程调用，不在 Renderer 方法白名单内。
