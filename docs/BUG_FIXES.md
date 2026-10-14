@@ -900,7 +900,7 @@
 - 原因与定位：`electron/main/lifecycle.cjs:navigateFromNotification` 直接发送 reminder.navigate，而 preload 只监听 subscribe-flow:event；恢复后未等待 Renderer/Core ready。`app.js:508` 只写 reminderView，未接入查询，也没有两种口径切换；设置菜单未 await 恢复就发事件。
 - 预期与修复范围：统一桥接事件，保存导航意图直到页面与 Core ready；接通 pending/high_unarchived 查询与切换界面；清空搜索、日期、平台、来源、标签等旧筛选且不修改内容状态，保留既有设置未保存保护。
 - 验证与验收：静态核对 Main→preload→Renderer→AppClient→Core 链路；验收需从真实菜单／通知回调驱动至实际 SQLite 列表，并核对 ID 集合和状态未改变。
-- 本轮处理：**已修复并通过 renderer-smoke 回归**（`79f3897`）：收件箱新增可见的「未处理 / 高优先级未归档」切换，直接使用 Core 共享谓词 `state=pending` 与 `view=high_unarchived`（与 `reminder.summary` 同源）。新增 `SF.app.openReminderView`，一次性清空搜索、日期、平台、来源与标签过滤但不改内容状态；通知与托盘点击走同一条路径。**未验证**：两个口径在非空 fixture 上的 UI 实际 ID 集合比对，本轮仅以既有 renderer-smoke 与设置 smoke 回归确认无破坏。
+- 本轮处理：补齐中间接口——`app-client.cjs` 的 `listContents` 白名单此前没有 `view`，`state` 也只接受 unread/read/archived/deferred，Renderer 传的 `pending` 与 `high_unarchived` 会被判为「尚未接入」直接拒绝，两个口径实际打不开。现两者都按 Core 共享谓词下发。另修 parseHash：离开收件箱时未清空 reminderView，普通侧栏导航被锁死。提醒 smoke 增加 UI 实际 ID 集合与 Core 的比对、以及切换入口与普通导航退出的验证。**未验证**：隔离库为空，两个集合都是空集，比对只证明链路通、参数没被拒；非空 fixture 的集合级验证仍未完成。
 - 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
