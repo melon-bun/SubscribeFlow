@@ -51,8 +51,7 @@ let suspended = false, powerUpdate = Promise.resolve();
 async function deliverNavigation(intent, target) {
   const win = target || (window && !window.isDestroyed() ? window : null);
   if (!win || win.isDestroyed()) return false;
-  // CoreClient 只发 status 事件，没有 status 属性；用 resources.ready 判定。
-  if (!resources.ready || !resources.core) {
+  if (!resources.ready || !resources.core || resources.core.status?.state !== 'ready') {
     resources.navigateIntent = intent; // 等 ready 后由 flushNavigationIntent 补发
     return false;
   }
@@ -91,32 +90,10 @@ function applyReminderSettings(settings) {
 }
 
 function send(event, data, target) {
-  // 每次只投递一次：早期版本在带 target 的同时又无条件广播一次，导致
-  // core.status、内容失效与导航事件全部翻倍（BUG-080）。
   const win = target || window;
-  if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-    win.webContents.send('subscribe-flow:event', event, data);
-  }
+  if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send('subscribe-flow:event', event, data);
+  if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('subscribe-flow:event', event, data);
 }
-/**
- * 主窗口工厂。初始窗口与「销毁后重建」共用同一套安全配置、URL 加载与
- * close/closed 绑定——重建出来的窗口不得比初始窗口更宽松。
- */
-async function createWindow() {
-  window = new BrowserWindow({ width: diagnostics ? 1000 : 1440, height: diagnostics ? 760 : 1000, minWidth: diagnostics ? 680 : 800, minHeight: diagnostics ? 500 : 600, show: !smoke && !rendererSmoke,
-    title: diagnostics ? 'Subscribe Flow · 开发联调' : '知流 · Subscribe Flow', webPreferences: {preload: path.join(root, 'electron', 'preload', 'index.cjs'),
-      contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, webviewTag: false,
-      backgroundThrottling: !smoke && !rendererSmoke} });
-  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  window.webContents.session.setWindowOpenHandler(() => ({action: 'deny'}));
-  window.webContents.on('will-navigate', event => event.preventDefault());
-  window.webContents.on('will-attach-webview', event => event.preventDefault());
-  window.on('closed', () => { if (window && window.isDestroyed()) window = null; });
-  window.on('close', event => { if (resources.lifecycle) resources.lifecycle.interceptClose(event); });
-  await window.loadURL(APP_URL);
-  return window;
-}
-
 async function start() {
   const runtime = resolveRuntime({packaged: app.isPackaged, resourcesPath: process.resourcesPath, root});
   diagnostic('app.start', {version: app.getVersion(), electron: process.versions.electron, platform: process.platform, arch: process.arch, packaged: app.isPackaged});
@@ -285,7 +262,7 @@ async function start() {
       if (Buffer.byteLength(JSON.stringify(params) ?? '') > 60000) throw new Error('参数超过大小限制');
       if (UI_METHODS.has(name)) {
         const value = await callUI(core, name, params, {settings: settingsBridge});
-        // 保存成功后才响应提醒配置变化；无关 AI 保存不重置间隔（BUG-074）。
+        // 保存成功后才响应提醒配置变化（BUG-074）。
         if (name === 'saveSettings') applyReminderSettings(value);
         return {ok: true, value};
       }
@@ -306,15 +283,25 @@ async function start() {
       return {ok: false, error: {code: error.code || 'DESKTOP_ERROR', message: error.message, ...(error.data || {})}};
     }
   });
-  await createWindow();
-  // M17：托盘在窗口就绪后建立，失败不阻断启动。
+  window = new BrowserWindow({ width: diagnostics ? 1000 : 1440, height: diagnostics ? 760 : 1000, minWidth: diagnostics ? 680 : 800, minHeight: diagnostics ? 500 : 600, show: !smoke && !rendererSmoke,
+    title: diagnostics ? 'Subscribe Flow · 开发联调' : '知流 · Subscribe Flow', webPreferences: {preload: path.join(root, 'electron', 'preload', 'index.cjs'),
+      contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, webviewTag: false,
+      backgroundThrottling: !smoke && !rendererSmoke} });
+  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  window.webContents.session.setPermissionCheckHandler(() => false);
+  window.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
+  window.webContents.on('will-navigate', event => event.preventDefault());
+  window.webContents.on('will-attach-webview', event => event.preventDefault());
+  await window.loadURL(APP_URL);
+  // M17：托盘与提醒在窗口就绪后建立，失败不阻断启动。
   ensureTray();
+  window.on('closed', () => { window = null; });
+  window.on('close', event => { if (resources.lifecycle) resources.lifecycle.interceptClose(event); });
   try { await core.start(); }
   catch (error) { lastStatus = {state: 'error', message: error.message}; diagnostic('core.status', lastStatus); send('core.status', lastStatus); if (smoke || rendererSmoke) throw error; }
   // Core ready 之后才接线提醒：之前这段在 core.start() 之前调用 settings.get，
   // CoreClient 未 ready 直接拒绝，错误还被空 catch 吞掉（BUG-074）。
-  // 只在纯桌面 smoke 下跳过；renderer smoke（含 M17）走与产品相同的初始化。
-  if (rendererSmoke !== 'offline' || !rendererSmoke) void wireReminders();
+  if (!smoke && !rendererSmoke) void wireReminders();
   if (rendererSmoke) {
     try {
       if (rendererSmoke === 'zhihu') await require('../../scripts/zhihu-renderer.cjs').verify({window,core,root,zhihu,fixture:zhihuFixture});
@@ -378,5 +365,3 @@ app.on('before-quit', event => {
   if (resources.lifecycle) void resources.lifecycle.quit();
   else app.quit();
 });
-
-module.exports = {start, __resources: resources};
