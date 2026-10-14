@@ -900,7 +900,7 @@
 - 原因与定位：`electron/main/lifecycle.cjs:navigateFromNotification` 直接发送 reminder.navigate，而 preload 只监听 subscribe-flow:event；恢复后未等待 Renderer/Core ready。`app.js:508` 只写 reminderView，未接入查询，也没有两种口径切换；设置菜单未 await 恢复就发事件。
 - 预期与修复范围：统一桥接事件，保存导航意图直到页面与 Core ready；接通 pending/high_unarchived 查询与切换界面；清空搜索、日期、平台、来源、标签等旧筛选且不修改内容状态，保留既有设置未保存保护。
 - 验证与验收：静态核对 Main→preload→Renderer→AppClient→Core 链路；验收需从真实菜单／通知回调驱动至实际 SQLite 列表，并核对 ID 集合和状态未改变。
-- 本轮处理：补齐中间接口——`app-client.cjs` 的 `listContents` 白名单此前没有 `view`，`state` 也只接受 unread/read/archived/deferred，Renderer 传的 `pending` 与 `high_unarchived` 会被判为「尚未接入」直接拒绝，两个口径实际打不开。现两者都按 Core 共享谓词下发。另修 parseHash：离开收件箱时未清空 reminderView，普通侧栏导航被锁死。提醒 smoke 增加 UI 实际 ID 集合与 Core 的比对、以及切换入口与普通导航退出的验证。**未验证**：隔离库为空，两个集合都是空集，比对只证明链路通、参数没被拒；非空 fixture 的集合级验证仍未完成。
+- 本轮处理：补齐中间接口——`app-client.cjs` 的 `listContents` 白名单此前没有 `view`，`state` 也只接受 unread/read/archived/deferred，Renderer 传的 `pending` 与 `high_unarchived` 会被判为「尚未接入」直接拒绝，两个口径实际打不开。现两者都按 Core 共享谓词下发。另修 parseHash：离开收件箱时未清空 reminderView，普通侧栏导航被锁死。提醒 smoke 增加 UI 实际 ID 集合与 Core 的比对、以及切换入口与普通导航退出的验证。集合级验证已完成（`d67cdb9`）：提醒 smoke 接入 seed_renderer.py 并用真实 RPC 造出差异——稍后处理 1 条、已读高优先级未归档 1 条、已归档 1 条（两个口径都不该有）、单条优先级覆盖 1 条；UI 经真实 bridge 取到的集合为未处理 23 条 / 高优先级未归档 2 条，与 reminder.summary 一致且两者确实不同。顺带修好 fixture 脚本本身——seed_renderer.py 此前假定订阅已存在（list_subscriptions()[0]），在空目录上 IndexError，现改为自给自足。仍未验证：多来源去重、单条覆盖与来源默认优先级的对照、以及通知点击端到端到达列表。
 - 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
