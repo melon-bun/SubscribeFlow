@@ -77,11 +77,11 @@
         params[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || "");
       });
     }
-    if (name === "inbox") {
-      // 口径写进哈希：普通导航不带 view 就会退出提醒口径，不会被锁死。
-      app.reminderView = params.view === "high_unarchived" ? "high_unarchived"
-        : params.view === "pending" ? "pending" : null;
-    }
+    // 口径写进哈希：只有收件箱带 view 才进入提醒口径；
+    // 任何其它路由（含普通侧栏导航）都会退出，不会被锁死。
+    app.reminderView = name === "inbox"
+      ? (params.view === "high_unarchived" ? "high_unarchived" : params.view === "pending" ? "pending" : null)
+      : null;
     if (name === "settings") {
       // 分区始终带回路由参数：直接改哈希进来时左栏与正文必须对得上。
       return { name: name, params: { section: params.section === "reminder" ? "reminder" : "tagging" } };

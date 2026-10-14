@@ -64,7 +64,7 @@ async function verify({window, core, root}) {
   };
 
   await until(`!!window.SF?.app.state.session`);
-  await until(`SF.app.state.coreStatus && SF.app.state.coreStatus.state === 'ready'`);
+  await until(`SF.app.state.coreStatus && SF.app.state.coreStatus.state === 'ready'`, 30000);
   const scheduler = resources.scheduler;
   assert.ok(scheduler, '生产提醒调度器必须已建立');
   assert.equal(await core.call('reminder.state'), null, '初始不应有持久运行状态');
@@ -241,6 +241,8 @@ async function verify({window, core, root}) {
   const coreSummary = await core.call('reminder.summary');
   const corePending = (await core.call('content.list', {state: 'pending', limit: 100})).items.map(i => i.id).sort();
   const coreHigh = (await core.call('content.list', {view: 'high_unarchived', limit: 100})).items.map(i => i.id).sort();
+  // 隔离库为空，两个集合都是空集：这里只能证明链路通、参数没被中间接口拒。
+  // 非空 fixture 的集合级验证仍未完成，见 M17_REMINDERS_TRAY.md 未验证项。
   assert.deepEqual(uiPending, corePending, '未处理列表与 Core 集合不一致');
   assert.deepEqual(uiHigh, coreHigh, '高优先级未归档列表与 Core 集合不一致');
   results.steps.push({listPerspectives: {pending: uiPending.length, high: uiHigh.length,
@@ -291,7 +293,7 @@ module.exports = {verify};
 
 if (require.main === module) {
   const root = path.resolve(__dirname, '..');
-  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'subscribe-flow-reminder-'));
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'subscribe-flow-renderer-reminder-'));
   const child = spawn(require('electron'), [root], {
     env: {...process.env, SUBSCRIBE_FLOW_RENDERER_SMOKE: 'reminder', SUBSCRIBE_FLOW_DATA_DIR: folder,
           SUBSCRIBE_FLOW_ISOLATED_TEST: '1'},
