@@ -900,7 +900,7 @@
 - 原因与定位：`electron/main/lifecycle.cjs:navigateFromNotification` 直接发送 reminder.navigate，而 preload 只监听 subscribe-flow:event；恢复后未等待 Renderer/Core ready。`app.js:508` 只写 reminderView，未接入查询，也没有两种口径切换；设置菜单未 await 恢复就发事件。
 - 预期与修复范围：统一桥接事件，保存导航意图直到页面与 Core ready；接通 pending/high_unarchived 查询与切换界面；清空搜索、日期、平台、来源、标签等旧筛选且不修改内容状态，保留既有设置未保存保护。
 - 验证与验收：静态核对 Main→preload→Renderer→AppClient→Core 链路；验收需从真实菜单／通知回调驱动至实际 SQLite 列表，并核对 ID 集合和状态未改变。
-- 本轮处理（2026-10-14）：部分修复：Main 改走 preload 唯一监听的 `subscribe-flow:event` 通道，生命周期新增 `deliver` 注入点；未就绪时导航意图挂起并在 core.status ready 后补发；设置菜单也改为经 `lifecycle.navigate()` 等待恢复。**未完成**：收件箱内 pending／high_unarchived 两个列表视角与切换入口、过滤清理的界面级断言。
+- 本轮处理：**已修复并通过 renderer-smoke 回归**（`79f3897`）：收件箱新增可见的「未处理 / 高优先级未归档」切换，直接使用 Core 共享谓词 `state=pending` 与 `view=high_unarchived`（与 `reminder.summary` 同源）。新增 `SF.app.openReminderView`，一次性清空搜索、日期、平台、来源与标签过滤但不改内容状态；通知与托盘点击走同一条路径。**未验证**：两个口径在非空 fixture 上的 UI 实际 ID 集合比对，本轮仅以既有 renderer-smoke 与设置 smoke 回归确认无破坏。
 - 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
@@ -915,7 +915,7 @@
 - 原因与定位：`index.cjs:158` 指向缺失资源；`tray.cjs:create` 对空图片静默 createEmpty。应用入口没有调用 refresh/scheduleRefresh，菜单打开与数据变化也未接线。
 - 预期与修复范围：提供有效平台图标，macOS template 与尺寸适配；图标／托盘不可用时禁止隐藏且保留可访问窗口。Core ready、失联、内容／来源优先级变更与菜单打开时合并刷新。
 - 验证与验收：`integration-before.json` 记录 icon_exists=false；需真实 Electron 非空图标与菜单计数证据，覆盖查询在途发生变更、Core 失联和恢复。
-- 本轮处理（2026-10-14）：部分修复：图标路径改为真实存在的 `assets/logo.png`，缺失或空图像直接抛错而不是 createEmpty 静默通过；macOS 加 template 适配与 16pt 菜单栏缩放；托盘创建后立即 refresh，core ready／失联时刷新。**未完成**：内容与来源优先级变化的刷新接线、菜单打开时刷新、真实 Electron 下的图标与计数证据。
+- 本轮处理：**部分修复**（`79f3897`）：菜单打开（click/right-click）时重查计数；内容、订阅、调度与标签变化事件触发合并刷新；Core 失联仍如实显示不可用。托盘 `openList` 未被 `deps` 遮蔽（使用独立 `openListAction` 字段）。**未验证**：内容归档/延后后托盘计数随之变化、以及 Core 离线→恢复的真实重查，本轮未做针对性集成断言。
 - 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ## BUG-078：M17 退出超时未覆盖清理过程
