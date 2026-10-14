@@ -845,7 +845,7 @@
 - 原因与定位：`electron/main/index.cjs:300–312` 顶层回调访问 start 局部 lifecycle/scheduler/tray；注入的 createWindow 没有定义；`electron/main/lifecycle.cjs:restore` 未串行合并窗口创建。
 - 预期与修复范围：使用明确的应用级资源所有权和真实窗口工厂，共用安全配置、加载与事件绑定；并发恢复只创建一次，退出期间不再创建窗口。
 - 验证与验收：`verification/m17-review/integration-before.json` 复现三个事件异常及 created=2；补充实际 Electron 隐藏、销毁重建、Dock／第二实例、登录窗口独立和托盘失败降级验收。
-- 本轮处理：**已修复并通过真实 Electron 验收**（`3f1e61a`）：补上此前缺失的真实 `createWindow` 工厂——上一版把 `setWindowOpenHandler` 错挂到 `webContents.session`（该方法在 `webContents` 上）并漏掉 `setPermissionCheckHandler`，导致启动即 TypeError。窗口生命周期集成 smoke 实测：安全配置（contextIsolation/sandbox/nodeIntegration/webview/preload 桥）保持、关闭被拦截为隐藏且未销毁、销毁后重建后 Core 仍在响应、并发 restore 三次只建一个窗口。
+- 本轮处理：**已修复并通过真实 Electron 验收**（`ce88fcb`）：除工厂 API 归属外，本轮修掉两个真实缺陷——① `window = created` 原在 `loadURL` 之后才赋值，新窗口 Renderer 加载期间发出的 IPC 被来源校验判为「请求来源无效」，改为构造后立即登记；② `start()` 残留一份 close/closed 绑定与工厂内重复，每次关闭被拦截两次，已移除。`restore()` 同步抛错后曾无法重试（已拒绝的 Promise 留在 pendingWindow），现已可重试。证据：`docs/verification/m17/window-lifecycle.log`——真实 `window.close()` 被拦截且未销毁；**真正 destroy 后 restore 得到不同 ID（1→2）**；先销毁再三次并发 restore 只新增一个窗口且 Core PID 未变；同步/异步失败各重试成功；独立辅助窗口关闭不影响主窗口。
 - 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
@@ -944,7 +944,7 @@
 - 原因：把可选钩子和空结果对比当作功能验收；Main `if (!smoke && !rendererSmoke) wireReminders()` 又明确跳过了 M17 smoke 中的生产调度初始化。
 - 预期与修复：缺失必需测试入口必须失败；隔离环境走与产品相同的初始化、设置保存、生命周期与 IPC 链路，数据仅由 fixture 隔离，不能绕开被测功能。使用有差异的非空 pending/high 数据核对 UI ID 集合与过滤清理；实际驱动关闭隐藏、销毁重建和有界退出。保留真实系统显示未验收的说明。
 - 验证：静态核对该脚本与 Main 入口；本轮未把该脚本运行结果作为验收证据。修复后须保存完整成功输出及退出码。
-- 本轮处理（2026-10-14，提交 `a41177e`）：部分修复：集成脚本已重写——必需入口缺失直接失败、用真实离线播种造出非空且两口径不同的 fixture、核对 UI ID 集合、导航必须真实到达 Renderer、Main 不再在 renderer smoke 下跳过生产初始化。**未完成**：仍未能取得一次成功运行，Electron network service 在本机崩溃导致所有 Electron smoke 无法启动。
+- 本轮处理：**已修复并验证**（`ce88fcb`）：原脚本从未 destroy 窗口却断言「销毁后重建」，并发 restore 也只在已存在窗口上跑，顶层「注入」只是调用纯函数。现重写为真实动作：真实 `window.close()`；真正 destroy 后断言新窗口 ID 不同并重新建立 Renderer 引用；先销毁再三次并发 restore 并核对 Core PID 未变；工厂同步/异步失败各自重试；实际操作独立辅助窗口。顶层启动异常改由 `scripts/startup-crash-check.cjs` 在独立进程用仅开发可用的注入点验证，smoke 不再假装测过它。
 
 
 ---
@@ -979,9 +979,9 @@
 - 原因：抽取工厂时多加一层 `.session`；同时遗漏原有 setPermissionCheckHandler 拒绝策略。顶层错误处理丢失原异常，导致错误分类和提示失真。
 - 修复范围：由 MiniMax 恢复并修正工厂（setWindowOpenHandler 属于 webContents，权限方法留在 session），保留全部安全设置；记录脱敏 message/stack/启动阶段，用户提示区分资源故障与内部启动错误。不得记录 Key、请求头或完整配置。
 - 证据：`verification/m17-review/factory-root-cause.json`。Codex 在临时 userData 中以真实 Electron 执行历史工厂复现，未启动 Core 或访问日常数据，进程退出0并保存异常。
-- 状态：已修复并验证；相关提交 `3f1e61a`。
+- 状态：已修复并验证；相关提交 `ce88fcb`。
 - 验收：当前代码实际启动、销毁后重建、并发恢复、安全策略仍有效；隔离注入代码异常验证真实错误被记录、提示不误称资源损坏；资源缺失路径保留合理提示。不得只用语法检查或类级mock证明完成。
 
 ### 2026-10-14 Codex 复核最终 HEAD `e9b0750`
 
-- 调用对象及TypeError提示已纠正，确认局部修复。真实诊断仍未落盘：diagnostics.cjs白名单不包含app.startup.failed，diagnosticRecord返回null，临时目录不存在lifecycle.jsonl。现有startup-errors 11项测试通过但只检查构造结果和静态调用，未通过顶层catch→真实落盘链路。资源分类还把ENOSPC/权限类问题统称重新解压，需按故障原因提示。最新状态：部分修复、待验收，证据bug082-review.json。
+- 调用对象及TypeError提示已纠正，确认局部修复。真实诊断仍未落盘：diagnostics.cjs白名单不包含app.startup.failed，diagnosticRecord返回null，临时目录不存在lifecycle.jsonl。现有startup-errors 11项测试通过但只检查构造结果和静态调用，未通过顶层catch→真实落盘链路。资源分类还把ENOSPC/权限类问题统称重新解压，需按故障原因提示。最新状态：本段记录的缺口已在 `ce88fcb` 全部修复，证据见 `docs/verification/m17/startup-crash-check.log`；上文「部分修复、待验收」不再成立，保留本段作为过程记录。
