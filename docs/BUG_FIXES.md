@@ -780,7 +780,7 @@
 - 修复范围：由 MiniMax 增加单调版本／代际，在全部异步边界检查；为持久状态写入也提供版本保护，防止迟到写入。已提交给系统的通知无法撤回投递事实时如实处理，但不能继续改写新状态。
 - 验证：`verification/m17-review/scheduler-before.json` 第二、三例均复现；实际旧通知 1 次，停用后 timer 又存在。
 - 修复验收：开→关→开（相同间隔）、通知在途修改间隔、查询迟到失败、退出中的回执，以及配置变化恰逢 timer 触发；新配置保持正确，后续新周期仍能执行。
-- 状态：已修复并验证；相关源码提交 `aa731f7`。
+- 状态：已修复并验证；相关提交 `2cfe4ce`。
 - 验证：覆盖五条：开→关→开（相同间隔）作废在途查询；通知在途改间隔后迟到回执不改写 nextCheckAt、lastResult 与定时器；停用后在途回执不重建定时器；迟到失败不污染新配置状态也不带进退避；无关 AI 保存不推进代际。提交 `aa731f7`。
 
 ### 2026-10-14 Codex 复核：重新打开（P1，持久化保护未完成）
@@ -810,7 +810,7 @@
 - 修复范围：由 MiniMax 修复持久契约与启动顺序，并接入计划要求的 Core 持久存储；配置身份、下一时间、通知结果原子维护，旧状态不能覆盖新配置。
 - 验证：`verification/m17-review/scheduler-before.json` 第四例 actualSavedDue=null。现有 restore 同时 arm(0) 和主动 run，还应验证慢／快异步返回下均只合并一轮。
 - 修复验收：到期前退出再开保留原时间；过期重开／连续 resume 只检查一次；停用后的旧记录不激活提醒；重启不丢退避状态；配置不符的旧状态不恢复。
-- 状态：已修复并验证；相关源码提交 `aa731f7`（Core 持久层 `14c9cea`）。
+- 状态：已修复并验证；相关提交 `2cfe4ce`。
 - 验证：退出只释放进程内 timer，持久 nextCheckAt 原样保留；恢复先校验 signature，配置不符的旧记录返回 false 且不激活提醒；过期周期连续 restore 三次只触发一次查询。Core 侧新增迁移 010_reminder_state 与 reminder.state／reminder.state.save 两条 RPC，跨 Core 实例往返验证通过（提交 `14c9cea`）。提交 `aa731f7`。
 
 ### 2026-10-14 Codex 复核：重新打开（P1，真实保存与恢复链路未完成）
@@ -838,7 +838,7 @@
 - 原因与定位：`electron/main/index.cjs:242–251` 在 core.start() 之前 core.call(settings.get)，CoreClient 未 ready 时直接拒绝且错误被吞；ready 事件只同步设置密钥，设置保存与 resume 均未调用提醒恢复／配置处理。
 - 预期与修复范围：Core ready 后按持久契约初始化，设置保存成功后只响应提醒配置变化，Core 重启与 resume 接入单次恢复。无关 AI 保存不得重置计时。
 - 验证与验收：静态调用链核对；新增真实 Main 启动、设置保存、Core 重启、连续 resume 的集成断言，证明 timer 存在且不会重复。
-- 本轮处理（2026-10-14）：部分修复：接线改为 Core ready 之后经 `wireReminders()` 执行（先 settings.get 再 reminder.state，`applySettings(settings,{persist:false})` 不再先覆盖原记录），并接入 saveSettings 保存成功后的提醒配置响应与 core ready 刷新。**未完成**：Core 重启与 resume 的恢复路径、真实 Main 集成断言。
+- 本轮处理：**已修复并验证**（`2cfe4ce`）：`applySettings` 两处 persist 此前漏掉 generation，仓库默认 0——正常检查写入高代际后，改间隔与停用会被判为迟到写入而拒绝；`restore` 又仅在 nextCheckAt 为数字时续接代际，停用记录（null）被忽略，导致重启后续接停用状态时内存版本远低于已存版本、后续变更新版本存不进去。现在所有生产保存都带当前代际，恢复与 nextCheckAt 是否为 null 无关地续接最高有效版本且不激活停用周期；Core ready（含重启）与 powerMonitor.resume 都接到 wireReminders 幂等路径。证据：`docs/verification/m17/reminder-persistence.log`——生产初始化、bridge 启用落盘、到期触发、无关 AI 保存不重置（generation 2 不变）、改间隔换身份（generation 3）、停用、迟到写被 CONFLICT 拒绝且停用未复活、重启沿用原 deadline。
 - 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
