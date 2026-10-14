@@ -831,7 +831,7 @@
 - 预期与修复范围：Core ready 后按持久契约初始化，设置保存成功后只响应提醒配置变化，Core 重启与 resume 接入单次恢复。无关 AI 保存不得重置计时。
 - 验证与验收：静态调用链核对；新增真实 Main 启动、设置保存、Core 重启、连续 resume 的集成断言，证明 timer 存在且不会重复。
 - 本轮处理（2026-10-14）：部分修复：接线改为 Core ready 之后经 `wireReminders()` 执行（先 settings.get 再 reminder.state，`applySettings(settings,{persist:false})` 不再先覆盖原记录），并接入 saveSettings 保存成功后的提醒配置响应与 core ready 刷新。**未完成**：Core 重启与 resume 的恢复路径、真实 Main 集成断言。
-- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+- 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
 
@@ -846,7 +846,7 @@
 - 预期与修复范围：使用明确的应用级资源所有权和真实窗口工厂，共用安全配置、加载与事件绑定；并发恢复只创建一次，退出期间不再创建窗口。
 - 验证与验收：`verification/m17-review/integration-before.json` 复现三个事件异常及 created=2；补充实际 Electron 隐藏、销毁重建、Dock／第二实例、登录窗口独立和托盘失败降级验收。
 - 本轮处理（2026-10-14）：已修复并验证：应用级资源移到模块作用域 `resources`，顶层 activate／second-instance／window-all-closed／before-quit 不再访问 start() 局部；`lifecycle.restore()` 以 pendingWindow 串行合并并发恢复，退出期间建出的窗口被关闭。新增 4 条断言（共享 IPC 通道、并发只建一个、退出期间不建、通知点击先恢复再投递）。
-- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+- 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
 
@@ -861,7 +861,7 @@
 - 预期与修复范围：统一桥接事件，保存导航意图直到页面与 Core ready；接通 pending/high_unarchived 查询与切换界面；清空搜索、日期、平台、来源、标签等旧筛选且不修改内容状态，保留既有设置未保存保护。
 - 验证与验收：静态核对 Main→preload→Renderer→AppClient→Core 链路；验收需从真实菜单／通知回调驱动至实际 SQLite 列表，并核对 ID 集合和状态未改变。
 - 本轮处理（2026-10-14）：部分修复：Main 改走 preload 唯一监听的 `subscribe-flow:event` 通道，生命周期新增 `deliver` 注入点；未就绪时导航意图挂起并在 core.status ready 后补发；设置菜单也改为经 `lifecycle.navigate()` 等待恢复。**未完成**：收件箱内 pending／high_unarchived 两个列表视角与切换入口、过滤清理的界面级断言。
-- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+- 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
 
@@ -876,7 +876,7 @@
 - 预期与修复范围：提供有效平台图标，macOS template 与尺寸适配；图标／托盘不可用时禁止隐藏且保留可访问窗口。Core ready、失联、内容／来源优先级变更与菜单打开时合并刷新。
 - 验证与验收：`integration-before.json` 记录 icon_exists=false；需真实 Electron 非空图标与菜单计数证据，覆盖查询在途发生变更、Core 失联和恢复。
 - 本轮处理（2026-10-14）：部分修复：图标路径改为真实存在的 `assets/logo.png`，缺失或空图像直接抛错而不是 createEmpty 静默通过；macOS 加 template 适配与 16pt 菜单栏缩放；托盘创建后立即 refresh，core ready／失联时刷新。**未完成**：内容与来源优先级变化的刷新接线、菜单打开时刷新、真实 Electron 下的图标与计数证据。
-- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+- 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ## BUG-078：M17 退出超时未覆盖清理过程
 
@@ -886,7 +886,7 @@
 - 预期与修复范围：从退出开始建立总期限，所有明确退出入口共用幂等流程；停止新任务、处理通道与 Core、销毁托盘，到期强制收尾并记录真实失败。不能再次触发隐藏。
 - 验证与验收：`integration-before.json` 的 hanging_cleanup：deadlineTimerCreated=false、quit=false；新增永不完成／抛错清理测试，并用本轮隔离 Electron/Core 进程验证退出时限及无子进程残留。
 - 本轮处理（2026-10-14）：已修复并验证：总期限改为**先建立**再逐个 race 清理步骤，覆盖永不完成的清理；超时步骤记 timedOut 且不计成功；allSettled 的单项失败逐条落到 steps。新增永不完成清理与抛错清理两条用例。
-- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+- 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
 
@@ -901,7 +901,7 @@
 - 预期与修复范围：复用／抽取 M15 通知结果处理，区分 submitted、shown、failed、unsupported、unknown；查询成功后投递失败不进入查询退避，记录独立通知结果；点击使用当前提醒目标，旧事件不得清除新通知。停用／退出按契约清理通知。
 - 验证与验收：`integration-before.json` 的 notification_failure_classification 为 query_failed/backoffIndex=1；补充异步投递、迟到事件与目标切换测试。真实系统显示与点击仍需独立实机证据，mock 不得宣称已验收。
 - 本轮处理（2026-10-14）：已修复并验证：新增 `electron/main/reminder-notification.cjs` 投递状态机，区分 submitted／shown／failed／unsupported／unknown 五态（show() 返回只算 submitted）；复用同一条通知，旧句柄的 close／failed 不得污染当前状态；点击读取当前 entry 的 target 而非首次快照。新增 8 条断言。**真实系统显示与点击仍待实机人工确认**，替身不构成显示证据。
-- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+- 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
 
@@ -915,7 +915,7 @@
 - 原因：`electron/main/index.cjs:send` 加入 target 后保留旧的无条件 window 发送；默认 target 为 window，导致 core.status、内容失效、导航等全体事件重复。
 - 预期与修复：每个事件只投递给指定目标一次；显式 target 也不能额外广播给旧窗口。由 MiniMax 修复，加入真实 bridge 事件计数验收。
 - 证据：`verification/m17-review/integration-fix-review.json` 中 single_send.actualCalls=2。
-- 状态：待修复；引入提交 `7190779`。
+- 本轮处理（2026-10-14，提交 `a41177e`）：已修复（未验收）：send() 每个事件只投递一次。**未验证**：真实 bridge 事件计数验收因 Electron 无法启动未执行。
 
 ## BUG-081：M17 集成脚本会跳过关键路径并宣称通过
 
@@ -924,4 +924,24 @@
 - 原因：把可选钩子和空结果对比当作功能验收；Main `if (!smoke && !rendererSmoke) wireReminders()` 又明确跳过了 M17 smoke 中的生产调度初始化。
 - 预期与修复：缺失必需测试入口必须失败；隔离环境走与产品相同的初始化、设置保存、生命周期与 IPC 链路，数据仅由 fixture 隔离，不能绕开被测功能。使用有差异的非空 pending/high 数据核对 UI ID 集合与过滤清理；实际驱动关闭隐藏、销毁重建和有界退出。保留真实系统显示未验收的说明。
 - 验证：静态核对该脚本与 Main 入口；本轮未把该脚本运行结果作为验收证据。修复后须保存完整成功输出及退出码。
-- 状态：待修复；引入提交 `7190779`。
+- 本轮处理（2026-10-14，提交 `a41177e`）：部分修复：集成脚本已重写——必需入口缺失直接失败、用真实离线播种造出非空且两口径不同的 fixture、核对 UI ID 集合、导航必须真实到达 Renderer、Main 不再在 renderer smoke 下跳过生产初始化。**未完成**：仍未能取得一次成功运行，Electron network service 在本机崩溃导致所有 Electron smoke 无法启动。
+
+
+---
+
+## 2026-10-14 环境阻塞记录：本轮所有 Electron 隔离 smoke 无法启动
+
+- 现象：任何 Electron 启动都以 exit=1 立即退出，`scripts/renderer-smoke.cjs`、
+  `scripts/settings-renderer.cjs`、`scripts/m17-renderer.cjs` 全部同样失败且零输出。
+- 判定证据：
+  1. `node_modules/.bin/electron --version` 正常返回 v44.5.1；
+  2. 同一二进制运行最小 Electron 应用成功（`MINIMAL_OK`，exit=0）——
+     说明运行时与二进制本身可用；
+  3. 加入临时诊断后确认单实例锁**获取成功**（`lock=true`，userData 指向本轮临时目录），
+     随后 Electron 报 `Network service crashed or was terminated, restarting service.` 并退出；
+  4. 最小应用不触碰 network service（不注册 app:// 协议、不建窗口）故不受影响。
+- 结论：属本机 Electron network service 级故障，非本轮代码引入。证据留存在
+  `docs/verification/m17/electron-network-service-blocker.log`。
+- 待办：环境恢复后重跑 `node scripts/m17-renderer.cjs`，并补齐本轮因无法运行而
+  未取得的集成证据（窗口隐藏／重建、托盘计数、导航过滤清理、有界退出无残留）。
+- 影响：本轮所有「已修复（未验收）」条目在取得上述证据前不得记为已验证。
