@@ -132,6 +132,28 @@ async function verify({window, core, root}) {
   assert.equal(asyncAttempts, 2, '异步失败后必须能重试');
   results.factoryRetry = {sync: syncAttempts, async: asyncAttempts};
 
+  /* ---------- 4b. 真实工厂的 loadURL 失败：销毁坏窗口后能重试 ---------- */
+  // 走真实 createWindow 工厂，由工厂自身的注入点在 loadURL 阶段失败一次。
+  process.env.SUBSCRIBE_FLOW_TEST_LOAD_FAIL = 'once';
+  const beforeFailId = current.id;
+  current.destroy();
+  await new Promise((r) => setTimeout(r, 300));
+  const bridgeIdBefore = resources.lifecycle.getWindow();
+  assert.equal(bridgeIdBefore, null, '销毁后不应残留窗口引用');
+  await assert.rejects(() => resources.lifecycle.restore(), /loadURL 失败/,
+    '注入的加载失败必须真实冒出来');
+  assert.equal(resources.lifecycle.getWindow(), null,
+    '加载失败后不得残留未就绪窗口引用（否则第二次 restore 只会拿到坏窗口）');
+  delete process.env.SUBSCRIBE_FLOW_TEST_LOAD_FAIL;
+  current = await resources.lifecycle.restore();
+  assert.ok(current && !current.isDestroyed(), '失败后应能重新建出窗口');
+  assert.notEqual(current.id, beforeFailId, '重试必须得到新的窗口');
+  await until(`!!window.SF?.app.state.session`, current);
+  assert.equal(await evaluate(`typeof window.SubscribeFlow === 'object'`, current), true,
+    '重试出的窗口必须挂上 preload 桥');
+  results.loadFailureRetry = {failedOnce: true, newId: current.id};
+  await current.show();
+
   /* ---------- 5. 辅助登录窗口独立：不被主窗口 close 拦截 ---------- */
   const {BrowserWindow} = require('electron');
   const login = new BrowserWindow({show: false, width: 480, height: 320});
@@ -178,7 +200,9 @@ if (require.main === module) {
   const root = path.resolve(__dirname, '..');
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'subscribe-flow-win-'));
   const child = spawn(require('electron'), [root], {
-    env: {...process.env, SUBSCRIBE_FLOW_RENDERER_SMOKE: 'window', SUBSCRIBE_FLOW_DATA_DIR: folder},
+    env: {...process.env, SUBSCRIBE_FLOW_RENDERER_SMOKE: 'window', SUBSCRIBE_FLOW_DATA_DIR: folder,
+          // 隔离测试模式：让工厂自身的注入点可用，且不影响任何正常用户路径。
+          SUBSCRIBE_FLOW_ISOLATED_TEST: '1'},
     stdio: 'inherit',
   });
   const timer = setTimeout(() => child.kill('SIGKILL'), 180000);

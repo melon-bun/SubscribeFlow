@@ -219,3 +219,67 @@ test('BUG-075：退出后不再创建窗口', async () => {
   assert.equal(win.destroyed, true, '退出期间建出的窗口必须关闭');
   assert.equal(await lifecycle.restore(), null, '退出后不再新建');
 });
+
+test('BUG-083：打包版必须忽略测试注入变量，正常创建窗口', () => {
+  const factory = mainSource.match(/async function createWindow\([^)]*\)\s*\{([\s\S]*?)\n\}\n/);
+  const body = factory[1];
+  // 早前写成 `if (app.isPackaged) throw`，等于让所有正式包无论有无标志都拒启动。
+  assert.ok(!/if\s*\(\s*app\.isPackaged\s*\)\s*throw/.test(body),
+    '不得存在打包版无条件抛错——那会让正式包永远启动不了');
+  assert.ok(!/^\s*if\s*\(\s*app\.isPackaged\s*\)\s*throw/m.test(mainSource),
+    '主入口任何位置都不得有 app.isPackaged 无条件抛错');
+  // 注入必须在「非打包 且 显式隔离测试模式」下才可能发生。
+  // 两个注入点（崩溃注入与 loadURL 失败注入）都必须被 !app.isPackaged && isolatedTest 保护。
+  const guarded = /!app\.isPackaged && isolatedTest[\s\S]{0,200}?SUBSCRIBE_FLOW_TEST_CRASH/
+    .test(body) && /!app\.isPackaged && isolatedTest[\s\S]{0,200}?SUBSCRIBE_FLOW_TEST_LOAD_FAIL/.test(body);
+  assert.ok(guarded, '两个注入点都必须同时受 !app.isPackaged 与 isolatedTest 保护');
+  assert.ok(!/SUBSCRIBE_FLOW_TEST_(CRASH|LOAD_FAIL)/.test(body.split('isolatedTest')[0]),
+    '注入变量不得出现在任何保护条件之前');
+});
+
+test('BUG-083：隔离测试模式标志存在且默认关闭', () => {
+  assert.match(mainSource, /const isolatedTest = !app\.isPackaged && process\.env\.SUBSCRIBE_FLOW_ISOLATED_TEST === '1';/,
+    '隔离测试模式必须显式开启，默认关闭');
+});
+
+test('BUG-075：工厂拒绝后生命周期能再次调用工厂（清引用由工厂负责）', async () => {
+  const {WindowLifecycle} = require('../electron/main/lifecycle.cjs');
+  let created = 0;
+  const good = {destroyed: false, isDestroyed() { return this.destroyed; }, isMinimized: () => false,
+                show() {}, focus() {}, destroy() { this.destroyed = true; }};
+  const lifecycle = new WindowLifecycle({
+    getWindow: () => null,
+    createWindow: async () => { created += 1; if (created === 1) throw new Error('loadURL 失败'); return good; },
+    hardQuit: () => {},
+  });
+  await assert.rejects(() => lifecycle.restore(), /loadURL 失败/);
+  const second = await lifecycle.restore();
+  assert.equal(created, 2, '失败后必须重新调用工厂');
+  assert.equal(second, good);
+});
+
+test('BUG-075：在途构建期间并发 restore 必须等同一构建', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let builds = 0;
+  const win = {destroyed: false, isDestroyed() { return this.destroyed; }, isMinimized: () => false,
+               show() {}, focus() {}, destroy() { this.destroyed = true; }};
+  const lifecycle = new WindowLifecycle({
+    getWindow: () => null,
+    // 工厂在窗口已登记后才完成加载——并发调用必须等它，而不是提前 resolve。
+    createWindow: async () => { builds += 1; await gate; return win; },
+    hardQuit: () => {},
+  });
+  const a = lifecycle.restore();
+  const b = lifecycle.restore();
+  const c = lifecycle.restore();
+  assert.equal(builds, 1, '并发 restore 只能触发一次构建');
+  let resolved = 0;
+  [a, b, c].forEach((p) => p.then(() => { resolved += 1; }));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(resolved, 0, '构建未完成时不得提前 resolve');
+  release();
+  const all = await Promise.all([a, b, c]);
+  assert.equal(resolved, 3);
+  assert.ok(all.every((value) => value === win), '三次都应等到同一个窗口');
+});

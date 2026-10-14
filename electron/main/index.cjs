@@ -23,6 +23,9 @@ const {classifyStartupFailure, startupFailureRecord} = require('./startup-errors
 const root = path.resolve(__dirname, '../..');
 const APP_URL = 'app://subscribe-flow/index.html';
 const smoke = !app.isPackaged && process.env.SUBSCRIBE_FLOW_DESKTOP_SMOKE === '1';
+// 隔离测试模式：只有在明确打开它且非打包版时，测试注入才可能生效。
+const isolatedTest = !app.isPackaged && process.env.SUBSCRIBE_FLOW_ISOLATED_TEST === '1';
+let loadFailureBudget = 0;
 const rendererSmoke = !app.isPackaged && process.env.SUBSCRIBE_FLOW_RENDERER_SMOKE;
 const diagnostics = smoke || (!app.isPackaged && process.env.SUBSCRIBE_FLOW_DIAGNOSTICS === '1');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
@@ -119,12 +122,17 @@ function send(event, data, target) {
  * webContents.session 上。写错对象就是 BUG-082 的直接根因。
  */
 async function createWindow() {
-  // 仅开发／隔离测试用的启动异常注入：正式打包后完全不存在，
-  // 正常用户无论如何都不会命中，也不改变任何运行路径。
-  if (app.isPackaged) throw new Error('打包版本不应存在测试注入点');
-  if (process.env.SUBSCRIBE_FLOW_TEST_CRASH === 'type') {
+  // 启动异常注入**只在显式的隔离测试模式**下生效。
+  // 打包版必须完全忽略这些环境变量。早前这里对打包版无条件抛错，
+  // 等于让所有正式包无论有没有标志都拒启动（BUG-083）。
+  if (!app.isPackaged && isolatedTest && process.env.SUBSCRIBE_FLOW_TEST_CRASH === 'type') {
     throw new TypeError('test-injected: window.webContents.session.setWindowOpenHandler is not a function');
   }
+  // 工厂加载失败的注入点：正常建窗，只让随后的 loadURL 失败一次，
+  // 走的正是生产里「加载失败要销毁并清引用」的那条清理路径。
+  const injectLoadFailure = !app.isPackaged && isolatedTest
+    && process.env.SUBSCRIBE_FLOW_TEST_LOAD_FAIL === 'once'
+    && (loadFailureBudget += 1) === 1;
   const created = new BrowserWindow({ width: diagnostics ? 1000 : 1440, height: diagnostics ? 760 : 1000, minWidth: diagnostics ? 680 : 800, minHeight: diagnostics ? 500 : 600, show: !smoke && !rendererSmoke,
     title: diagnostics ? 'Subscribe Flow · 开发联调' : '知流 · Subscribe Flow', webPreferences: {preload: path.join(root, 'electron', 'preload', 'index.cjs'),
       contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, webviewTag: false,
@@ -137,7 +145,16 @@ async function createWindow() {
   created.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
   created.webContents.on('will-navigate', event => event.preventDefault());
   created.webContents.on('will-attach-webview', event => event.preventDefault());
-  await created.loadURL(APP_URL);
+  try {
+    if (injectLoadFailure) throw new Error('test-injected: loadURL 失败');
+    await created.loadURL(APP_URL);
+  } catch (error) {
+    // 加载失败必须销毁自己并清掉引用：否则 window 仍指向一个坏窗口，
+    // 下一次 restore 会先看到它就直接返回，既不重试也永不销毁（BUG-075）。
+    try { if (!created.isDestroyed()) created.destroy(); } catch { /* 已失效 */ }
+    if (window === created) window = null;
+    throw error;
+  }
   // 绑定顺序与原实现一致：loadURL 之后才挂 close/closed。
   // closed 只清理「自己仍是当前窗口」的情况，旧窗口的迟到回调不得清掉新引用（BUG-075）。
   created.on('closed', () => { if (window === created) window = null; });

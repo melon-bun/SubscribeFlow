@@ -861,6 +861,10 @@
 
 - 真实工厂定义与安全API修复已确认，但window-lifecycle-renderer没有window.destroy()，restore前窗口仍存在，并断言rebuilt.id等于firstId；并发恢复也只恢复同一现存窗口。报告的“销毁后重建通过”没有对应证据；关闭测试直接调用interceptClose，没有触发真实close事件；Core响应也不能证明PID未变。独立复现同步工厂首次抛错后第二次restore仍复用被拒绝Promise，attempts=1而非2（window-retry-review.json）。最新状态：工厂局部修复、重建与失败重试未通过完整验收。
 
+### 2026-10-14 Codex 复核最终 HEAD `807eaab`
+
+- 真实close、destroy后新ID重建和Core PID保持的脚本已有实际动作，同步工厂异常重试也已改善。但真实工厂在BrowserWindow创建后loadURL拒绝时不销毁/清空窗口，下一次restore先看到existing而直接返回坏窗口；用当前工厂和注入loadURL失败复现createdCount=1、secondReturnedFailedWindow=true、failedWindowDestroyed=false。并发restore时也需先等待pendingWindow再返回构建中的existing，不能提前focus/导航。最新状态：正常路径有证据，失败路径仍待修复。
+
 ## BUG-076：M17 通知导航通道不匹配且列表口径未接入
 
 - 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
@@ -971,6 +975,10 @@
 
 - 新增窗口smoke存在同类验收虚报：既未销毁窗口也未实际触发顶层启动异常，仅调用分类纯函数就标startupClassification实机注入通过；loginWindowUntouched只断言方法存在，未操作登录类窗口。须修正报告及脚本必测动作；不能用文件头注释或返回字段名代替证据。
 
+### 2026-10-14 Codex 复核最终 HEAD `807eaab`
+
+- 本轮脚本确实执行销毁重建，前轮该项虚报已改进；factoryRetry仍是未创建真实窗口的替身失败，不覆盖生产工厂loadURL失败泄漏。startup-crash-check未设置smoke模式，会走真实showErrorBox而非无交互失败路径；需加入明确测试模式并验证退出码为1（不能只notEqual(code,0)，SIGKILL的null也会通过），记录signal/timeout。全M17 smoke保持未完成。
+
 ## BUG-082：窗口方法调用对象错误，启动异常误报为资源损坏
 
 - 发现日期／优先级：2026-10-14，用户指定优先修复，P1。
@@ -985,3 +993,18 @@
 ### 2026-10-14 Codex 复核最终 HEAD `e9b0750`
 
 - 调用对象及TypeError提示已纠正，确认局部修复。真实诊断仍未落盘：diagnostics.cjs白名单不包含app.startup.failed，diagnosticRecord返回null，临时目录不存在lifecycle.jsonl。现有startup-errors 11项测试通过但只检查构造结果和静态调用，未通过顶层catch→真实落盘链路。资源分类还把ENOSPC/权限类问题统称重新解压，需按故障原因提示。最新状态：本段记录的缺口已在 `ce88fcb` 全部修复，证据见 `docs/verification/m17/startup-crash-check.log`；上文「部分修复、待验收」不再成立，保留本段作为过程记录。
+
+### 2026-10-14 Codex 复核最终 HEAD `807eaab`
+
+- 原始方法归属错误、TypeError误报和诊断白名单已修复。Codex直接调用真实createDiagnostics并读取临时目录日志，确认app.startup.failed的kind/message落盘；MiniMax独立启动故障日志也与实现一致。原BUG-082功能修复成立，但新加入的打包版无条件抛错另记BUG-083，必须先修复再推进M17。证据bug082-followup-review.json。
+
+## BUG-083：测试注入保护导致所有打包版启动失败
+
+- 发现日期／优先级：2026-10-14，P1，审查最终 HEAD `807eaab`。
+- 复现：`electron/main/index.cjs:createWindow` 开头无条件执行 `if (app.isPackaged) throw new Error('打包版本不应存在测试注入点')`。即使没有任何测试环境变量，只要打包版就拒绝创建窗口。隔离VM执行原工厂、app.isPackaged=true、env={}，确认该异常。
+- 预期：打包版正常运行，测试注入在打包版中无效；没有注入标志时正常开发版也不受影响。
+- 原因：把“打包版禁用测试注入”实现成了“打包版无条件抛错”，注释与行为相反。
+- 修复范围：由 MiniMax 将注入条件限定于明确的开发隔离测试模式；打包版忽略测试变量并走正常工厂，不能为测试增加生产拒启分支。无需实际打包／发布，可对同一工厂以app.isPackaged替身参数检验保护条件。
+- 证据：`verification/m17-review/bug082-followup-review.json`，packagedWithoutTestFlag实际异常；没有创建或运行发布包。
+- 验收：模拟打包版无标志／带标志均不注入；开发普通模式不注入，明确隔离测试模式才产生预期错误并由真实顶层catch记录、以1退出。
+- 状态：待修复；引入`ce88fcb`，当前`807eaab`。修复后再进入剩余M17工作。

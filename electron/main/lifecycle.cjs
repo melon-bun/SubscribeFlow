@@ -61,9 +61,11 @@ class WindowLifecycle {
    */
   restore() {
     if (this.quitting) return Promise.resolve(null);
+    // 在途构建优先：窗口在 loadURL 前就已登记，此时先看它会把「尚未就绪的窗口」
+    // 当成可用窗口返回，既不等构建完成也不触发重试（BUG-075）。
+    if (this.pendingWindow) return this.pendingWindow;
     const existing = this.getWindow();
     if (existing && !existing.isDestroyed()) return Promise.resolve(this.focus(existing));
-    if (this.pendingWindow) return this.pendingWindow;
     let created = null;
     const task = (async () => {
       created = await this.createWindow();

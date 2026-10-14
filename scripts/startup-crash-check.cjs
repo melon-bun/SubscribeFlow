@@ -21,17 +21,20 @@ function runCase(crash, dir) {
       env: {
         ...process.env,
         SUBSCRIBE_FLOW_DATA_DIR: dir,
+        // 隔离测试模式：让注入点生效，同时避免真实 showErrorBox 弹窗阻塞。
+        SUBSCRIBE_FLOW_ISOLATED_TEST: '1',
         ...(crash ? {SUBSCRIBE_FLOW_TEST_CRASH: crash} : {}),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
+    let timedOut = false;
     child.stdout.on('data', (chunk) => { out += chunk; });
     child.stderr.on('data', (chunk) => { out += chunk; });
-    const timer = setTimeout(() => child.kill('SIGKILL'), 90000);
-    child.on('close', (code) => {
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, 90000);
+    child.on('close', (code, signal) => {
       clearTimeout(timer);
-      resolve({code, output: out});
+      resolve({code, signal, timedOut, output: out});
     });
   });
 }
@@ -43,8 +46,10 @@ async function main() {
   /* ---------- 注入 TypeError：走真实顶层 catch ---------- */
   const crashDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-crash-type-'));
   try {
-    const {code, output} = await runCase('type', crashDir);
-    assert.notEqual(code, 0, '启动失败必须非零退出，实际 exit=' + code);
+    const {code, signal, timedOut, output} = await runCase('type', crashDir);
+    assert.equal(timedOut, false, '进程是被超时 SIGKILL 的，不是自身退出');
+    assert.equal(signal, null, '进程不得被信号杀死，实际 signal=' + signal);
+    assert.equal(code, 1, '启动失败必须以退出码 1 结束，实际 exit=' + code);
     assert.match(output, /startup:code/, 'stderr 必须写明是代码异常');
     assert.match(output, /setWindowOpenHandler/, 'stderr 必须包含真实原因');
 
