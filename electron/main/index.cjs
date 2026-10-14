@@ -403,8 +403,16 @@ async function start() {
   // CoreClient 未 ready 直接拒绝，错误还被空 catch 吞掉（BUG-074）。
   // 只读签名快照：供集成验收在 Renderer 侧等待保存真正落地。
   resources.reminderSignature = () => (scheduler ? scheduler.snapshot().signature : null);
-  // 生产初始化在所有 smoke 下都执行：集成验收必须跑真实接线，不能由测试重建一套。
   void wireReminders();
+  // 人工验收入口：只有显式打开时才向真实桌面发一条测试通知。
+  // 隔离在临时 userData，且不会改动用户的通知权限或偏好。
+  if (!smoke && !rendererSmoke && !app.isPackaged && process.env.SUBSCRIBE_FLOW_NOTIFICATION_MANUAL === '1') {
+    setTimeout(() => {
+      const outcome = postReminder({pendingCount: 23, highUnarchivedCount: 5}, {kind: 'summary'});
+      console.log('[manual-notification] 投递结果：' + JSON.stringify(outcome));
+      console.log('[manual-notification] 若系统通知中心没有任何新消息，说明真实显示未通过。');
+    }, 4000);
+  }
   if (rendererSmoke) {
     try {
       if (rendererSmoke === 'zhihu') await require('../../scripts/zhihu-renderer.cjs').verify({window,core,root,zhihu,fixture:zhihuFixture});
