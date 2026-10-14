@@ -12,6 +12,12 @@ const assert = require('node:assert/strict');
  * 全部走生产代码与真实 IPC。
  */
 async function verify({window, core, root}) {
+  // 重启验收分两阶段跑：persist 写下到期时间并正常退出，restore 用同一个数据目录
+  // 重新启动，验证到期时间被保留；已过期时只提醒一次。
+  const phase = process.env.SUBSCRIBE_FLOW_FLOW_PHASE || 'click';
+  if (phase === 'persist') return verifyPersistPhase({window, core, root});
+  if (phase === 'restore') return verifyRestorePhase({window, core, root});
+  if (phase === 'overdue') return verifyOverduePhase({window, core, root});
   const {__resources: resources} = require('../electron/main/index.cjs');
   const results = {steps: []};
   const evaluate = async (code, target) => {
@@ -185,9 +191,171 @@ async function verify({window, core, root}) {
     notificationDisplay: '待人工确认：桌面通知使用替身，仅替换 OS 边界，链路其余部分真实'}));
 }
 
+
+/** 阶段一：启用提醒 → 记录到期时间 → 正常退出（数据留给阶段二）。 */
+async function verifyPersistPhase({window, core, root}) {
+  const evaluate = (code) => window.webContents.executeJavaScript(code);
+  const until = async (expr, timeout = 30000) => {
+    const start = Date.now();
+    while (true) {
+      let value;
+      try { value = await evaluate(expr); }
+      catch (error) { if (Date.now() - start > timeout) throw error; await new Promise((r) => setTimeout(r, 120)); continue; }
+      if (value) return true;
+      if (Date.now() - start > timeout) throw new Error('超时：' + expr);
+      await new Promise((r) => setTimeout(r, 80));
+    }
+  };
+  {
+    const {spawnSync} = require('node:child_process');
+    const runtime = JSON.parse(fs.readFileSync(path.join(root, '.runtime-paths.json'), 'utf8'));
+    await core.stop();
+    const seed = spawnSync(runtime.python, [path.join(root, 'python/tests/seed_renderer.py'), core.dataDir, new Date().toISOString().slice(0, 10)],
+      {encoding: 'utf8', env: Object.assign({}, process.env, {SUBSCRIBE_FLOW_RENDERER_SMOKE: 'offline'})});
+    if (seed.status !== 0) throw new Error('fixture 播种失败');
+    await core.start();
+  }
+  await until(`!!window.SF?.app.state.session`);
+  await until(`SF.app.state.coreStatus && SF.app.state.coreStatus.state === 'ready'`);
+
+  const resources = require('../electron/main/index.cjs').__resources;
+  // 30 分钟后到期，跨重启应当保留这个时刻而不是从重启时刻重算。
+  await evaluate(`(async () => {
+    const saved = await SF.app.state.client.saveSettings({section: 'reminder', patch: {enabled: true, intervalMinutes: 30}});
+    return !!saved;
+  })()`);
+  const deadline = Date.now() + 20000;
+  while (!/^1:/.test(String(resources.scheduler.snapshot().signature || '')) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const snapshot = resources.scheduler.snapshot();
+  const persisted = await core.call('reminder.state');
+  if (!snapshot.nextCheckAt) throw new Error('未排周期');
+  fs.writeFileSync(path.join(core.dataDir, 'm17-expected-deadline.json'),
+    JSON.stringify({nextCheckAt: snapshot.nextCheckAt, signature: snapshot.signature,
+      pending: snapshot.nextCheckAt - Date.now()}));
+  console.log(JSON.stringify({flowPhase: 'persist', nextCheckAt: snapshot.nextCheckAt,
+    signature: snapshot.signature, persistedSignature: persisted.signature}));
+  return undefined;
+}
+
+/** 阶段二：同一数据目录重新启动，验证到期时间保留；已过期时只提醒一次。 */
+async function verifyRestorePhase({window, core, root}) {
+  const resources = require('../electron/main/index.cjs').__resources;
+  const expected = JSON.parse(fs.readFileSync(path.join(core.dataDir, 'm17-expected-deadline.json'), 'utf8'));
+  const evaluate = (code) => window.webContents.executeJavaScript(code);
+  const until = async (expr, timeout = 30000) => {
+    const start = Date.now();
+    while (true) {
+      let value;
+      try { value = await evaluate(expr); }
+      catch (error) { if (Date.now() - start > timeout) throw error; await new Promise((r) => setTimeout(r, 120)); continue; }
+      if (value) return true;
+      if (Date.now() - start > timeout) throw new Error('超时：' + expr);
+      await new Promise((r) => setTimeout(r, 80));
+    }
+  };
+  await until(`!!window.SF?.app.state.session`);
+  await until(`SF.app.state.coreStatus && SF.app.state.coreStatus.state === 'ready'`);
+
+  const restored = await core.call('reminder.state');
+  const snapshot = resources.scheduler.snapshot();
+  assert.equal(restored.signature, expected.signature, '重启后配置身份必须保留');
+  assert.ok(restored.nextCheckAt !== null, '重启后持久到期时间不得丢失');
+  assert.ok(snapshot.nextCheckAt === restored.nextCheckAt,
+    '调度器必须沿用持久到期时间，而不是从重启时刻重算：' + snapshot.nextCheckAt + ' vs ' + restored.nextCheckAt);
+  results_restore.restored = {nextCheckAt: snapshot.nextCheckAt, signature: snapshot.signature};
+  results_restore.notYetDue = {calls: resources.scheduler.running.callCount, notified: resources.scheduler.running.notified};
+  assert.equal(resources.scheduler.running.callCount, 0, '未到期的恢复不得触发检查');
+  // 把持久到期时间改到过去，制造「重启时已过期」，留给阶段三验证只提醒一次。
+  const stale = await core.call('reminder.state.save', {
+    signature: restored.signature, generation: restored.generation + 1,
+    next_check_at: Date.now() - 60000, last_handled_at: restored.lastHandledAt,
+    last_result: restored.lastResult, notification_error: null, backoff_index: 0});
+  results_restore.wroteOverdue = {nextCheckAt: stale.nextCheckAt, generation: stale.generation};
+  console.log(JSON.stringify({flowPhase: 'restore', ...results_restore}));
+}
+const results_restore = {};
+
+/** 阶段三：重启时到期时间已过期，应只合并一次提醒，不补发风暴。 */
+async function verifyOverduePhase({window, core, root}) {
+  const resources = require('../electron/main/index.cjs').__resources;
+  const evaluate = (code) => window.webContents.executeJavaScript(code);
+  const until = async (expr, timeout = 30000) => {
+    const start = Date.now();
+    while (true) {
+      let value;
+      try { value = await evaluate(expr); }
+      catch (error) { if (Date.now() - start > timeout) throw error; await new Promise((r) => setTimeout(r, 120)); continue; }
+      if (value) return true;
+      if (Date.now() - start > timeout) throw new Error('超时：' + expr);
+      await new Promise((r) => setTimeout(r, 80));
+    }
+  };
+  await until(`!!window.SF?.app.state.session`);
+  await until(`SF.app.state.coreStatus && SF.app.state.coreStatus.state === 'ready'`, 40000);
+  // 给已过期的一次补查留出时间
+  await new Promise((r) => setTimeout(r, 1500));
+  const calls = resources.scheduler.running.callCount;
+  assert.ok(calls >= 1, '重启时已过期，必须补一次检查，实际 calls=' + calls);
+  assert.equal(calls, 1, '过期周期只合并一次，不得补发风暴，实际 calls=' + calls);
+  console.log(JSON.stringify({flowPhase: 'overdue', overdueMergedOnce: true,
+    calls, notified: resources.scheduler.running.notified}));
+}
+
 module.exports = {verify};
 
+/** 编排：用同一个隔离数据目录连续启动两次，验证真实进程重启后的恢复。 */
+function runPhase(root, folder, phase) {
+  return new Promise((resolve) => {
+    const child = spawn(require('electron'), [root], {
+      env: {...process.env, SUBSCRIBE_FLOW_RENDERER_SMOKE: 'flow',
+            SUBSCRIBE_FLOW_DATA_DIR: folder, SUBSCRIBE_FLOW_ISOLATED_TEST: '1',
+            SUBSCRIBE_FLOW_FLOW_PHASE: phase},
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    child.stdout.on('data', (c) => { out += c; });
+    child.stderr.on('data', (c) => { out += c; });
+    const timer = setTimeout(() => child.kill('SIGKILL'), 180000);
+    child.on('close', (code) => { clearTimeout(timer); resolve({code, out}); });
+  });
+}
+
+async function runRestartSequence() {
+  const root = path.resolve(__dirname, '..');
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'subscribe-flow-renderer-restart-'));
+  try {
+    const marker = (r) => (r.out.trim().split('\n').filter((l) => l.startsWith('{')).pop() || '');
+    // Electron 被信号结束时 code 为 null，不能当成失败；以阶段自己的输出标记为准。
+    const first = await runPhase(root, folder, 'persist');
+    if (!marker(first).includes('"flowPhase":"persist"')) {
+      throw new Error('阶段一失败（exit=' + first.code + '）：' + first.out.slice(-400));
+    }
+    console.log('[restart] ' + marker(first));
+    const second = await runPhase(root, folder, 'restore');
+    if (!marker(second).includes('"flowPhase":"restore"')) {
+      throw new Error('阶段二失败（exit=' + second.code + '）：' + second.out.slice(-400));
+    }
+    console.log('[restart] ' + marker(second));
+    const third = await runPhase(root, folder, 'overdue');
+    if (!marker(third).includes('"flowPhase":"overdue"')) {
+      throw new Error('阶段三失败（exit=' + third.code + '）：' + third.out.slice(-400));
+    }
+    console.log('[restart] ' + marker(third));
+    const out = path.join(root, 'docs/verification/m17');
+    fs.mkdirSync(out, {recursive: true});
+    fs.writeFileSync(path.join(out, 'restart-recovery.log'), [marker(first), marker(second), marker(third)].join('\n') + '\n');
+  } finally {
+    fs.rmSync(folder, {recursive: true, force: true});
+  }
+}
+
 if (require.main === module) {
+  if (process.argv.includes('--restart')) {
+    runRestartSequence().catch((error) => { console.error(error.message); process.exitCode = 1; });
+    return;
+  }
   const root = path.resolve(__dirname, '..');
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'subscribe-flow-renderer-flow-'));
   const child = spawn(require('electron'), [root], {
