@@ -77,6 +77,11 @@
         params[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || "");
       });
     }
+    if (name === "inbox") {
+      // 口径写进哈希：普通导航不带 view 就会退出提醒口径，不会被锁死。
+      app.reminderView = params.view === "high_unarchived" ? "high_unarchived"
+        : params.view === "pending" ? "pending" : null;
+    }
     if (name === "settings") {
       // 分区始终带回路由参数：直接改哈希进来时左栏与正文必须对得上。
       return { name: name, params: { section: params.section === "reminder" ? "reminder" : "tagging" } };
@@ -91,14 +96,17 @@
    * 过滤，但**不改任何内容的已读／归档／标签状态**——查看不产生副作用。
    */
   function openReminderView(app, view) {
-    app.reminderView = view === 'high_unarchived' ? 'high_unarchived' : 'pending';
+    var target = view === 'high_unarchived' ? 'high_unarchived' : 'pending';
+    app.reminderView = target;
+    // 一次性清空旧筛选：通知说 23 条、页面只剩当前平台下 2 条是真实发生过的问题。
     app.filters = {quick: null, platform: null, channelId: null};
     app.search = "";
-    if (app.session) { cache_reset(app); render(); refreshData(true); }
-  }
-
-  function cache_reset(app) {
-    if (app.inboxCache) app.inboxCache = {};
+    app.filters.day = null;
+    if (global.location.hash !== '#/inbox?view=' + target) {
+      global.location.hash = '#/inbox?view=' + target;   // 路由会触发重渲染与重查
+      return;
+    }
+    if (app.session) { render(); refreshData(true); }
   }
 
   /** 记住来处，设置页关闭时回到原处，而不是一律跳回收件箱。 */
@@ -525,7 +533,6 @@
       if (!intent) return;
       if (intent.view === "settings") { openSettings("tagging"); return; }
       // 走与手动切换完全相同的路径：口径真正进入查询、旧过滤一次性清空。
-      SF.app.navigate("inbox", {});
       openReminderView(app, intent.view === "high_unarchived" ? "high_unarchived" : "pending");
     }));
     app.unsubscribe.push(app.client.on("core.status", function (status) {

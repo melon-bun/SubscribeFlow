@@ -229,6 +229,39 @@ async function verify({window, core, root}) {
   assert.ok(restored.generation >= stored.generation, '重启后续接持久代际');
   results.steps.push({restartRecovery: {deadline: restored.nextCheckAt, reused: true}});
 
+  /* ---------- 9b. 两种列表口径：UI 实际 ID 集合必须与 summary 一致 ---------- */
+  const uiPending = await evaluate(`(async () => {
+    const r = await SF.app.state.client.listContents({limit: 100, state: 'pending'});
+    return r.items.map(i => i.id).sort();
+  })()`);
+  const uiHigh = await evaluate(`(async () => {
+    const r = await SF.app.state.client.listContents({limit: 100, view: 'high_unarchived'});
+    return r.items.map(i => i.id).sort();
+  })()`);
+  const coreSummary = await core.call('reminder.summary');
+  const corePending = (await core.call('content.list', {state: 'pending', limit: 100})).items.map(i => i.id).sort();
+  const coreHigh = (await core.call('content.list', {view: 'high_unarchived', limit: 100})).items.map(i => i.id).sort();
+  assert.deepEqual(uiPending, corePending, '未处理列表与 Core 集合不一致');
+  assert.deepEqual(uiHigh, coreHigh, '高优先级未归档列表与 Core 集合不一致');
+  results.steps.push({listPerspectives: {pending: uiPending.length, high: uiHigh.length,
+    matchesSummary: uiPending.length === coreSummary.pendingCount && uiHigh.length === coreSummary.highUnarchivedCount}});
+
+  /* ---------- 9c. 切换入口 + 普通导航可退出 ---------- */
+  await evaluate(`location.hash = '#/inbox?view=pending'`);
+  await until(`!!document.querySelector('.chips--views')`);
+  const toggled = await evaluate(`(() => {
+    const target = Array.from(document.querySelectorAll('.chips--views button'))
+      .find(b => b.textContent.trim() === '高优先级未归档');
+    if (!target) return false;
+    target.click();
+    return true;
+  })()`);
+  assert.equal(toggled, true, '收件箱里找不到口径切换入口');
+  await until(`location.hash === '#/inbox?view=high_unarchived'`);
+  await evaluate(`location.hash = '#/tags'`);
+  await until(`!SF.app.state.reminderView`);
+  results.steps.push({perspectiveToggle: {switched: true, sidebarExits: true}});
+
   /* ---------- 10. 到期重启只合并一次 ---------- */
   clock = stored.nextCheckAt + 60_000; // 已过期
   scheduler.halt();

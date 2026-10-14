@@ -129,7 +129,7 @@ async function callUI(core, name, args, context) {
     case 'getCalendar':
     case 'listContents': {
       const query = object(first);
-      keys(query, ['platform', 'channelId', 'sourceId', 'intakeMethod', 'timezone', 'state', 'keyword', 'priority', 'tags', 'tagMode',
+      keys(query, ['platform', 'channelId', 'sourceId', 'intakeMethod', 'timezone', 'state', 'view', 'keyword', 'priority', 'tags', 'tagMode',
                    ...(name === 'getCalendar' ? ['month'] : ['limit','offset','from','to'])]);
       const params = {timezone: displayTimezone(query.timezone)};
       for (const [front, back] of [['platform', 'channel'], ['sourceId', 'source_id'], ['intakeMethod', 'intake_method'], ['keyword', 'query'], ['limit', 'limit'], ['offset', 'offset'], ['from', 'start'], ['to', 'end'], ['priority', 'priority']]) {
@@ -141,7 +141,14 @@ async function callUI(core, name, args, context) {
         throw new Error('标签筛选方式需为任一符合或全部符合');
       }
       if (query.tagMode === 'all') params.tag_mode = 'all';
+      // M17 提醒口径：pending 与 high_unarchived 直接下发给 Core 的共享谓词，
+      // 与 reminder.summary 同源。此前这两个取值会被当成不支持而拒绝。
+      if (query.view != null && query.view !== '') {
+        if (query.view !== 'high_unarchived') unsupported('不支持此列表口径');
+        params.view = query.view;
+      }
       if (query.state === 'unread') Object.assign(params, INBOX_FILTER);
+      else if (query.state === 'pending') params.state = 'pending';
       else if (query.state) {
         if (!['read', 'archived', 'deferred'].includes(query.state)) unsupported('不支持此内容状态');
         params[query.state] = true;

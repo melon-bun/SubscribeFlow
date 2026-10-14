@@ -908,6 +908,10 @@
 - 新增判断 `resources.core.status?.state` 使用不存在的字段（CoreClient 只有 ready 和 status 事件）。隔离 VM 置 core.ready=true、resources.ready=true，导航仍 delivered=false、发送0次，意图挂起直到另一次 ready 事件。resources.ready 也只代表 Core，未验证 Renderer 已注册监听；两种列表仍未接线。最新状态：未通过。
 - 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
 
+### 2026-10-14 Codex 快速收尾复核（33f7702）
+
+- 双列表仍存在实质阻断：Renderer传state=pending或view=high_unarchived，但Main app-client.cjs白名单不允许view，state也不允许pending。真实callUI复现两种请求均被拒绝，证据verification/m17-review/user-flow-review.json。必须修中间适配层，不能把仅Renderer增加参数称作接通。其它非致命细节不再拆返修，集中完成主流程。
+
 ## BUG-077：M17 托盘使用不存在的图标且统计从未刷新
 
 - 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
