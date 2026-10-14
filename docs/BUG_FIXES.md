@@ -792,6 +792,11 @@
 - 证据：`verification/m17-review/persistence-before.json`、`integration-before.json`。新增实际 RPC 与 SQLite 的乱序写入、ABA、重启验收。
 - 最新状态：待 MiniMax 返修；之前“已修复并验证”仅覆盖局部内存路径，不能作为完整验收。
 
+### 2026-10-14 Codex 复核 `7190779`
+
+- `7190779` 未修改持久层和 generation 写入契约，原乱序覆盖复现仍适用；最新状态仍待修复。
+- 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
+
 ## BUG-073：M17 退出清空下次到期时间，不能恢复原提醒周期
 
 - 发现日期／优先级：2026-10-13，Codex 审查 `28e73ac`，P2。
@@ -813,6 +818,11 @@
 - 证据：`verification/m17-review/persistence-before.json` 真实 RPC 复现；无日常数据库操作。
 - 最新状态：待 MiniMax 返修；相关局部修复为 `aa731f7`、`14c9cea`，集成仍未通过。
 
+### 2026-10-14 Codex 复核 `7190779`
+
+- `7190779` 未修改 RPC nullable 字段和保存失败吞错；只增加 persist:false 不构成真实保存／恢复验收。最新状态仍待修复。
+- 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
+
 ## BUG-074：M17 提醒启动、设置保存与唤醒没有接通
 
 - 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
@@ -822,6 +832,11 @@
 - 验证与验收：静态调用链核对；新增真实 Main 启动、设置保存、Core 重启、连续 resume 的集成断言，证明 timer 存在且不会重复。
 - 本轮处理（2026-10-14）：部分修复：接线改为 Core ready 之后经 `wireReminders()` 执行（先 settings.get 再 reminder.state，`applySettings(settings,{persist:false})` 不再先覆盖原记录），并接入 saveSettings 保存成功后的提醒配置响应与 core ready 刷新。**未完成**：Core 重启与 resume 的恢复路径、真实 Main 集成断言。
 - 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+
+### 2026-10-14 Codex 复核 `7190779`
+
+- 此前“接入 saveSettings”声明不成立：`applyReminderSettings` 全文件只有定义，无调用；UI_METHODS 路径仍直接 return callUI。Core 重启与 resume 也未接入。新增 wireReminders 虽在启动后调用，但在读取持久状态前 applySettings 仍先建 timer。最新状态：部分修复、待返修；须由真实设置保存证明周期变化。
+- 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
 
 ## BUG-075：M17 应用事件作用域错误且窗口重建入口缺失
 
@@ -833,6 +848,11 @@
 - 本轮处理（2026-10-14）：已修复并验证：应用级资源移到模块作用域 `resources`，顶层 activate／second-instance／window-all-closed／before-quit 不再访问 start() 局部；`lifecycle.restore()` 以 pendingWindow 串行合并并发恢复，退出期间建出的窗口被关闭。新增 4 条断言（共享 IPC 通道、并发只建一个、退出期间不建、通知点击先恢复再投递）。
 - 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
 
+### 2026-10-14 Codex 复核 `7190779`
+
+- 作用域与类级并发合并有改善，但 Main 仍注入 `createWindow: () => createWindow()`，全文件没有工厂定义，销毁后恢复必然失败；不可标已修复。还需覆盖工厂同步抛错后 pendingWindow 不残留拒绝 Promise、能重试，以及真实窗口重建。最新状态：部分修复、未通过。
+- 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
+
 ## BUG-076：M17 通知导航通道不匹配且列表口径未接入
 
 - 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
@@ -842,6 +862,11 @@
 - 验证与验收：静态核对 Main→preload→Renderer→AppClient→Core 链路；验收需从真实菜单／通知回调驱动至实际 SQLite 列表，并核对 ID 集合和状态未改变。
 - 本轮处理（2026-10-14）：部分修复：Main 改走 preload 唯一监听的 `subscribe-flow:event` 通道，生命周期新增 `deliver` 注入点；未就绪时导航意图挂起并在 core.status ready 后补发；设置菜单也改为经 `lifecycle.navigate()` 等待恢复。**未完成**：收件箱内 pending／high_unarchived 两个列表视角与切换入口、过滤清理的界面级断言。
 - 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+
+### 2026-10-14 Codex 复核 `7190779`
+
+- 新增判断 `resources.core.status?.state` 使用不存在的字段（CoreClient 只有 ready 和 status 事件）。隔离 VM 置 core.ready=true、resources.ready=true，导航仍 delivered=false、发送0次，意图挂起直到另一次 ready 事件。resources.ready 也只代表 Core，未验证 Renderer 已注册监听；两种列表仍未接线。最新状态：未通过。
+- 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
 
 ## BUG-077：M17 托盘使用不存在的图标且统计从未刷新
 
@@ -863,6 +888,11 @@
 - 本轮处理（2026-10-14）：已修复并验证：总期限改为**先建立**再逐个 race 清理步骤，覆盖永不完成的清理；超时步骤记 timedOut 且不计成功；allSettled 的单项失败逐条落到 steps。新增永不完成清理与抛错清理两条用例。
 - 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
 
+### 2026-10-14 Codex 复核 `7190779`
+
+- 类级有界清理测试通过，实际 Electron/Core 退出与残留检查尚无证据，不能作为完整应用验收。超时与步骤失败结果当前只返回给忽略结果的调用者，需真正记录诊断。最新状态：局部修复通过，集成待验收。
+- 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
+
 ## BUG-079：M17 正式通知误报显示成功且失败分类回归
 
 - 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
@@ -872,3 +902,26 @@
 - 验证与验收：`integration-before.json` 的 notification_failure_classification 为 query_failed/backoffIndex=1；补充异步投递、迟到事件与目标切换测试。真实系统显示与点击仍需独立实机证据，mock 不得宣称已验收。
 - 本轮处理（2026-10-14）：已修复并验证：新增 `electron/main/reminder-notification.cjs` 投递状态机，区分 submitted／shown／failed／unsupported／unknown 五态（show() 返回只算 submitted）；复用同一条通知，旧句柄的 close／failed 不得污染当前状态；点击读取当前 entry 的 target 而非首次快照。新增 8 条断言。**真实系统显示与点击仍待实机人工确认**，替身不构成显示证据。
 - 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+
+### 2026-10-14 Codex 复核 `7190779`
+
+- 新 notifier 只在内部 lastResult 更新异步投递状态，未回传 scheduler 或持久层。独立复现 failed 仍落 checked/notificationError=null；抛错仍 query_failed/backoffIndex=1。cancel 将通知对象传入 clearTimer，实际 entry.timer 未清理；复用通知没有重建回执期限，新一轮无回执将一直 submitted；旧已取消通知 click 仍可导航。不得标完整修复。最新状态：部分修复、未通过。
+- 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
+
+## BUG-080：M17 共享事件桥重复发送所有事件
+
+- 发现日期／优先级：2026-10-14，P2，审查 `7190779`。
+- 复现：正式 send('content.changed', {}) 在隔离 VM 中调用 webContents.send 两次，预期一次。
+- 原因：`electron/main/index.cjs:send` 加入 target 后保留旧的无条件 window 发送；默认 target 为 window，导致 core.status、内容失效、导航等全体事件重复。
+- 预期与修复：每个事件只投递给指定目标一次；显式 target 也不能额外广播给旧窗口。由 MiniMax 修复，加入真实 bridge 事件计数验收。
+- 证据：`verification/m17-review/integration-fix-review.json` 中 single_send.actualCalls=2。
+- 状态：待修复；引入提交 `7190779`。
+
+## BUG-081：M17 集成脚本会跳过关键路径并宣称通过
+
+- 发现日期／优先级：2026-10-14，P1，审查 `7190779`。
+- 现象：`scripts/m17-renderer.cjs` 在没有 __m17SendNav hook 时记录 no-hook 并跳过导航断言，仍输出 m17Integration=passed；全仓无该 hook 实现。空测试库只比较 total，未比较实际 UI 的非空 ID 集合。脚本声称有通知替身、窗口隐藏恢复和有界退出验证，但并未驱动这些路径。
+- 原因：把可选钩子和空结果对比当作功能验收；Main `if (!smoke && !rendererSmoke) wireReminders()` 又明确跳过了 M17 smoke 中的生产调度初始化。
+- 预期与修复：缺失必需测试入口必须失败；隔离环境走与产品相同的初始化、设置保存、生命周期与 IPC 链路，数据仅由 fixture 隔离，不能绕开被测功能。使用有差异的非空 pending/high 数据核对 UI ID 集合与过滤清理；实际驱动关闭隐藏、销毁重建和有界退出。保留真实系统显示未验收的说明。
+- 验证：静态核对该脚本与 Main 入口；本轮未把该脚本运行结果作为验收证据。修复后须保存完整成功输出及退出码。
+- 状态：待修复；引入提交 `7190779`。

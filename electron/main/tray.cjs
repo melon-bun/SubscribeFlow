@@ -41,6 +41,7 @@ class TrayController {
     Object.assign(this, deps);
     this.tray = null;
     this.counts = unavailableCounts();
+    this.openListAction = deps.openList;
     this.refreshTimer = null;
     this.refreshInFlight = false;
     this.lastRefreshedAt = null;
@@ -130,6 +131,12 @@ class TrayController {
     return this.counts;
   }
 
+  /** 与菜单项完全相同的动作入口：集成验收走的就是这条路径，不是替身。 */
+  async openList(view) {
+    await this.refresh();
+    return this.openListAction(view);
+  }
+
   refreshMenu() {
     if (!this.available()) return null;
     const {pending, high, available} = this.counts;
@@ -137,8 +144,8 @@ class TrayController {
       {label: '打开知流', click: () => this.showWindow()},
       {type: 'separator'},
       // Core 不可用时仍可点击：点了会带着真实不可用状态打开列表，而不是显示空白。
-      {label: formatPending(pending, available), click: () => this.openList('pending')},
-      {label: formatHigh(high, available), click: () => this.openList('high_unarchived')},
+      {label: formatPending(pending, available), click: () => { void this.openList('pending'); }},
+      {label: formatHigh(high, available), click: () => { void this.openList('high_unarchived'); }},
       {type: 'separator'},
       {label: '设置…', click: () => this.openSettings()},
       {label: '退出应用', click: () => this.quit()},

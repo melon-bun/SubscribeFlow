@@ -180,7 +180,15 @@ class ReminderScheduler {
       }
       this.state.backoffIndex = 0;
       this.state.notificationError = null;
-      const result = await this.dispatch(summary, Number(intervalMinutes));
+      // 查询成功与投递成功是两回事：投递失败不得把已成功的检查降级成查询失败，
+      // 更不能触发查询退避（BUG-079）。
+      let result, deliveryError = null;
+      try {
+        result = await this.dispatch(summary, Number(intervalMinutes));
+      } catch (error) {
+        deliveryError = String((error && error.message) || error);
+        result = {notified: false, reason: 'delivery_failed'};
+      }
       if (!alive()) {
         // 通知可能已经提交给系统，但新周期的状态不能再被这次旧回调改写。
         this.running.stale += 1;
@@ -188,10 +196,17 @@ class ReminderScheduler {
       }
       this.state.lastHandledAt = this.now();
       this.state.nextCheckAt = this.now() + Number(intervalMinutes) * 60_000;
-      this.state.lastResult = result.notified ? 'checked' : 'checked_empty';
+      // 投递结果如实记录：failed / unsupported / unknown 都不是「已检查完且提醒成功」。
+      const delivery = result && result.notification ? result.notification.status : null;
+      this.state.notificationError = deliveryError
+        || (delivery && ['failed', 'unknown'].includes(delivery.status) ? delivery.status : null);
+      this.state.lastResult = deliveryError || delivery === 'failed' ? 'notification_failed'
+        : delivery === 'unsupported' ? 'notification_unsupported'
+        : delivery === 'unknown' ? 'notification_unknown'
+        : result.notified ? 'checked' : 'checked_empty';
       this.armIn(this.state.nextCheckAt);
       await this.persist({...this.state, signature: this.signature, generation});
-      return result;
+      return {...result, lastResult: this.state.lastResult};
     } catch (error) {
       if (!alive()) {
         // 迟到失败同样不能覆盖新配置状态，也不能改动新周期的计时。

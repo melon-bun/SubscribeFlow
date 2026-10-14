@@ -42,17 +42,7 @@ class ReminderNotification {
   }
 
   cancel() {
-    if (this.current) {
-      const {handle} = this.current;
-      this.current = null;
-      this.sequence += 1;
-      if (handle) this.clearTimer(handle);
-      try {
-        handle && handle.close();
-      } catch {
-        /* 已经失效的句柄不需要再关 */
-      }
-    }
+    this.discard();
     this.lastResult = {status: 'cleared'};
     return {status: 'cleared'};
   }
@@ -67,15 +57,23 @@ class ReminderNotification {
     // 目标随每次更新刷新：点击必须打开当前该看的口径。
     const target = pendingCount ? 'pending' : 'high_unarchived';
     if (this.current) {
-      this.current.target = target;
+      // 复用同一条：更新目标与正文，并**重置回执期限与身份**，
+      // 否则上一轮的 shown/failed 可能落在新一轮正文上。
+      const entry = this.current;
+      entry.target = target;
+      entry.body = body;
+      entry.generation = ++this.sequence;
+      if (entry.timer) this.clearTimer(entry.timer);
+      this.armReceipt(entry);
       try {
-        this.current.handle.body = body;
-        this.current.handle.show();
+        entry.handle.body = body;
+        entry.handle.show();
         this.lastResult = {status: 'submitted'};
         return {status: 'submitted', reused: true};
       } catch (error) {
-        // 更新失败就换一条新的，别让这条卡在旧内容上。
         this.discard();
+        this.lastResult = {status: 'failed', error: String(error.message || error)};
+        return {...this.lastResult};
       }
     }
     let handle;
@@ -87,25 +85,18 @@ class ReminderNotification {
     }
     const entry = {handle, target, body};
     this.current = entry;
-    const generation = ++this.sequence;
-    const settle = () => {
-      if (this.sequence !== generation || this.current !== entry) return;
-      this.clearTimer(entry.timer);
-      // 到期仍无系统回报：如实标未知，不写成显示成功。
-      this.lastResult = {status: 'unknown', body};
-    };
-    entry.timer = this.setTimer(settle, this.settleMs);
-    if (entry.timer && entry.timer.unref) entry.timer.unref();
+    entry.generation = ++this.sequence;
+    this.armReceipt(entry);
 
     handle.on?.('show', () => {
-      if (this.sequence !== generation || this.current !== entry) return;
+      if (this.sequence !== entry.generation || this.current !== entry) return;
       this.clearTimer(entry.timer);
-      this.lastResult = {status: 'shown', body};
+      this.lastResult = {status: 'shown', body: entry.body};
     });
     handle.on?.('failed', (_event, reason) => {
-      if (this.sequence !== generation || this.current !== entry) return;
+      if (this.sequence !== entry.generation || this.current !== entry) return;
       this.clearTimer(entry.timer);
-      this.lastResult = {status: 'failed', reason: String(reason || ''), body};
+      this.lastResult = {status: 'failed', reason: String(reason || ''), body: entry.body};
     });
     handle.on?.('close', () => {
       // 旧通知的 close 不得清掉已经换上的新通知。
@@ -124,6 +115,17 @@ class ReminderNotification {
     }
     this.lastResult = {status: 'submitted', body};
     return {status: 'submitted'};
+  }
+
+  /** 为一轮投递建立回执期限；到期仍无系统回报即如实标未知。 */
+  armReceipt(entry) {
+    if (entry.timer) this.clearTimer(entry.timer);
+    const generation = entry.generation;
+    entry.timer = this.setTimer(() => {
+      if (this.sequence !== generation || this.current !== entry) return;
+      this.lastResult = {status: 'unknown', body: entry.body};
+    }, this.settleMs);
+    if (entry.timer && entry.timer.unref) entry.timer.unref();
   }
 
   discard() {
