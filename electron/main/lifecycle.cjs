@@ -3,42 +3,47 @@
  * M17 窗口生命周期与明确退出。
  *
  * 规则（计划 §4.5）：
- * - 关闭主窗口 = 隐藏到托盘，后台继续；隐藏时给出一次非阻塞说明。
- * - 托盘、Dock activate、second-instance、通知点击都走同一个恢复入口，
- *   窗口已销毁时受控重建，但不重复启动 Core、托盘与计时器。
- * - 明确退出绕过「关闭即隐藏」拦截，走一条**有超时上限**的清理流程，
- *   避免网络请求让应用永远退不出去。
- * - 渠道登录窗口保持原语义：关它只关它自己。
+ * - 关闭主窗口 = 隐藏到托盘；隐藏第一次给一次非阻塞说明，不反复确认。
+ * - 托盘、Dock activate、second-instance、通知点击共用同一恢复入口；
+ *   窗口已销毁才受控重建，并发恢复只创建一个窗口，退出期间不再新建。
+ * - 明确退出走**有总期限**的清理流程：期限从退出开始计时，包含永远不会
+ *   完成的清理；到期强制收尾并如实记录。单步失败不阻断其余清理。
+ *
+ * 这里是应用级对象，由 index.cjs 在模块作用域持有，不放在 start() 局部。
  */
 const QUIT_TIMEOUT_MS = 8000;
 
 class WindowLifecycle {
   /**
    * @param {object} deps
-   * @param {() => object|null} deps.getWindow   取当前主窗口
-   * @param {() => Promise<object>} deps.createWindow 受控重建（复用已启动的 Core）
-   * @param {() => void} [deps.onQuitTasks]     停止提醒与新任务
-   * @param {() => Promise<any[]>} [deps.closeResources] 关闭 Core 与渠道
+   * @param {() => object|null} deps.getWindow
+   * @param {() => Promise<object>} deps.createWindow 真实窗口工厂
+   * @param {(intent) => Promise<boolean>} [deps.deliver] 下发导航意图（已 ready 时）
+   * @param {() => void} [deps.onQuitTasks] 停止提醒与新任务
+   * @param {() => Promise<any[]>} [deps.closeResources]
    * @param {() => void} [deps.destroyTray]
    * @param {() => void} [deps.hardQuit]
    * @param {(fn, ms) => any} [deps.setTimer]
    * @param {(handle) => void} [deps.clearTimer]
+   * @param {() => number} [deps.now]
    */
   constructor(deps) {
     Object.assign(this, deps);
     this.setTimer = deps.setTimer || ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer = deps.clearTimer || ((handle) => clearTimeout(handle));
+    this.now = deps.now || (() => Date.now());
     this.quitting = false;
-    /** 是否还允许隐藏窗口：托盘不可用时不能隐藏，否则应用找不回来。 */
+    /** 托盘不可用时不能隐藏窗口：否则应用变成用户找不回来的后台进程。 */
     this.canHide = true;
     this.hintShown = false;
     this.closeCount = 0;
+    /** 窗口创建的串行化：并发 restore 只会有一个真正建窗。 */
+    this.pendingWindow = null;
   }
 
-  /** 主窗口 close 拦截：隐藏而不是销毁。返回 true 表示已拦截。 */
+  /** 关闭主窗口：拦截并隐藏。返回 true 表示已拦截。 */
   interceptClose(event) {
-    if (this.quitting) return false;
-    if (!this.canHide) return false;
+    if (this.quitting || !this.canHide) return false;
     if (event && typeof event.preventDefault === 'function') event.preventDefault();
     const window = this.getWindow();
     if (window && !window.isDestroyed()) window.hide();
@@ -46,74 +51,101 @@ class WindowLifecycle {
     return true;
   }
 
-  /**
-   * 恢复或受控重建主窗口。
-   * 重建只创建窗口，不重新启动 Core／托盘／计时器——那些是应用级资源。
-   */
+  /** 恢复或受控重建主窗口；并发调用合并成一次建窗。 */
   async restore() {
     if (this.quitting) return null;
     const existing = this.getWindow();
-    if (existing && !existing.isDestroyed()) {
-      if (existing.isMinimized()) existing.restore();
-      existing.show();
-      existing.focus();
-      return existing;
-    }
-    const created = await this.createWindow();
-    if (created && !created.isDestroyed()) {
-      if (created.isMinimized()) created.restore();
-      created.show();
-      created.focus();
-    }
-    return created;
+    if (existing && !existing.isDestroyed()) return this.focus(existing);
+    if (this.pendingWindow) return this.pendingWindow;
+    this.pendingWindow = (async () => {
+      try {
+        const created = await this.createWindow();
+        if (this.quitting) {
+          // 退出期间不再创建窗口：关掉刚建的那个。
+          if (created && !created.isDestroyed()) created.destroy();
+          return null;
+        }
+        return created && !created.isDestroyed() ? this.focus(created) : created;
+      } finally {
+        this.pendingWindow = null;
+      }
+    })();
+    return this.pendingWindow;
   }
 
-  /** 通知点击：先恢复窗口，等待页面与 Core 就绪后再导航。 */
-  async navigateFromNotification(view) {
-    const window = await this.restore();
-    if (!window) return false;
-    // 导航意图交给 Renderer 应用：它负责清空旧过滤并切换口径。
-    if (!window.webContents.isDestroyed()) {
-      window.webContents.send('reminder.navigate', {view});
-    }
-    return true;
+  focus(window) {
+    if (!window || window.isDestroyed()) return window;
+    if (typeof window.isMinimized === 'function' && window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
+    return window;
   }
 
   /**
-   * 明确退出：一次性、有上限的清理流程。
-   * 顺序：禁止新任务 → 释放资源 → 销毁托盘 → 退出。
+   * 通知／托盘点击：先恢复窗口，再下发导航意图。
+   * 意图由 deliver 负责等待 Renderer 与 Core 就绪，本方法不吞失败。
+   */
+  async navigate(intent) {
+    const window = await this.restore();
+    if (!window) return {delivered: false, reason: 'window_unavailable'};
+    if (!this.deliver) return {delivered: false, reason: 'no_bridge'};
+    const delivered = await this.deliver(intent, window);
+    return {delivered: !!delivered, window};
+  }
+
+  /**
+   * 明确退出：唯一入口，幂等，总期限从此刻开始计时。
    */
   async quit() {
     if (this.quitting) return {alreadyQuitting: true};
     this.quitting = true;
+    const startedAt = this.now();
     const steps = [];
-    const run = async (name, fn) => {
+
+    // 期限先建立：即使清理永远不返回，也到点强制收尾（BUG-078）。
+    let deadlineTimer = null;
+    const expired = new Promise((resolve) => {
+      deadlineTimer = this.setTimer(() => resolve('timeout'), QUIT_TIMEOUT_MS);
+      if (deadlineTimer && deadlineTimer.unref) deadlineTimer.unref();
+    });
+    const budget = {limitMs: QUIT_TIMEOUT_MS};
+
+    const runStep = async (name, fn) => {
       if (!fn) return;
       try {
-        await fn();
+        await Promise.race([
+          Promise.resolve().then(() => fn()),
+          expired.then(() => {
+            const error = new Error(`清理步骤「${name}」超过总期限，未完成`);
+            error.timedOut = true;
+            throw error;
+          }),
+        ]);
         steps.push({name, ok: true});
       } catch (error) {
-        // 单步失败不阻断后续清理：中断的任务不标成成功。
-        steps.push({name, ok: false, error: String((error && error.message) || error)});
+        // 中断的步骤不标成成功；失败也不阻断其余清理。
+        steps.push({name, ok: false, timedOut: !!error.timedOut, error: String(error.message || error)});
       }
     };
-    await run('stopTasks', this.onQuitTasks);
-    await run('closeResources', async () => {
-      if (this.closeResources) await Promise.allSettled(this.closeResources());
+
+    await runStep('stopTasks', this.onQuitTasks);
+    await runStep('closeResources', async () => {
+      if (!this.closeResources) return;
+      // 单项失败也要落到 steps，不能被 allSettled 悄悄吞掉。
+      const results = await Promise.allSettled(this.closeResources());
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          steps.push({name: `closeResource[${index}]`, ok: false, error: String(result.reason)});
+        }
+      });
     });
-    await run('destroyTray', this.destroyTray);
-    const hardQuit = this.hardQuit || (() => {});
-    // 超时上限：清理卡住也必须能退出，不能因为网络请求让应用永远退不出去。
-    let timer = null;
-    const guard = new Promise((resolve) => {
-      timer = this.setTimer(() => resolve({name: 'timeout', ok: false}), QUIT_TIMEOUT_MS);
-      if (timer && timer.unref) timer.unref();
-    });
-    await Promise.race([Promise.resolve(), guard]);
-    if (timer) this.clearTimer(timer);
-    steps.push({name: 'quit', ok: true});
-    hardQuit();
-    return {steps};
+    await runStep('destroyTray', this.destroyTray);
+    if (deadlineTimer) this.clearTimer(deadlineTimer);
+    const elapsed = this.now() - startedAt;
+    const timedOut = steps.some((step) => step.timedOut);
+    steps.push({name: 'quit', ok: true, elapsedMs: elapsed, timedOut});
+    (this.hardQuit || (() => {}))();
+    return {steps, budget, elapsedMs: elapsed, timedOut};
   }
 }
 

@@ -769,7 +769,7 @@
 - 修复范围：由 MiniMax 修复真实定时器的计算／调度，并增加实际 timer 或可注入 timer 的到期断言，不用手动 run 冒充计时验收。
 - 验证：`verification/m17-review/scheduler-before.json` 第一例 actualCalls=1、expectedCalls=0；出现 TimeoutNaNWarning。
 - 状态：已修复并验证；相关源码提交 `aa731f7`。
-- 验证：真实定时器路径覆盖：启用 60 分钟后断言定时器延迟为 21600000ms 且为有限数，推进时钟到 30ms 与 59 分钟后通知次数恒为 0，真正到期才触发一次并排出下一周期。回归用例使用可注入假定时器驱动到期，不再以手动调用 run() 冒充计时验收。Node 112 项通过。提交 `aa731f7`。
+- 验证：真实定时器路径覆盖：启用 60 分钟后断言定时器延迟为 3600000ms 且为有限数，推进时钟到 30ms 与 59 分钟后通知次数恒为 0，真正到期才触发一次并排出下一周期。回归用例使用可注入假定时器驱动到期，不再以手动调用 run() 冒充计时验收。Node 112 项通过。提交 `aa731f7`。
 
 ## BUG-072：M17 配置切换和迟到通知回执覆盖当前运行状态
 
@@ -783,6 +783,15 @@
 - 状态：已修复并验证；相关源码提交 `aa731f7`。
 - 验证：覆盖五条：开→关→开（相同间隔）作废在途查询；通知在途改间隔后迟到回执不改写 nextCheckAt、lastResult 与定时器；停用后在途回执不重建定时器；迟到失败不污染新配置状态也不带进退避；无关 AI 保存不推进代际。提交 `aa731f7`。
 
+### 2026-10-14 Codex 复核：重新打开（P1，持久化保护未完成）
+
+- 审查提交：`7bcfef9`。内存代际测试通过，不代表持久层已防止旧写入。
+- 复现：在隔离 SQLite 保存停用状态 `signature=0:60,generation=3`，随后写入旧启用状态 `signature=1:60,generation=1`，读取结果退回 generation=1 且 nextCheckAt=3601000。`applySettings` 的 persist 参数还遗漏 generation。
+- 原因：`storage/repositories.py:save_reminder_state` 无条件 UPSERT，没有版本比较／写入排序契约；进程内 generation 重启后归零，不能单独充当跨重启版本。
+- 预期与修复：建立覆盖配置切换、异步写入和重启的版本／顺序保护；旧写入不得覆盖停用或新周期，全部持久化调用携带正确身份，错误不可静默吞掉。
+- 证据：`verification/m17-review/persistence-before.json`、`integration-before.json`。新增实际 RPC 与 SQLite 的乱序写入、ABA、重启验收。
+- 最新状态：待 MiniMax 返修；之前“已修复并验证”仅覆盖局部内存路径，不能作为完整验收。
+
 ## BUG-073：M17 退出清空下次到期时间，不能恢复原提醒周期
 
 - 发现日期／优先级：2026-10-13，Codex 审查 `28e73ac`，P2。
@@ -794,3 +803,72 @@
 - 修复验收：到期前退出再开保留原时间；过期重开／连续 resume 只检查一次；停用后的旧记录不激活提醒；重启不丢退避状态；配置不符的旧状态不恢复。
 - 状态：已修复并验证；相关源码提交 `aa731f7`（Core 持久层 `14c9cea`）。
 - 验证：退出只释放进程内 timer，持久 nextCheckAt 原样保留；恢复先校验 signature，配置不符的旧记录返回 false 且不激活提醒；过期周期连续 restore 三次只触发一次查询。Core 侧新增迁移 010_reminder_state 与 reminder.state／reminder.state.save 两条 RPC，跨 Core 实例往返验证通过（提交 `14c9cea`）。提交 `aa731f7`。
+
+### 2026-10-14 Codex 复核：重新打开（P1，真实保存与恢复链路未完成）
+
+- 审查提交：`7bcfef9`。`halt()` 保留内存到期时间的局部修复成立；实际 RPC 保存失败，启动次序也不符合恢复契约。
+- 复现：向真实 Dispatcher 发送 Main 使用的状态字段（含 null 的 last_handled_at、last_result、notification_error），返回 -32602「参数 last_handled_at 类型不正确」。停用时 next_check_at=null 同样不被 schema 接受；Main catch 静默吞错。
+- 原因：RPC 可选字段不等于可为 null；`index.cjs:242` 先 applySettings 发起重置写入，再读取旧状态。即使修复启动时 Core 未就绪，仍会先覆盖应恢复的到期时间。
+- 预期与修复：统一 nullable 契约；Core ready 后先读配置与持久状态，判断身份并恢复，不先写新周期。验证退出／跨进程重启保留 deadline、过期合并一次、停用与退避恢复。
+- 证据：`verification/m17-review/persistence-before.json` 真实 RPC 复现；无日常数据库操作。
+- 最新状态：待 MiniMax 返修；相关局部修复为 `aa731f7`、`14c9cea`，集成仍未通过。
+
+## BUG-074：M17 提醒启动、设置保存与唤醒没有接通
+
+- 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
+- 现象与复现：启动后开启提醒不会建立正常周期；保存设置和休眠恢复也未驱动提醒调度器。
+- 原因与定位：`electron/main/index.cjs:242–251` 在 core.start() 之前 core.call(settings.get)，CoreClient 未 ready 时直接拒绝且错误被吞；ready 事件只同步设置密钥，设置保存与 resume 均未调用提醒恢复／配置处理。
+- 预期与修复范围：Core ready 后按持久契约初始化，设置保存成功后只响应提醒配置变化，Core 重启与 resume 接入单次恢复。无关 AI 保存不得重置计时。
+- 验证与验收：静态调用链核对；新增真实 Main 启动、设置保存、Core 重启、连续 resume 的集成断言，证明 timer 存在且不会重复。
+- 本轮处理（2026-10-14）：部分修复：接线改为 Core ready 之后经 `wireReminders()` 执行（先 settings.get 再 reminder.state，`applySettings(settings,{persist:false})` 不再先覆盖原记录），并接入 saveSettings 保存成功后的提醒配置响应与 core ready 刷新。**未完成**：Core 重启与 resume 的恢复路径、真实 Main 集成断言。
+- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+
+## BUG-075：M17 应用事件作用域错误且窗口重建入口缺失
+
+- 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
+- 现象与复现：触发 activate、second-instance、window-all-closed，均 ReferenceError: lifecycle is not defined；销毁后恢复还会调用不存在的 createWindow。并发 restore 可创建两个窗口。
+- 原因与定位：`electron/main/index.cjs:300–312` 顶层回调访问 start 局部 lifecycle/scheduler/tray；注入的 createWindow 没有定义；`electron/main/lifecycle.cjs:restore` 未串行合并窗口创建。
+- 预期与修复范围：使用明确的应用级资源所有权和真实窗口工厂，共用安全配置、加载与事件绑定；并发恢复只创建一次，退出期间不再创建窗口。
+- 验证与验收：`verification/m17-review/integration-before.json` 复现三个事件异常及 created=2；补充实际 Electron 隐藏、销毁重建、Dock／第二实例、登录窗口独立和托盘失败降级验收。
+- 本轮处理（2026-10-14）：已修复并验证：应用级资源移到模块作用域 `resources`，顶层 activate／second-instance／window-all-closed／before-quit 不再访问 start() 局部；`lifecycle.restore()` 以 pendingWindow 串行合并并发恢复，退出期间建出的窗口被关闭。新增 4 条断言（共享 IPC 通道、并发只建一个、退出期间不建、通知点击先恢复再投递）。
+- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+
+## BUG-076：M17 通知导航通道不匹配且列表口径未接入
+
+- 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
+- 现象与复现：点击通知／托盘列表不会收到导航事件；即使直接触发 Renderer 事件，reminderView 不进入列表查询，搜索／日期等过滤仍可能残留。
+- 原因与定位：`electron/main/lifecycle.cjs:navigateFromNotification` 直接发送 reminder.navigate，而 preload 只监听 subscribe-flow:event；恢复后未等待 Renderer/Core ready。`app.js:508` 只写 reminderView，未接入查询，也没有两种口径切换；设置菜单未 await 恢复就发事件。
+- 预期与修复范围：统一桥接事件，保存导航意图直到页面与 Core ready；接通 pending/high_unarchived 查询与切换界面；清空搜索、日期、平台、来源、标签等旧筛选且不修改内容状态，保留既有设置未保存保护。
+- 验证与验收：静态核对 Main→preload→Renderer→AppClient→Core 链路；验收需从真实菜单／通知回调驱动至实际 SQLite 列表，并核对 ID 集合和状态未改变。
+- 本轮处理（2026-10-14）：部分修复：Main 改走 preload 唯一监听的 `subscribe-flow:event` 通道，生命周期新增 `deliver` 注入点；未就绪时导航意图挂起并在 core.status ready 后补发；设置菜单也改为经 `lifecycle.navigate()` 等待恢复。**未完成**：收件箱内 pending／high_unarchived 两个列表视角与切换入口、过滤清理的界面级断言。
+- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+
+## BUG-077：M17 托盘使用不存在的图标且统计从未刷新
+
+- 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
+- 现象与复现：配置的 assets/icon.png 不存在；空图像仍被当作可用托盘，允许隐藏主窗口。菜单计数一直停留“数据暂不可用”。
+- 原因与定位：`index.cjs:158` 指向缺失资源；`tray.cjs:create` 对空图片静默 createEmpty。应用入口没有调用 refresh/scheduleRefresh，菜单打开与数据变化也未接线。
+- 预期与修复范围：提供有效平台图标，macOS template 与尺寸适配；图标／托盘不可用时禁止隐藏且保留可访问窗口。Core ready、失联、内容／来源优先级变更与菜单打开时合并刷新。
+- 验证与验收：`integration-before.json` 记录 icon_exists=false；需真实 Electron 非空图标与菜单计数证据，覆盖查询在途发生变更、Core 失联和恢复。
+- 本轮处理（2026-10-14）：部分修复：图标路径改为真实存在的 `assets/logo.png`，缺失或空图像直接抛错而不是 createEmpty 静默通过；macOS 加 template 适配与 16pt 菜单栏缩放；托盘创建后立即 refresh，core ready／失联时刷新。**未完成**：内容与来源优先级变化的刷新接线、菜单打开时刷新、真实 Electron 下的图标与计数证据。
+- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+
+## BUG-078：M17 退出超时未覆盖清理过程
+
+- 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
+- 现象与复现：closeResources 永不结束时，不创建退出期限 timer，也不会 hardQuit；应用原有 before-quit 仍走另一套未限时逻辑。
+- 原因与定位：`lifecycle.cjs:quit` 等待全部清理之后才创建8秒 guard，又与 Promise.resolve() 竞争，超时形同虚设；allSettled 的单项失败也未记录。
+- 预期与修复范围：从退出开始建立总期限，所有明确退出入口共用幂等流程；停止新任务、处理通道与 Core、销毁托盘，到期强制收尾并记录真实失败。不能再次触发隐藏。
+- 验证与验收：`integration-before.json` 的 hanging_cleanup：deadlineTimerCreated=false、quit=false；新增永不完成／抛错清理测试，并用本轮隔离 Electron/Core 进程验证退出时限及无子进程残留。
+- 本轮处理（2026-10-14）：已修复并验证：总期限改为**先建立**再逐个 race 清理步骤，覆盖永不完成的清理；超时步骤记 timedOut 且不计成功；allSettled 的单项失败逐条落到 steps。新增永不完成清理与抛错清理两条用例。
+- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。
+
+## BUG-079：M17 正式通知误报显示成功且失败分类回归
+
+- 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
+- 现象与复现：调用 show() 立即返回 shown，未监听异步 show/failed；返回 failed 仍被记作 notified/checked，notify 抛错却被记作 query_failed 并退避。复用通知后的点击仍使用第一次的 summary。
+- 原因与定位：`index.cjs:postReminder` 没有正式投递结果状态机；`reminders.cjs:run/dispatch` 混用查询与投递失败，回归了 dc7a8f8 的分类；click 闭包捕获初次 summary，close 未核对当前对象身份。
+- 预期与修复范围：复用／抽取 M15 通知结果处理，区分 submitted、shown、failed、unsupported、unknown；查询成功后投递失败不进入查询退避，记录独立通知结果；点击使用当前提醒目标，旧事件不得清除新通知。停用／退出按契约清理通知。
+- 验证与验收：`integration-before.json` 的 notification_failure_classification 为 query_failed/backoffIndex=1；补充异步投递、迟到事件与目标切换测试。真实系统显示与点击仍需独立实机证据，mock 不得宣称已验收。
+- 本轮处理（2026-10-14）：已修复并验证：新增 `electron/main/reminder-notification.cjs` 投递状态机，区分 submitted／shown／failed／unsupported／unknown 五态（show() 返回只算 submitted）；复用同一条通知，旧句柄的 close／failed 不得污染当前状态；点击读取当前 entry 的 target 而非首次快照。新增 8 条断言。**真实系统显示与点击仍待实机人工确认**，替身不构成显示证据。
+- 相关提交：`aa731f7`、`14c9cea`、`4f73cff`、`7bcfef9` 为审查基线；本轮修复提交见提交历史。

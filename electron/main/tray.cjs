@@ -10,6 +10,8 @@
  */
 const {Tray, Menu, nativeImage} = require('electron');
 
+const fs = require('node:fs');
+
 function unavailableCounts() {
   return {pending: null, high: null, available: false};
 }
@@ -44,14 +46,36 @@ class TrayController {
     this.lastRefreshedAt = null;
   }
 
-  /** 创建失败时抛出，由调用方决定是否降级为「不隐藏窗口」。 */
+  /**
+   * 创建失败时抛出，由调用方决定是否降级为「不隐藏窗口」。
+   * 空图像不算可用托盘：否则会以为托盘在工作，实际上菜单永远点不到。
+   */
   create() {
+    if (!this.iconPath || !fs.existsSync(this.iconPath)) {
+      throw new Error(`托盘图标不存在：${this.iconPath || '(未配置)'}`);
+    }
     const image = nativeImage.createFromPath(this.iconPath);
-    this.tray = new Tray(image.isEmpty() ? nativeImage.createEmpty() : image);
+    if (image.isEmpty()) {
+      throw new Error(`托盘图标无法加载：${this.iconPath}`);
+    }
+    if (this.template) {
+      // macOS 菜单栏用 template 图像按深浅色自动适配。
+      image.setTemplateImage(true);
+    }
+    this.tray = new Tray(this.resize(image, this.template));
     // 应用级引用：主窗口销毁不影响它。
     this.tray.setToolTip('知流');
     this.refreshMenu();
     return this.tray;
+  }
+
+  /** 菜单栏图标按点尺寸缩放，避免糊成一团。 */
+  resize(image, template) {
+    const size = template ? 16 : 22;
+    if (!image.isEmpty() && (image.getSize().width !== size || image.getSize().height !== size)) {
+      return image.resize({width: size, height: size});
+    }
+    return image;
   }
 
   destroy() {

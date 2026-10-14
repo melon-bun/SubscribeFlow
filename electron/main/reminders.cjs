@@ -74,7 +74,7 @@ class ReminderScheduler {
    * 设置变化时调用。只有提醒自身配置变了才推进代际与重置周期。
    * @returns {boolean} 是否真的重置了周期
    */
-  applySettings(settings) {
+  applySettings(settings, {persist = true} = {}) {
     const signature = reminderSignature(settings);
     if (signature === this.signature) return false;
     this.signature = signature;
@@ -83,14 +83,15 @@ class ReminderScheduler {
     if (!signature || settings.reminder.enabled === false) {
       this.state = {...EMPTY_STATE(), lastResult: 'disabled'};
       this.lastNotified = null;
-      void this.persist({...this.state, signature});
+      // 启动接线时不落盘：先读配置再读持久记录，反过来会覆盖原记录（BUG-074）。
+      if (persist) void this.persist({...this.state, signature});
       return true;
     }
     // 从「现在」重算，而不是沿用旧的到期时间。
     this.state.backoffIndex = 0;
     this.state.notificationError = null;
     this.armIn(this.state.nextCheckAt = this.now() + settings.reminder.intervalMinutes * 60_000);
-    void this.persist({...this.state, signature});
+    if (persist) void this.persist({...this.state, signature});
     return true;
   }
 

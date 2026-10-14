@@ -181,12 +181,102 @@ test('窗口已销毁时受控重建同一个窗口', async () => {
   assert.equal(events.shown, 1);
 });
 
-test('通知点击先恢复窗口再下发导航意图', async () => {
-  const {lifecycle, events} = lifecycleHarness();
-  const ok = await lifecycle.navigateFromNotification('high_unarchived');
-  assert.equal(ok, true);
+test('通知点击先恢复窗口再经共享 IPC 通道下发导航意图', async () => {
+  const sent = [];
+  const {lifecycle, events} = lifecycleHarness({
+    deliver: async (intent, target) => {
+      sent.push({intent, same: target === undefined ? false : true});
+      target.webContents.send('subscribe-flow:event', 'reminder.navigate', intent);
+      return true;
+    },
+  });
+  const result = await lifecycle.navigate({view: 'high_unarchived'});
+  assert.equal(result.delivered, true);
   assert.equal(events.shown, 1, '必须先恢复窗口');
-  assert.deepEqual(events.sent, {channel: 'reminder.navigate', payload: {view: 'high_unarchived'}});
+  // 走的是 preload 唯一监听的 subscribe-flow:event 通道。
+  assert.deepEqual(events.sent, {channel: 'subscribe-flow:event', payload: 'reminder.navigate'});
+});
+
+test('并发恢复只创建一个窗口', async () => {
+  let created = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const win = {destroyed: false, isDestroyed: () => win.destroyed, isMinimized: () => false,
+               show() {}, focus() {}, webContents: {isDestroyed: () => false, send() {}}};
+  const lifecycle = new WindowLifecycle({
+    getWindow: () => null,
+    createWindow: async () => { created += 1; await gate; return win; },
+    hardQuit: () => {},
+  });
+  const all = Promise.all([lifecycle.restore(), lifecycle.restore(), lifecycle.restore()]);
+  release();
+  await all;
+  assert.equal(created, 1, '并发 restore 只能建一个窗口');
+});
+
+test('退出期间不再创建窗口', async () => {
+  let created = 0;
+  const win = {destroyed: false, isDestroyed: () => win.destroyed, isMinimized: () => false,
+               show() {}, focus() {}, destroy() { win.destroyed = true; }};
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const lifecycle = new WindowLifecycle({
+    getWindow: () => null,
+    createWindow: async () => { created += 1; await gate; return win; },
+    hardQuit: () => {},
+  });
+  const pending = lifecycle.restore();
+  const quitting = lifecycle.quit();
+  release();
+  await Promise.all([pending, quitting]);
+  assert.equal(created, 1);
+  assert.equal(win.destroyed, true, '退出期间建出的窗口要被关闭');
+});
+
+test('BUG-078：清理永不结束时仍强制退出并记录超时', async () => {
+  let released;
+  const hang = new Promise((resolve) => { released = resolve; });
+  let quits = 0;
+  let now = 0;
+  const timers = [];
+  const lifecycle = new WindowLifecycle({
+    getWindow: () => null,
+    createWindow: async () => null,
+    onQuitTasks: () => hang,
+    closeResources: () => [hang],
+    hardQuit: () => { quits += 1; },
+    now: () => now,
+    setTimer: (fn) => {
+      const handle = {unref() {}};
+      timers.push({fn, handle});
+      return handle;
+    },
+    clearTimer: () => {},
+  });
+  const quitting = lifecycle.quit();
+  // 模拟总期限到点。
+  now = 8001;
+  timers[0].fn();
+  const result = await quitting;
+  assert.equal(quits, 1, '必须强制退出');
+  assert.equal(result.timedOut, true);
+  assert.ok(result.steps.some((step) => step.timedOut), '超时步骤要被如实记录');
+  assert.ok(result.steps.some((step) => step.ok === false), '未完成的步骤不能记成成功');
+  released();
+});
+
+test('BUG-078：清理单���抛错被逐项记录', async () => {
+  const steps = [];
+  const lifecycle = new WindowLifecycle({
+    getWindow: () => null,
+    createWindow: async () => null,
+    closeResources: () => [Promise.reject(new Error('渠道关闭失败')), Promise.reject(new Error('Core 停止失败'))],
+    hardQuit: () => {},
+  });
+  const result = await lifecycle.quit();
+  assert.ok(steps.length === 0);
+  const failed = result.steps.filter((s) => s.name.startsWith('closeResource['));
+  assert.equal(failed.length, 2, 'allSettled 的单项失败不能被吞掉');
 });
 
 test('退出清理有顺序且失败不阻断后续步骤', async () => {

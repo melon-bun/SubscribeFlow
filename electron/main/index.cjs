@@ -15,6 +15,7 @@ const {createDiagnostics} = require('./diagnostics.cjs');
 const {CredentialService} = require('./credentials.cjs');
 const {SettingsBridge} = require('./settings-bridge.cjs');
 const {ReminderScheduler} = require('./reminders.cjs');
+const {ReminderNotification} = require('./reminder-notification.cjs');
 const {TrayController} = require('./tray.cjs');
 const {WindowLifecycle} = require('./lifecycle.cjs');
 
@@ -38,9 +39,59 @@ let window, core, bilibili, xiaohongshu, zhihu, wechat;
 const channels = new ChannelSessions();
 let lastStatus = {state: 'starting'};
 let quitting = false;
+/**
+ * 应用级资源。顶层 activate／second-instance／window-all-closed／before-quit
+ * 都要用到它们，放在 start() 局部会让这些回调抛 ReferenceError（BUG-075）。
+ */
+const resources = {core: null, channels: null, scheduler: null, tray: null, lifecycle: null,
+                   notifier: null, ready: false, navigateIntent: null};
 let suspended = false, powerUpdate = Promise.resolve();
 
-function send(event, data) {
+/** 导航意图投递：页面或 Core 未就绪时挂起，就绪后补发（BUG-076）。 */
+async function deliverNavigation(intent, target) {
+  const win = target || (window && !window.isDestroyed() ? window : null);
+  if (!win || win.isDestroyed()) return false;
+  if (!resources.ready || !resources.core || resources.core.status?.state !== 'ready') {
+    resources.navigateIntent = intent; // 等 ready 后由 flushNavigationIntent 补发
+    return false;
+  }
+  send('reminder.navigate', intent, win);
+  return true;
+}
+
+function flushNavigationIntent() {
+  if (!resources.navigateIntent || !resources.ready) return false;
+  if (!window || window.isDestroyed()) return false;
+  send('reminder.navigate', resources.navigateIntent);
+  resources.navigateIntent = null;
+  return true;
+}
+
+/** 提醒接线：Core ready 后按持久契约初始化，再决定恢复还是新建周期（BUG-074）。 */
+async function wireReminders({persisted = true} = {}) {
+  const core = resources.core, scheduler = resources.scheduler;
+  if (!core || !scheduler) return;
+  try {
+    // 先读配置，再读持久记录：applySettings 会写运行状态，顺序反了会覆盖原记录。
+    const settings = await core.call('settings.get');
+    scheduler.applySettings(settings, {persist: false});
+    const state = persisted ? await core.call('reminder.state') : null;
+    scheduler.restore(state);
+  } catch (error) {
+    diagnostic('reminder.wire', {error: error.message});
+  }
+}
+
+/** 只响应真正变化的提醒配置；无关 AI 保存不重置计时。 */
+function applyReminderSettings(settings) {
+  const scheduler = resources.scheduler;
+  if (!scheduler || !settings) return false;
+  return scheduler.applySettings(settings);
+}
+
+function send(event, data, target) {
+  const win = target || window;
+  if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send('subscribe-flow:event', event, data);
   if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('subscribe-flow:event', event, data);
 }
 async function start() {
@@ -105,45 +156,31 @@ async function start() {
       backoff_index: state.backoffIndex,
     }).catch(() => {}),
   });
-  let reminderNotification = null;
+  let lifecycleRef = null, schedulerRef = scheduler, trayRef = null;
+  const notifier = new ReminderNotification({NotificationCtor: Notification});
+  notifier.onClick = (view) => { void lifecycleRef.navigate({view}); };
+  resources.notifier = notifier;
 
-  /** 单条汇总通知的生命周期：有内容就更新同一条，全零就关掉它。 */
+  /** 调度器回调：投递失败只记通知结果，不影响查询与周期（BUG-079）。 */
   function postReminder(summary, context) {
-    if (!Notification.isSupported()) return {status: 'unsupported'};
-    try {
-      if (context.kind === 'clear') {
-        if (reminderNotification) { reminderNotification.close(); reminderNotification = null; }
-        return {status: 'cleared'};
-      }
-      const parts = [];
-      if (summary.pendingCount) parts.push(`${summary.pendingCount} 条内容未处理`);
-      if (summary.highUnarchivedCount) parts.push(`${summary.highUnarchivedCount} 条高优先级内容尚未归档`);
-      const body = `你有 ${parts.join('；')}。`;
-      if (reminderNotification) {
-        // 尽量更新同一条，避免通知中心堆积。
-        reminderNotification.body = body;
-        reminderNotification.show();
-        return {status: 'updated'};
-      }
-      reminderNotification = new Notification({title: '知流', body});
-      reminderNotification.on('close', () => { reminderNotification = null; });
-      reminderNotification.on('click', () => { if (lifecycle) void lifecycle.navigateFromNotification(summary.pendingCount ? 'pending' : 'high_unarchived'); });
-      reminderNotification.show();
-      return {status: 'shown'};
-    } catch (error) {
-      // 显示失败单独记录，不让提醒本身停摆。
-      return {status: 'failed', error: error.message};
-    }
+    if (context.kind === 'clear') return notifier.cancel();
+    return notifier.post(summary);
   }
 
   const lifecycle = new WindowLifecycle({
     getWindow: () => window,
     createWindow: () => createWindow(),
-    onQuitTasks: () => scheduler.halt(),
+    // 走共享 IPC 通道：preload 只监听 subscribe-flow:event，直接
+    // webContents.send('reminder.navigate') 收不到（BUG-076）。
+    deliver: async (intent, target) => deliverNavigation(intent, target),
+    onQuitTasks: () => schedulerRef.halt(),
     closeResources: () => [core.stop(), channels.close()],
-    destroyTray: () => { if (tray) { tray.destroy(); tray = null; } },
+    destroyTray: () => { if (trayRef) { trayRef.destroy(); trayRef = null; resources.tray = null; } },
     hardQuit: () => { quitting = true; app.exit(0); },
   });
+  lifecycleRef = lifecycle;
+  resources.core = core; resources.channels = channels; resources.scheduler = scheduler;
+  resources.lifecycle = lifecycle;
 
   let tray = null;
   function ensureTray() {
@@ -151,17 +188,24 @@ async function start() {
     try {
       tray = new TrayController({
         summary: () => core.call('reminder.summary'),
-        showWindow: () => { void lifecycle.restore(); },
-        openList: (view) => { void lifecycle.navigateFromNotification(view); },
-        openSettings: () => { void lifecycle.restore(); send('reminder.navigate', {view: 'settings'}); },
-        quit: () => { void lifecycle.quit(); },
-        iconPath: path.join(__dirname, '../../assets/icon.png'),
+        showWindow: () => { void lifecycleRef.restore(); },
+        openList: (view) => { void lifecycleRef.navigate({view}); },
+        // 设置菜单同样要等恢复完成再投递意图（BUG-076）。
+        openSettings: () => { void lifecycleRef.navigate({view: 'settings'}); },
+        quit: () => { void lifecycleRef.quit(); },
+        iconPath: path.join(__dirname, '../../assets/logo.png'),
+        template: process.platform === 'darwin',
         now: () => Date.now(),
       });
+      trayRef = tray;
       tray.create();
+      resources.tray = tray;
+      void tray.refresh();
     } catch (error) {
       // 托盘建立失败：保留可访问的主窗口并说明原因，绝不隐藏成找不回来的进程。
       tray = null;
+      trayRef = null;
+      resources.tray = null;
       lifecycle.canHide = false;
       diagnostic('tray.create', {error: error.message});
       send('tray.status', {available: false, message: '托盘不可用，关闭主窗口会退出应用：' + error.message});
@@ -177,7 +221,14 @@ async function start() {
   powerMonitor.on('resume', () => { suspended = false; updatePower(); });
   core.on('status', status => { diagnostic('core.status', status); lastStatus = status; send('core.status', status); if (status.state === 'ready' && suspended) updatePower();
     // Core 重启后内存里的密钥就没了，重新推送一次，运行时才不会以为没有密钥。
-    if (status.state === 'ready') settingsBridge.sync().catch(() => {}); });
+    if (status.state === 'ready') settingsBridge.sync().catch(() => {});
+    resources.ready = status.state === 'ready';
+    if (resources.ready) {
+      flushNavigationIntent();
+      if (resources.tray) void resources.tray.refresh();
+    } else if (resources.tray) {
+      void resources.tray.refresh(); // 失联时菜单要如实显示不可用
+    } });
   core.on('notification', (event, data) => {
     if (!['sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'scheduler.changed', 'tags.changed'].includes(event)) return;
     send(event, data);
@@ -239,23 +290,20 @@ async function start() {
   await window.loadURL(APP_URL);
   // M17：托盘与提醒在窗口就绪后建立，失败不阻断启动。
   ensureTray();
-  void core.call('settings.get').then((settings) => {
-    scheduler.applySettings(settings);
-    if (!smoke && !rendererSmoke) {
-      // 启动时先加载持久运行状态，再决定恢复还是合并一次过期检查。
-      return core.call('reminder.state').then((state) => scheduler.restore(state));
-    }
-  }).catch(() => {});
   window.on('closed', () => { window = null; });
-  window.on('close', event => { if (lifecycle) lifecycle.interceptClose(event); });
+  window.on('close', event => { if (resources.lifecycle) resources.lifecycle.interceptClose(event); });
   try { await core.start(); }
   catch (error) { lastStatus = {state: 'error', message: error.message}; diagnostic('core.status', lastStatus); send('core.status', lastStatus); if (smoke || rendererSmoke) throw error; }
+  // Core ready 之后才接线提醒：之前这段在 core.start() 之前调用 settings.get，
+  // CoreClient 未 ready 直接拒绝，错误还被空 catch 吞掉（BUG-074）。
+  if (!smoke && !rendererSmoke) void wireReminders();
   if (rendererSmoke) {
     try {
       if (rendererSmoke === 'zhihu') await require('../../scripts/zhihu-renderer.cjs').verify({window,core,root,zhihu,fixture:zhihuFixture});
       else if (rendererSmoke === 'wechat') await require('../../scripts/wechat-renderer.cjs').verify({window,core,root,wechat,fixture:wechatFixture});
       else if (rendererSmoke === 'intake') await require('../../scripts/intake-renderer.cjs').verify({window,core,root,fixture:intakeFixture});
       else if (rendererSmoke === 'xhs') await require('../../scripts/xiaohongshu-renderer.cjs').verify({window,core,root,xiaohongshu,fixture:xhsFixture});
+      else if (rendererSmoke === 'm17') await require('../../scripts/m17-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'settings') await require('../../scripts/settings-renderer.cjs').verify({window,core,root});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
       await core.stop(); await channels.close(); quitting = true; app.quit();
@@ -297,17 +345,18 @@ async function start() {
   }
 }
 // M17：托盘常驻时关闭全部窗口不退出；托盘未建立时才退出，避免应用无法找回。
-app.on('second-instance', () => { if (lifecycle) void lifecycle.restore(); });
-app.on('activate', () => { if (lifecycle) void lifecycle.restore(); });
-app.on('window-all-closed', () => { if (!lifecycle || !lifecycle.canHide) app.quit(); });
+app.on('second-instance', () => { if (resources.lifecycle) void resources.lifecycle.restore(); });
+app.on('activate', () => { if (resources.lifecycle) void resources.lifecycle.restore(); });
+// 托盘可用时关闭全部窗口不等于退出；托盘不可用时退出，避免进程无法找回。
+app.on('window-all-closed', () => {
+  if (!resources.lifecycle || !resources.lifecycle.canHide) app.quit();
+});
+// 统一退出入口：所有明确退出都走 lifecycle 的有界清理，不再有第二条无上限路径。
 app.on('before-quit', event => {
-  if (quitting || !core) return;
+  if (quitting) return;
   event.preventDefault();
   quitting = true;
   diagnostic('app.quit');
-  // M17：提醒调度器一并停掉；明确退出的清理走 lifecycle 的有界流程。
-  if (scheduler) scheduler.halt();
-  Promise.allSettled([core.stop(), channels.close()])
-    .then(() => { if (tray) tray.destroy(); })
-    .finally(() => app.quit());
+  if (resources.lifecycle) void resources.lifecycle.quit();
+  else app.quit();
 });
