@@ -81,17 +81,18 @@ class ReminderScheduler {
     this.generation += 1;
     this.clear();
     if (!signature || settings.reminder.enabled === false) {
+      // 停用：清掉周期但保留代际（代际在下一条 update 里由 this.generation 携带）。
       this.state = {...EMPTY_STATE(), lastResult: 'disabled'};
       this.lastNotified = null;
       // 启动接线时不落盘：先读配置再读持久记录，反过来会覆盖原记录（BUG-074）。
-      if (persist) void this.persist({...this.state, signature});
+      if (persist) void this.persist({...this.state, signature, generation: this.generation});
       return true;
     }
     // 从「现在」重算，而不是沿用旧的到期时间。
     this.state.backoffIndex = 0;
     this.state.notificationError = null;
     this.armIn(this.state.nextCheckAt = this.now() + settings.reminder.intervalMinutes * 60_000);
-    if (persist) void this.persist({...this.state, signature});
+    if (persist) void this.persist({...this.state, signature, generation: this.generation});
     return true;
   }
 
@@ -104,10 +105,10 @@ class ReminderScheduler {
       // 配置身份对不上的旧记录不得激活提醒：那是上一个配置的残留。
       return false;
     }
-    if (persisted && typeof persisted.nextCheckAt === 'number') {
+    if (persisted) {
       this.state = {...this.state, ...persisted, signature: this.signature};
-      // 代际必须从持久记录续接：每进程从 0 起算会让重启后的正常写入被
-      // Core 判为「比已存代际更旧」而拒绝，提醒就再也存不进新周期。
+      // 代际必须从持久记录续接，与 nextCheckAt 是否为 null 无关：停用记录同样
+      // 带着最高有效版本，否则重启后再开启时内存版本会远低于已存版本，写入被拒。
       if (Number.isInteger(persisted.generation) && persisted.generation > this.generation) {
         this.generation = persisted.generation;
       }

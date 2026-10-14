@@ -320,11 +320,20 @@ async function start() {
     powerUpdate.catch(() => {});
   };
   powerMonitor.on('suspend', () => { suspended = true; updatePower(); });
-  powerMonitor.on('resume', () => { suspended = false; updatePower(); });
+  powerMonitor.on('resume', () => {
+    suspended = false;
+    updatePower();
+    // 休眠恢复：从持久状态重新决定恢复还是合并一次过期检查，不重算周期。
+    if (resources.scheduler && resources.ready) void wireReminders();
+  });
   core.on('status', status => { diagnostic('core.status', status); lastStatus = status; send('core.status', status); if (status.state === 'ready' && suspended) updatePower();
     // Core 重启后内存里的密钥就没了，重新推送一次，运行时才不会以为没有密钥。
     if (status.state === 'ready') settingsBridge.sync().catch(() => {});
+    const wasReady = resources.ready;
     resources.ready = status.state === 'ready';
+    // Core 就绪（含重启后重新就绪）都走同一条幂等接线路径：
+    // 连续 ready 事件不会重复建周期；wireReminders 内部有并发去重。
+    if (resources.ready && !wasReady && resources.scheduler) void wireReminders();
     if (resources.ready) {
       flushNavigationIntent();
       if (resources.tray) void resources.tray.refresh();

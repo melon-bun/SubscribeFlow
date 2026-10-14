@@ -145,9 +145,12 @@ async function verify({window, core, root}) {
   await until(`document.querySelector('.settings__title').textContent === 'AI 模型配置'`);
   const genBefore = beforeIrrelevant.generation;
   const dueBefore = beforeIrrelevant.nextCheckAt;
+  // 合法的 AI 配置变更：只改模型标识文本，不开启自动打标、不需要任何模型凭据，
+  // 也不会触发任何模型调用。
   await evaluate(`(() => {
-    const t = Array.from(document.querySelectorAll('.switch')).find(s => /启用自动打标/.test(s.getAttribute('aria-label') || ''));
-    if (t) { if (t.getAttribute('aria-checked') !== 'true') t.click(); }
+    const fields = Array.from(document.querySelectorAll('.setting-block input[type="text"]'));
+    const model = fields[fields.length - 1];
+    if (model) { model.value = 'acceptance-only-model'; model.dispatchEvent(new Event('input', {bubbles: true})); }
     return true;
   })()`);
   await clickSave();
