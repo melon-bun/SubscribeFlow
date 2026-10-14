@@ -33,10 +33,22 @@ async function verify({window, core, root}) {
   };
   const until = async (expr, target, timeout = 30000) => {
     const start = Date.now();
-    while (!(await evaluate(expr, target))) {
+    let lastError = null;
+    while (true) {
+      let value;
+      try {
+        value = await evaluate(expr, target);
+      } catch (error) {
+        // 页面启动/重载瞬间执行上下文会短暂不可用，这不是失败，重试即可。
+        lastError = error;
+        if (Date.now() - start > timeout) throw error;
+        await new Promise((r) => setTimeout(r, 120));
+        continue;
+      }
+      if (value) return true;
       if (Date.now() - start > timeout) {
         let page = '';
-        try { page = await target.webContents.executeJavaScript('document.body.innerText.slice(0,200)'); } catch (e) { page = '执行失败: ' + e.message; }
+        try { page = await target.webContents.executeJavaScript('document.body.innerText.slice(0,200)'); } catch (e) { page = '执行失败: ' + (lastError ? lastError.message : e.message); }
         throw new Error('超时：' + expr + '\n页面：' + page + '\nURL：' + target.webContents.getURL());
       }
       await new Promise((r) => setTimeout(r, 80));

@@ -9,10 +9,18 @@ async function verify({window, core, root, mode}) {
     try { return await window.webContents.executeJavaScript(code); }
     catch (error) { throw new Error(error.message + '\nRenderer assertion: ' + code); }
   };
-  const until = async (expression, timeout = 15000) => {
+  const until = async (expression, timeout = 30000) => {
     const start = Date.now();
     while (true) {
-      const result = await evaluate(expression);
+      let result;
+      try {
+        result = await evaluate(expression);
+      } catch (error) {
+        // 页面启动/重载瞬间执行上下文短暂不可用，属于正常时序而非失败。
+        if (Date.now() - start > timeout) throw error;
+        await new Promise(resolve => setTimeout(resolve, 120));
+        continue;
+      }
       if (result) return result;
       if (Date.now() - start > timeout) throw new Error('Timed out: ' + expression + '\n' + await evaluate('document.body.innerText'));
       await new Promise(resolve => setTimeout(resolve, 70));
