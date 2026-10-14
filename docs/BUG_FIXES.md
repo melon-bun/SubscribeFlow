@@ -797,6 +797,10 @@
 - `7190779` 未修改持久层和 generation 写入契约，原乱序覆盖复现仍适用；最新状态仍待修复。
 - 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
 
+### 2026-10-14 Codex 复核 `56ed3f3`
+
+- nullable RPC及存储拒绝低代际已有实现，但生产applySettings的persist仍漏generation（默认0），正常检查写入较高代际后，停用/改间隔写入会被拒绝。不能把手工RPC传generation的测试当作Main已正确保存。此项会使用户停用/变更无法持久化，是当前核心阻断。
+
 ## BUG-073：M17 退出清空下次到期时间，不能恢复原提醒周期
 
 - 发现日期／优先级：2026-10-13，Codex 审查 `28e73ac`，P2。
@@ -823,6 +827,10 @@
 - `7190779` 未修改 RPC nullable 字段和保存失败吞错；只增加 persist:false 不构成真实保存／恢复验收。最新状态仍待修复。
 - 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
 
+### 2026-10-14 Codex 复核 `56ed3f3`
+
+- restore只有nextCheckAt为number才续接generation，停用记录的nextCheckAt=null直接丢掉持久代际；恢复generation=9的停用状态后再开启，内存只有2且保存仍不带generation。startup先applySettings再restore也仍对旧身份不匹配恢复失败，首次初始化不落盘。证据reminder-state-review.json，保持未通过。
+
 ## BUG-074：M17 提醒启动、设置保存与唤醒没有接通
 
 - 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
@@ -837,6 +845,10 @@
 
 - 此前“接入 saveSettings”声明不成立：`applyReminderSettings` 全文件只有定义，无调用；UI_METHODS 路径仍直接 return callUI。Core 重启与 resume 也未接入。新增 wireReminders 虽在启动后调用，但在读取持久状态前 applySettings 仍先建 timer。最新状态：部分修复、待返修；须由真实设置保存证明周期变化。
 - 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
+
+### 2026-10-14 Codex 复核 `56ed3f3`
+
+- wireReminders声明ready/resume复用，但真实core status与powerMonitor resume处理器没有调用它，仍只有启动末尾调用；集成脚本直接调用导出的wireReminders不能证明事件接线。实际页面还被BUG-084阻断，优先恢复启动后补这条主要功能。
 
 ## BUG-075：M17 应用事件作用域错误且窗口重建入口缺失
 
@@ -1020,3 +1032,13 @@
 ### 2026-10-14 Codex 验收与推进决定（HEAD `3d29ede`）
 
 - Codex以同一生产工厂注入Electron依赖，模拟打包版无标志/带标志均创建成功，普通开发模式忽略注入，仅隔离测试触发预期错误；没有实际打包。证据startup-guard-review.json。最新状态：已修复并验证保护分支，修复f48350c；真实窗口smoke也退出0。
+
+## BUG-084：测试入口在 SF.app 初始化前赋值导致前端启动中断
+
+- 发现日期／优先级：2026-10-14，P1，审查 `56ed3f3`；主界面无法渲染，是核心阻断。
+- 复现：执行正式 `electron/renderer/scripts/app.js`，第602行 `SF.app.__schedulerSignature = ...` 在第606行 `SF.app = {...}` 之前运行，此时SF.app未定义，抛出 `Cannot set properties of undefined (setting '__schedulerSignature')`，连DOMContentLoaded的boot注册都未执行。
+- 原因：为测试增加的只读入口放错初始化时机，且函数依赖的SF.__reminderSignature未接线，随后SF.app整体赋值也会覆盖该入口。
+- 预期与修复范围：由MiniMax移除不需要的测试入口或正确初始化，不影响正常应用引导；测试直接使用已有Main快照即可，不应给产品引入死代码。先恢复Renderer启动及设置/窗口回归，然后继续M17提醒主要链路，无需先二分Python nullable代码。
+- 证据：`verification/m17-review/reminder-state-review.json`：完整Renderer脚本隔离VM执行得到TypeError，bootRegistered=false；MiniMax本轮报告所有Electron smoke等待页面失败与此一致。
+- 验收：当前入口不抛错并实际渲染收件箱，Renderer/设置/窗口隔离smoke通过；故障应从Renderer异常被明确捕获，不能靠扩大超时掩盖。
+- 状态：待修复；引入 `7f9e8a1`，当前 `56ed3f3`。按用户要求，只派发此类实质阻断及未完成主要功能，非致命问题不单派。
