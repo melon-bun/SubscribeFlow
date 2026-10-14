@@ -780,7 +780,6 @@
 - 修复范围：由 MiniMax 增加单调版本／代际，在全部异步边界检查；为持久状态写入也提供版本保护，防止迟到写入。已提交给系统的通知无法撤回投递事实时如实处理，但不能继续改写新状态。
 - 验证：`verification/m17-review/scheduler-before.json` 第二、三例均复现；实际旧通知 1 次，停用后 timer 又存在。
 - 修复验收：开→关→开（相同间隔）、通知在途修改间隔、查询迟到失败、退出中的回执，以及配置变化恰逢 timer 触发；新配置保持正确，后续新周期仍能执行。
-- 状态：已修复并验证；相关提交 `2cfe4ce`。
 - 验证：覆盖五条：开→关→开（相同间隔）作废在途查询；通知在途改间隔后迟到回执不改写 nextCheckAt、lastResult 与定时器；停用后在途回执不重建定时器；迟到失败不污染新配置状态也不带进退避；无关 AI 保存不推进代际。提交 `aa731f7`。
 
 ### 2026-10-14 Codex 复核：重新打开（P1，持久化保护未完成）
@@ -804,6 +803,7 @@
 ### 2026-10-14 Codex 审查与推进（HEAD `b2c9a52`）
 
 - b2c9a52现有applySettings保存携带generation；集成日志证明启用/间隔变更/停用身份与deadline落盘、旧代际写入被拒绝。此前常规配置保存阻断解除。保留正常范围结论，不把未验证的异步竞争与全部异常路径宣称验收完成。
+- 状态：已修复并验证；相关提交 `2cfe4ce`、`1a4b772`。
 
 ## BUG-073：M17 退出清空下次到期时间，不能恢复原提醒周期
 
@@ -814,7 +814,6 @@
 - 修复范围：由 MiniMax 修复持久契约与启动顺序，并接入计划要求的 Core 持久存储；配置身份、下一时间、通知结果原子维护，旧状态不能覆盖新配置。
 - 验证：`verification/m17-review/scheduler-before.json` 第四例 actualSavedDue=null。现有 restore 同时 arm(0) 和主动 run，还应验证慢／快异步返回下均只合并一轮。
 - 修复验收：到期前退出再开保留原时间；过期重开／连续 resume 只检查一次；停用后的旧记录不激活提醒；重启不丢退避状态；配置不符的旧状态不恢复。
-- 状态：已修复并验证；相关提交 `2cfe4ce`。
 - 验证：退出只释放进程内 timer，持久 nextCheckAt 原样保留；恢复先校验 signature，配置不符的旧记录返回 false 且不激活提醒；过期周期连续 restore 三次只触发一次查询。Core 侧新增迁移 010_reminder_state 与 reminder.state／reminder.state.save 两条 RPC，跨 Core 实例往返验证通过（提交 `14c9cea`）。提交 `aa731f7`。
 
 ### 2026-10-14 Codex 复核：重新打开（P1，真实保存与恢复链路未完成）
@@ -838,6 +837,7 @@
 ### 2026-10-14 Codex 审查与推进（HEAD `b2c9a52`）
 
 - 停用null状态现已续接generation，常规持久往返有证据。报告中的restartRecovery实际对同一个scheduler调用halt再wireReminders，没有新进程/新调度器；halted未复原，过期测试calls=0不能证明实际补查一次。该项证据缺口保留，下一完整M17流程验收补实际重启，不再单独分配测试形式返修。
+- 状态：已修复并验证（含真实进程重启）；相关提交 `2cfe4ce`、`1a4b772`。
 
 ## BUG-074：M17 提醒启动、设置保存与唤醒没有接通
 
@@ -847,6 +847,7 @@
 - 预期与修复范围：Core ready 后按持久契约初始化，设置保存成功后只响应提醒配置变化，Core 重启与 resume 接入单次恢复。无关 AI 保存不得重置计时。
 - 验证与验收：静态调用链核对；新增真实 Main 启动、设置保存、Core 重启、连续 resume 的集成断言，证明 timer 存在且不会重复。
 - 本轮处理：**已修复并验证**（`2cfe4ce`）：`applySettings` 两处 persist 此前漏掉 generation，仓库默认 0——正常检查写入高代际后，改间隔与停用会被判为迟到写入而拒绝；`restore` 又仅在 nextCheckAt 为数字时续接代际，停用记录（null）被忽略，导致重启后续接停用状态时内存版本远低于已存版本、后续变更新版本存不进去。现在所有生产保存都带当前代际，恢复与 nextCheckAt 是否为 null 无关地续接最高有效版本且不激活停用周期；Core ready（含重启）与 powerMonitor.resume 都接到 wireReminders 幂等路径。证据：`docs/verification/m17/reminder-persistence.log`——生产初始化、bridge 启用落盘、到期触发、无关 AI 保存不重置（generation 2 不变）、改间隔换身份（generation 3）、停用、迟到写被 CONFLICT 拒绝且停用未复活、重启沿用原 deadline。
+- 状态：已修复并验证；相关提交 `2cfe4ce`、`e0853c2`。
 - 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
@@ -901,6 +902,7 @@
 - 预期与修复范围：统一桥接事件，保存导航意图直到页面与 Core ready；接通 pending/high_unarchived 查询与切换界面；清空搜索、日期、平台、来源、标签等旧筛选且不修改内容状态，保留既有设置未保存保护。
 - 验证与验收：静态核对 Main→preload→Renderer→AppClient→Core 链路；验收需从真实菜单／通知回调驱动至实际 SQLite 列表，并核对 ID 集合和状态未改变。
 - 本轮处理：补齐中间接口——`app-client.cjs` 的 `listContents` 白名单此前没有 `view`，`state` 也只接受 unread/read/archived/deferred，Renderer 传的 `pending` 与 `high_unarchived` 会被判为「尚未接入」直接拒绝，两个口径实际打不开。现两者都按 Core 共享谓词下发。另修 parseHash：离开收件箱时未清空 reminderView，普通侧栏导航被锁死。提醒 smoke 增加 UI 实际 ID 集合与 Core 的比对、以及切换入口与普通导航退出的验证。集合级验证已完成（`d67cdb9`）：提醒 smoke 接入 seed_renderer.py 并用真实 RPC 造出差异——稍后处理 1 条、已读高优先级未归档 1 条、已归档 1 条（两个口径都不该有）、单条优先级覆盖 1 条；UI 经真实 bridge 取到的集合为未处理 23 条 / 高优先级未归档 2 条，与 reminder.summary 一致且两者确实不同。顺带修好 fixture 脚本本身——seed_renderer.py 此前假定订阅已存在（list_subscriptions()[0]），在空目录上 IndexError，现改为自给自足。仍未验证：多来源去重、单条覆盖与来源默认优先级的对照、以及通知点击端到端到达列表。
+- 状态：已修复并验证（非空集合级）；相关提交 `c09502c`、`92c5108`、`d67cdb9`、`e0853c2`。
 - 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
@@ -959,6 +961,7 @@
 ### 2026-10-14 Codex 复核最终 HEAD `dfa9cc0`
 
 - cancel 清理 timer、复用时重建期限，以及同步投递失败分类有进展；异步回执仍只更新 notifier.lastResult，未进入持久化，当前 delivery 是字符串却读取 delivery.status，导致 notificationError 仍丢失。同步show可能被submitted覆盖，复用同一entry的可变generation不能鉴别旧回执，取消后的click仍可导航。保留未验收状态，后续独立返修。
+- 状态：已修复；点击与投递链路已用真实进程验收，**真实系统显示与点击仍待人工确认**；相关提交 `e0853c2`。
 
 ## BUG-080：M17 共享事件桥重复发送所有事件
 
@@ -1070,3 +1073,38 @@
 ### 2026-10-14 Codex 审查与推进（HEAD `b2c9a52`）
 
 - 测试入口已删除，Codex再次执行完整Renderer启动脚本，不再抛错，SF.app创建且DOMContentLoaded boot注册成功（reminder-recovery-review.json）。MiniMax的Renderer/设置/窗口smoke恢复通过，源码与结果一致。本条主界面阻断已解除，修复729fca5。
+
+---
+
+## M17 四项验收缺口：Codex 指出 → 已用真实进程补齐（2026-10-14）
+
+Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级单测替代。本轮全部补齐，
+隔离的只有数据目录与 OS 通知边界。
+
+| 缺口 | 结果 | 证据 |
+|---|---|---|
+| 非空数据列表 | 通过 | 25 条 fixture，UI 集合「未处理 23 / 高优先级未归档 2」与 `reminder.summary` 逐 ID 一致且两者不同 |
+| 通知点击 | 通过 | 文案用真实统计；点击后窗口恢复、落到 `#/inbox?view=pending`、集合一致、旧平台过滤与旧搜索词清空 |
+| 真实重启 | 通过 | 三个独立进程、同一数据目录：persist → restore 到期时间逐毫秒一致且未到期不触发；overdue 阶段 `calls=1 notified=1` |
+| 退出 | 通过 | 关窗未销毁、Core 存活、提醒继续排期；明确退出 91ms，Core 结束、托盘销毁 |
+
+- 证据文件：`docs/verification/m17/reminder-persistence.log`、`user-flow.log`、`restart-recovery.log`。
+- 相关提交：`d67cdb9`、`e0853c2`、`1a4b772`。
+
+### 本轮修掉的真实缺陷
+
+- `ReminderNotification` 在**构造时**捕获 `NotificationCtor`，隔离测试在应用启动后再注入
+  替身也不生效。改为 `ctorProvider` 延迟解析，生产行为不变。
+- `seed_renderer.py` 假定订阅已存在（`list_subscriptions()[0]`），在空目录上 IndexError，
+  必须依赖调用方先建订阅。改为自给自足，没有订阅时先建连接、来源与订阅。
+- 中间编排把 Electron 被信号结束（`code = null`）当成失败，会误报阶段失败。
+
+### 仍然待人工
+
+**真实系统通知在 macOS 通知中心的实际显示与点击**。所有自动化只替换了 OS 通知边界，
+替身不构成显示证据。验收入口：`node scripts/notification-manual-check.cjs`。
+
+### 仍未验证
+
+- 多来源去重、来源默认优先级 vs 单条覆盖的对照数据（fixture 尚未造这两类）；
+- 托盘计数在内容状态/优先级变化后随之变化、Core 离线→恢复重查（已接线，无针对性断言）。
