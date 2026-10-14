@@ -18,6 +18,7 @@ const {ReminderScheduler} = require('./reminders.cjs');
 const {ReminderNotification} = require('./reminder-notification.cjs');
 const {TrayController} = require('./tray.cjs');
 const {WindowLifecycle} = require('./lifecycle.cjs');
+const {classifyStartupFailure, startupFailureRecord} = require('./startup-errors.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const APP_URL = 'app://subscribe-flow/index.html';
@@ -29,9 +30,21 @@ app.setName('Subscribe Flow');
 if (process.env.SUBSCRIBE_FLOW_DATA_DIR) app.setPath('userData', process.env.SUBSCRIBE_FLOW_DATA_DIR);
 const diagnostic = createDiagnostics(app.getPath('userData'));
 if (!app.requestSingleInstanceLock()) app.quit();
-else app.whenReady().then(start).catch(() => {
-  diagnostic('app.error');
-  dialog.showErrorBox('知流无法启动', '应用资源无法读取，请重新解压完整应用。应用数据目录中的订阅与内容会保留。');
+else app.whenReady().then(start).catch((error) => {
+  // 过去这里是空 catch：任何内部代码异常都被说成「资源无法读取，请重新解压」，
+  // 真实根因完全丢失（BUG-082）。
+  const failure = classifyStartupFailure(error);
+  const record = startupFailureRecord(error, 'start');
+  diagnostic('app.startup.failed', record);
+  // smoke 与 CI 必须能看到真实原因并以非零退出，不能用静默弹窗掩盖。
+  console.error(`[startup:${record.kind}] ${record.name || ''} ${record.message}`);
+  if (record.stack) console.error(record.stack);
+  if (smoke || rendererSmoke) {
+    process.stderr.write(`startup failed (${record.kind}): ${record.message}\n`);
+    app.exit(1);
+    return;
+  }
+  dialog.showErrorBox(failure.title, failure.detail + '\n\n错误：' + failure.message);
   app.exit(1);
 });
 
@@ -51,7 +64,8 @@ let suspended = false, powerUpdate = Promise.resolve();
 async function deliverNavigation(intent, target) {
   const win = target || (window && !window.isDestroyed() ? window : null);
   if (!win || win.isDestroyed()) return false;
-  if (!resources.ready || !resources.core || resources.core.status?.state !== 'ready') {
+  // CoreClient 只有 status 事件、没有 status 属性；就绪状态由事件维护在 resources.ready。
+  if (!resources.ready || !resources.core) {
     resources.navigateIntent = intent; // 等 ready 后由 flushNavigationIntent 补发
     return false;
   }
@@ -90,10 +104,41 @@ function applyReminderSettings(settings) {
 }
 
 function send(event, data, target) {
+  // 每次只向指定目标投递一次（BUG-080）。此前带 target 发送后还会无条件广播一次，
+  // 导致 core.status、内容失效与导航事件全部翻倍。
   const win = target || window;
-  if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send('subscribe-flow:event', event, data);
-  if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('subscribe-flow:event', event, data);
+  if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+    win.webContents.send('subscribe-flow:event', event, data);
+  }
 }
+/**
+ * 主窗口工厂。初始窗口与「销毁后重建」共用同一套安全配置、URL 加载与事件绑定
+ * ——重建出来的窗口不得比初始窗口更宽松。
+ *
+ * 注意 API 归属：setWindowOpenHandler 在 webContents 上，权限请求／检查处理器在
+ * webContents.session 上。写错对象就是 BUG-082 的直接根因。
+ */
+async function createWindow() {
+  const created = new BrowserWindow({ width: diagnostics ? 1000 : 1440, height: diagnostics ? 760 : 1000, minWidth: diagnostics ? 680 : 800, minHeight: diagnostics ? 500 : 600, show: !smoke && !rendererSmoke,
+    title: diagnostics ? 'Subscribe Flow · 开发联调' : '知流 · Subscribe Flow', webPreferences: {preload: path.join(root, 'electron', 'preload', 'index.cjs'),
+      contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, webviewTag: false,
+      backgroundThrottling: !smoke && !rendererSmoke} });
+  created.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  created.webContents.session.setPermissionCheckHandler(() => false);
+  created.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
+  created.webContents.on('will-navigate', event => event.preventDefault());
+  created.webContents.on('will-attach-webview', event => event.preventDefault());
+  await created.loadURL(APP_URL);
+  // 绑定顺序与原实现一致：loadURL 之后才挂 close/closed。
+  // closed 只清理「自己仍是当前窗口」的情况，旧窗口的迟到回调不得清掉新引用（BUG-075）。
+  created.on('closed', () => { if (window === created) window = null; });
+  created.on('close', event => { if (resources.lifecycle) resources.lifecycle.interceptClose(event); });
+  window = created;
+  return created;
+}
+
+globalThis.__m17Send = send;
+
 async function start() {
   const runtime = resolveRuntime({packaged: app.isPackaged, resourcesPath: process.resourcesPath, root});
   diagnostic('app.start', {version: app.getVersion(), electron: process.versions.electron, platform: process.platform, arch: process.arch, packaged: app.isPackaged});
@@ -283,16 +328,7 @@ async function start() {
       return {ok: false, error: {code: error.code || 'DESKTOP_ERROR', message: error.message, ...(error.data || {})}};
     }
   });
-  window = new BrowserWindow({ width: diagnostics ? 1000 : 1440, height: diagnostics ? 760 : 1000, minWidth: diagnostics ? 680 : 800, minHeight: diagnostics ? 500 : 600, show: !smoke && !rendererSmoke,
-    title: diagnostics ? 'Subscribe Flow · 开发联调' : '知流 · Subscribe Flow', webPreferences: {preload: path.join(root, 'electron', 'preload', 'index.cjs'),
-      contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, webviewTag: false,
-      backgroundThrottling: !smoke && !rendererSmoke} });
-  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  window.webContents.session.setPermissionCheckHandler(() => false);
-  window.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
-  window.webContents.on('will-navigate', event => event.preventDefault());
-  window.webContents.on('will-attach-webview', event => event.preventDefault());
-  await window.loadURL(APP_URL);
+  await createWindow();
   // M17：托盘与提醒在窗口就绪后建立，失败不阻断启动。
   ensureTray();
   window.on('closed', () => { window = null; });
@@ -308,6 +344,7 @@ async function start() {
       else if (rendererSmoke === 'wechat') await require('../../scripts/wechat-renderer.cjs').verify({window,core,root,wechat,fixture:wechatFixture});
       else if (rendererSmoke === 'intake') await require('../../scripts/intake-renderer.cjs').verify({window,core,root,fixture:intakeFixture});
       else if (rendererSmoke === 'xhs') await require('../../scripts/xiaohongshu-renderer.cjs').verify({window,core,root,xiaohongshu,fixture:xhsFixture});
+      else if (rendererSmoke === 'window') await require('../../scripts/window-lifecycle-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'm17') await require('../../scripts/m17-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'settings') await require('../../scripts/settings-renderer.cjs').verify({window,core,root});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
@@ -365,3 +402,5 @@ app.on('before-quit', event => {
   if (resources.lifecycle) void resources.lifecycle.quit();
   else app.quit();
 });
+
+module.exports = {start, __resources: resources, createWindow, send};

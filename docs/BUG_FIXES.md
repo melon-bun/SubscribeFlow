@@ -853,6 +853,10 @@
 - 作用域与类级并发合并有改善，但 Main 仍注入 `createWindow: () => createWindow()`，全文件没有工厂定义，销毁后恢复必然失败；不可标已修复。还需覆盖工厂同步抛错后 pendingWindow 不残留拒绝 Promise、能重试，以及真实窗口重建。最新状态：部分修复、未通过。
 - 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
 
+### 2026-10-14 Codex 复核最终 HEAD `dfa9cc0`
+
+- Codex 已定位被回退的工厂启动失败：a41177e 中错误调用 window.webContents.session.setWindowOpenHandler。使用真实 Electron、临时 userData 执行原工厂，实际 TypeError 为该方法不是函数（factory-root-cause.json）。应保留正确抽取并修复调用对象、恢复原 permissionCheck 防线，不需要回退整个工厂。用户指定本轮优先处理同源 BUG-082。dfa9cc0 仍无真实工厂。
+
 ## BUG-076：M17 通知导航通道不匹配且列表口径未接入
 
 - 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
@@ -908,6 +912,10 @@
 - 新 notifier 只在内部 lastResult 更新异步投递状态，未回传 scheduler 或持久层。独立复现 failed 仍落 checked/notificationError=null；抛错仍 query_failed/backoffIndex=1。cancel 将通知对象传入 clearTimer，实际 entry.timer 未清理；复用通知没有重建回执期限，新一轮无回执将一直 submitted；旧已取消通知 click 仍可导航。不得标完整修复。最新状态：部分修复、未通过。
 - 证据：`verification/m17-review/integration-fix-review.json`；相关 36 项 Node 单测通过（`integration-fix-node.log`），但未覆盖上述正式接线。Codex 未改源码。
 
+### 2026-10-14 Codex 复核最终 HEAD `dfa9cc0`
+
+- cancel 清理 timer、复用时重建期限，以及同步投递失败分类有进展；异步回执仍只更新 notifier.lastResult，未进入持久化，当前 delivery 是字符串却读取 delivery.status，导致 notificationError 仍丢失。同步show可能被submitted覆盖，复用同一entry的可变generation不能鉴别旧回执，取消后的click仍可导航。保留未验收状态，后续独立返修。
+
 ## BUG-080：M17 共享事件桥重复发送所有事件
 
 - 发现日期／优先级：2026-10-14，P2，审查 `7190779`。
@@ -916,6 +924,10 @@
 - 预期与修复：每个事件只投递给指定目标一次；显式 target 也不能额外广播给旧窗口。由 MiniMax 修复，加入真实 bridge 事件计数验收。
 - 证据：`verification/m17-review/integration-fix-review.json` 中 single_send.actualCalls=2。
 - 本轮处理（2026-10-14，提交 `a41177e`）：已修复（未验收）：send() 每个事件只投递一次。**未验证**：真实 bridge 事件计数验收因 Electron 无法启动未执行。
+
+### 2026-10-14 Codex 复核最终 HEAD `dfa9cc0`
+
+- 最新 dfa9cc0 的 send 仍含两条发送语句，回退2021f68把单投递修复一并撤销。独立VM复现单次send导致2次投递，证据 completion-review.json。最终报告所称“保留并已修复”不符合最终源码；状态重新打开。
 
 ## BUG-081：M17 集成脚本会跳过关键路径并宣称通过
 
@@ -942,3 +954,18 @@
 - 影响：BUG-075 的「真实窗口工厂」**未完成**。此前记为「已修复（未验收）」的条目一并撤回为未完成。
 - 教训：把「自己引入的回归」误判为环境阻塞，会浪费整轮时间并给出错误结论；判定环境问题前必须先跑
   改动前的提交做对照。
+
+### 2026-10-14 Codex 复核最终 HEAD `dfa9cc0`
+
+- 最终HEAD入口仍不向verify传resources、仍在rendererSmoke时跳过wireReminders，必需入口虽改成失败但没有接好。禁止仅按中途a41177e声明修复；需核对最终HEAD。专属完整smoke尚未通过，后续继续。
+
+## BUG-082：窗口方法调用对象错误，启动异常误报为资源损坏
+
+- 发现日期／优先级：2026-10-14，用户指定优先修复，P1。
+- 复现：`a41177e` 的 createWindow 使用 `window.webContents.session.setWindowOpenHandler(...)`，真实 Electron 执行立即抛出 `TypeError: window.webContents.session.setWindowOpenHandler is not a function`；应用顶层 catch 不接收 error，只记录 app.error 并统一显示“应用资源无法读取，请重新解压完整应用”。
+- 预期：窗口方法调用正确对象；代码错误、资源缺失等启动失败保留真实诊断，不全部指引用户重新解压。初始窗口与重建共用经过验证的安全工厂。
+- 原因：抽取工厂时多加一层 `.session`；同时遗漏原有 setPermissionCheckHandler 拒绝策略。顶层错误处理丢失原异常，导致错误分类和提示失真。
+- 修复范围：由 MiniMax 恢复并修正工厂（setWindowOpenHandler 属于 webContents，权限方法留在 session），保留全部安全设置；记录脱敏 message/stack/启动阶段，用户提示区分资源故障与内部启动错误。不得记录 Key、请求头或完整配置。
+- 证据：`verification/m17-review/factory-root-cause.json`。Codex 在临时 userData 中以真实 Electron 执行历史工厂复现，未启动 Core 或访问日常数据，进程退出0并保存异常。
+- 状态：待修复；`2021f68` 已回退错误工厂以恢复启动，但未修复工厂功能和统一误导提示。相关提交 `a41177e`、`2021f68`、当前 `dfa9cc0`。
+- 验收：当前代码实际启动、销毁后重建、并发恢复、安全策略仍有效；隔离注入代码异常验证真实错误被记录、提示不误称资源损坏；资源缺失路径保留合理提示。不得只用语法检查或类级mock证明完成。
