@@ -845,7 +845,7 @@
 - 原因与定位：`electron/main/index.cjs:300–312` 顶层回调访问 start 局部 lifecycle/scheduler/tray；注入的 createWindow 没有定义；`electron/main/lifecycle.cjs:restore` 未串行合并窗口创建。
 - 预期与修复范围：使用明确的应用级资源所有权和真实窗口工厂，共用安全配置、加载与事件绑定；并发恢复只创建一次，退出期间不再创建窗口。
 - 验证与验收：`verification/m17-review/integration-before.json` 复现三个事件异常及 created=2；补充实际 Electron 隐藏、销毁重建、Dock／第二实例、登录窗口独立和托盘失败降级验收。
-- 本轮处理：**已修复并通过真实 Electron 验收**（`ce88fcb`）：除工厂 API 归属外，本轮修掉两个真实缺陷——① `window = created` 原在 `loadURL` 之后才赋值，新窗口 Renderer 加载期间发出的 IPC 被来源校验判为「请求来源无效」，改为构造后立即登记；② `start()` 残留一份 close/closed 绑定与工厂内重复，每次关闭被拦截两次，已移除。`restore()` 同步抛错后曾无法重试（已拒绝的 Promise 留在 pendingWindow），现已可重试。证据：`docs/verification/m17/window-lifecycle.log`——真实 `window.close()` 被拦截且未销毁；**真正 destroy 后 restore 得到不同 ID（1→2）**；先销毁再三次并发 restore 只新增一个窗口且 Core PID 未变；同步/异步失败各重试成功；独立辅助窗口关闭不影响主窗口。
+- 本轮处理：**已修复并通过真实 Electron 验收**（`f48350c`）：工厂在 `loadURL` 前登记 window，一旦 loadURL 拒绝既不销毁也不清引用，第二次 restore 会先看到这个未就绪的 existing 直接返回坏窗口而不重试（复现：createdCount=1、secondReturnedFailedWindow=true、failedWindowDestroyed=false）。现改为 loadURL 失败时销毁自身并按对象身份清引用；`lifecycle.restore` 优先等待在途构建，避免把已登记但未就绪的窗口提前 focus 或导航。窗口 smoke 实测 `loadFailureRetry: {failedOnce: true, newId: 5}`——真实工厂在 loadURL 阶段失败一次，坏窗口被销毁、引用清空，第二次 restore 得到新窗口且 preload 桥可用。证据：`docs/verification/m17/window-lifecycle.log`。
 - 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
@@ -948,7 +948,7 @@
 - 原因：把可选钩子和空结果对比当作功能验收；Main `if (!smoke && !rendererSmoke) wireReminders()` 又明确跳过了 M17 smoke 中的生产调度初始化。
 - 预期与修复：缺失必需测试入口必须失败；隔离环境走与产品相同的初始化、设置保存、生命周期与 IPC 链路，数据仅由 fixture 隔离，不能绕开被测功能。使用有差异的非空 pending/high 数据核对 UI ID 集合与过滤清理；实际驱动关闭隐藏、销毁重建和有界退出。保留真实系统显示未验收的说明。
 - 验证：静态核对该脚本与 Main 入口；本轮未把该脚本运行结果作为验收证据。修复后须保存完整成功输出及退出码。
-- 本轮处理：**已修复并验证**（`ce88fcb`）：原脚本从未 destroy 窗口却断言「销毁后重建」，并发 restore 也只在已存在窗口上跑，顶层「注入」只是调用纯函数。现重写为真实动作：真实 `window.close()`；真正 destroy 后断言新窗口 ID 不同并重新建立 Renderer 引用；先销毁再三次并发 restore 并核对 Core PID 未变；工厂同步/异步失败各自重试；实际操作独立辅助窗口。顶层启动异常改由 `scripts/startup-crash-check.cjs` 在独立进程用仅开发可用的注入点验证，smoke 不再假装测过它。
+- 本轮处理：**已修复并验证**（`f48350c`）：`startup-crash-check` 原先只断言退出码非零——被 SIGKILL 时进程返回 null 也能通过；且未设隔离测试模式，会弹真实 `showErrorBox` 阻塞。现显式进入隔离测试模式，并断言退出码**严格等于 1**、signal 为 null、未被超时 SIGKILL；父进程记录 timeout/signal 并只清理本轮子进程。窗口 smoke 也新增真实工厂加载失败重试步骤。
 
 
 ---
@@ -1007,4 +1007,4 @@
 - 修复范围：由 MiniMax 将注入条件限定于明确的开发隔离测试模式；打包版忽略测试变量并走正常工厂，不能为测试增加生产拒启分支。无需实际打包／发布，可对同一工厂以app.isPackaged替身参数检验保护条件。
 - 证据：`verification/m17-review/bug082-followup-review.json`，packagedWithoutTestFlag实际异常；没有创建或运行发布包。
 - 验收：模拟打包版无标志／带标志均不注入；开发普通模式不注入，明确隔离测试模式才产生预期错误并由真实顶层catch记录、以1退出。
-- 状态：待修复；引入`ce88fcb`，当前`807eaab`。修复后再进入剩余M17工作。
+- 状态：已修复并验证；相关提交 `f48350c`。
