@@ -23,9 +23,19 @@ function redactStack(stack) {
     .join('\n');
 }
 
-const RESOURCE_CODES = new Set([
-  'ENOENT', 'EACCES', 'EPERM', 'EMFILE', 'ENOSPC', 'EBUSY', 'ENOTDIR', 'EISDIR', 'ETARGETMOUNT',
-]);
+// 只有「应用自身资源读取不到」才提示重新解压。磁盘满、权限不足、目标卷未挂载
+// 都是环境问题，重新解压没有用——把它们混进资源损坏会让用户白折腾。
+const RESOURCE_CODES = new Set(['ENOENT']);
+const ENVIRONMENT_CODES = new Set(['EACCES', 'EPERM', 'EMFILE', 'ENOSPC', 'EBUSY', 'EROFS', 'ETARGETMOUNT']);
+const ENVIRONMENT_HINTS = {
+  EACCES: '当前进程没有读取该路径的权限。请检查文件权限后重试。',
+  EPERM: '当前进程没有该路径的操作权限。请检查文件权限后重试。',
+  EMFILE: '进程打开的文件过多。请关闭其他程序后重试。',
+  ENOSPC: '磁盘空间不足，无法读取所需数据。请清理空间后重试。',
+  EBUSY: '相关文件正被占用。请退出其他知流进程后重试。',
+  EROFS: '所在磁盘为只读，无法读取所需数据。',
+  ETARGETMOUNT: '目标卷未挂载，无法读取所需数据。',
+};
 
 /**
  * 判断是不是「应用资源读取故障」——只有这类才建议重新解压。
@@ -42,6 +52,16 @@ function classifyStartupFailure(error) {
       stack: redactStack(error && error.stack),
       title: '知流无法启动',
       detail: '应用资源无法读取，请重新解压完整应用。应用数据目录中的订阅与内容会保留。',
+    };
+  }
+  if (code && ENVIRONMENT_CODES.has(code)) {
+    return {
+      kind: 'environment',
+      code,
+      message,
+      stack: redactStack(error && error.stack),
+      title: '知流无法启动',
+      detail: ENVIRONMENT_HINTS[code] || '启动所需的文件暂时不可访问，请检查系统环境后重试。',
     };
   }
   if (error && (error.name === 'TypeError' || error.name === 'ReferenceError' || error.name === 'SyntaxError')) {

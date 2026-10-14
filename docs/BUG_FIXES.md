@@ -857,6 +857,10 @@
 
 - Codex 已定位被回退的工厂启动失败：a41177e 中错误调用 window.webContents.session.setWindowOpenHandler。使用真实 Electron、临时 userData 执行原工厂，实际 TypeError 为该方法不是函数（factory-root-cause.json）。应保留正确抽取并修复调用对象、恢复原 permissionCheck 防线，不需要回退整个工厂。用户指定本轮优先处理同源 BUG-082。dfa9cc0 仍无真实工厂。
 
+### 2026-10-14 Codex 复核最终 HEAD `e9b0750`
+
+- 真实工厂定义与安全API修复已确认，但window-lifecycle-renderer没有window.destroy()，restore前窗口仍存在，并断言rebuilt.id等于firstId；并发恢复也只恢复同一现存窗口。报告的“销毁后重建通过”没有对应证据；关闭测试直接调用interceptClose，没有触发真实close事件；Core响应也不能证明PID未变。独立复现同步工厂首次抛错后第二次restore仍复用被拒绝Promise，attempts=1而非2（window-retry-review.json）。最新状态：工厂局部修复、重建与失败重试未通过完整验收。
+
 ## BUG-076：M17 通知导航通道不匹配且列表口径未接入
 
 - 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
@@ -929,6 +933,10 @@
 
 - 最新 dfa9cc0 的 send 仍含两条发送语句，回退2021f68把单投递修复一并撤销。独立VM复现单次send导致2次投递，证据 completion-review.json。最终报告所称“保留并已修复”不符合最终源码；状态重新打开。
 
+### 2026-10-14 Codex 复核最终 HEAD `e9b0750`
+
+- 当前最终HEAD恢复了单投递源码，MiniMax真实preload计数日志singleDelivery=1与源码一致，本条修复证据成立（源码3f1e61a，文档e9b0750）。不要随后整体回退再次带回旧发送语句。
+
 ## BUG-081：M17 集成脚本会跳过关键路径并宣称通过
 
 - 发现日期／优先级：2026-10-14，P1，审查 `7190779`。
@@ -959,6 +967,10 @@
 
 - 最终HEAD入口仍不向verify传resources、仍在rendererSmoke时跳过wireReminders，必需入口虽改成失败但没有接好。禁止仅按中途a41177e声明修复；需核对最终HEAD。专属完整smoke尚未通过，后续继续。
 
+### 2026-10-14 Codex 复核最终 HEAD `e9b0750`
+
+- 新增窗口smoke存在同类验收虚报：既未销毁窗口也未实际触发顶层启动异常，仅调用分类纯函数就标startupClassification实机注入通过；loginWindowUntouched只断言方法存在，未操作登录类窗口。须修正报告及脚本必测动作；不能用文件头注释或返回字段名代替证据。
+
 ## BUG-082：窗口方法调用对象错误，启动异常误报为资源损坏
 
 - 发现日期／优先级：2026-10-14，用户指定优先修复，P1。
@@ -969,3 +981,7 @@
 - 证据：`verification/m17-review/factory-root-cause.json`。Codex 在临时 userData 中以真实 Electron 执行历史工厂复现，未启动 Core 或访问日常数据，进程退出0并保存异常。
 - 状态：已修复并验证；相关提交 `3f1e61a`。
 - 验收：当前代码实际启动、销毁后重建、并发恢复、安全策略仍有效；隔离注入代码异常验证真实错误被记录、提示不误称资源损坏；资源缺失路径保留合理提示。不得只用语法检查或类级mock证明完成。
+
+### 2026-10-14 Codex 复核最终 HEAD `e9b0750`
+
+- 调用对象及TypeError提示已纠正，确认局部修复。真实诊断仍未落盘：diagnostics.cjs白名单不包含app.startup.failed，diagnosticRecord返回null，临时目录不存在lifecycle.jsonl。现有startup-errors 11项测试通过但只检查构造结果和静态调用，未通过顶层catch→真实落盘链路。资源分类还把ENOSPC/权限类问题统称重新解压，需按故障原因提示。最新状态：部分修复、待验收，证据bug082-review.json。

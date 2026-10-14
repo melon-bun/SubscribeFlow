@@ -51,26 +51,36 @@ class WindowLifecycle {
     return true;
   }
 
-  /** 恢复或受控重建主窗口；并发调用合并成一次建窗。 */
-  async restore() {
-    if (this.quitting) return null;
+  /**
+   * 恢复或受控重建主窗口；并发调用合并成一次建窗。
+   *
+   * 工厂同步抛错时 async 函数返回的是**已拒绝的 Promise**，外层赋值会把它存进
+   * pendingWindow；此时 finally 已经清过空值，赋值发生在之后，于是这个已拒绝的
+   * Promise 被留在槽里，之后的 restore 只会重复抛出同一个错误、再也不调用工厂。
+   * 这里在赋值前就把 rejected 情况清掉，保证失败后可以重试。
+   */
+  restore() {
+    if (this.quitting) return Promise.resolve(null);
     const existing = this.getWindow();
-    if (existing && !existing.isDestroyed()) return this.focus(existing);
+    if (existing && !existing.isDestroyed()) return Promise.resolve(this.focus(existing));
     if (this.pendingWindow) return this.pendingWindow;
-    this.pendingWindow = (async () => {
-      try {
-        const created = await this.createWindow();
-        if (this.quitting) {
-          // 退出期间不再创建窗口：关掉刚建的那个。
-          if (created && !created.isDestroyed()) created.destroy();
-          return null;
-        }
-        return created && !created.isDestroyed() ? this.focus(created) : created;
-      } finally {
-        this.pendingWindow = null;
+    let created = null;
+    const task = (async () => {
+      created = await this.createWindow();
+      if (this.quitting) {
+        // 退出期间不再创建窗口：关掉刚建的那个。
+        if (created && !created.isDestroyed()) created.destroy();
+        return null;
       }
+      return created && !created.isDestroyed() ? this.focus(created) : created;
     })();
-    return this.pendingWindow;
+    this.pendingWindow = task;
+    // 无论同步抛错还是异步拒绝，都不能把已拒绝的 Promise 留在槽里。
+    const clear = () => {
+      if (this.pendingWindow === task) this.pendingWindow = null;
+    };
+    task.then(clear, clear);
+    return task;
   }
 
   focus(window) {

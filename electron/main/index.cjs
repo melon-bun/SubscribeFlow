@@ -119,10 +119,19 @@ function send(event, data, target) {
  * webContents.session 上。写错对象就是 BUG-082 的直接根因。
  */
 async function createWindow() {
+  // 仅开发／隔离测试用的启动异常注入：正式打包后完全不存在，
+  // 正常用户无论如何都不会命中，也不改变任何运行路径。
+  if (app.isPackaged) throw new Error('打包版本不应存在测试注入点');
+  if (process.env.SUBSCRIBE_FLOW_TEST_CRASH === 'type') {
+    throw new TypeError('test-injected: window.webContents.session.setWindowOpenHandler is not a function');
+  }
   const created = new BrowserWindow({ width: diagnostics ? 1000 : 1440, height: diagnostics ? 760 : 1000, minWidth: diagnostics ? 680 : 800, minHeight: diagnostics ? 500 : 600, show: !smoke && !rendererSmoke,
     title: diagnostics ? 'Subscribe Flow · 开发联调' : '知流 · Subscribe Flow', webPreferences: {preload: path.join(root, 'electron', 'preload', 'index.cjs'),
       contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, webviewTag: false,
       backgroundThrottling: !smoke && !rendererSmoke} });
+  // 必须立即登记：Renderer 会在 loadURL 期间就发 IPC，来源校验比对的是这个引用。
+  // 放在 loadURL 之后会让新窗口的所有请求被判为「请求来源无效」。
+  window = created;
   created.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   created.webContents.session.setPermissionCheckHandler(() => false);
   created.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
@@ -133,7 +142,6 @@ async function createWindow() {
   // closed 只清理「自己仍是当前窗口」的情况，旧窗口的迟到回调不得清掉新引用（BUG-075）。
   created.on('closed', () => { if (window === created) window = null; });
   created.on('close', event => { if (resources.lifecycle) resources.lifecycle.interceptClose(event); });
-  window = created;
   return created;
 }
 
@@ -331,8 +339,6 @@ async function start() {
   await createWindow();
   // M17：托盘与提醒在窗口就绪后建立，失败不阻断启动。
   ensureTray();
-  window.on('closed', () => { window = null; });
-  window.on('close', event => { if (resources.lifecycle) resources.lifecycle.interceptClose(event); });
   try { await core.start(); }
   catch (error) { lastStatus = {state: 'error', message: error.message}; diagnostic('core.status', lastStatus); send('core.status', lastStatus); if (smoke || rendererSmoke) throw error; }
   // Core ready 之后才接线提醒：之前这段在 core.start() 之前调用 settings.get，
