@@ -12,8 +12,20 @@ async def seed(folder, day):
     from subscribe_flow.rpc.browser import BrowserBridge
     core = Core(Path(folder) / 'subscribe-flow.sqlite3', browser_bridge=BrowserBridge())
     try:
-        sub = core.repository.list_subscriptions()[0]
-        source = core.repository.source_for(sub['id'])
+        # 自给自足：空库里先建连接、来源与订阅。
+        # 此前直接 list_subscriptions()[0]，在没有任何订阅的隔离目录上会 IndexError，
+        # 导致依赖它的 smoke 拿不到任何样例数据。
+        subs = core.repository.list_subscriptions()
+        if subs:
+            sub = subs[0]
+            source = core.repository.source_for(sub['id'])
+        else:
+            from subscribe_flow.contracts import Connection, Source
+            core.repository.add_connection(Connection('bilibili:default', 'bilibili', 'electron-session', 'offline-fixture'))
+            source = Source('bilibili', 'offline-fixture', 'offline-author', '离线验收来源',
+                            'https://example.com/offline-fixture', True)
+            core.repository.remember_sources([source])
+            sub = core.repository.subscribe(source, 'bilibili:default')
         job, _ = core.repository.create_job(sub['id'], 'refresh', progress_version='electron-1')
         core.repository.set_job_state(job['id'], 'running')
         items = tuple(ContentItem('bilibili', 'video', f'offline-{i}', source,

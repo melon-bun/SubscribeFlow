@@ -63,8 +63,35 @@ async function verify({window, core, root}) {
     }
   };
 
+  // ---- 非空 fixture：两种口径必须真的不同，否则 0===0 的比对证明不了任何事 ----
+  {
+    const {spawnSync} = require('node:child_process');
+    const runtime = JSON.parse(fs.readFileSync(path.join(root, '.runtime-paths.json'), 'utf8'));
+    const day = new Date().toISOString().slice(0, 10);
+    await core.stop();
+    const seed = spawnSync(runtime.python, [path.join(root, 'python/tests/seed_renderer.py'), core.dataDir, day],
+      {encoding: 'utf8', env: Object.assign({}, process.env, {SUBSCRIBE_FLOW_RENDERER_SMOKE: 'offline'})});
+    if (seed.status !== 0) throw new Error('fixture 播种失败：' + (seed.stderr || '').slice(-200));
+    await core.start();
+  }
   await until(`!!window.SF?.app.state.session`);
   await until(`SF.app.state.coreStatus && SF.app.state.coreStatus.state === 'ready'`, 30000);
+
+  // 用真实 RPC 造出两种口径的差异：稍后处理、已读高优先级未归档、已归档排除、
+  // 单条优先级覆盖，以及同一内容挂两个来源（验证去重）。
+  const fixture = await evaluate(`(async () => {
+    const c = SF.app.state.client;
+    const list = await c.listContents({limit: 100});
+    const ids = list.items.map(i => i.id);
+    const id = (n) => ids[n];
+    await c.updateContent(id(0), {state: {deferred: true}});          // 稍后处理 → 只在未处理里
+    await c.updateContent(id(1), {state: {read: true}, priority: 'high'});     // 已读高优先级未归档 → 只在 high 里
+    await c.updateContent(id(2), {state: {archived: true}, priority: 'high'});  // 已归档 → 两个口径都不该有
+    await c.updateContent(id(3), {priority: 'high'});                  // 单条覆盖
+    return {total: ids.length, sample: ids.slice(0, 4)};
+  })()`);
+  results.steps.push({fixtureSeeded: fixture});
+
   const scheduler = resources.scheduler;
   assert.ok(scheduler, '生产提醒调度器必须已建立');
   assert.equal(await core.call('reminder.state'), null, '初始不应有持久运行状态');

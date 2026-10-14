@@ -912,6 +912,10 @@
 
 - 双列表仍存在实质阻断：Renderer传state=pending或view=high_unarchived，但Main app-client.cjs白名单不允许view，state也不允许pending。真实callUI复现两种请求均被拒绝，证据verification/m17-review/user-flow-review.json。必须修中间适配层，不能把仅Renderer增加参数称作接通。其它非致命细节不再拆返修，集中完成主流程。
 
+### 2026-10-14 Codex 最终快速复核（4c414b8）
+
+- 两种列表参数经真实callUI适配层已分别传递为state=pending、view=high_unarchived，之前请求被拒阻断已解除；证据verification/m17-review/finalize-review.json。该验证仅证明参数接通，不冒称非空UI集合、通知点击及全部M17验收通过。用户要求节省token，本轮不追加非致命返修。
+
 ## BUG-077：M17 托盘使用不存在的图标且统计从未刷新
 
 - 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
