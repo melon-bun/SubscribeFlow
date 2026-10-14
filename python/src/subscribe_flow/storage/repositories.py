@@ -459,6 +459,18 @@ class Repository:
         """
         if not isinstance(signature, str) or not signature:
             raise ChannelError('INVALID_INPUT', 'reminder.state', '缺少提醒配置身份')
+        generation = int(generation)
+        stored = self.load_reminder_state()
+        if stored is not None:
+            # 代际是**持久**的单调序号，不��每进程从 0 重新起算——否则重启后的新进程
+            # 会用小数字覆盖上一次的记录。这里拒绝任何比已存代际更旧的写入，
+            # 使停用之后到达的迟到写入无法把提醒重新点亮。
+            if generation < stored['generation']:
+                raise ChannelError('CONFLICT', 'reminder.state',
+                                   '提醒状态写入被拒绝：存在更新的运行状态')
+            if generation == stored['generation'] and signature != stored['signature']:
+                raise ChannelError('CONFLICT', 'reminder.state',
+                                   '提醒状态写入被拒绝：同一代际不应改变配置身份')
         with self.database.transaction() as db:
             db.execute(
                 "INSERT INTO reminder_run_state(id,signature,generation,next_check_at,last_handled_at,"
@@ -467,7 +479,7 @@ class Repository:
                 "next_check_at=excluded.next_check_at,last_handled_at=excluded.last_handled_at,"
                 "last_result=excluded.last_result,notification_error=excluded.notification_error,"
                 "backoff_index=excluded.backoff_index,updated_at=excluded.updated_at",
-                (signature, int(generation), next_check_at, last_handled_at, last_result,
+                (signature, generation, next_check_at, last_handled_at, last_result,
                  notification_error, int(backoff_index), now()))
         return self.load_reminder_state()
 

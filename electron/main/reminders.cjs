@@ -106,6 +106,11 @@ class ReminderScheduler {
     }
     if (persisted && typeof persisted.nextCheckAt === 'number') {
       this.state = {...this.state, ...persisted, signature: this.signature};
+      // 代际必须从持久记录续接：每进程从 0 起算会让重启后的正常写入被
+      // Core 判为「比已存代际更旧」而拒绝，提醒就再也存不进新周期。
+      if (Number.isInteger(persisted.generation) && persisted.generation > this.generation) {
+        this.generation = persisted.generation;
+      }
     }
     if (!this.signature || this.signature.startsWith('0')) return false;
     const due = this.state.nextCheckAt;

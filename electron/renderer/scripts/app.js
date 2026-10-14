@@ -598,6 +598,11 @@
     syncNavState();
   }
 
+  // 只读快照：供集成验收等待设置保存真正落地，不提供任何写入能力。
+  SF.app.__schedulerSignature = function () {
+    try { return (window.SF.__reminderSignature || (function () { return null; }))(); } catch (_) { return null; }
+  };
+
   SF.app = {
     state: app,
     openSettings: openSettings,

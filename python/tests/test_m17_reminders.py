@@ -193,3 +193,93 @@ class ReminderStatePersistenceTests(unittest.TestCase):
         rows = self.db.connection.execute('SELECT count(*) FROM reminder_run_state').fetchone()[0]
         self.assertEqual(rows, 1)
         self.assertEqual(self.repo.load_reminder_state()['generation'], 2)
+
+
+class ReminderStateRpcTests(unittest.IsolatedAsyncioTestCase):
+    """经真实 Dispatcher 验证契约，不绕过 RPC 直接调 repository。"""
+
+    async def asyncSetUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.core = Core(Path(self.temp.name) / 'm17-rpc.sqlite3', gateway=ChannelGateway())
+        self.rpc = Dispatcher(self.core, asyncio.Event().set)
+
+    async def asyncTearDown(self):
+        await self.core.close()
+        self.temp.cleanup()
+
+    async def call(self, method, params=None):
+        return await self.rpc.handle(
+            {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}})
+
+    async def hello(self):
+        self.assertIn("result", await self.call("core.hello", {"protocol_version": "1.0"}))
+
+    async def save(self, **overrides):
+        params = {"signature": "1:60", "generation": 1, "next_check_at": 3600000,
+                  "last_handled_at": 1000, "last_result": "checked",
+                  "notification_error": None, "backoff_index": 0}
+        params.update(overrides)
+        return await self.call("reminder.state.save", params)
+
+    async def test_nullable_fields_are_accepted_over_rpc(self):
+        await self.hello()
+        # 停用/初始状态下这些字段本就是 null；以前会被精确类型校验直接拒掉。
+        response = await self.save(next_check_at=None, last_handled_at=None,
+                                   last_result=None, signature="0:60")
+        self.assertIn("result", response, response)
+        saved = (await self.call("reminder.state"))["result"]
+        self.assertIsNone(saved["nextCheckAt"])
+        self.assertIsNone(saved["lastResult"])
+        self.assertEqual(saved["signature"], "0:60")
+
+    async def test_stale_generation_cannot_overwrite_newer_state(self):
+        await self.hello()
+        await self.save(generation=5, next_check_at=999, last_result="checked")
+        # 迟到写入：代际更旧，必须被拒绝且不改变已存状态。
+        stale = await self.save(generation=3, next_check_at=1, last_result="checked")
+        self.assertEqual(stale["error"]["data"]["code"], "CONFLICT")
+        saved = (await self.call("reminder.state"))["result"]
+        self.assertEqual(saved["generation"], 5)
+        self.assertEqual(saved["nextCheckAt"], 999)
+
+    async def test_disable_wins_over_later_inflight_success(self):
+        # 场景：周期检查在途 → 用户停用（generation 4）→ 检查结果迟到（generation 3）
+        await self.hello()
+        await self.save(generation=4, next_check_at=None, last_result="disabled", signature="0:60")
+        inflight = await self.save(generation=3, next_check_at=7777777, last_result="checked",
+                                   signature="1:60")
+        self.assertEqual(inflight["error"]["data"]["code"], "CONFLICT")
+        saved = (await self.call("reminder.state"))["result"]
+        self.assertIsNone(saved["nextCheckAt"], '停用不得被在途成功复活')
+        self.assertEqual(saved["signature"], "0:60")
+
+    async def test_same_generation_cannot_change_identity(self):
+        await self.hello()
+        await self.save(generation=2, signature="1:60")
+        clash = await self.save(generation=2, signature="1:30")
+        self.assertEqual(clash["error"]["data"]["code"], "CONFLICT")
+
+    async def test_newer_generation_is_accepted_and_survives_new_core_instance(self):
+        await self.hello()
+        await self.save(generation=7, next_check_at=1234567890, last_result="checked", backoff_index=2)
+        await self.save(generation=8, next_check_at=1234599999, backoff_index=3)
+        # 换一个 Core 实例（新进程）读回，deadline 与退避档位必须还在。
+        # 同一数据目录同时只允许一个 Core 持有租约，所以先关闭再重开。
+        await self.core.close()
+        reopened = Core(Path(self.temp.name) / 'm17-rpc.sqlite3', gateway=ChannelGateway())
+        self.core = reopened
+        try:
+            rpc2 = Dispatcher(reopened, asyncio.Event().set)
+            await rpc2.handle({"jsonrpc": "2.0", "id": 0,
+                               "method": "core.hello", "params": {"protocol_version": "1.0"}})
+            saved = (await rpc2.handle({"jsonrpc": "2.0", "id": 1, "method": "reminder.state", "params": {}}))["result"]
+            self.assertEqual(saved["nextCheckAt"], 1234599999, '重启后到期时间必须保留')
+            self.assertEqual(saved["generation"], 8)
+            self.assertEqual(saved["backoffIndex"], 3, '重启后退避档位必须保留')
+        finally:
+            await reopened.close()
+
+    async def test_invalid_generation_still_rejected(self):
+        await self.hello()
+        bad = await self.call("reminder.state.save", {"signature": "1:60", "generation": "x"})
+        self.assertIn("error", bad)

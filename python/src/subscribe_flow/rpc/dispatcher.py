@@ -11,11 +11,15 @@ class RPCFault(Exception):
         self.code, self.message, self.data = code, message, data
 
 
-def validate(params, required=None, optional=None, allow_empty=()):
+def validate(params, required=None, optional=None, allow_empty=(), nullable=()):
     required, optional = required or {}, optional or {}
     if not isinstance(params, dict) or set(params) - (required.keys() | optional.keys()) or required.keys() - params.keys():
         raise RPCFault(-32602, "参数字段不符合接口定义")
     for key, value in params.items():
+        # 可空字段是接口契约的一部分：主进程在初始/停用状态确实会传 null，
+        # 以前这里按精确类型校验，直接把正常生产调用拒掉。
+        if key in nullable and value is None:
+            continue
         expected = (required | optional)[key]
         if not (type(value) in expected if isinstance(expected, tuple) else type(value) is expected):
             raise RPCFault(-32602, f"参数 {key} 类型不正确")
@@ -85,7 +89,9 @@ class Dispatcher:
             "reminder.state.save": (c.queries.save_reminder_state, {},
                                       {"signature": str, "generation": int, "next_check_at": int,
                                        "last_handled_at": int, "last_result": str,
-                                       "notification_error": str, "backoff_index": int}),
+                                       "notification_error": str, "backoff_index": int},
+                                      {"next_check_at", "last_handled_at", "last_result",
+                                       "notification_error"}),
             "settings.get": (c.settings.snapshot, {}, {}),
             "settings.update": (c.settings.update, {"section": str, "patch": dict}, {"credential_refs": dict}),
             # 私有凭据桥接：只由主进程调用，不在 Renderer 方法白名单内。
@@ -118,9 +124,10 @@ class Dispatcher:
             else:
                 if method not in self.routes:
                     raise RPCFault(-32601, "Method not found")
-                function, required, optional = self.routes[method]
+                function, required, optional, *rest = self.routes[method]
                 validate(params, required, optional,
-                         allow_empty=("description",) if method in ("tag.create", "tag.update") else ())
+                         allow_empty=("description",) if method in ("tag.create", "tag.update") else (),
+                         nullable=rest[0] if rest else ())
                 if "item_ids" in params and (len(params["item_ids"]) > 100 or any(type(item) is not str or not item or len(item) > 2000 for item in params["item_ids"])):
                     raise RPCFault(-32602, "内容 ID 列表无效")
                 if "tag_ids" in params and (len(params["tag_ids"]) > 100 or any(type(t) is not str or not t or len(t) > 2000 for t in params["tag_ids"])):

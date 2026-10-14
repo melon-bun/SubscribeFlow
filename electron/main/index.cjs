@@ -85,18 +85,31 @@ function flushNavigationIntent() {
 }
 
 /** 提醒接线：Core ready 后按持久契约初始化，再决定恢复还是新建周期（BUG-074）。 */
-async function wireReminders({persisted = true} = {}) {
+async function wireReminders() {
   const core = resources.core, scheduler = resources.scheduler;
   if (!core || !scheduler) return;
-  try {
-    // 先读配置，再读持久记录：applySettings 会写运行状态，顺序反了会覆盖原记录。
-    const settings = await core.call('settings.get');
-    scheduler.applySettings(settings, {persist: false});
-    const state = persisted ? await core.call('reminder.state') : null;
-    scheduler.restore(state);
-  } catch (error) {
-    diagnostic('reminder.wire', {error: error.message});
-  }
+  if (resources.reminderWiring) return resources.reminderWiring;
+  // 幂等：Core ready、Core 重启与 resume 共用这一条路径，连续触发只会接线一次。
+  resources.reminderWiring = (async () => {
+    try {
+      // 顺序很重要：先读当前设置，再读与之匹配的持久状态，最后才决定恢复还是
+      // 新建周期。反过来会先建周期再把旧状态读进来覆盖它。
+      const settings = await core.call('settings.get');
+      const state = await core.call('reminder.state').catch((error) => {
+        diagnostic('reminder.state.read', {phase: 'reminder-state-read',
+          name: error.name || null, message: String(error.message || error).slice(0, 300)});
+        return null;
+      });
+      scheduler.applySettings(settings, {persist: false});
+      scheduler.restore(state);
+    } catch (error) {
+      diagnostic('reminder.wire.failed', {phase: 'reminder-wire',
+        name: error.name || null, message: String(error.message || error).slice(0, 300)});
+    } finally {
+      resources.reminderWiring = null;
+    }
+  })();
+  return resources.reminderWiring;
 }
 
 /** 只响应真正变化的提醒配置；无关 AI 保存不重置计时。 */
@@ -213,7 +226,11 @@ async function start() {
   // M17：提醒调度器。计时在 Main，Renderer 隐藏／重载／崩溃都不影响。
   // 统计走 Core 的 reminder.summary，运行状态经 reminder.state 持久化。
   const scheduler = new ReminderScheduler({
-    now: () => Date.now(),
+    // 隔离测试模式下时钟可由验收脚本推进，驱动的是同一个正式定时器回调。
+    now: () => (typeof resources.testClock === 'function' ? resources.testClock() : Date.now()),
+    // 隔离测试模式下定时器也可控；生产恒为真实 setTimeout。
+    setTimer: (fn, ms) => (typeof resources.testSetTimer === 'function' ? resources.testSetTimer(fn, ms) : setTimeout(fn, ms)),
+    clearTimer: (handle) => (typeof resources.testClearTimer === 'function' ? resources.testClearTimer(handle) : clearTimeout(handle)),
     summary: () => core.call('reminder.summary'),
     notify: (summary, context) => postReminder(summary, context),
     persist: (state) => core.call('reminder.state.save', {
@@ -224,7 +241,22 @@ async function start() {
       last_result: state.lastResult,
       notification_error: state.notificationError,
       backoff_index: state.backoffIndex,
-    }).catch(() => {}),
+    }).catch((error) => {
+      // 持久化失败必须留下证据，不能静默吞掉：否则「以为存住了」和「真的存住了」
+      // 无法区分。CONFLICT 表示这次写入被判定为迟到，属于预期内，记录即可。
+      const expected = error.code === 'CONFLICT';
+      diagnostic('reminder.persist.failed', {
+        phase: 'reminder-state-save',
+        kind: expected ? 'conflict' : 'error',
+        name: error.name || null,
+        message: String(error.message || error).slice(0, 300),
+      });
+      if (!expected) {
+        const line = '[reminder] 运行状态未能保存：' + (error.message || error);
+        if (rendererSmoke) process.stderr.write(line + '\n');
+        console.error(line);
+      }
+    }),
   });
   let lifecycleRef = null, schedulerRef = scheduler, trayRef = null;
   const notifier = new ReminderNotification({NotificationCtor: Notification});
@@ -360,13 +392,17 @@ async function start() {
   catch (error) { lastStatus = {state: 'error', message: error.message}; diagnostic('core.status', lastStatus); send('core.status', lastStatus); if (smoke || rendererSmoke) throw error; }
   // Core ready 之后才接线提醒：之前这段在 core.start() 之前调用 settings.get，
   // CoreClient 未 ready 直接拒绝，错误还被空 catch 吞掉（BUG-074）。
-  if (!smoke && !rendererSmoke) void wireReminders();
+  // 只读签名快照：供集成验收在 Renderer 侧等待保存真正落地。
+  resources.reminderSignature = () => (scheduler ? scheduler.snapshot().signature : null);
+  // 生产初始化在所有 smoke 下都执行：集成验收必须跑真实接线，不能由测试重建一套。
+  void wireReminders();
   if (rendererSmoke) {
     try {
       if (rendererSmoke === 'zhihu') await require('../../scripts/zhihu-renderer.cjs').verify({window,core,root,zhihu,fixture:zhihuFixture});
       else if (rendererSmoke === 'wechat') await require('../../scripts/wechat-renderer.cjs').verify({window,core,root,wechat,fixture:wechatFixture});
       else if (rendererSmoke === 'intake') await require('../../scripts/intake-renderer.cjs').verify({window,core,root,fixture:intakeFixture});
       else if (rendererSmoke === 'xhs') await require('../../scripts/xiaohongshu-renderer.cjs').verify({window,core,root,xiaohongshu,fixture:xhsFixture});
+      else if (rendererSmoke === 'reminder') await require('../../scripts/reminder-persistence-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'window') await require('../../scripts/window-lifecycle-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'm17') await require('../../scripts/m17-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'settings') await require('../../scripts/settings-renderer.cjs').verify({window,core,root});
@@ -426,4 +462,4 @@ app.on('before-quit', event => {
   else app.quit();
 });
 
-module.exports = {start, __resources: resources, createWindow, send};
+module.exports = {start, __resources: resources, createWindow, send, __wireReminders: wireReminders};

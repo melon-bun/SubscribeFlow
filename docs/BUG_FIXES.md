@@ -865,6 +865,10 @@
 
 - 真实close、destroy后新ID重建和Core PID保持的脚本已有实际动作，同步工厂异常重试也已改善。但真实工厂在BrowserWindow创建后loadURL拒绝时不销毁/清空窗口，下一次restore先看到existing而直接返回坏窗口；用当前工厂和注入loadURL失败复现createdCount=1、secondReturnedFailedWindow=true、failedWindowDestroyed=false。并发restore时也需先等待pendingWindow再返回构建中的existing，不能提前focus/导航。最新状态：正常路径有证据，失败路径仍待修复。
 
+### 2026-10-14 Codex 验收与推进决定（HEAD `3d29ede`）
+
+- 当前最终HEAD的正常窗口与加载失败重试通过Codex独立复跑：真实close隐藏、销毁后ID 1→2、并发恢复ID3且Core PID不变、失败后新ID5与bridge可用。退出码0，见verification/m17-review/startup-guard-window.log与-exit.txt。同一生产工厂注入真实异步loadURL拒绝的依赖测试也确认销毁/清引用/重试；登记窗口后并发等待得到验证（startup-guard-review.json）。本阶段窗口阻断已解除，不再为非致命细节单独返修。
+
 ## BUG-076：M17 通知导航通道不匹配且列表口径未接入
 
 - 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
@@ -979,6 +983,10 @@
 
 - 本轮脚本确实执行销毁重建，前轮该项虚报已改进；factoryRetry仍是未创建真实窗口的替身失败，不覆盖生产工厂loadURL失败泄漏。startup-crash-check未设置smoke模式，会走真实showErrorBox而非无交互失败路径；需加入明确测试模式并验证退出码为1（不能只notEqual(code,0)，SIGKILL的null也会通过），记录signal/timeout。全M17 smoke保持未完成。
 
+### 2026-10-14 Codex 验收与推进决定（HEAD `3d29ede`）
+
+- 窗口部分独立复跑通过（startup-guard-window.log）。启动故障脚本isolatedTest没有接入顶层smoke分支，仍可能出现错误对话框；此为非致命测试体验问题，仅记录，不再单独派发。按用户最新要求优先推进M17主要功能，完整M17集成验收仍待实现后验证。
+
 ## BUG-082：窗口方法调用对象错误，启动异常误报为资源损坏
 
 - 发现日期／优先级：2026-10-14，用户指定优先修复，P1。
@@ -1008,3 +1016,7 @@
 - 证据：`verification/m17-review/bug082-followup-review.json`，packagedWithoutTestFlag实际异常；没有创建或运行发布包。
 - 验收：模拟打包版无标志／带标志均不注入；开发普通模式不注入，明确隔离测试模式才产生预期错误并由真实顶层catch记录、以1退出。
 - 状态：已修复并验证；相关提交 `f48350c`。
+
+### 2026-10-14 Codex 验收与推进决定（HEAD `3d29ede`）
+
+- Codex以同一生产工厂注入Electron依赖，模拟打包版无标志/带标志均创建成功，普通开发模式忽略注入，仅隔离测试触发预期错误；没有实际打包。证据startup-guard-review.json。最新状态：已修复并验证保护分支，修复f48350c；真实窗口smoke也退出0。
