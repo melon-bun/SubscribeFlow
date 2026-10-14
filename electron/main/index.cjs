@@ -259,7 +259,12 @@ async function start() {
     }),
   });
   let lifecycleRef = null, schedulerRef = scheduler, trayRef = null;
-  const notifier = new ReminderNotification({NotificationCtor: Notification});
+  // 通知构造器可注入：仅隔离测试模式替换 OS 边界，链路其余部分都是真的。
+  const notifier = new ReminderNotification({
+    NotificationCtor: Notification,
+    // 延迟解析：隔离测试可在应用启动之后再替换 OS 通知边界。
+    ctorProvider: () => (typeof resources.testNotificationCtor === 'function' ? resources.testNotificationCtor : Notification),
+  });
   notifier.onClick = (view) => { void lifecycleRef.navigate({view}); };
   resources.notifier = notifier;
 
@@ -423,6 +428,7 @@ async function start() {
       else if (rendererSmoke === 'wechat') await require('../../scripts/wechat-renderer.cjs').verify({window,core,root,wechat,fixture:wechatFixture});
       else if (rendererSmoke === 'intake') await require('../../scripts/intake-renderer.cjs').verify({window,core,root,fixture:intakeFixture});
       else if (rendererSmoke === 'xhs') await require('../../scripts/xiaohongshu-renderer.cjs').verify({window,core,root,xiaohongshu,fixture:xhsFixture});
+      else if (rendererSmoke === 'flow') await require('../../scripts/m17-user-flow-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'reminder') await require('../../scripts/reminder-persistence-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'window') await require('../../scripts/window-lifecycle-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'm17') await require('../../scripts/m17-renderer.cjs').verify({window,core,root});

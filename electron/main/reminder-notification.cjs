@@ -21,8 +21,11 @@ class ReminderNotification {
    * @param {Function} deps.NotificationCtor 注入 Notification 构造器（测试用替身）
    * @param {number} [deps.settleMs]
    */
-  constructor({NotificationCtor, settleMs = DEFAULT_SETTLE_MS, setTimer, clearTimer, now}) {
+  constructor({NotificationCtor, ctorProvider, settleMs = DEFAULT_SETTLE_MS, setTimer, clearTimer, now}) {
     this.Notification = NotificationCtor;
+    // ctorProvider 让构造器延迟解析：隔离测试可在应用启动之后再替换 OS 边界，
+    // 在启动时捕获的话，后注入的替身根本不会被用到。
+    this.ctorProvider = ctorProvider || (() => NotificationCtor);
     this.settleMs = settleMs;
     this.setTimer = setTimer || ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer = clearTimer || ((handle) => clearTimeout(handle));
@@ -35,7 +38,7 @@ class ReminderNotification {
 
   supported() {
     try {
-      return !!this.Notification.isSupported();
+      return !!this.ctorProvider().isSupported();
     } catch {
       return false;
     }
@@ -49,7 +52,8 @@ class ReminderNotification {
 
   /** 发送或更新汇总通知，返回投递结果；不抛错。 */
   post({pendingCount, highUnarchivedCount}) {
-    if (!this.supported()) {
+    const Ctor = this.ctorProvider();
+    if (!Ctor.isSupported()) {
       this.lastResult = {status: 'unsupported'};
       return {status: 'unsupported'};
     }
@@ -78,7 +82,7 @@ class ReminderNotification {
     }
     let handle;
     try {
-      handle = new this.Notification({title: '知流', body});
+      handle = new Ctor({title: '知流', body});
     } catch (error) {
       this.lastResult = {status: 'failed', error: String(error.message || error)};
       return {...this.lastResult};
