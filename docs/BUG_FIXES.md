@@ -845,7 +845,7 @@
 - 原因与定位：`electron/main/index.cjs:300–312` 顶层回调访问 start 局部 lifecycle/scheduler/tray；注入的 createWindow 没有定义；`electron/main/lifecycle.cjs:restore` 未串行合并窗口创建。
 - 预期与修复范围：使用明确的应用级资源所有权和真实窗口工厂，共用安全配置、加载与事件绑定；并发恢复只创建一次，退出期间不再创建窗口。
 - 验证与验收：`verification/m17-review/integration-before.json` 复现三个事件异常及 created=2；补充实际 Electron 隐藏、销毁重建、Dock／第二实例、登录窗口独立和托盘失败降级验收。
-- 本轮处理（2026-10-14）：已修复并验证：应用级资源移到模块作用域 `resources`，顶层 activate／second-instance／window-all-closed／before-quit 不再访问 start() 局部；`lifecycle.restore()` 以 pendingWindow 串行合并并发恢复，退出期间建出的窗口被关闭。新增 4 条断言（共享 IPC 通道、并发只建一个、退出期间不建、通知点击先恢复再投递）。
+- 本轮处理（2026-10-14）：抽取真实窗口工厂的尝试**破坏了应用启动**（两次 start() 均停在工厂内，exit=1 零输出），已于 `2021f68` 回退。本条**未完成**。
 - 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
@@ -929,19 +929,16 @@
 
 ---
 
-## 2026-10-14 环境阻塞记录：本轮所有 Electron 隔离 smoke 无法启动
+## 2026-10-14 撤回：所谓「Electron 环境阻塞」是本轮代码回归
 
-- 现象：任何 Electron 启动都以 exit=1 立即退出，`scripts/renderer-smoke.cjs`、
-  `scripts/settings-renderer.cjs`、`scripts/m17-renderer.cjs` 全部同样失败且零输出。
-- 判定证据：
-  1. `node_modules/.bin/electron --version` 正常返回 v44.5.1；
-  2. 同一二进制运行最小 Electron 应用成功（`MINIMAL_OK`，exit=0）——
-     说明运行时与二进制本身可用；
-  3. 加入临时诊断后确认单实例锁**获取成功**（`lock=true`，userData 指向本轮临时目录），
-     随后 Electron 报 `Network service crashed or was terminated, restarting service.` 并退出；
-  4. 最小应用不触碰 network service（不注册 app:// 协议、不建窗口）故不受影响。
-- 结论：属本机 Electron network service 级故障，非本轮代码引入。证据留存在
-  `docs/verification/m17/electron-network-service-blocker.log`。
-- 待办：环境恢复后重跑 `node scripts/m17-renderer.cjs`，并补齐本轮因无法运行而
-  未取得的集成证据（窗口隐藏／重建、托盘计数、导航过滤清理、有界退出无残留）。
-- 影响：本轮所有「已修复（未验收）」条目在取得上述证据前不得记为已验证。
+- 本轮中途曾把「所有 Electron smoke 以 exit=1 零输出失败」判定为环境问题并写入本文件。该判断**错误**，现撤回。
+- 反证：切到改动前的提交 `7190779` 用同一方式运行 `node scripts/renderer-smoke.cjs`，结果为
+  `{"rendererSmoke":"passed"}`；同时 `./node_modules/.bin/electron --version` 正常返回 v44.5.1，
+  最小 Electron 应用也能正常运行。环境正常。
+- 真实原因：`a41177e` 把主窗口创建从 `start()` 内联代码抽成 `createWindow()` 工厂。加入启动轨迹后，
+  两次 `start()` 都停在 `createWindow()` 内部，进程以 exit=1 零输出退出。
+- 处理：`2021f68` 回退该抽取，保留两项不触碰窗口创建的修复（send 单一投递、saveSettings 接线），
+  回退后 renderer-smoke 恢复通过。
+- 影响：BUG-075 的「真实窗口工厂」**未完成**。此前记为「已修复（未验收）」的条目一并撤回为未完成。
+- 教训：把「自己引入的回归」误判为环境阻塞，会浪费整轮时间并给出错误结论；判定环境问题前必须先跑
+  改动前的提交做对照。
