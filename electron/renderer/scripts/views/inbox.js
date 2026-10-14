@@ -56,9 +56,27 @@
     });
   }
 
+  /**
+   * 提醒口径（计划 §4.3）。直接复用 Core 的共享谓词：state=pending 与
+   * view=high_unarchived 与 reminder.summary 出自同一段 SQL，页面看到的就是
+   * 通知里那两个集合本身。
+   */
+  function reminderView(app) {
+    return app.reminderView === 'high_unarchived' ? 'high_unarchived'
+      : app.reminderView === 'pending' ? 'pending' : null;
+  }
+
   function query(app) {
     var q = {limit: 20, offset: offset};
-    if (app.filters.quick !== 'all') q.state = app.filters.quick;
+    var view = reminderView(app);
+    if (view === 'high_unarchived') {
+      // 口径已含「最终优先级为高且未归档」，再叠加其它筛选只会让数字对不上。
+      q.view = 'high_unarchived';
+      q.state = null;
+      return q;
+    }
+    if (view === 'pending') q.state = 'pending';
+    if (app.filters.quick !== 'all' && !view) q.state = app.filters.quick;
     if (app.filters.priority) q.priority = app.filters.priority;
     if (app.filters.platform) q.platform = app.filters.platform;
     if (app.filters.channelId) q.channelId = app.filters.channelId;
@@ -110,9 +128,33 @@
     var titles = {unread:'收件箱',all:'全部更新',read:'已读',deferred:'稍后处理',archived:'已归档'};
     var descriptions = {unread:'待处理的创作者更新；标记已读、稍后处理或归档后会移出收件箱。',
       all:'查看所有已保存的内容，包括已读、稍后处理和已归档。',read:'已标记为已读的内容。',deferred:'已留待稍后处理的内容。',archived:'已归档的内容。'};
+    /* 提醒口径切换：两个集合与通知里的数字同源，可以直接对照。 */
+    var view = reminderView(app);
+    var viewToggle = h('div.chips.chips--views', {role:'group', 'aria-label':'提醒口径'}, [
+      {id:'pending', label:'未处理', hint:'收件箱与稍后处理的并集，不含已读与已归档'},
+      {id:'high_unarchived', label:'高优先级未归档', hint:'最终优先级为高且未归档，包含已读内容'},
+    ].map(function (item) {
+      var active = view === item.id;
+      return ui.btn(item.label, {
+        variant: active ? 'primary' : undefined,
+        title: item.hint,
+        'aria-pressed': active ? 'true' : 'false',
+        onClick: function () {
+          SF.app.openReminderView(app, item.id);
+        },
+      });
+    }));
+    if (!view) viewToggle = null;
     var head = h('div.view__head', null,
-      h('div.view__head-text', null, h('div.view__title', null, h('h1.t-h1', {text:titles[app.filters.quick] || '内容'}), ui.countPill(cache.total == null ? '—' : cache.total, 'brand')),
-        h('p.view__desc', {text:descriptions[app.filters.quick] || '按日期查看收录的内容。'})),
+      h('div.view__head-text', null,
+        h('div.view__title', null,
+          h('h1.t-h1', {text: view ? (view === 'pending' ? '未处理' : '高优先级未归档') : (titles[app.filters.quick] || '内容')}),
+          ui.countPill(cache.total == null ? '—' : cache.total, 'brand')),
+        h('p.view__desc', {text: view
+          ? (view === 'pending' ? '收件箱与稍后处理的并集；已读与已归档不计入。与提醒里的「未处理」数字同源。'
+                                : '最终优先级为高且尚未归档的内容，包含已读内容。与提醒里的「高优先级未归档」数字同源。')
+          : (descriptions[app.filters.quick] || '按日期查看收录的内容。')}),
+        viewToggle),
       h('div.view__actions', null, h('span.muted', {text:'按日历时间排列'}),
         ui.btn('添加内容', {variant:'primary', icon:'plus', disabled:!app.session.capabilities.canIntake,
           title: app.session.capabilities.canIntake ? '粘贴链接收录单条内容' : '当前渠道尚未支持单条链接收录',

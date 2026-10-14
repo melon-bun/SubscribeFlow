@@ -656,7 +656,7 @@
         null,
         switchRow(
           "启用自动打标",
-          "自动打标尚未接入，当前仅保存配置。接入后：" + boundary,
+          "当前仅保存开关与识别配置，模型识别尚未接入（不影响提醒与手动标签）。接入后：" + boundary,
           t.enabled,
           function (next) {
             t.enabled = next;
@@ -847,7 +847,7 @@
             "div",
             null,
             h("h3.setting-block__title", { text: "后台运行" }),
-            h("p.setting-block__desc", { text: "定时提醒与托盘常驻尚未接入。当前关闭主窗口会退出应用；后续支持关闭窗口后留在托盘运行。" })
+            h("p.setting-block__desc", { text: "定时提醒与托盘常驻已可用：关闭主窗口后应用继续在托盘运行，采集与提醒不中断；需要完全退出时，从托盘菜单或应用菜单选择「退出应用」。备份请在退出之后复制应用数据目录。" })
           )
         )
       ),

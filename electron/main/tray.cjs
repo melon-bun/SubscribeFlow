@@ -67,6 +67,7 @@ class TrayController {
     // 应用级引用：主窗口销毁不影响它。
     this.tray.setToolTip('知流');
     this.refreshMenu();
+    this.bindMenuOpenRefresh(this.tray);
     return this.tray;
   }
 
@@ -135,6 +136,14 @@ class TrayController {
   async openList(view) {
     await this.refresh();
     return this.openListAction(view);
+  }
+
+  /** 菜单被打开时按需重查：计数不能停留在上一次打开时的旧值。 */
+  bindMenuOpenRefresh(tray) {
+    if (!tray || typeof tray.on !== 'function') return;
+    const refresh = () => { void this.refresh(); };
+    tray.on('click', refresh);
+    tray.on('right-click', refresh);
   }
 
   refreshMenu() {

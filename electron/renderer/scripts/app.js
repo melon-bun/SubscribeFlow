@@ -85,6 +85,22 @@
     return { name: name, params: params };
   }
 
+  /**
+   * 切换提醒口径。两次提醒之间不能留旧筛选：通知说 23 条、页面却只剩当前平台
+   * 下的 2 条是真实发生过的问题。这里一次性清空搜索、日期、平台、来源与标签
+   * 过滤，但**不改任何内容的已读／归档／标签状态**——查看不产生副作用。
+   */
+  function openReminderView(app, view) {
+    app.reminderView = view === 'high_unarchived' ? 'high_unarchived' : 'pending';
+    app.filters = {quick: null, platform: null, channelId: null};
+    app.search = "";
+    if (app.session) { cache_reset(app); render(); refreshData(true); }
+  }
+
+  function cache_reset(app) {
+    if (app.inboxCache) app.inboxCache = {};
+  }
+
   /** 记住来处，设置页关闭时回到原处，而不是一律跳回收件箱。 */
   function openSettings(section) {
     app.settingsReturn = app.route.name === "settings" ? app.settingsReturn : app.route.name;
@@ -508,11 +524,9 @@
     app.unsubscribe.push(app.client.on("reminder.navigate", function (intent) {
       if (!intent) return;
       if (intent.view === "settings") { openSettings("tagging"); return; }
-      // 清空旧过滤，避免通知说 23 条而页面只显示当前平台下的 2 条。
-      app.filters = {quick: null, platform: null, channelId: null};
-      app.reminderView = intent.view === "high_unarchived" ? "high_unarchived" : "pending";
+      // 走与手动切换完全相同的路径：口径真正进入查询、旧过滤一次性清空。
       SF.app.navigate("inbox", {});
-      if (app.session) refreshData(true);
+      openReminderView(app, intent.view === "high_unarchived" ? "high_unarchived" : "pending");
     }));
     app.unsubscribe.push(app.client.on("core.status", function (status) {
       app.coreStatus = status;
@@ -601,6 +615,7 @@
   SF.app = {
     state: app,
     openSettings: openSettings,
+    openReminderView: openReminderView,
     act: act,
     isPending: function (key) { return pending.has(key); },
     refreshData: refreshData,

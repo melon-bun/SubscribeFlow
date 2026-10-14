@@ -801,6 +801,10 @@
 
 - nullable RPC及存储拒绝低代际已有实现，但生产applySettings的persist仍漏generation（默认0），正常检查写入较高代际后，停用/改间隔写入会被拒绝。不能把手工RPC传generation的测试当作Main已正确保存。此项会使用户停用/变更无法持久化，是当前核心阻断。
 
+### 2026-10-14 Codex 审查与推进（HEAD `b2c9a52`）
+
+- b2c9a52现有applySettings保存携带generation；集成日志证明启用/间隔变更/停用身份与deadline落盘、旧代际写入被拒绝。此前常规配置保存阻断解除。保留正常范围结论，不把未验证的异步竞争与全部异常路径宣称验收完成。
+
 ## BUG-073：M17 退出清空下次到期时间，不能恢复原提醒周期
 
 - 发现日期／优先级：2026-10-13，Codex 审查 `28e73ac`，P2。
@@ -831,6 +835,10 @@
 
 - restore只有nextCheckAt为number才续接generation，停用记录的nextCheckAt=null直接丢掉持久代际；恢复generation=9的停用状态后再开启，内存只有2且保存仍不带generation。startup先applySettings再restore也仍对旧身份不匹配恢复失败，首次初始化不落盘。证据reminder-state-review.json，保持未通过。
 
+### 2026-10-14 Codex 审查与推进（HEAD `b2c9a52`）
+
+- 停用null状态现已续接generation，常规持久往返有证据。报告中的restartRecovery实际对同一个scheduler调用halt再wireReminders，没有新进程/新调度器；halted未复原，过期测试calls=0不能证明实际补查一次。该项证据缺口保留，下一完整M17流程验收补实际重启，不再单独分配测试形式返修。
+
 ## BUG-074：M17 提醒启动、设置保存与唤醒没有接通
 
 - 发现日期／优先级：2026-10-14，Codex 审查 `7bcfef9`，P1。
@@ -849,6 +857,10 @@
 ### 2026-10-14 Codex 复核 `56ed3f3`
 
 - wireReminders声明ready/resume复用，但真实core status与powerMonitor resume处理器没有调用它，仍只有启动末尾调用；集成脚本直接调用导出的wireReminders不能证明事件接线。实际页面还被BUG-084阻断，优先恢复启动后补这条主要功能。
+
+### 2026-10-14 Codex 审查与推进（HEAD `b2c9a52`）
+
+- core ready及resume事件现在确实调用wireReminders，保存与原timer已有正常路径证据。真实跨Core/Main重启及连续resume完整证据待总体集成验收；本轮不因测试形式阻断列表/托盘等主功能推进。
 
 ## BUG-075：M17 应用事件作用域错误且窗口重建入口缺失
 
@@ -999,6 +1011,10 @@
 
 - 窗口部分独立复跑通过（startup-guard-window.log）。启动故障脚本isolatedTest没有接入顶层smoke分支，仍可能出现错误对话框；此为非致命测试体验问题，仅记录，不再单独派发。按用户最新要求优先推进M17主要功能，完整M17集成验收仍待实现后验证。
 
+### 2026-10-14 Codex 审查与推进（HEAD `b2c9a52`）
+
+- reminder-persistence.log的过期补查calls=0，测试只是halt后的相同对象重接线，不能宣称跨进程恢复通过。人工入口目前硬编码23/5且真实列表尚未接好，因此暂不请用户验通知点击；完整用户流程实现后用匹配的隔离fixture验证。记录而不另开单独修测试任务。
+
 ## BUG-082：窗口方法调用对象错误，启动异常误报为资源损坏
 
 - 发现日期／优先级：2026-10-14，用户指定优先修复，P1。
@@ -1042,3 +1058,7 @@
 - 证据：`verification/m17-review/reminder-state-review.json`：完整Renderer脚本隔离VM执行得到TypeError，bootRegistered=false；MiniMax本轮报告所有Electron smoke等待页面失败与此一致。
 - 验收：当前入口不抛错并实际渲染收件箱，Renderer/设置/窗口隔离smoke通过；故障应从Renderer异常被明确捕获，不能靠扩大超时掩盖。
 - 状态：待修复；引入 `7f9e8a1`，当前 `56ed3f3`。按用户要求，只派发此类实质阻断及未完成主要功能，非致命问题不单派。
+
+### 2026-10-14 Codex 审查与推进（HEAD `b2c9a52`）
+
+- 测试入口已删除，Codex再次执行完整Renderer启动脚本，不再抛错，SF.app创建且DOMContentLoaded boot注册成功（reminder-recovery-review.json）。MiniMax的Renderer/设置/窗口smoke恢复通过，源码与结果一致。本条主界面阻断已解除，修复729fca5。

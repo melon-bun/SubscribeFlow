@@ -338,7 +338,7 @@ async function start() {
       flushNavigationIntent();
       if (resources.tray) void resources.tray.refresh();
     } else if (resources.tray) {
-      void resources.tray.refresh(); // 失联时菜单要如实显示不可用
+      void resources.tray.refresh(); // 失联时菜单要如实显示不可用，不伪造 0
     } });
   core.on('notification', (event, data) => {
     if (!['sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'scheduler.changed', 'tags.changed'].includes(event)) return;
@@ -347,6 +347,10 @@ async function start() {
     // 否则目录被标记为已加载且为空，新建标签在收件箱里会看不到。
     const aliases = {'sync.changed': ['run', 'runs'], 'content.changed': ['content'], 'subscription.changed': ['channels'], 'scheduler.changed':['channels'], 'tags.changed': ['content']};
     for (const alias of aliases[event] || []) send(alias, null); // Invalidation; consumers re-query durable state.
+    // 内容状态与优先级变化会改变托盘上的两个数字，走合并刷新，不伪造 0。
+    if (['content.changed', 'subscription.changed', 'scheduler.changed', 'tags.changed'].includes(event)) {
+      if (resources.tray) resources.tray.scheduleRefresh();
+    }
   });
 
   const pageRoot = path.join(root, 'electron', diagnostics ? 'diagnostics' : 'renderer');
