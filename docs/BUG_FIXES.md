@@ -845,7 +845,7 @@
 - 原因与定位：`electron/main/index.cjs:300–312` 顶层回调访问 start 局部 lifecycle/scheduler/tray；注入的 createWindow 没有定义；`electron/main/lifecycle.cjs:restore` 未串行合并窗口创建。
 - 预期与修复范围：使用明确的应用级资源所有权和真实窗口工厂，共用安全配置、加载与事件绑定；并发恢复只创建一次，退出期间不再创建窗口。
 - 验证与验收：`verification/m17-review/integration-before.json` 复现三个事件异常及 created=2；补充实际 Electron 隐藏、销毁重建、Dock／第二实例、登录窗口独立和托盘失败降级验收。
-- 本轮处理（2026-10-14）：抽取真实窗口工厂的尝试**破坏了应用启动**（两次 start() 均停在工厂内，exit=1 零输出），已于 `2021f68` 回退。本条**未完成**。
+- 本轮处理：**已修复并通过真实 Electron 验收**（`3f1e61a`）：补上此前缺失的真实 `createWindow` 工厂——上一版把 `setWindowOpenHandler` 错挂到 `webContents.session`（该方法在 `webContents` 上）并漏掉 `setPermissionCheckHandler`，导致启动即 TypeError。窗口生命周期集成 smoke 实测：安全配置（contextIsolation/sandbox/nodeIntegration/webview/preload 桥）保持、关闭被拦截为隐藏且未销毁、销毁后重建后 Core 仍在响应、并发 restore 三次只建一个窗口。
 - 相关提交：`aa731f7`（上一轮）与本轮 `a41177e`。
 
 ### 2026-10-14 Codex 复核 `7190779`
@@ -923,7 +923,7 @@
 - 原因：`electron/main/index.cjs:send` 加入 target 后保留旧的无条件 window 发送；默认 target 为 window，导致 core.status、内容失效、导航等全体事件重复。
 - 预期与修复：每个事件只投递给指定目标一次；显式 target 也不能额外广播给旧窗口。由 MiniMax 修复，加入真实 bridge 事件计数验收。
 - 证据：`verification/m17-review/integration-fix-review.json` 中 single_send.actualCalls=2。
-- 本轮处理（2026-10-14，提交 `a41177e`）：已修复（未验收）：send() 每个事件只投递一次。**未验证**：真实 bridge 事件计数验收因 Electron 无法启动未执行。
+- 本轮处理：**已修复并通过真实 bridge 验收**（`3f1e61a`）：`send()` 每次只向指定目标投递一次。窗口 smoke 用 preload 白名单内的 `reminder.navigate` 实测 `singleDelivery=1`。此前 `2021f68` 的提交说明曾误称已修复，而当时最终 HEAD 上仍发两次——已按最终 HEAD 重新核对。
 
 ### 2026-10-14 Codex 复核最终 HEAD `dfa9cc0`
 
@@ -967,5 +967,5 @@
 - 原因：抽取工厂时多加一层 `.session`；同时遗漏原有 setPermissionCheckHandler 拒绝策略。顶层错误处理丢失原异常，导致错误分类和提示失真。
 - 修复范围：由 MiniMax 恢复并修正工厂（setWindowOpenHandler 属于 webContents，权限方法留在 session），保留全部安全设置；记录脱敏 message/stack/启动阶段，用户提示区分资源故障与内部启动错误。不得记录 Key、请求头或完整配置。
 - 证据：`verification/m17-review/factory-root-cause.json`。Codex 在临时 userData 中以真实 Electron 执行历史工厂复现，未启动 Core 或访问日常数据，进程退出0并保存异常。
-- 状态：待修复；`2021f68` 已回退错误工厂以恢复启动，但未修复工厂功能和统一误导提示。相关提交 `a41177e`、`2021f68`、当前 `dfa9cc0`。
+- 状态：已修复并验证；相关提交 `3f1e61a`。
 - 验收：当前代码实际启动、销毁后重建、并发恢复、安全策略仍有效；隔离注入代码异常验证真实错误被记录、提示不误称资源损坏；资源缺失路径保留合理提示。不得只用语法检查或类级mock证明完成。
