@@ -39,9 +39,18 @@ async function verify({window, core, root, mode}) {
     fs.mkdirSync(output,{recursive:true});
     fs.writeFileSync(path.join(output, name), (await window.webContents.capturePage()).toPNG());
   };
-  await until(`!!window.SF?.app.state.session && !!document.querySelector('[data-view="inbox"] .state')`);
+  const readyExpression = mode === 'github'
+    ? `!!window.SF?.app.state.session && !!document.querySelector('[data-view="inbox"] .content-card, [data-view="inbox"] .state')`
+    : `!!window.SF?.app.state.session && !!document.querySelector('[data-view="inbox"] .state')`;
+  await until(readyExpression);
   assert.equal(await evaluate(`SF.app.state.source`),'real');
   assert.equal(await evaluate(`typeof require`),'undefined');
+  if (mode === 'github') {
+    // The GitHub channel uses no browser session, so it needs none of the
+    // platform fixtures the other modes install. index.cjs stops the core.
+    await require('./github-ui-smoke.cjs').verifyGithub({evaluate,until,click,screenshot,core,root,window});
+    return;
+  }
   if (mode === 'offline') {
     // Known channels now advertise M13 intake; unsupported websites still do no I/O.
     assert.equal(await evaluate(`SF.app.state.session.capabilities.canIntake`),true);
@@ -335,8 +344,16 @@ module.exports={verify};
 
 if(require.main === module) {
   const root=path.resolve(__dirname,'..');
-  const folder=fs.mkdtempSync(path.join(os.tmpdir(),'subscribe-flow-renderer-'));
-  const mode=process.argv.includes('--zhihu')?'zhihu':process.argv.includes('--wechat')?'wechat':process.argv.includes('--intake')?'intake':process.argv.includes('--xhs')?'xhs':process.argv.includes('--live')?'live':'offline';
+  const mode=process.argv.includes('--zhihu')?'zhihu':process.argv.includes('--wechat')?'wechat':process.argv.includes('--intake')?'intake':process.argv.includes('--xhs')?'xhs':process.argv.includes('--github')?'github':process.argv.includes('--live')?'live':'offline';
+  // The GitHub fixture seeds its own database before Core starts, so it needs a
+  // differently named temp folder to satisfy the seed script's own guard.
+  const prefix=mode==='github'?'subscribe-flow-github-':'subscribe-flow-renderer-';
+  const folder=fs.mkdtempSync(path.join(os.tmpdir(),prefix));
+  if(mode==='github') {
+    const seed=spawnSync(JSON.parse(fs.readFileSync(path.join(root,'.runtime-paths.json'),'utf8')).python,
+      [path.join(root,'scripts/seed-github-renderer.py'),folder],{encoding:'utf8'});
+    assert.equal(seed.status,0,seed.stderr);
+  }
   const child=spawn(require('electron'),[root],{env:{...process.env,SUBSCRIBE_FLOW_RENDERER_SMOKE:mode,SUBSCRIBE_FLOW_LIVE_SKIP_SEARCH:process.argv.includes('--uid-only')?'1':'0',SUBSCRIBE_FLOW_DATA_DIR:folder},stdio:'inherit'});
   const timer=setTimeout(()=>child.kill('SIGKILL'),180000);
   child.on('close',code=>{clearTimeout(timer);fs.rmSync(folder,{recursive:true,force:true});process.exitCode=code??1;});

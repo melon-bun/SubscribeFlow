@@ -475,7 +475,7 @@
       item.cover ? h('div.detail__cover', null, h('img', {src:item.cover, alt:'', referrerPolicy:'no-referrer'})) : null,
       h('h2.detail__title', {text:item.title}),
       h('div.detail__byline', null, ui.avatar(item.channelName, null, 'md'), h('div.detail__byline-text', null,
-        h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform),h('span.tag',{text:item.intakeMethod==='manual'?'手动收录':'自动采集'})), h('div.detail__byline-time', {text:'原始发布 · '+fmt.publication(item)}), item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
+        h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform),h('span.tag',{text:item.intakeMethod==='manual'?'手动收录':'自动采集'})), h('div.detail__byline-time', {text:fmt.publicationHeading(item)+' · '+fmt.publication(item)}), item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
       bodySection(item, whole),
       priorityControls(app,item,repaint),
       tagControls(app, item, repaint),

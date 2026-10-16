@@ -21,7 +21,11 @@ async function fixture(run, acquisition, options = {}) {
 test('real sidecar handshake, persistent subscription, UI mapping and controlled restart', async () => {
   await fixture(async core => {
     const channels = await core.call('channel.list');
-    assert.equal(channels[0].channel, 'bilibili');
+    // Registration order is not part of the contract; the channel set is.
+    const registered = channels.map(entry => entry.channel);
+    assert.ok(registered.includes('bilibili'), 'bilibili must be registered');
+    assert.ok(registered.includes('github'), 'the direct-http GitHub channel needs no browser bridge');
+    assert.equal(channels.find(entry => entry.channel === 'github').backend, 'direct-http');
     assert.equal((await callUI(core, 'getSession', [])).capabilities.canManageTags, true);
     const sub = await callUI(core, 'createChannel', [{platform: 'bilibili', link:'946974', confirmed:true}]);
     assert.equal(sub.platform, 'bilibili');

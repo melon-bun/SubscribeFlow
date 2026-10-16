@@ -4,6 +4,7 @@ from subscribe_flow.channels.gateway import ChannelGateway
 from subscribe_flow.channels.bilibili.adapter import BilibiliAdapter
 from subscribe_flow.channels.bilibili.backends.opencli import BilibiliOpenCLIBackend
 from subscribe_flow.channels.bilibili.electron import BilibiliElectronAdapter
+from subscribe_flow.channels.github.adapter import GithubTrendingAdapter
 from subscribe_flow.channels.xiaohongshu.adapter import XiaohongshuAdapter
 from subscribe_flow.channels.wechat.adapter import WechatAdapter
 from subscribe_flow.channels.zhihu.adapter import ZhihuAdapter
@@ -27,6 +28,9 @@ import logging
 
 def build_gateway(opencli_path: str = "opencli", browser_bridge=None) -> ChannelGateway:
     gateway = ChannelGateway()
+    # 无条件注册：纯 HTTP 渠道不依赖浏览器桥接，写在 if 分支里会在
+    # --backend opencli 启动时整个消失。
+    gateway.register(GithubTrendingAdapter())
     if browser_bridge is not None:
         gateway.register(BilibiliElectronAdapter(browser_bridge))
         gateway.register(XiaohongshuAdapter(browser_bridge))
@@ -35,6 +39,23 @@ def build_gateway(opencli_path: str = "opencli", browser_bridge=None) -> Channel
     else:
         gateway.register(BilibiliAdapter(BilibiliOpenCLIBackend(CLITransport(ResourceCoordinator()), opencli_path)))
     return gateway
+
+
+# 每种 backend 一种资源闸门。resource_key 决定串行化范围与请求间隔，
+# 少一个分支就会把新 backend 错记成别的渠道的资源。
+RESOURCE_KEYS = {
+    "electron-session": lambda channel: f"browser:electron-{channel}",
+    "opencli": lambda channel: "browser:opencli-default",
+    # 三张榜共用 http:github，因此天然串行，间隔沿用 policy.resource_gap（默认 3 秒）。
+    "direct-http": lambda channel: f"http:{channel}",
+}
+
+
+def resource_key(descriptor) -> str:
+    builder = RESOURCE_KEYS.get(descriptor.backend)
+    # 未登记的 backend 沿用既有默认闸门，保持既有行为不变；
+    # 上面的显式分支保证已知的传输方式不会被错记。
+    return builder(descriptor.channel) if builder else "browser:opencli-default"
 
 
 class Core:
@@ -65,7 +86,7 @@ class Core:
         self.settings = SettingsService(SettingsStore(self.database))
         self.credentials = CredentialBroker()
         for descriptor in self.gateway.describe():
-            resource = f"browser:electron-{descriptor.channel}" if descriptor.backend == "electron-session" else "browser:opencli-default"
+            resource = resource_key(descriptor)
             self.repository.add_connection(Connection(f"{descriptor.channel}:default", descriptor.channel, descriptor.backend, resource))
             if descriptor.backend == "electron-session":
                 # One-way upgrade of known legacy connections. Version invalidates

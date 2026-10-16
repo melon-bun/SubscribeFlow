@@ -155,7 +155,11 @@
         return h('div.connection-card',null,h('h3',{text:SF.catalog.platform(c.channel).name}),
           intakeOnly
             ? h('p.muted',{text:'仅支持自主添加：在收件箱粘贴文章链接即可收录，无需登录，也不订阅公众号。'})
-            : (c.backend === 'electron-session' ? h('p.muted',{text:'使用应用内独立会话，无需启动 Chrome。登录后关闭登录窗口，再检查连接。'}) : null),
+            : (c.backend === 'electron-session'
+                ? h('p.muted',{text:'使用应用内独立会话，无需启动 Chrome。登录后关闭登录窗口，再检查连接。'})
+                : c.backend === 'direct-http'
+                  ? h('p.muted',{text:'由核心进程直接读取公开网页，不使用浏览器会话，也不需要登录。'})
+                  : null),
           h('p',{text:r ? r.reason : '尚未检查采集环境'}),
           h('p.muted',{text:'认证：' + ({unknown:'尚未确认',required:'需要登录',available:'已有可用会话',not_required:'无需登录'}[r && r.authentication] || '尚未确认')}),
           r ? h('p.muted',{text:'检查时间：' + fmt.absolute(r.checked_at)}) : null,

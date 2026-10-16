@@ -13,6 +13,7 @@
     wechat: { id: "wechat", name: "微信公众号", short: "公众号", mark: "微" },
     weibo: { id: "weibo", name: "微博", short: "微博", mark: "博" },
     zhihu: { id: "zhihu", name: "知乎", short: "知乎", mark: "知" },
+    github: { id: "github", name: "GitHub", short: "GitHub", mark: "GH" },
     other: { id: "other", name: "其他", short: "其他", mark: "?" },
   };
 

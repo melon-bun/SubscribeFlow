@@ -125,6 +125,17 @@
     if (!Number.isFinite(toDate(item.manualAddedAt).getTime())) return "添加时间未知";
     return "添加于 " + (compact ? ymd(item.manualAddedAt) : absolute(item.manualAddedAt));
   }
+
+  /**
+   * 这个时间到底是什么时间。
+   *
+   * 有些渠道（GitHub 趋势榜）在页面上根本没有单条发布时间，Adapter 只能把
+   * 抓取时刻标成 provenance='fetched_at'。那种时间说的是「我们什么时候看到
+   * 它」，显示成发布时间就是不诚实，因此这里按来源改标题。
+   */
+  function publicationHeading(item) {
+    return item.publishedProvenance === "fetched_at" ? "收录时间" : "原始发布";
+  }
   function publicationDay(item) {
     if (!item.publishedAt || item.publishedPrecision === "unknown") return null;
     var day = String(item.publishedAt).slice(0, 10);
@@ -137,7 +148,7 @@
     return {history_end:"历史遍历已完成", window_only:"仅最近窗口，非全部历史", possible_gaps:"已保存部分内容，可能有缺口", refresh_interval:"刷新区间已完成"}[scope] || "覆盖范围尚未确定";
   }
   SF.fmt = {
-    intakeTime: intakeTime, publication: publication, publicationDay: publicationDay, runState: runState, coverage: coverage,
+    intakeTime: intakeTime, publication: publication, publicationDay: publicationDay, publicationHeading: publicationHeading, runState: runState, coverage: coverage,
     WEEK: WEEK,
     pad: pad,
     ymd: ymd,

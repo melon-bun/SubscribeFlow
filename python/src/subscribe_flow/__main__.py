@@ -14,7 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description="Subscribe Flow JSON-RPC Core")
     parser.add_argument("--data-dir", required=True, type=Path, help="Absolute application user-data directory")
     parser.add_argument("--opencli", default="opencli", help="Configured OpenCLI executable path")
-    parser.add_argument("--backend", choices=["electron-session", "opencli"], default="electron-session")
+    parser.add_argument("--backend", choices=["electron-session", "opencli", "direct-http"], default="electron-session")
     parser.add_argument('--schedule-policy', default='{}', help='JSON overrides for bounded scheduler policy')
     args = parser.parse_args()
     if not args.data_dir.is_absolute():

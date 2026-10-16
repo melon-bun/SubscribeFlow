@@ -133,14 +133,25 @@
   }
 
   /**
-   * 这个渠道有没有登录入口。只有支持 resolve_source 的渠道才有账号会话
-   * 和登录窗口；只支持单条读取的渠道（如微信）对登录提示没有意义。
+   * 这个渠道有没有登录入口。
+   *
+   * 只看 resolve_source 是不够的：GitHub 趋势为了订阅日/周/月榜必须支持
+   * resolve_source，但它全程不需要登录，只按这条规则就会误显示登录提示。
+   *
+   * 判据是「有没有任何操作声明了认证要求」：只有当渠道把每个可用操作都明确
+   * 标成 not_required 时，才断定它没有登录窗口。authentication='unknown'
+   * 表示登录态由运行时决定（B 站就是这样），仍要保留登录提示，所以不能反过来
+   * 把 unknown 当成不需要登录。
    */
   function loginNeeded(app, channelId) {
     if (!channelId) return true; // 还没识别出来时保持原有的登录提示
     return (app.session || {}).channels.some(function (channel) {
+      if (channel.channel !== channelId) return false;
       var ops = channel.operations || {};
-      return channel.channel === channelId && ops.resolve_source && ops.resolve_source.supported;
+      return Object.keys(ops).some(function (op) {
+        var capability = ops[op] || {};
+        return capability.supported && capability.authentication !== "not_required";
+      });
     });
   }
 
@@ -421,7 +432,8 @@
               "span.intake-preview__published",
               null,
               icon("clock", 13),
-              h("span", { text: "原始发布 " + publishedText(preview) })
+              // 预览是原始契约对象（published.provenance），不是列表用的扁平 DTO。
+              h("span", { text: ((preview.published && preview.published.provenance === "fetched_at") ? "收录时间 " : "原始发布 ") + publishedText(preview) })
             ),
             h(
               "span.intake-preview__calendar",

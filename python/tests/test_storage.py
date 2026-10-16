@@ -56,6 +56,40 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(self.repo.query_contents()["total"], 1)
         self.assertEqual(self.repo.subscribe(self.source, "c")["id"], self.sub["id"])
 
+    def test_duplicate_identity_links_a_second_source_without_touching_the_item(self):
+        """A duplicate now records source attribution; single-source channels must not notice.
+
+        GitHub Trending ranks one repository on three overlapping boards, so a
+        duplicate identity has to be attributed to every board it appears on.
+        Existing channels map one item to one source, so for them the extra
+        write is an idempotent no-op: same rows, same payload, same counts.
+        """
+        job = self.job()
+        self.repo.commit_page(job["id"], self.page())
+        before = self.repo.get_content(self.item.key)
+
+        # Same item, second source of the same channel (the GitHub shape).
+        other_source = Source("test", "author", "2", "Second", "https://example.com/two", True)
+        self.repo.add_connection(Connection("c2", "test", "test", "browser:shared"))
+        self.repo.subscribe(other_source, "c2")
+        twin = replace(self.item, source=other_source)
+        with self.db.transaction() as db:
+            self.assertEqual(self.repo._upsert_item(db, twin), 0,
+                             "a duplicate must still report as not newly created")
+
+        rows = self.repo.db.execute("SELECT source_id FROM content_sources WHERE content_id=?",
+                               (self.item.key,)).fetchall()
+        self.assertEqual({row["source_id"] for row in rows}, {"test:author:1", "test:author:2"})
+        self.assertEqual(self.repo.get_content(self.item.key), before,
+                         "payload, state and timestamps must be untouched by the extra link")
+        self.assertEqual(self.repo.query_contents()["total"], 1)
+
+        # Re-running the original source is a pure no-op, exactly as before.
+        with self.db.transaction() as db:
+            self.assertEqual(self.repo._upsert_item(db, self.item), 0)
+        self.assertEqual(self.repo.db.execute(
+            "SELECT count(*) FROM content_sources WHERE content_id=?", (self.item.key,)).fetchone()[0], 2)
+
     def test_page_failure_rolls_back_contents_counts_and_cursor(self):
         job = self.job("backfill")
         bad = replace(self.item, external_id="2", title="")

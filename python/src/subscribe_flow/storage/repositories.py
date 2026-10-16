@@ -177,10 +177,29 @@ class Repository:
                               (reference.channel, reference.namespace, reference.external_id)).fetchone()
         return row['id'] if row else None
 
+    def _link_source(self, db, item):
+        """Attribute already-stored content to one more source, adding nothing else.
+
+        ``content_sources`` is a many-to-many table, so a single item legitimately
+        belongs to several sources. Only the association is written here: no
+        payload, state, timestamp or content row is touched.
+        """
+        if any(not isinstance(part, str) or not part or ':' in part
+               for part in (item.channel, item.namespace, item.external_id,
+                            item.source.kind, item.source.external_id)):
+            raise ValueError("Invalid content contract")
+        db.execute("INSERT OR IGNORE INTO content_sources VALUES(?,?)", (item.key, item.source.key))
+
     def _upsert_item(self, db, item, *, intake_method='subscription', stamp=None):
         # Both entry points call this inside BEGIN IMMEDIATE. No source, state,
         # payload or timestamp is written on a duplicate identity.
         if self.existing_item_id(item):
+            # A duplicate identity is still attributed to this source. Without
+            # this, content seen on several sources would belong to whichever
+            # source reached it first, and per-source filtering and counts would
+            # silently under-report. Existing single-source channels are
+            # unaffected: the insert is OR IGNORE and the source key repeats.
+            self._link_source(db, item)
             return 0
         if (any(not isinstance(part, str) or not part or ':' in part
                 for part in (item.channel, item.namespace, item.external_id,
