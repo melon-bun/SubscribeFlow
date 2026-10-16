@@ -53,7 +53,7 @@ class JevProviderTests(unittest.TestCase):
         return JevProvider(endpoint='https://api.typesafe.ai/v1/systemone', model='jev-latest',
                            api_key='k', transport=transport, **options)
 
-    def test_selects_only_above_threshold_and_uses_real_model_name(self):
+    def test_selects_threshold_matches_and_uses_real_model_name(self):
         transport = FakeTransport([{'model': 'jev-1.13.0',
                                     'answers': {'t1': {'type': 'noul', 'noul': 0.91},
                                                 't2': {'type': 'noul', 'noul': 0.05},
@@ -146,12 +146,66 @@ class JevProviderTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'invalid_response')
 
     def test_legitimate_boundary_answers_still_work(self):
-        for value, expected in ((0.0, 'no_match'), (0.79, 'no_match'), (1.0, 'matched')):
+        for value, ids in ((0.0, ['t1', 't2']), (0.79, ['t1', 't2']),
+                           (0.8, ['t1', 't2', 't3']), (1.0, ['t1', 't2', 't3'])):
             with self.subTest(value=value):
                 transport = FakeTransport([{'model': 'v', 'answers': {
                     f't{i}': {'type': 'noul', 'noul': value} for i in (1, 2, 3)}}])
                 result = self.provider(transport).recognize(request())
-                self.assertEqual(result.status, expected)
+                self.assertEqual(result.status, 'matched')
+                self.assertEqual([candidate.tag_id for candidate in result.candidates], ids)
+
+    def test_all_below_threshold_selects_the_two_highest_scores(self):
+        transport = FakeTransport([{'model': 'v', 'answers': {
+            't1': {'type': 'noul', 'noul': 0.1},
+            't2': {'type': 'noul', 'noul': 0.79},
+            't3': {'type': 'noul', 'noul': 0.77},
+        }}])
+        result = self.provider(transport).recognize(request())
+        self.assertEqual(result.status, 'matched')
+        self.assertEqual([candidate.tag_id for candidate in result.candidates], ['t2', 't3'])
+        self.assertEqual([candidate.score for candidate in result.candidates], [0.79, 0.77])
+        self.assertIn('前 2 个', result.detail)
+
+    def test_fallback_ranks_all_batches_and_keeps_catalogue_order_for_ties(self):
+        scores = [0.1, 0.79, 0.77, 0.79, 0.76]
+        transport = FakeTransport([{'model': 'v', 'answers': {
+            f't{i}': {'type': 'noul', 'noul': scores[i]}
+            for i in range(start, min(start + 2, len(scores)))
+        }} for start in range(0, len(scores), 2)])
+        result = self.provider(transport, batch=2).recognize(
+            request(candidates=[{'id': f't{i}', 'name': f'标签{i}'} for i in range(len(scores))]))
+        self.assertEqual(len(transport.requests), 3)
+        self.assertEqual([candidate.tag_id for candidate in result.candidates], ['t1', 't3'])
+
+    def test_one_candidate_at_threshold_does_not_fill_a_second_below_it(self):
+        transport = FakeTransport([{'model': 'v', 'answers': {
+            't1': {'type': 'noul', 'noul': 0.79},
+            't2': {'type': 'noul', 'noul': 0.8},
+            't3': {'type': 'noul', 'noul': 0.78},
+        }}])
+        result = self.provider(transport).recognize(request())
+        self.assertEqual([candidate.tag_id for candidate in result.candidates], ['t2'])
+
+    def test_fallback_respects_a_smaller_limit_or_catalogue(self):
+        for catalogue, limit, expected in ((CANDIDATES, 1, ['t2']), (CANDIDATES[:1], 5, ['t1'])):
+            with self.subTest(limit=limit, catalogue_size=len(catalogue)):
+                transport = FakeTransport([{'model': 'v', 'answers': {
+                    tag['id']: {'type': 'noul', 'noul': score}
+                    for tag, score in zip(catalogue, [0.1, 0.7, 0.5])
+                }}])
+                result = self.provider(transport).recognize(request(candidates=catalogue, limit=limit))
+                self.assertEqual([candidate.tag_id for candidate in result.candidates], expected)
+
+    def test_fallback_does_not_hide_an_invalid_later_batch(self):
+        transport = FakeTransport([
+            {'model': 'v', 'answers': {'t1': {'type': 'noul', 'noul': 0.7},
+                                      't2': {'type': 'noul', 'noul': 0.6}}},
+            {'model': 'v', 'answers': {'t3': {'type': 'noul', 'noul': -0.1}}},
+        ])
+        with self.assertRaises(RecognitionError) as caught:
+            self.provider(transport, batch=2).recognize(request())
+        self.assertEqual(caught.exception.code, 'invalid_response')
 
     def test_missing_actual_model_is_not_filled_with_the_requested_alias(self):
         transport = FakeTransport([{'answers': {f't{i}': {'type': 'noul', 'noul': 0.9} for i in (1, 2, 3)}}])

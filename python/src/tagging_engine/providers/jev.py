@@ -1,7 +1,8 @@
 """Jev（TypeSafe System One）识别方式。
 
 只从候选目录里挑，不新建标签（计划 §3.3）。每个候选标签问一个独立的
-Noul 问题，按概率门槛筛选后取数量上限。
+Noul 问题；优先选取达到门槛的标签，全部低于门槛时取分数最高的两个，
+最后服从调用方的数量上限。
 
 容易踩的点写在这里：
 - `questions` 必须是对象而不是数组，否则服务端按 422 拒；
@@ -86,15 +87,19 @@ class JevProvider:
             answers = self._answers(body, batch)
             for tag in batch:
                 probability = self._probability(answers, tag.id)
-                if probability >= self.threshold:
-                    candidates.append(Candidate(tag.id, None, probability, 'noul',
-                                                f'与「{tag.name}」的成立概率 {probability}'))
+                candidates.append(Candidate(tag.id, None, probability, 'noul',
+                                            f'与「{tag.name}」的成立概率 {probability}'))
         resolved = self._resolved_model(served_models)
-        # 概率高的先挂，并按 limit 截断；被截断的数量要说明，不能假装全都评估过。
+        # 全部批次校验后统一排序；同分保持原候选顺序，不在各批次分别兜底。
         candidates.sort(key=lambda c: -(c.score or 0))
+        qualified = [candidate for candidate in candidates if candidate.score >= self.threshold]
+        fallback = not qualified
+        candidates = candidates[:2] if fallback else qualified
         kept, dropped = candidates[:request.limit], max(0, len(candidates) - request.limit)
         detail = None
-        if dropped:
+        if fallback:
+            detail = f'所有候选均低于门槛 {self.threshold}，按分数及数量上限选择前 {len(kept)} 个标签'
+        elif dropped:
             detail = f'共 {len(candidates)} 个候选超过门槛，按上限保留 {len(kept)} 个，未挂载 {dropped} 个'
         return RecognitionResult(self.name, STATUS_MATCHED if kept else STATUS_NO_MATCH,
                                  candidates=tuple(kept), model=resolved,

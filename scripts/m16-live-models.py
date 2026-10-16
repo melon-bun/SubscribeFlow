@@ -83,7 +83,7 @@ class ObservedTransport:
             call['http_status'] = status
             call['response_fields'] = sorted(body)
             call['served_model'] = body.get('model')
-            # Jev filters results at the threshold; retain all actual scores.
+            # Retain every score, including candidates selected by Jev's top-two fallback.
             if isinstance(body.get('answers'), dict):
                 call['probabilities'] = {
                     str(k): v.get('noul') for k, v in body['answers'].items()
@@ -119,7 +119,8 @@ def recognize(mode, config, sample, timeout):
     result = {'mode': mode, 'sample_id': sample['id'],
               'sample_sha256': hashlib.sha256(sample['text'].encode()).hexdigest(),
               'prompt_contract': 'production-llm-system-prompt/jev-noul',
-              'threshold': 0.8 if mode == 'jev' else None}
+              'threshold': 0.8 if mode == 'jev' else None,
+              'selection_policy': 'threshold_or_top2' if mode == 'jev' else 'llm_free_tags'}
     try:
         provider = build_provider(mode, **config, transport=observer, timeout=timeout)
         result['recognition'] = provider.recognize(request).to_dict()
