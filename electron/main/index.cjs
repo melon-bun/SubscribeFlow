@@ -434,7 +434,10 @@ async function start() {
       else if (rendererSmoke === 'm17') await require('../../scripts/m17-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'settings') await require('../../scripts/settings-renderer.cjs').verify({window,core,root});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
-      await core.stop(); await channels.close(); quitting = true; app.quit();
+      // 验收同样走 M17 的统一退出流程，否则关窗仍会被拦截为隐藏到托盘。
+      await lifecycle.quit();
+      // flow 验收会替换 hardQuit 以断言清理结果，返回后仍须结束隔离进程。
+      app.exit(0);
     } catch (error) { console.error(error); await core.stop(); app.exit(1); }
     return;
   }
@@ -462,9 +465,8 @@ async function start() {
       await fs.mkdir(path.join(root, 'docs', 'verification'), {recursive: true});
       await fs.writeFile(path.join(root, 'docs', 'verification', 'm4-desktop.png'), screenshot.toPNG());
       console.log(JSON.stringify({desktopSmoke: 'passed', ...result}));
-      await core.stop();
-      quitting = true;
-      app.quit();
+      await lifecycle.quit();
+      app.exit(0);
     } catch (error) {
       console.error(error);
       await core.stop();

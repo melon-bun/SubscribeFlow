@@ -39,6 +39,8 @@
 | BUG-068 | HTTP 响应中途断开时泄出底层异常 | 待修复，P2 |
 | BUG-069 | Jev 批大小与概率门槛未校验，错误配置返回成功 | 待修复，P2 |
 | BUG-070 | Jev 未返回模型版本时用请求别名冒充实际版本 | 待修复，P2 |
+| BUG-085 | M18 基于旧 main 开发，遗漏四期设置、提醒与托盘 | 已修复并验证 |
+| BUG-086 | 隔离验收绕过统一退出，关窗被托盘拦截导致进程滞留 | 已修复并验证 |
 
 ## BUG-001：收件箱操作后未移出
 
@@ -1108,3 +1110,26 @@ Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级�
 
 - 多来源去重、来源默认优先级 vs 单条覆盖的对照数据（fixture 尚未造这两类）；
 - 托盘计数在内容状态/优先级变化后随之变化、Core 离线→恢复重查（已接线，无针对性断言）。
+
+
+## BUG-085：M18 基于旧 main 开发，遗漏四期设置、提醒与托盘
+
+- 发现日期：2026-10-16，用户要求核查 M17 / M18 与 M18 分支。
+- 现象与复现：原工作区为 `main dd32acf`，12 个已跟踪文件修改、11 个未跟踪 M18 文件，未提交；`git merge-base main phase4_minimax` 为 `dd32acf`，M15–M17 的 43 个后续提交均未包含。原方案却把 `8a2f131` 错称为 main，旧 169 / 63 测试结果不覆盖四期。
+- 预期：M18 以已有四期成果继续开发，保留设置、提醒与托盘，并形成可复核的独立提交。
+- 原因：实际 checkout 从 `phase4_minimax` 切回旧 main 后实施 M18，交接文档未校验分支与提交对应关系。
+- 修复范围：先保存全部 23 个 M18 文件，再将新增 `feature/m18-github-trending` 变基到 `phase4_minimax 8a2f131`；M18 提交 `91e25ea`。原 main / phase4_minimax 指针保持不变；同步四期半计划、M17/M18 说明与交接状态，保留 docs 本地忽略策略。
+- 验证：无冲突变基；`git range-diff` 仅 bootstrap 上下文变化；249 项 Python + 82 subtests、138 项 Node 通过。GitHub UI、M17 持久化/列表、通知点击/后台退出、三进程重启、完整 offline Renderer、桌面 smoke 全部 exit 0。证据 `verification/m18-branch-review/result.json`。
+- 状态：已修复并验证；M17 真实系统通知人工确认与 M16 BUG-061 仍未完成，未合入 main、推送或打包。
+- 相关提交：`91e25ea`（M18 源码）；本条与 BUG-086 随本轮接续修复提交。
+
+## BUG-086：隔离验收绕过统一退出，关窗被托盘拦截导致进程滞留
+
+- 发现日期：2026-10-16，M18 迁移到四期基线后的集成回归。
+- 现象与复现：运行 GitHub UI 或提醒持久化 smoke，功能断言输出 passed，但 Electron 主进程仍存活；三进程重启编排停在 persist 阶段等待旧进程退出。修复前现场日志保留为 `verification/m18-branch-review/*-before-shutdown-fix.log`，仅终止本轮已核验 PID 的隔离测试进程。
+- 预期：断言通过后通过生产统一退出流程结束 Electron/Core/托盘，整条验收命令 exit 0；重启编排无需等超时强杀。
+- 原因：`electron/main/index.cjs` 的 Renderer/desktop smoke 收尾直接设置外层 `quitting=true` 后 `app.quit()`，跳过 `WindowLifecycle.quit()`；其内部 `quitting` 仍为 false，主窗口 close 被拦截为 hide。生产托盘退出路径正常，问题在验收收尾。
+- 修复范围：两处成功收尾均改用已有 `lifecycle.quit()`，随后 `app.exit(0)`；后者兼容 flow smoke 替换 hardQuit 后返回的情况。未改生产关窗常驻规则。
+- 验证：Github UI、提醒持久化、M17 用户流程、三阶段跨进程重启、完整离线 Renderer、desktop smoke 均正常 exit 0；重启 persist/restore deadline 完全一致，overdue calls=1/notified=1。命令与结果见 `verification/m18-branch-review/result.json`。
+- 状态：已修复并验证通过。
+- 相关提交：与本条一并提交 `fix(desktop): exit acceptance runs through the tray lifecycle`；M18 基线提交 `91e25ea`。
