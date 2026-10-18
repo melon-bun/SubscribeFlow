@@ -43,6 +43,11 @@
 | BUG-086 | 隔离验收绕过统一退出，关窗被托盘拦截导致进程滞留 | 已修复并验证 |
 | BUG-087 | Jev 缺少全部低分时选择前两名的兜底规则 | 已修复并验证 |
 | BUG-088 | M16 任务被 worker 认领后卡在 running：重排被并发保护挡掉 | 已修复并验证 |
+| BUG-089 | 新增桌面入口取错 client，连接测试与 AI 面板不可用 | 待修复，P1；M16 实质阻断 |
+| BUG-090 | LLM 在空标签目录被跳过，无法创建第一批标签 | 待修复，P1；M16 实质阻断 |
+| BUG-091 | 打标配置变化未在任务生命周期生效 | 待修复，P1；M16 实质阻断 |
+| BUG-092 | 历史补打漏掉启用前内容，预览与实际排队数量不一致 | 待修复，P1；M16 实质阻断 |
+| BUG-093 | 在途打标任务正常退出重启后卡在 running，过期也不自动恢复 | 待修复，P1；M16 实质阻断 |
 
 ## BUG-001：收件箱操作后未移出
 
@@ -1178,3 +1183,63 @@ Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级�
 - 验证：新增用例「配置版本变化后旧任务按新版本重排」先断言重排后为 `queued` 且 `config_version` 已更新，再断言新版本下执行完成；「认证失败阻塞并在配置修好后恢复」用例同样由卡死转为通过。M16 集成测试 11 项全通过，既有全量 265 项回归通过。
 - 状态：已修复并验证。
 - 相关提交：随本轮 M16 业务接入提交。
+
+
+## BUG-089：新增桌面入口取错 client，连接测试与 AI 面板不可用
+
+- 发现日期／优先级：2026-10-18，Codex 审查 M16 交付 `83e1d9a`，P1。按用户尺度属于主流程不可用/配置不生效/数据或统计错误，不是界面细节或测试形式问题。
+- 现象与复现：正式 Electron 页面中 SF.app.client 为 undefined，而 SF.app.state.client 存在。AI 页显示“自动打标尚未接入”；点测试连接产生 TypeError，按钮停在“正在测试”。
+- 预期：页面使用实际 AppClient，连接测试、状态、重试与补打入口可调用。
+- 原因与定位：electron/renderer/scripts/views/settings.js:767；views/tags.js:1064/1103；新页面使用未导出的 SF.app.client，实际 client 存在 SF.app.state 及传入 app 参数中。
+- 修复范围：修正真实页面到 AppClient 的引用，跑一次正式 Renderer 主操作验证；不要求样式返工。
+- 验证：Codex 使用正式实现、隔离临时 SQLite 与真实 Electron 页面复现；数据为固定夹具，不读 Key、不发真实模型请求。证据 `verification/m16-review/2026-10-18-r01/renderer.json、renderer.log、renderer.cjs`。
+- 状态：待修复；当前是已复现失败，不标记通过。
+- 相关提交：引入于 `83e1d9a`；本轮 Codex 只写审查/派发文档与隔离诊断，产品实现交 MiniMax 修复。
+
+
+## BUG-090：LLM 在空标签目录被跳过，无法创建第一批标签
+
+- 发现日期／优先级：2026-10-18，Codex 审查 M16 交付 `83e1d9a`，P1。按用户尺度属于主流程不可用/配置不生效/数据或统计错误，不是界面细节或测试形式问题。
+- 现象与复现：LLM 已配置且启用，保存正文充分的新内容，在空标签目录下 Provider 调用 0 次，任务 skipped、标签 0 条。
+- 预期：只有 Jev 空候选跳过；LLM 无现有标签时仍能调用模型提出并创建标签。
+- 原因与定位：python/src/subscribe_flow/application/tagging.py:_execute；_execute 在组装请求之前对所有模式统一执行 not directory -> skipped，将 Jev 限制套给 LLM。
+- 修复范围：仅按对应模式处理空目录，验证新用户 LLM 无标签首次收录会进入 Provider 并创建标签。
+- 验证：Codex 使用正式实现、隔离临时 SQLite 与真实 Electron 页面复现；数据为固定夹具，不读 Key、不发真实模型请求。证据 `verification/m16-review/2026-10-18-r01/reproductions.json:llm_empty_directory；reproduce.py`。
+- 状态：待修复；当前是已复现失败，不标记通过。
+- 相关提交：引入于 `83e1d9a`；本轮 Codex 只写审查/派发文档与隔离诊断，产品实现交 MiniMax 修复。
+
+
+## BUG-091：打标配置变化未在任务生命周期生效
+
+- 发现日期／优先级：2026-10-18，Codex 审查 M16 交付 `83e1d9a`，P1。按用户尺度属于主流程不可用/配置不生效/数据或统计错误，不是界面细节或测试形式问题。
+- 现象与复现：模型请求执行期间保存 enabled=false 后，迟到结果仍写入 Python 标签并把任务记 succeeded。另一场景认证失败 blocked 后保存修正配置，任务仍 blocked、Provider 仍只调用 1 次。
+- 预期：关闭后迟到结果不得写标签；保存有效配置应让相应阻塞任务恢复，无需手工改库或重启。
+- 原因与定位：python/src/subscribe_flow/application/tagging.py:_execute/on_settings_changed；rpc/dispatcher.py:settings.update；仅在请求开始检查设置；apply_result 前未再核对启用状态/配置版本。on_settings_changed 没接入正式设置保存路径；原测试手动调用 unblock_all，未证明实际接线。
+- 修复范围：在正式设置保存与任务写回边界落实停用/版本失效及配置修正恢复；沿用现有服务边界，避免无关重构。
+- 验证：Codex 使用正式实现、隔离临时 SQLite 与真实 Electron 页面复现；数据为固定夹具，不读 Key、不发真实模型请求。证据 `verification/m16-review/2026-10-18-r01/reproductions.json:disable_inflight/corrected_config_stays_blocked；reproduce.py`。
+- 状态：待修复；当前是已复现失败，不标记通过。
+- 相关提交：引入于 `83e1d9a`；本轮 Codex 只写审查/派发文档与隔离诊断，产品实现交 MiniMax 修复。
+
+
+## BUG-092：历史补打漏掉启用前内容，预览与实际排队数量不一致
+
+- 发现日期／优先级：2026-10-18，Codex 审查 M16 交付 `83e1d9a`，P1。按用户尺度属于主流程不可用/配置不生效/数据或统计错误，不是界面细节或测试形式问题。
+- 现象与复现：启用自动打标前已保存 1 条内容，主动补打预览 total=0/pending=0，排队 0。另一个隔离库有 60 条候选时，预览 pending=60/limit=60，实际 items 只给 50、最后只排队 50。
+- 预期：用户主动历史补打包含开关关闭/启用前收录内容；展示的可排队数量与本次实际排队数量一致。
+- 原因与定位：python/src/subscribe_flow/application/tagging.py:backfill_preview/backfill；storage/tagging.py:backfill_preview；历史补打查询错误复用自动生效边界 enabledSince；预览 items 被截为 50，服务又把该展示列表当完整执行 ID。
+- 修复范围：区分自动触发生效边界与用户历史补打范围，保证本次预览/执行范围与计数一致。
+- 验证：Codex 使用正式实现、隔离临时 SQLite 与真实 Electron 页面复现；数据为固定夹具，不读 Key、不发真实模型请求。证据 `verification/m16-review/2026-10-18-r01/reproductions.json:historical_backfill/backfill_count_mismatch；reproduce.py`。
+- 状态：待修复；当前是已复现失败，不标记通过。
+- 相关提交：引入于 `83e1d9a`；本轮 Codex 只写审查/派发文档与隔离诊断，产品实现交 MiniMax 修复。
+
+
+## BUG-093：在途打标任务正常退出重启后卡在 running，过期也不自动恢复
+
+- 发现日期／优先级：2026-10-18，Codex 审查 M16 交付 `83e1d9a`，P1。按用户尺度属于主流程不可用/配置不生效/数据或统计错误，不是界面细节或测试形式问题。
+- 现象与复现：任务已由正式 next_task 认领，退出时租约仍未到期；close 后重建 Core，任务仍 running。随后将隔离库该租约置过期并等待 worker 下一轮，任务仍 running。
+- 预期：正常退出释放本进程在途任务，重启后可恢复执行；异常残留租约到期后也须有实际恢复路径。
+- 原因与定位：python/src/subscribe_flow/application/tagging.py:close/start/_loop；storage/tagging.py:recover_stale_tasks；close/start 只回收当前已过期租约，未处理本进程刚取消的未过期 running；工作循环又不检查后来过期的租约。
+- 修复范围：修复退出和重启恢复的实际路径，保留排队身份/幂等与有界退出，避免任务无限滞留。
+- 验证：Codex 使用正式实现、隔离临时 SQLite 与真实 Electron 页面复现；数据为固定夹具，不读 Key、不发真实模型请求。证据 `verification/m16-review/2026-10-18-r01/reproductions.json:restart_recovery；reproduce.py`。
+- 状态：待修复；当前是已复现失败，不标记通过。
+- 相关提交：引入于 `83e1d9a`；本轮 Codex 只写审查/派发文档与隔离诊断，产品实现交 MiniMax 修复。
