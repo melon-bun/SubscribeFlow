@@ -46,11 +46,21 @@ class StubProvider:
     def recognize(self, request):
         self.calls += 1
         self.seen.append(request)
+        wanted = self.picks.get(request.item_id, [])
         chosen = []
-        for tag in request.candidates:
-            if tag.name in self.picks.get(request.item_id, []):
+        by_name = {tag.name: tag for tag in request.candidates}
+        # 目录里已有的标签给 ID；目录里没有的名字按「新标签」返回——
+        # 这正是 LLM 在空目录下的行为，也是 Jev 不会做的事。
+        for name in wanted:
+            tag = by_name.get(name)
+            if tag is not None:
                 chosen.append(Candidate(tag_id=tag.id, name=tag.name, score=0.95,
                                         score_kind='noul' if request.mode == 'jev' else 'llm'))
+            elif request.mode == 'llm':
+                chosen.append(Candidate(tag_id=None, name=name, score=0.9, score_kind='llm'))
+        for tag in request.candidates:
+            if tag.name in wanted and not any(c.tag_id == tag.id for c in chosen):
+                chosen.append(Candidate(tag_id=tag.id, name=tag.name, score=0.95, score_kind='llm'))
         if not chosen:
             return RecognitionResult(provider='stub', status=STATUS_NO_MATCH, model='stub-model')
         return RecognitionResult(provider='stub', status=STATUS_MATCHED, model='stub-model',
@@ -59,10 +69,14 @@ class StubProvider:
 
 class AuthFailProvider(StubProvider):
     def recognize(self, request):
+        self.calls += 1
+        self.seen.append(request)
         raise RecognitionError('auth_failed', '凭据无效')
 
 
-class M16TaggingTests(unittest.TestCase):
+class _M16Fixture:
+    """共享夹具与工具；刻意不继承 TestCase，避免被重复收集。"""
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / 'm16.sqlite3'
@@ -127,6 +141,9 @@ class M16TaggingTests(unittest.TestCase):
         self.fail('后台队列未在预期轮次内排空')
 
     # ------------------------------------------------------------ 主链
+
+class M16TaggingTests(_M16Fixture, unittest.TestCase):
+    """第一轮：主链、幂等、人工保护与恢复。"""
 
     def test_manual_save_reaches_provider_and_applies_tags(self):
         """手动确认保存 → 事件 → 任务 → 替身 Provider → 标签落库 → 界面可查。"""
@@ -315,6 +332,195 @@ class M16TaggingTests(unittest.TestCase):
         rows = self.repo.db.execute('SELECT count(*) FROM content_tags WHERE content_id=?',
                                     (saved['item_id'],)).fetchone()[0]
         self.assertEqual(rows, 1)
+
+
+
+
+class GatedProvider(StubProvider):
+    """可控时机的替身：在测试放行前不返回，用来制造「请求在途」窗口。"""
+
+    def __init__(self, picks=None):
+        super().__init__(picks)
+        import threading
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def recognize(self, request):
+        self.entered.set()
+        self.release.wait(timeout=10)
+        return StubProvider.recognize(self, request)
+
+
+    """第一轮主链验收。"""
+
+class M16Round2RegressionTests(_M16Fixture, unittest.TestCase):
+    """第二轮：Codex 复现的四个主流程阻断各自的回归验证。"""
+
+    def test_llm_empty_directory_creates_first_tags(self):
+        """BUG-090：LLM 空目录仍调用 Provider 并创建第一批标签（Jev 才跳过）。"""
+        self.enable(mode='llm', picks={'fixture:feed:first-1': ['自动打标']})
+        # 断言前提：此时标签目录确实是空的。
+        self.assertEqual(self.tasks.enabled_tags(), [])
+        saved = self.repo.save_manual(make_item('fixture', 'first-1', '自动打标入门',
+                                                '一篇讲自动打标如何工作的入门文章，介绍流程与配置方式。'))
+        self.drain()
+        self.assertEqual(self.stub.calls, 1, 'LLM 在空目录必须调用模型')
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['state'], 'succeeded')
+        names = self.tags_of(saved['item_id'])
+        self.assertTrue(names, 'LLM 应创建并挂载新标签')
+        self.assertTrue(self.repo.list_tags(), '新标签应真正入库')
+
+    def test_jev_empty_directory_still_skips(self):
+        """Jev 的限制保留：空目录无事可做，不调模型也不造标签。"""
+        self.enable(mode='jev')
+        self.repo.save_manual(make_item('fixture', 'jev-empty-1', '空目录样本',
+                                        '正文长度足够触发识别流程，用来验证空目录跳过。'))
+        self.drain()
+        self.assertEqual(self.stub.calls, 0)
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['state'], 'skipped')
+
+    def test_disable_during_request_blocks_late_write(self):
+        """BUG-091：请求在途时关闭开关，迟到结果不得写标签。"""
+        provider = GatedProvider({'fixture:feed:late-1': ['科技']})
+        self.enable(mode='llm')
+        self._patch_provider(provider)
+        saved = self.repo.save_manual(make_item('fixture', 'late-1', '并发关闭测试',
+                                                '用于验证识别过程中关闭开关时不会写入迟到结果。'))
+
+        async def scenario():
+            work = asyncio.ensure_future(self.tagging._run_once())
+            while not provider.entered.is_set():
+                await asyncio.sleep(0.01)
+            # 模型还在等待：用户此刻关闭自动打标。
+            self.core.settings.update('tagging', {'enabled': False})
+            provider.release.set()
+            await work
+
+        self.loop.run_until_complete(scenario())
+        self.assertEqual(self.tags_of(saved['item_id']), [], '停用后的迟到结果不得落库')
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['state'], 'cancelled')
+
+    def test_corrected_config_releases_blocked_task(self):
+        """BUG-091：保存修正配置后，阻塞任务经正式 worker 路径自动恢复。
+
+        不手工调用 unblock_all、不改库——用户保存设置就应该生效。
+        """
+        self.enable(mode='llm')
+        failing = AuthFailProvider()
+        self._patch_provider(failing)
+        self.repo.save_manual(make_item('fixture', 'fix-1', '认证失败样本',
+                                        '用于验证修正配置之后被阻塞的任务会自动恢复。'))
+        self.drain()
+        blocked = self.tasks.list_tasks(limit=1)['items'][0]
+        self.assertEqual(blocked['state'], 'blocked')
+        self.assertEqual(failing.calls, 1)
+
+        # 用户在设置页保存修正后的凭据与配置：设置版本前进，worker 必须发现。
+        self.core.credentials.provide('ref-llm', 'sk-corrected')
+        self.core.settings.update('tagging', {'providers': {'llm': {'model': 'fixed-model'}}})
+        self._patch_provider(StubProvider({'fixture:feed:fix-1': ['安全']}))
+
+        self.drain()
+        refreshed = self.tasks.get_task(blocked['id'])
+        self.assertEqual(refreshed['state'], 'succeeded', '保存修正配置后应自动恢复执行')
+        self.assertEqual(self.tags_of('fixture:feed:fix-1'), ['安全'])
+
+    def test_backfill_includes_content_saved_before_enable(self):
+        """BUG-092：启用前收录的历史内容必须出现在用户主动补打范围内。"""
+        saved = self.repo.save_manual(make_item('fixture', 'old-1', '启用前的内容',
+                                                '这条内容在开启自动打标之前就已收录，补打必须覆盖它。'))
+        self.assertIsNotNone(saved)
+        self.enable(mode='llm')
+        preview = self.tagging.backfill_preview(limit=50)
+        self.assertEqual(preview['pending'], 1, '启用前内容不能被生效边界排除')
+        self.assertIn(saved['item_id'], preview['itemIds'])
+        result = self.tagging.backfill(limit=50)
+        self.assertEqual(result['queued'], 1, '预览与实际排队数量必须一致')
+
+    def test_backfill_count_matches_preview_with_many_items(self):
+        """BUG-092：候选多于展示切片时，预览数量与实际排队数量仍然一致。"""
+        self.enable(mode='llm')
+        for index in range(60):
+            self.repo.save_manual(make_item('fixture', f'bulk-{index}', f'历史内容 {index}',
+                                            f'第 {index} 条历史内容，用于验证补打范围与数量一致性。'))
+        preview = self.tagging.backfill_preview(limit=200)
+        self.assertEqual(preview['pending'], 60)
+        self.assertEqual(len(preview['itemIds']), 60)
+        # items 只是展示切片，不应被当成执行集合。
+        self.assertLessEqual(len(preview['items']), 50)
+        result = self.tagging.backfill(limit=200)
+        self.assertEqual(result['queued'], preview['pending'], '排队数必须等于预览的 pending')
+
+    def test_exit_releases_inflight_task_and_restart_resumes(self):
+        """BUG-093：正常退出释放在途任务，重启后继续执行且不重复写入。
+
+        走真实 Core.close() 与重建 Core，不手工改租约或直接调恢复函数。
+        """
+        provider = GatedProvider({'fixture:feed:restart-1': ['投资']})
+        self.enable(mode='llm')
+        self._patch_provider(provider)
+        saved = self.repo.save_manual(make_item('fixture', 'restart-1', '退出重启测试',
+                                                '用于验证退出时释放在途任务并在重启后继续执行。'))
+
+        async def claim_then_exit():
+            work = asyncio.ensure_future(self.tagging._run_once())
+            while not provider.entered.is_set():
+                await asyncio.sleep(0.01)
+            # 任务此刻已被 next_task 认领，租约尚未到期。
+            in_flight = self.tasks.list_tasks(limit=1)['items'][0]
+            self.assertEqual(in_flight['state'], 'running')
+            self.assertGreater(in_flight['attempts'], 0)
+            await self.tagging.close()
+            work.cancel()
+            try:
+                await work
+            except asyncio.CancelledError:
+                pass
+
+        self.loop.run_until_complete(claim_then_exit())
+        released = self.tasks.list_tasks(limit=1)['items'][0]
+        self.assertEqual(released['state'], 'queued', '退出必须释放本进程在途任务')
+
+        self.core.database.close()
+        self.core.lease.close()
+        # 重建 Core：模拟应用重启。
+        self.core = Core(self.path, gateway=type('G', (), {'describe': staticmethod(lambda: [])})())
+        self.repo = self.core.repository
+        self.tagging = self.core.tagging
+        self.tasks = self.repo.tagging
+        # 凭据只在 Core 内存里，重启后为空；主进程在 core.hello 之后会按设置里的
+        # 引用重新推送密钥（settingsBridge.sync）。这里如实复现这一步，而不是
+        # 让凭据凭空出现。
+        self.core.credentials.provide('ref-llm', 'sk-after-restart')
+        self.core.credentials.provide('ref-jev', 'sk-after-restart')
+        provider.release.set()
+        provider.entered.clear()
+        self._patch_provider(StubProvider({'fixture:feed:restart-1': ['投资']}))
+
+        for _ in range(8):
+            self.loop.run_until_complete(self.tagging._run_once())
+            if self.tasks.summary()['active'] == 0:
+                break
+        self.assertEqual(self.tasks.summary()['active'], 0, '重启后任务必须能继续跑到终态')
+        self.assertEqual(self.tags_of(saved['item_id']), ['投资'])
+        rows = self.repo.db.execute('SELECT count(*) FROM content_tags WHERE content_id=?',
+                                   (saved['item_id'],)).fetchone()[0]
+        self.assertEqual(rows, 1, '重启续跑不得重复写入关联')
+
+    def test_expired_lease_recovers_without_manual_call(self):
+        """BUG-093：异常残留的过期租约由 worker 循环自行回收，不需手工调用。"""
+        self.enable(mode='llm')
+        self.repo.save_manual(make_item('fixture', 'orphan-1', '残留租约测试',
+                                        '用于验证过期租约由工作循环自动回收而不必人工干预。'))
+        self.tagging._register()
+        task = self.tasks.next_task()
+        self.assertIsNotNone(task)
+        self.tasks.db.execute("UPDATE tagging_tasks SET lease_expires_at='2000-01-01T00:00:00'"
+                              " WHERE id=?", (task['id'],))
+        # 只跑 worker 循环本身：循环必须把过期租约收回来并完成该任务。
+        self.drain()
+        self.assertIn(self.tasks.get_task(task['id'])['state'],
+                      ('succeeded', 'skipped', 'queued', 'failed'))
 
 
 if __name__ == '__main__':

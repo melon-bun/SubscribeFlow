@@ -45,6 +45,9 @@ class TaggingService:
         self.workers: list[asyncio.Task] = []
         self.closing = False
         self.running_task_id: str | None = None
+        # 上一轮读到的配置版本：用来发现用户保存了设置（含主进程推进凭据后
+        # 提交的引用），从而让被阻塞的任务自动恢复。None 表示还没读过。
+        self._seen_config_version = None
 
     # ------------------------------------------------------------ 组装
 
@@ -167,10 +170,45 @@ class TaggingService:
         if created:
             self.emit('tagging.changed', {'registered': len(created)})
 
+    def _notice_config_change(self):
+        """设置或凭据变化后让后台任务跟着变，不要求重启也不要求用户手工操作。
+
+        worker 本身就每轮读一次最新设置，因此以「设置版本 + 凭据代次」为界判断
+        是否变化最可靠：用户在设置页保存配置会让版本前进，Core 重启后主进程
+        重新推送密钥只会让凭据代次前进（设置版本不变）。两者都要看，否则
+        被认证/配置缺失阻塞的任务会永远停在 blocked。
+        """
+        config, _ = self.snapshot()
+        stamp = (config['version'], self.credentials.generation)
+        if self._seen_config_version is None:
+            self._seen_config_version = stamp
+            return False
+        if stamp == self._seen_config_version:
+            return False
+        self._seen_config_version = stamp
+        try:
+            released = self.repo.unblock_all()
+        except Exception:
+            LOG.exception('Releasing blocked auto-tagging tasks failed')
+            return False
+        if released:
+            self.emit('tagging.changed', {'released': released})
+        return True
+
     async def _run_once(self):
         """一轮：推进事件 → 认领一个任务 → 执行 → 落库。"""
         if self.closing:
             return
+        # 过期租约每轮回收：崩溃或异常残留的 running 任务到点就重新可执行，
+        # 否则它们会永远滞留，worker 自己却以为队列已空。
+        try:
+            recovered = self.repo.recover_stale_tasks()
+        except Exception:
+            LOG.exception('Recovering stale auto-tagging tasks failed')
+        else:
+            if recovered:
+                self.emit('tagging.changed', {'recovered': recovered})
+        self._notice_config_change()
         self.repo.promote_due()
         self._register()
         task = self.repo.next_task()
@@ -207,8 +245,10 @@ class TaggingService:
             return
 
         directory = self.repo.enabled_tags()
-        if not directory:
-            # 空标签目录直接跳过，不调用模型，也不生成新标签（§3.3）。
+        if not directory and task['mode'] == 'jev':
+            # 只有 Jev 受这条限制：它只能在已有标签里选，空目录无事可做，
+            # 调模型既拿不到候选也造不出新标签（计划 §3.3）。
+            # LLM 空目录仍要调用——新用户的第一批标签正是这样产生的（§3.4）。
             self.repo.finish(task['id'], 'skipped', skipped_reason='没有可用于自动分类的已启用标签')
             return
 
@@ -248,6 +288,19 @@ class TaggingService:
             return
 
         self.repo.renew_lease(task['id'])
+        # 写回前必须按当前配置再核一次。只在请求开始处检查是不够的：
+        # 用户可能在模型返回之前就关掉开关或换掉凭据，那时这条结果已经过期，
+        # 落库就等于用旧配置的决定覆盖用户当前的选择。
+        current, current_tagging = self.snapshot()
+        if not current_tagging['enabled']:
+            self.repo.finish(task['id'], CANCELLED_STATE, skipped_reason='自动打标在识别期间已关闭')
+            return
+        if current['version'] != task['config_version']:
+            # 配置已变（模式或凭据引用不同）：按当前版本重排，不写旧快照结果。
+            self.repo.rerun(task['id'], config_version=current['version'],
+                            catalog_version=catalog, mode=current_tagging['mode'], force=True)
+            self.emit('tagging.changed', {'requeued': task['id']})
+            return
         if result.status == STATUS_INSUFFICIENT_TEXT:
             self.repo.finish(task['id'], 'skipped', provider=result.provider, model=result.model,
                              skipped_reason='文本过短，不足以判断')
@@ -303,12 +356,13 @@ class TaggingService:
         if self.workers:
             await asyncio.gather(*self.workers, return_exceptions=True)
         self.workers = []
-        # 在途任务退回队列，重启后可恢复，不留在假运行状态。
-        if self.running_task_id:
-            try:
-                self.repo.recover_stale_tasks()
-            except Exception:
-                LOG.exception('Releasing in-flight auto-tagging task failed')
+        # 退出这一刻所有 running 任务都属于本进程（数据库由 CoreLease 单进程独占），
+        # 无论是否被本进程认领，都必须显式退回队列：它们租约未到期，
+        # 若只回收「已过期」，重启后既认领不了也等不到过期。
+        try:
+            self.repo.release_running_tasks()
+        except Exception:
+            LOG.exception('Releasing in-flight auto-tagging tasks failed')
 
     def on_settings_changed(self):
         """设置保存后立即生效：配置版本一变，旧任务按新版本重排。"""
@@ -337,23 +391,25 @@ class TaggingService:
 
     def backfill_preview(self, since=None, limit=200):
         config, tagging = self.snapshot()
-        preview = self.repo.backfill_preview(since=since, limit=limit,
-                                             enabled_since=tagging.get('enabledSince'))
+        # 不传 enabled_since：用户主动补打必须覆盖开关关闭/开启前收录的内容。
+        preview = self.repo.backfill_preview(since=since, limit=limit)
         preview['mode'] = tagging['mode']
         preview['configVersion'] = config['version']
         preview['enabled'] = bool(tagging['enabled'])
         return preview
 
     def backfill(self, item_ids=None, limit=200):
-        """用户主动补打。没有指定内容时，对预览范围内的内容排队。"""
+        """用户主动补打。没有指定内容时，对预览范围内的内容排队。
+
+        执行范围必须与刚刚展示的预览同源：否则界面写着 60 条、实际只排队一部分，
+        用户无法判断哪些内容真的被打标过。
+        """
         config, tagging = self.snapshot()
         if not tagging['enabled']:
             raise ChannelError('NOT_CONFIGURED', 'tagging.backfill', '自动打标已关闭，无法补打')
         if not item_ids:
-            preview = self.repo.backfill_preview(limit=limit,
-                                                 enabled_since=tagging.get('enabledSince'))
-            item_ids = [row['id'] for row in self.repo.backfill_preview(
-                limit=limit, enabled_since=tagging.get('enabledSince'))['items']]
+            preview = self.repo.backfill_preview(limit=limit)
+            item_ids = preview['itemIds']
         result = self.repo.enqueue_backfill(item_ids, config_version=config['version'],
                                             catalog_version=self.repo.catalog_version(),
                                             mode=tagging['mode'], limit=limit)

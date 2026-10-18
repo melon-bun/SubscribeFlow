@@ -1061,7 +1061,7 @@
   var aiState = { busy: false };
 
   function loadAiPanel(app, container) {
-    var client = SF.app.client;
+    var client = app.client;
     if (!client || typeof client.getTaggingStatus !== "function") {
       container.textContent = "自动打标尚未接入。";
       return;
@@ -1100,7 +1100,7 @@
   function renderAiPanel(app, container, status) {
     var summary = (status && status.summary) || {};
     var recent = (status && status.recent) || [];
-    var client = SF.app.client;
+    var client = app.client;
     container.textContent = "";
 
     container.appendChild(

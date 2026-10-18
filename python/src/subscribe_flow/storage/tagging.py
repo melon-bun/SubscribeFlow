@@ -146,6 +146,20 @@ class TaggingRepository:
                 (stamp, stamp))
             return cursor.rowcount
 
+    def release_running_tasks(self):
+        """正常退出时释放本进程尚未到期的在途任务。
+
+        数据库由 CoreLease 保证单进程独占，因此退出这一刻处于 running 的任务
+        必定属于本进程：它们是 worker 刚取消掉的，没有结果可落库。租约还没到
+        期是正常情况——若只回收「已过期」，这些任务会带着未过期的租约留在库里，
+        重启后既不能被认领，也等不到过期，看起来就永远卡在运行中。
+        """
+        with self.database.transaction() as db:
+            cursor = db.execute(
+                "UPDATE tagging_tasks SET state='queued',lease_expires_at=NULL,updated_at=?"
+                " WHERE state='running'", (now(),))
+            return cursor.rowcount
+
     def finish(self, task_id, state, **fields):
         """结束任务。state 必须是终态，且标签落库调用方负责同事务提交。"""
         if state not in TERMINAL:
@@ -433,24 +447,30 @@ class TaggingRepository:
                     queued.append(content_id)
         return {'queued': len(queued), 'skipped': skipped, 'item_ids': queued[:100]}
 
-    def backfill_preview(self, *, since=None, limit=500, enabled_since=None):
-        """补打范围预览：数量与是否已打过，界面在执行前展示。"""
+    def backfill_preview(self, *, since=None, limit=500):
+        """用户主动补打的范围预览：总数、可补打数与本次实际会排队的 ID。
+
+        这里刻意**不**套用自动触发生效边界 `enabledSince`：开关关闭期间或
+        开启之前收录的内容，本来就只能由用户主动补打处理（计划 §3.5 第 4 条），
+        把它们排除出去会让「补打」这件事永远做不了它们。
+        已打过标的内容同样排除，重复补打不会重复请求模型。
+        """
         clauses, args = ['1=1'], []
         if since:
             clauses.append("first_seen_at>=?")
             args.append(since)
-        if enabled_since:
-            clauses.append("first_seen_at>=?")
-            args.append(enabled_since)
         where = ' AND '.join(clauses)
         total = self.db.execute(f"SELECT count(*) FROM contents WHERE {where}", args).fetchone()[0]
         rows = self.db.execute(
             f"SELECT c.id,c.first_seen_at FROM contents c WHERE {where}"
             " AND NOT EXISTS(SELECT 1 FROM tagging_tasks t WHERE t.content_id=c.id)"
-            " ORDER BY c.first_seen_at DESC LIMIT ?", (*args, limit))
-        pending = [dict(row) for row in rows]
-        return {'total': total, 'pending': len(pending),
-                'limit': min(limit, total), 'items': pending[:50]}
+            " ORDER BY c.first_seen_at DESC LIMIT ?", (*args, limit)).fetchall()
+        candidates = [dict(row) for row in rows]
+        return {'total': total, 'pending': len(candidates),
+                'limit': len(candidates),
+                # itemIds 是本次执行的完整集合；items 只是给界面看的切片。
+                'itemIds': [row['id'] for row in candidates],
+                'items': candidates[:50]}
 
     def delete_tasks(self, task_id):
         with self.database.transaction() as db:

@@ -19,6 +19,14 @@ class CredentialBroker:
     def __init__(self, limit=LIMIT):
         self._secrets = {}
         self._limit = limit
+        # 凭据代次：每次提供或撤销都前进。自动打标据此判断「配置是否变化过」，
+        # 因为 Core 重启后主进程只重新推送凭据（credential.provide），并不会
+        # 因此递增设置版本——只看设置版本会漏掉这次恢复。
+        self._generation = 0
+
+    @property
+    def generation(self):
+        return self._generation
 
     def provide(self, reference, secret):
         if not isinstance(reference, str) or not reference or len(reference) > 64:
@@ -28,6 +36,7 @@ class CredentialBroker:
         # 重复推送同一引用时先删后插，让它排到队尾，裁剪时保留的是最近使用的。
         self._secrets.pop(reference, None)
         self._secrets[reference] = secret
+        self._generation += 1
         while len(self._secrets) > self._limit:
             del self._secrets[next(iter(self._secrets))]
 
@@ -35,10 +44,12 @@ class CredentialBroker:
         if not isinstance(reference, str) or not reference:
             raise ChannelError("INVALID_INPUT", "credential.revoke", "凭据引用无效")
         self._secrets.pop(reference, None)
+        self._generation += 1
         return {"revoked": True}
 
     def clear(self):
         self._secrets.clear()
+        self._generation += 1
 
     def secret_for(self, reference):
         """供自动打标调用模型时取用；引用不存在一律返回 None，不抛错也不猜。"""

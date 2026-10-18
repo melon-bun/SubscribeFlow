@@ -725,7 +725,7 @@
       ),
       // 两种方式并排：切换后另一种仍保留，摆在同一屏才看得出这一点。
       h("div.setting-grid", null, buildProvider(app, "jev"), buildProvider(app, "llm")),
-      buildTestBlock(),
+      buildTestBlock(app),
     ];
   }
 
@@ -733,7 +733,7 @@
    * 连接测试属于 M16 的真实模型调用。M15 没有可调用的 Provider，
    * 这里如实标为不可用，而不是给一个点了会「成功」的假按钮。
    */
-  function buildTestBlock() {
+  function buildTestBlock(app) {
     // 真实连接测试：复用正式 Provider 与固定样例，反馈真实结果。
     // 配置不全时给出明确原因，不会静默成功，也不会回显任何密钥。
     var running = !!cache.testing;
@@ -764,7 +764,7 @@
             cache.testing = true;
             cache.testResult = null;
             SF.app.renderContent();
-            SF.app.client.testTaggingConnection().then(
+            app.client.testTaggingConnection().then(
               function (result) {
                 cache.testing = false;
                 cache.testResult = result;
