@@ -43,11 +43,11 @@
 | BUG-086 | 隔离验收绕过统一退出，关窗被托盘拦截导致进程滞留 | 已修复并验证 |
 | BUG-087 | Jev 缺少全部低分时选择前两名的兜底规则 | 已修复并验证 |
 | BUG-088 | M16 任务被 worker 认领后卡在 running：重排被并发保护挡掉 | 已修复并验证 |
-| BUG-089 | 新增桌面入口取错 client，连接测试与 AI 面板不可用 | 待修复，P1；M16 实质阻断 |
-| BUG-090 | LLM 在空标签目录被跳过，无法创建第一批标签 | 待修复，P1；M16 实质阻断 |
-| BUG-091 | 打标配置变化未在任务生命周期生效 | 待修复，P1；M16 实质阻断 |
-| BUG-092 | 历史补打漏掉启用前内容，预览与实际排队数量不一致 | 待修复，P1；M16 实质阻断 |
-| BUG-093 | 在途打标任务正常退出重启后卡在 running，过期也不自动恢复 | 待修复，P1；M16 实质阻断 |
+| BUG-089 | 新增桌面入口取错 client，连接测试与 AI 面板不可用 | 已修复并验证（2026-10-18） |
+| BUG-090 | LLM 在空标签目录被跳过，无法创建第一批标签 | 已修复并验证（2026-10-18） |
+| BUG-091 | 打标配置变化未在任务生命周期生效 | 已修复并验证（2026-10-18） |
+| BUG-092 | 历史补打漏掉启用前内容，预览与实际排队数量不一致 | 已修复并验证（2026-10-18） |
+| BUG-093 | 在途打标任务正常退出重启后卡在 running，过期也不自动恢复 | 已修复并验证（2026-10-18） |
 
 ## BUG-001：收件箱操作后未移出
 
@@ -1193,8 +1193,8 @@ Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级�
 - 原因与定位：electron/renderer/scripts/views/settings.js:767；views/tags.js:1064/1103；新页面使用未导出的 SF.app.client，实际 client 存在 SF.app.state 及传入 app 参数中。
 - 修复范围：修正真实页面到 AppClient 的引用，跑一次正式 Renderer 主操作验证；不要求样式返工。
 - 验证：Codex 使用正式实现、隔离临时 SQLite 与真实 Electron 页面复现；数据为固定夹具，不读 Key、不发真实模型请求。证据 `verification/m16-review/2026-10-18-r01/renderer.json、renderer.log、renderer.cjs`。
-- 状态：待修复；当前是已复现失败，不标记通过。
-- 相关提交：引入于 `83e1d9a`；本轮 Codex 只写审查/派发文档与隔离诊断，产品实现交 MiniMax 修复。
+- 状态：**已修复并验证**（2026-10-18）。桌面入口已恢复可用：视图改用 view.render(app) 传入的内部 app 对象上的 client（SF.app 是外层包装，SF.app.client 恒为 undefined）。真实 Electron 重跑诊断，aiPanelUnavailable 由 true 变 false、errors 由 TypeError 变空、testButtonStuck 由 true 变 false，exit 0。
+- 引入于 `83e1d9a`；修复提交 `ef6e3bb`。
 
 
 ## BUG-090：LLM 在空标签目录被跳过，无法创建第一批标签
@@ -1205,8 +1205,8 @@ Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级�
 - 原因与定位：python/src/subscribe_flow/application/tagging.py:_execute；_execute 在组装请求之前对所有模式统一执行 not directory -> skipped，将 Jev 限制套给 LLM。
 - 修复范围：仅按对应模式处理空目录，验证新用户 LLM 无标签首次收录会进入 Provider 并创建标签。
 - 验证：Codex 使用正式实现、隔离临时 SQLite 与真实 Electron 页面复现；数据为固定夹具，不读 Key、不发真实模型请求。证据 `verification/m16-review/2026-10-18-r01/reproductions.json:llm_empty_directory；reproduce.py`。
-- 状态：待修复；当前是已复现失败，不标记通过。
-- 相关提交：引入于 `83e1d9a`；本轮 Codex 只写审查/派发文档与隔离诊断，产品实现交 MiniMax 修复。
+- 状态：**已修复并验证**（2026-10-18）。空目录跳过只保留给 Jev；LLM 仍调用正式 Provider，并在写标签的同一事务内创建与挂载新标签。集成测试断言空目录下 Provider 调用 1 次、任务 succeeded、标签真正入库；同时保留 Jev 空目录 0 次调用的既有限制。
+- 引入于 `83e1d9a`；修复提交 `ef6e3bb`。
 
 
 ## BUG-091：打标配置变化未在任务生命周期生效
@@ -1217,8 +1217,8 @@ Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级�
 - 原因与定位：python/src/subscribe_flow/application/tagging.py:_execute/on_settings_changed；rpc/dispatcher.py:settings.update；仅在请求开始检查设置；apply_result 前未再核对启用状态/配置版本。on_settings_changed 没接入正式设置保存路径；原测试手动调用 unblock_all，未证明实际接线。
 - 修复范围：在正式设置保存与任务写回边界落实停用/版本失效及配置修正恢复；沿用现有服务边界，避免无关重构。
 - 验证：Codex 使用正式实现、隔离临时 SQLite 与真实 Electron 页面复现；数据为固定夹具，不读 Key、不发真实模型请求。证据 `verification/m16-review/2026-10-18-r01/reproductions.json:disable_inflight/corrected_config_stays_blocked；reproduce.py`。
-- 状态：待修复；当前是已复现失败，不标记通过。
-- 相关提交：引入于 `83e1d9a`；本轮 Codex 只写审查/派发文档与隔离诊断，产品实现交 MiniMax 修复。
+- 状态：**已修复并验证**（2026-10-18）。两处生命周期问题一并修复：写回前重新读取当前设置，识别期间关闭开关则不写入任何标签、配置版本变化则按新版本重排；worker 每轮比较「设置版本 + 凭据代次」——此前只比较设置版本，而 Core 重启后主进程仅重新推送密钥（credential.provide）、设置版本并不前进，被阻塞任务因此永不恢复。集成测试只做正式配置保存，不调 unblock_all、不改库。
+- 引入于 `83e1d9a`；修复提交 `ef6e3bb`。
 
 
 ## BUG-092：历史补打漏掉启用前内容，预览与实际排队数量不一致
@@ -1229,8 +1229,8 @@ Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级�
 - 原因与定位：python/src/subscribe_flow/application/tagging.py:backfill_preview/backfill；storage/tagging.py:backfill_preview；历史补打查询错误复用自动生效边界 enabledSince；预览 items 被截为 50，服务又把该展示列表当完整执行 ID。
 - 修复范围：区分自动触发生效边界与用户历史补打范围，保证本次预览/执行范围与计数一致。
 - 验证：Codex 使用正式实现、隔离临时 SQLite 与真实 Electron 页面复现；数据为固定夹具，不读 Key、不发真实模型请求。证据 `verification/m16-review/2026-10-18-r01/reproductions.json:historical_backfill/backfill_count_mismatch；reproduce.py`。
-- 状态：待修复；当前是已复现失败，不标记通过。
-- 相关提交：引入于 `83e1d9a`；本轮 Codex 只写审查/派发文档与隔离诊断，产品实现交 MiniMax 修复。
+- 状态：**已修复并验证**（2026-10-18）。补打查询不再套用自动触发生效边界 enabled_since（启用前与关闭期间收录的内容本来就只能靠用户主动补打）；预览返回完整 itemIds 作为本次执行集合，items 仅作展示切片，因此 pending 数量与实际排队数量一致。
+- 引入于 `83e1d9a`；修复提交 `ef6e3bb`。
 
 
 ## BUG-093：在途打标任务正常退出重启后卡在 running，过期也不自动恢复
@@ -1241,5 +1241,5 @@ Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级�
 - 原因与定位：python/src/subscribe_flow/application/tagging.py:close/start/_loop；storage/tagging.py:recover_stale_tasks；close/start 只回收当前已过期租约，未处理本进程刚取消的未过期 running；工作循环又不检查后来过期的租约。
 - 修复范围：修复退出和重启恢复的实际路径，保留排队身份/幂等与有界退出，避免任务无限滞留。
 - 验证：Codex 使用正式实现、隔离临时 SQLite 与真实 Electron 页面复现；数据为固定夹具，不读 Key、不发真实模型请求。证据 `verification/m16-review/2026-10-18-r01/reproductions.json:restart_recovery；reproduce.py`。
-- 状态：待修复；当前是已复现失败，不标记通过。
-- 相关提交：引入于 `83e1d9a`；本轮 Codex 只写审查/派发文档与隔离诊断，产品实现交 MiniMax 修复。
+- 状态：**已修复并验证**（2026-10-18）。数据库由 CoreLease 单进程独占，因此退出时释放全部 running 任务（此前只回收「已过期」租约，本进程刚取消、租约未到期的任务被留在库里）；worker 每轮回收过期租约，异常残留也自行恢复。集成测试走真实 tagging.close() 与重建 Core，不手工改租约或直接调恢复函数。
+- 引入于 `83e1d9a`；修复提交 `ef6e3bb`。
