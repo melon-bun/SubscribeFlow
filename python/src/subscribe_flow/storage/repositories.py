@@ -27,6 +27,11 @@ class Repository:
         self.database, self.db = database, database.connection
         self.db.create_function('sf_calendar_key', 4, calendar_key, deterministic=True)
         self.db.create_function('sf_calendar_order', 4, calendar_order, deterministic=True)
+        # M16：自动打标事件与任务仓储。事件写入复用内容入库的那个事务，
+        # 因此「内容存了但事件没写」的窗口在结构上不存在（计划 §3.5 第 1 条）。
+        # 延迟导入：tagging 依赖本模块的 now/encode，模块层互相 import 会成环。
+        from .tagging import TaggingRepository
+        self.tagging = TaggingRepository(database)
 
     def add_connection(self, connection: Connection):
         with self.database.transaction() as db:
@@ -217,6 +222,10 @@ class Repository:
         self._save_source(db, item.source)
         db.execute("INSERT OR IGNORE INTO content_sources VALUES(?,?)", (item.key, item.source.key))
         db.execute("INSERT OR IGNORE INTO content_states(content_id,updated_at) VALUES(?,?)", (item.key, stamp))
+        # M16：首次成功保存这一事实与内容入库同事务提交。订阅分页与手动确认保存
+        # 共用这里，因此两条入口产生同一种事件；重复收录在上面已 return 0，
+        # 不会产生第二条事件（唯一索引 name+content_id 再兜一层）。
+        self.tagging.record_content_created(db, item.key, stamp, stamp)
         return 1
 
     def save_manual(self, item, *, priority=None, tag_ids=None):

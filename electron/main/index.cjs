@@ -346,7 +346,7 @@ async function start() {
       void resources.tray.refresh(); // 失联时菜单要如实显示不可用，不伪造 0
     } });
   core.on('notification', (event, data) => {
-    if (!['sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'scheduler.changed', 'tags.changed'].includes(event)) return;
+    if (!['sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'scheduler.changed', 'tags.changed', 'tagging.changed'].includes(event)) return;
     send(event, data);
     // 标签变动同时影响侧栏计数：内容收件箱据此重取标签目录，
     // 否则目录被标记为已加载且为空，新建标签在收件箱里会看不到。

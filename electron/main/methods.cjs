@@ -7,6 +7,10 @@ const CORE_METHODS = new Set([
   'content.set_tags', 'content.bulk_set_tags',
   'source.list', 'intake.start', 'intake.get', 'intake.cancel', 'intake.save',
   'schedule.list', 'schedule.status',
+  // M16 自动打标：任务状态、失败重试与用户主动补打。只读状态与排队动作，
+  // 不接受也不返回任何密钥；连接测试只用 Core 内存里的凭据，结果只有成败。
+  'tagging.status', 'tagging.test', 'tagging.tasks', 'tagging.retry',
+  'tagging.backfill_preview', 'tagging.backfill',
 ]);
 // settings.* 与 notification.* 刻意不在这里：它们必须经过 Main 的 UI 方法，
 // 先加密保存密钥再向 Core 提交引用。放进白名单等于让 Renderer 绕过凭据编排。

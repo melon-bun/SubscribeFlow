@@ -178,6 +178,18 @@
     client.openContent = function (id) { return invoke('content.open', { item_id: id }); };
     client.openChannel = function (id) { return invoke('source.open', { subscription_id: id }); };
     client.loginConnection = function (id) { return invoke('connection.login', { connection_id: id }); };
+    // M16 自动打标。直接走 RPC 通道名：这些方法不接受也不返回密钥，
+    // 因此不需要经过主进程的凭据编排。
+    client.getTaggingStatus = function () { return invoke('tagging.status', {}); };
+    client.testTaggingConnection = function () { return invoke('tagging.test', {}); };
+    client.listTaggingTasks = function (params) { return invoke('tagging.tasks', params || {}); };
+    client.retryTaggingTask = function (taskId) { return invoke('tagging.retry', { task_id: taskId }); };
+    client.previewTaggingBackfill = function (limit) {
+      return limit ? invoke('tagging.backfill_preview', { limit: limit }) : invoke('tagging.backfill_preview', {});
+    };
+    client.runTaggingBackfill = function (limit) {
+      return limit ? invoke('tagging.backfill', { limit: limit }) : invoke('tagging.backfill', {});
+    };
     return client;
   }
 

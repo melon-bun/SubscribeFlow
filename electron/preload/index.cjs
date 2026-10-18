@@ -13,6 +13,9 @@ const allowed = new Set([
   'schedule.list', 'schedule.status',
   // M15 设置：密钥明文只在提交这一刻经过 Preload，任何读取都拿不到密钥。
   'getSettings', 'saveSettings', 'getNotificationStatus', 'sendTestNotification',
+  // M16 自动打标：状态、连接测试、重试与补打。渲染层拿不到密钥，只能看到结果。
+  'tagging.status', 'tagging.test', 'tagging.tasks', 'tagging.retry',
+  'tagging.backfill_preview', 'tagging.backfill',
   'getSession', 'getCounts', 'listPlatforms', 'listPriorities', 'getCalendar', 'listContents', 'getContent',
   'updateContent', 'bulkUpdate', 'listChannels', 'createChannel', 'updateChannel',
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',
@@ -22,7 +25,7 @@ const allowed = new Set([
   'listTags', 'getTag', 'createTag', 'updateTag', 'setTagEnabled', 'removeTag', 'listTagContents',
   'setContentTags', 'bulkSetTags',
 ]);
-const events = new Set(['core.status', 'sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'tags.changed', 'run', 'runs', 'content', 'channels', 'reminder.navigate']);
+const events = new Set(['core.status', 'sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'tags.changed', 'tagging.changed', 'run', 'runs', 'content', 'channels', 'reminder.navigate']);
 // Plain result envelopes cross contextBridge intact. Renderer creates its own
 // Error so code/scope/retry fields are not discarded while crossing contexts.
 async function request(name, params = {}) {

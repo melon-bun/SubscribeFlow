@@ -92,6 +92,14 @@ class Dispatcher:
                                        "notification_error": str, "backoff_index": int},
                                       {"next_check_at", "last_handled_at", "last_result",
                                        "notification_error"}),
+            # M16 自动打标：状态、重试与用户主动补打。设置类方法刻意不在这里，
+            # 自动打标只用配置引用，密钥始终留在主进程受保护凭据里。
+            "tagging.status": (c.tagging.status, {}, {}),
+            "tagging.test": (c.tagging.test_connection, {}, {}),
+            "tagging.tasks": (c.tagging.tasks, {}, {"states": list, "limit": int, "offset": int}),
+            "tagging.retry": (c.tagging.retry, {"task_id": str}, {}),
+            "tagging.backfill_preview": (c.tagging.backfill_preview, {}, {"limit": int}),
+            "tagging.backfill": (c.tagging.backfill, {}, {"limit": int}),
             "settings.get": (c.settings.snapshot, {}, {}),
             "settings.update": (c.settings.update, {"section": str, "patch": dict}, {"credential_refs": dict}),
             # 私有凭据桥接：只由主进程调用，不在 Renderer 方法白名单内。

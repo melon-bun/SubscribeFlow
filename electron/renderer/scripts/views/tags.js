@@ -1045,65 +1045,212 @@
      ===================================================================== */
 
   /**
-   * 设计化空态，但只放现在真的能走通的去向。
-   * 「去设置标签规则」这类按钮在本期没有落点，「填 API Key」也没有——
-   * 放上去就是点了没反应，因此这里改成说明现状 + 一个真实可用的出口。
+   * AI 自动识别：真实的后台任务面板。
+   *
+   * 这里不再是「尚未接入」的空态：任务状态、失败重试与历史补打都走
+   * app.client 的正式 RPC 方法，页面不判断演示 / 真实，也不自己拼模型参数。
+   * 补打是用户主动动作，先显示范围与数量再执行，不在打开页面时自动扫全库。
    */
   function buildAiPage(app) {
-    return h(
-      "div.panel.tags-fill",
-      null,
+    var body = h("div.panel.tags-fill");
+    body.appendChild(h("div.tags-empty", null, h("p", { text: "正在读取自动打标状态…" })));
+    loadAiPanel(app, body);
+    return body;
+  }
+
+  var aiState = { busy: false };
+
+  function loadAiPanel(app, container) {
+    var client = SF.app.client;
+    if (!client || typeof client.getTaggingStatus !== "function") {
+      container.textContent = "自动打标尚未接入。";
+      return;
+    }
+    client
+      .getTaggingStatus()
+      .then(function (status) {
+        renderAiPanel(app, container, status);
+      })
+      .catch(function (err) {
+        container.textContent = err && err.message ? err.message : "读取自动打标状态失败。";
+      });
+  }
+
+  var STATE_LABEL = {
+    queued: "排队中",
+    running: "识别中",
+    retry_wait: "等待重试",
+    blocked: "需要处理",
+    succeeded: "已完成",
+    skipped: "已跳过",
+    failed: "失败",
+    cancelled: "已取消",
+  };
+  var STATE_TONE = {
+    queued: "neutral",
+    running: "info",
+    retry_wait: "warning",
+    blocked: "danger",
+    succeeded: "success",
+    skipped: "neutral",
+    failed: "danger",
+    cancelled: "neutral",
+  };
+
+  function renderAiPanel(app, container, status) {
+    var summary = (status && status.summary) || {};
+    var recent = (status && status.recent) || [];
+    var client = SF.app.client;
+    container.textContent = "";
+
+    container.appendChild(
       h(
-        "div.tags-empty",
+        "div.ai-status",
         null,
-        h("div.tags-empty__icon", { "aria-hidden": "true" }, icon("zap", 28)),
-        h("h2.tags-empty__title", { text: "AI 自动识别尚未接入" }),
-        h("p.tags-empty__desc", {
-          text:
-            "模型识别还没有接入：这一页不会出现排队、运行或失败的任务，因为后台并没有在跑识别，" +
-            "现在也不会产生任何自动标签。人工标签不受影响，随时可用。",
-        }),
-        h(
-          "div.ai-status",
-          null,
-          aiStatusRow("自动打标开关", "待配置", "neutral", "开关与模型配置在设置页；识别功能接入后才会真正开始处理内容。"),
-          aiStatusRow("后台任务", "未开始", "neutral", "排队、运行、成功与失败会在识别接入后出现在这一页。"),
-          aiStatusRow("历史内容补打", "未开始", "neutral", "开启自动打标后，可以在这里对之前收录的内容主动补打。")
-        ),
-        h(
-          "div.tags-empty__actions",
-          null,
-          ui.btn("去设置 AI 模型配置", {
-            variant: "primary",
-            icon: "sliders",
-            onClick: function () {
-              SF.app.openSettings("tagging");
-            },
-          }),
-          ui.btn("回到标签列表", {
-            icon: "tag",
-            onClick: function () {
-              SF.app.navigate("tags", { tab: "list" });
-              app.tagTab = "list";
-              SF.app.renderContent();
-            },
-          })
-        ),
-        h(
-          "div.tags-empty__note",
-          null,
-          icon("info", 15),
-          h(
-            "div",
-            null,
-            h("p.tags-empty__note-t", { text: "现在可以做的" }),
-            h("p", { text: "创建、重命名、改色和维护别名标签，并查看每个标签用在了多少条内容上。" }),
-            h("p.tags-empty__note-t", { text: "设置页现在能做的" }),
-            h("p", { text: "保存自动打标开关与识别方式、填写模型接口与 API Key，以及设置提醒间隔。密钥用系统保护能力加密保存，保存后不再回显。" })
-          )
-        )
+        aiStatusRow("后台任务", summary.total ? summary.total + " 条已登记" : "暂无任务", "neutral",
+          summary.active ? summary.active + " 条正在排队或执行。" : "当前没有排队或执行中的任务。"),
+        aiStatusRow("需要处理", summary.needsAttention ? summary.needsAttention + " 条失败或被阻塞" : "没有需要处理的任务",
+          summary.needsAttention ? "danger" : "neutral",
+          summary.needsAttention ? "认证失败或配置缺失会阻塞，改好配置后自动恢复。" : "所有任务都已正常结束。")
       )
     );
+
+    container.appendChild(
+      h(
+        "div.tags-empty__actions",
+        null,
+        ui.btn("刷新状态", {
+          icon: "refresh",
+          onClick: function () {
+            loadAiPanel(app, container);
+          },
+        }),
+        ui.btn("去设置 AI 模型配置", {
+          variant: "primary",
+          icon: "sliders",
+          onClick: function () {
+            SF.app.openSettings("tagging");
+          },
+        })
+      )
+    );
+
+    // 历史补打：先给范围与数量，用户确认后才排队。
+    var backfillBox = h("div.ai-status");
+    container.appendChild(backfillBox);
+    backfillBox.appendChild(aiStatusRow("历史内容补打", "未执行", "neutral", "只处理尚未打标过的内容，不会重复请求已完成的标签。"));
+    var backfillActions = h(
+      "div.tags-empty__actions",
+      null,
+      ui.btn("查看可补打范围", {
+        icon: "search",
+        onClick: function () {
+          client
+            .previewTaggingBackfill(200)
+            .then(function (preview) {
+              backfillBox.textContent = "";
+              backfillBox.appendChild(
+                aiStatusRow("历史内容补打", preview.pending + " 条可补打", "info",
+                  "范围内共 " + preview.total + " 条内容，最多补打 " + preview.limit + " 条。")
+              );
+              backfillActions.textContent = "";
+              backfillActions.appendChild(
+                ui.btn("立即补打 " + preview.limit + " 条", {
+                  variant: "primary",
+                  icon: "zap",
+                  onClick: function () {
+                    if (aiState.busy) return;
+                    aiState.busy = true;
+                    client.runTaggingBackfill(preview.limit).then(
+                      function (result) {
+                        aiState.busy = false;
+                        backfillBox.textContent = "";
+                        backfillBox.appendChild(
+                          aiStatusRow("历史内容补打", "已排队 " + result.queued + " 条", "success",
+                            "任务已进入后台队列，完成后这里会显示结果。")
+                        );
+                        loadAiPanel(app, container);
+                      },
+                      function (err) {
+                        aiState.busy = false;
+                        backfillBox.textContent = "";
+                        backfillBox.appendChild(
+                          aiStatusRow("历史内容补打", "补打失败", "danger",
+                            (err && err.message) || "补打未能排队，请检查设置。")
+                        );
+                      }
+                    );
+                  },
+                })
+              );
+              backfillActions.appendChild(
+                ui.btn("取消", {
+                  icon: "close",
+                  onClick: function () {
+                    loadAiPanel(app, container);
+                  },
+                })
+              );
+            })
+            .catch(function (err) {
+              backfillBox.textContent = "";
+              backfillBox.appendChild(
+                aiStatusRow("历史内容补打", "无法读取范围", "danger", (err && err.message) || "读取失败。")
+              );
+            });
+        },
+      })
+    );
+    container.appendChild(backfillActions);
+
+    if (!recent.length) {
+      container.appendChild(
+        h("div.tags-empty__note", null, icon("info", 15),
+          h("div", null,
+            h("p.tags-empty__note-t", { text: "还没有自动打标任务" }),
+            h("p", { text: "开启自动打标后，新收录的内容会进入后台队列。人工标签不受影响，随时可用。" })))
+      );
+      return;
+    }
+
+    container.appendChild(h("h2.t-h2", { text: "最近任务" }));
+    var list = h("div.ai-tasklist");
+    recent.forEach(function (task) {
+      var retryable = task.state === "failed" || task.state === "blocked";
+      list.appendChild(
+        h(
+          "div.ai-status__row",
+          null,
+          h("span.ai-status__name", { text: task.content_id }),
+          h("span.badge.badge--" + (STATE_TONE[task.state] || "neutral"),
+            { text: STATE_LABEL[task.state] || task.state }),
+          h("span.ai-status__note", {
+            text:
+              (task.provider ? task.provider + " " + (task.model || "") + " · " : "") +
+              (task.skipped_reason || task.error_message ||
+                (task.applied_count ? "已挂载 " + task.applied_count + " 个标签" : "无匹配标签")),
+          }),
+          retryable
+            ? ui.btn("重试", {
+                icon: "refresh",
+                onClick: function () {
+                  client.retryTaggingTask(task.id).then(
+                    function () {
+                      loadAiPanel(app, container);
+                    },
+                    function (err) {
+                      container.appendChild(
+                        h("p.tags-empty__desc", { text: (err && err.message) || "重试未能排队。" })
+                      );
+                    }
+                  );
+                },
+              })
+            : null
+        )
+      );
+    });
+    container.appendChild(list);
   }
 
   /** 状态徽章顺带说清「为什么是这个状态」，避免只丢一个词让用户猜。 */

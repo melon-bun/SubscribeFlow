@@ -15,6 +15,7 @@ from subscribe_flow.application.content import ContentService
 from subscribe_flow.application.queries import QueryService
 from subscribe_flow.application.priorities import PriorityService
 from subscribe_flow.application.tags import TagService
+from subscribe_flow.application.tagging import TaggingService
 from subscribe_flow.application.settings import SettingsService
 from subscribe_flow.application.credentials import CredentialBroker
 from subscribe_flow.application.scheduler import Scheduler
@@ -85,6 +86,13 @@ class Core:
         # M15：配置只存引用；Main 私有桥推送的明文只在 credentials 内存容器中使用。
         self.settings = SettingsService(SettingsStore(self.database))
         self.credentials = CredentialBroker()
+        # M16：自动打标后台任务。事件与任务仓储挂在 repository 上（事件写入复用
+        # 内容入库事务），Provider 按当前设置与内存凭据现组，不缓存快照。
+        # 必须排在 settings/credentials 之后：它们在这里是构造参数。
+        self.tagging = TaggingService(repository=self.repository.tagging,
+                                      tags_repository=self.repository, settings=self.settings,
+                                      credentials=self.credentials, emit=self.emit,
+                                      **({'clock': clock} if clock else {}))
         for descriptor in self.gateway.describe():
             resource = resource_key(descriptor)
             self.repository.add_connection(Connection(f"{descriptor.channel}:default", descriptor.channel, descriptor.backend, resource))
@@ -101,6 +109,8 @@ class Core:
     def start(self):
         self.sync.resource_gap = self.scheduler.policy.resource_gap
         self.scheduler.start()
+        # M16：后台打标任务。事件表是恢复依据，因此这里只是唤醒，崩溃重启也能续上。
+        self.tagging.start()
 
     async def check_connection(self, connection_id, operation='list_items'):
         readiness = await self.subscriptions.check_connection(connection_id, operation)
@@ -126,6 +136,9 @@ class Core:
             await self.scheduler.close()
             await self.intake.close()
             await self.sync.close()
+            # M16：先停打标后台任务再关库——在途任务需要把租约退回队列，
+            # 关库之后就写不回去了（重启时会被当成假运行状态）。
+            await self.tagging.close()
             self.database.close()
             self.lease.close()
             self.closed = True

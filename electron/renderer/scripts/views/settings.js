@@ -78,6 +78,7 @@
     cleared: { jev: false, llm: false }, // 是否已勾选清除
     notification: null,
     testing: false,
+    testResult: null, // 最近一次连接测试的真实结果（只有成败与模型标识，没有密钥）
     notificationLoading: false,
   };
   var generation = 0;
@@ -656,7 +657,7 @@
         null,
         switchRow(
           "启用自动打标",
-          "当前仅保存开关与识别配置，模型识别尚未接入（不影响提醒与手动标签）。接入后：" + boundary,
+          "开启后由后台任务读取配置并调用模型（不影响提醒与手动标签）。" + boundary,
           t.enabled,
           function (next) {
             t.enabled = next;
@@ -733,8 +734,12 @@
    * 这里如实标为不可用，而不是给一个点了会「成功」的假按钮。
    */
   function buildTestBlock() {
+    // 真实连接测试：复用正式 Provider 与固定样例，反馈真实结果。
+    // 配置不全时给出明确原因，不会静默成功，也不会回显任何密钥。
+    var running = !!cache.testing;
+    var ready = !!(cache.testResult && cache.testResult.ok);
     return h(
-      "section.setting-block.setting-block--muted",
+      "section.setting-block" + (ready ? "" : ".setting-block--muted"),
       null,
       h(
         "div.setting-block__head",
@@ -744,16 +749,47 @@
           null,
           h("h3.setting-block__title", { text: "连接测试" }),
           h("p.setting-block__desc", {
-            text: "用固定的测试文本验证认证、模型调用和输出结构。真实识别调用在自动打标接入后开放。",
+            text: "用固定的测试文本验证认证、模型调用和输出结构，走的是与后台打标完全相同的接口配置。",
           })
         ),
-        badge("本期不可用", "neutral")
+        badge(running ? "测试中" : ready ? "连接正常" : "可随时测试", ready ? "success" : "neutral")
       ),
       h(
         "div.setting-block__foot",
         null,
-        ui.btn("测试连接", { disabled: true, title: "自动打标尚未接入模型，本期不提供连接测试" }),
-        h("span.field__hint", { text: "现在点下去不会有任何真实调用，也不会返回模拟结果。" })
+        ui.btn(running ? "正在测试…" : "测试连接", {
+          disabled: running,
+          icon: "refresh",
+          onClick: function () {
+            cache.testing = true;
+            cache.testResult = null;
+            SF.app.renderContent();
+            SF.app.client.testTaggingConnection().then(
+              function (result) {
+                cache.testing = false;
+                cache.testResult = result;
+                SF.app.renderContent();
+              },
+              function (err) {
+                cache.testing = false;
+                cache.testResult = {
+                  ok: false,
+                  message: (err && err.message) || "连接测试失败，请检查接口地址、模型标识与 API Key。",
+                };
+                SF.app.renderContent();
+              }
+            );
+          },
+        }),
+        cache.testResult
+          ? h("span.field__hint", {
+              text: cache.testResult.ok
+                ? "连接正常：" + (cache.testResult.provider || "") + " " +
+                  (cache.testResult.model || cache.testResult.requestedModel || "") +
+                  "，返回 " + cache.testResult.candidates + " 个候选标签"
+                : "测试失败：" + cache.testResult.message,
+            })
+          : h("span.field__hint", { text: "测试会发出一次真实的模型请求，但不会保存任何标签。" })
       )
     );
   }
