@@ -32,6 +32,11 @@ async function main() {
   const stage = path.join(build,'app');
   fs.rmSync(stage,{recursive:true,force:true}); fs.mkdirSync(stage,{recursive:true});
   for (const folder of ['main','preload','renderer']) fs.cpSync(path.join(root,'electron',folder),path.join(stage,'electron',folder),{recursive:true});
+  // M17 托盘按 __dirname/../../assets/logo.png 解析，落在 app.asar 内的 assets/ 下。
+  // 只放这一个运行期真正需要的公开静态资源：整个 assets/ 里还有开发用截图，
+  // 不应进包。这里仍走显式白名单，不复制工作区。
+  fs.mkdirSync(path.join(stage,'assets'),{recursive:true});
+  fs.copyFileSync(path.join(root,'assets','logo.png'),path.join(stage,'assets','logo.png'));
   fs.writeFileSync(path.join(stage,'package.json'),JSON.stringify({name:pkg.name,productName:'Subscribe Flow',version:pkg.version,description:pkg.description,main:pkg.main},null,2));
   const core = path.join(build,'core');
   fs.rmSync(core,{recursive:true,force:true});
