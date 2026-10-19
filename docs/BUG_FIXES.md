@@ -1540,3 +1540,10 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 独立执行正式打包脚本实际staging片段并生成临时asar，运行时所需assets/logo.png存在；提取后与源逐字节一致、PNG有效、1254×1254，assets仅logo.png。正式TrayController.create仅替换OS边界后成功（nativeImage=1／tray=1）。白名单与运行逻辑未放宽，无开发路径回退。源码修复**已验收并关闭BUG-098**，不冒称真实OS托盘或完整0.4.5包已验收。证据verification/backlog-review/2026-10-19-r04-acceptance/REPORT.md及resource-acceptance.json。
 
 当前BUG-097／098修复均验收，继续用户已授权的合并main、0.4.5打包与上传；BUG-011仍用户搁置未解决，发布时披露。无登录／Key／真实模型／站点调用。
+
+
+### 2026-10-19 0.4.5 正式包核心验收（BUG-098）
+
+构建源9c4210e，正式asar托盘PNG存在且与源相同；新包复制到项目外带空格目录后独立启动、v2库升级至v11并备份、标签／优先级／状态持久化、异常恢复、应用重启和正常退出通过。签名、zip完整性与SHA校验通过，产物SHA-256 284a2cecb5bfc06ab846917fe2364f7deaf66a1e1b36a1dd5353c2b87f89808d。完整证据verification/v0.4.5/REPORT.md及result.json。
+
+新签名app的额外受保护设置页探针触发macOS钥匙串授权，用户未确认，记人工待验收；未绕过保护。真实系统通知／托盘点击等原人工范围保留。BUG-011用户搁置未解决，不冒充修复。当前正式包已验收，代码及产物准备推送／发布，实际远端状态另记。
