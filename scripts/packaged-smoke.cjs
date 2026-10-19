@@ -117,6 +117,12 @@ DROP TRIGGER content_intake_immutable;
 DROP INDEX content_intake_timeline;
 ALTER TABLE contents DROP COLUMN manual_added_at;
 ALTER TABLE contents DROP COLUMN intake_method;
+-- v2 predates settings, reminders and tagging; keeping these tables makes
+-- the upgrade fail with "table already exists" instead of testing a v2 file.
+DROP TABLE tagging_tasks;
+DROP TABLE content_events;
+DROP TABLE reminder_run_state;
+DROP TABLE app_settings;
 PRAGMA user_version=2;
 ''');db.execute('UPDATE content_states SET read=1,archived=1 WHERE content_id=?',(sys.argv[2],));db.commit();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id],{encoding:'utf8'});
     assert.equal(legacy.status,0,legacy.stderr);
