@@ -229,8 +229,7 @@ class TaggingRepository:
 
     def catalog_version(self):
         """标签目录版本。目录一变，旧任务的候选清单就不再成立。"""
-        row = self.db.execute("SELECT count(*),max(updated_at),max(id) FROM tags").fetchone()
-        return f"{row[0]}:{row[1] or ''}:{row[2] or ''}"
+        return self._catalog_version(self.db)
 
     def enabled_tags(self):
         """可自动分类的标签目录：只有已启用的（计划 §3.2 候选标签目录）。"""
@@ -248,13 +247,22 @@ class TaggingRepository:
 
     # ---------------------------------------------------------- 结果落库
 
-    def apply_result(self, task_id, *, applied_tag_ids, new_tags, expected_content_version,
-                     catalog_version):
+    @staticmethod
+    def _catalog_version(db):
+        """按当前数据库内容算目录版本。只接受一个连接句柄，写回路径据此取真值。"""
+        row = db.execute("SELECT count(*),max(updated_at),max(id) FROM tags").fetchone()
+        return f"{row[0]}:{row[1] or ''}:{row[2] or ''}"
+
+    def apply_result(self, task_id, *, applied_tag_ids, new_tags, expected_content_version):
         """在同一事务里：复核版本与屏蔽 → 挂载/新建标签 → 完成任务。
 
         这是迟到结果的唯一拦截点。人工移除过的标签、已被禁用的标签、
         期间已经改过正文的内容，都在这里被挡住；挡住与完成同事务，
         重启重放也不会把它们补回来（计划 §3.5 第 7 条）。
+
+        目录版本以**数据库当前内容**为准，而不是调用方带来的快照：worker 发起
+        请求时读到的目录，到写回时可能已经被改名、删除或停用。若拿快照和任务上
+        的旧值比较，两边都是同一次旧读，恒等，目录变化就永远拦不住。
         """
         stamp = now()
         applied = blocked = created = 0
@@ -275,13 +283,15 @@ class TaggingRepository:
                 self._complete(db, task_id, SKIPPED, stamp, skipped_reason='内容已更新，建议已过期')
                 return {'applied': 0, 'blocked': 0, 'created': 0, 'outcome': SKIPPED,
                         'reason': '内容已更新，该结果基于旧版本'}
-            if task['catalog_version'] != catalog_version:
-                # 标签目录在识别期间变了：候选含义可能已经不同，重新排队而不是写旧快照。
+            current_catalog = self._catalog_version(db)
+            if task['catalog_version'] != current_catalog:
+                # 标签目录在识别期间变了：候选的身份或含义已经不同（改名、删除、
+                # 停用都算），旧结果必须丢弃并按当前目录重新识别。
                 db.execute("UPDATE tagging_tasks SET state='queued',catalog_version=?,dedupe_key=?,"
                            "lease_expires_at=NULL,attempts=0,next_attempt_at=NULL,updated_at=? WHERE id=?",
-                           (catalog_version, _dedupe(task['content_id'], task['content_version'],
-                                                     task['config_version'], catalog_version, task['origin'],
-                                                     task['round_no']), stamp, task_id))
+                           (current_catalog, _dedupe(task['content_id'], task['content_version'],
+                                                     task['config_version'], current_catalog,
+                                                     task['origin'], task['round_no']), stamp, task_id))
                 return {'applied': 0, 'blocked': 0, 'created': 0, 'outcome': 'requeued',
                         'reason': '标签目录已变化，将按当前目录重新识别'}
 

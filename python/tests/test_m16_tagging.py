@@ -507,6 +507,52 @@ class M16Round2RegressionTests(_M16Fixture, unittest.TestCase):
                                    (saved['item_id'],)).fetchone()[0]
         self.assertEqual(rows, 1, '重启续跑不得重复写入关联')
 
+    def test_tag_rename_during_request_discards_stale_result(self):
+        """BUG-095：识别在途时改名，旧结果不得挂到已改名的标签上。
+
+        目录版本确实变了，但写回时必须按数据库当前目录复核；旧结果被丢弃后
+        任务按当前目录重新排队，并最终走到终态，不留在 running、不重复挂载。
+        """
+        provider = GatedProvider({'fixture:feed:rename-1': ['Python']})
+        self.enable(mode='llm')
+        self._patch_provider(provider)
+        tag = self.add_tag('Python', description='Python 相关内容')
+        saved = self.repo.save_manual(make_item('fixture', 'rename-1', 'Python 实践',
+                                                '这是一篇 Python 编程实践记录，包含代码示例与依赖说明。'))
+
+        async def scenario():
+            work = asyncio.ensure_future(self.tagging._run_once())
+            while not provider.entered.is_set():
+                await asyncio.sleep(0.01)
+            # 目录已交给 Provider，返回之前用正式 TagService 把同一 ID 改名。
+            self.core.tags.update(tag['id'], name='美食')
+            provider.release.set()
+            await work
+
+        self.loop.run_until_complete(scenario())
+
+        # 旧结果不得落库：内容不能被挂到已经叫「美食」的标签上。
+        self.assertEqual(self.tags_of(saved['item_id']), [], '旧目录结果不得写入')
+        task = self.tasks.list_tasks(limit=1)['items'][0]
+        self.assertEqual(task['state'], 'queued',
+                         '目录变化必须让任务重新排队，不能按旧目录判成功或留在 running')
+        self.assertEqual(task['catalog_version'], self.tasks.catalog_version(),
+                         '重新排队后任务记录的是当前目录版本')
+        self.assertEqual(task['applied_count'], 0, '旧结果没有挂载任何标签')
+
+        # 按当前目录重排后应能继续跑到终态。
+        provider.release.set()
+        provider.entered.clear()
+        self._patch_provider(StubProvider({'fixture:feed:rename-1': ['美食']}))
+        for _ in range(8):
+            self.loop.run_until_complete(self.tagging._run_once())
+            if self.tasks.summary()['active'] == 0:
+                break
+        self.assertEqual(self.tasks.summary()['active'], 0)
+        rows = self.repo.db.execute('SELECT count(*) FROM content_tags WHERE content_id=?',
+                                   (saved['item_id'],)).fetchone()[0]
+        self.assertLessEqual(rows, 1, '不得重复挂载')
+
     def test_expired_lease_recovers_without_manual_call(self):
         """BUG-093：异常残留的过期租约由 worker 循环自行回收，不需手工调用。"""
         self.enable(mode='llm')

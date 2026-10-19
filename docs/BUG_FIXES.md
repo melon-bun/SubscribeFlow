@@ -49,8 +49,8 @@
 | BUG-092 | 历史补打漏掉启用前内容，预览与实际排队数量不一致 | 已修复并验证（2026-10-18） |
 | BUG-093 | 在途打标任务正常退出重启后卡在 running，过期也不自动恢复 | 已修复并验证（2026-10-18） |
 | BUG-094 | 成功挂载标签的任务未保存 Provider／实际模型元数据 | 仅记录，非致命；不单独派修 |
-| BUG-095 | M16 在途标签目录变化未阻止旧结果落库，改名后误挂标签 | 待修复，P1；2026-10-19 已复现 |
-| BUG-096 | M18 采集条数配置不生效，限制 1 条仍保存整榜 | 待修复，P1；2026-10-19 已复现 |
+| BUG-095 | M16 在途标签目录变化未阻止旧结果落库，改名后误挂标签 | 已修复并验证（2026-10-19） |
+| BUG-096 | M18 采集条数配置不生效，限制 1 条仍保存整榜 | 已修复并验证（2026-10-19） |
 
 ## BUG-001：收件箱操作后未移出
 
@@ -1327,7 +1327,7 @@ Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级�
 - 原因／定位：`python/src/subscribe_flow/application/tagging.py:_execute` 只重读当前配置，apply_result 参数 catalogue 仍为请求开始时的旧值；`storage/tagging.py:apply_result` 比较任务旧值和参数旧值，未读取实际当前目录。
 - 修复范围：补齐现有目录版本失效与事务写回，不另造模型调用路径；重新排队须能到达终态且不重复挂载。
 - 证据：`verification/m16-m18-review/2026-10-19-r01/reproductions.json:m16_stale_catalogue`，实际 state=succeeded/tags=[美食]；诊断脚本 exit 0 仅表示复现完成。无真实模型请求、无个人数据。
-- 状态：**待修复，已复现**；整体交给原 MiniMax session，与 BUG-096 同轮处理。产品基线 `ef6e3bb`，复核 HEAD `b86ce17`。
+- 状态：**已修复并验证**（2026-10-19）。根因：`apply_result` 判断「目录是否变化」时，比较的是任务记录的 `catalog_version` 与调用方传进来的 `catalog_version` 参数——后者来自 `_execute` 发起请求时的读数。两边是同一次旧读，恒等，因此识别期间改名／删除／停用都拦不住。修复：新增 `_catalog_version(db)` 只接受连接句柄、按数据库当前内容计算目录版本，写回事务内用它与任务旧版本比较，变化即丢弃旧结果并按当前目录重排；`catalog_version()` 公共入口复用同一实现；`_execute` 不再把请求开始时的快照传入 `apply_result`，从调用面消除用旧快照复核的可能。沿用既有目录版本机制与幂等键，未做无关重构。验证：可控时机替身制造「请求在途」，期间用正式 TagService 把同一 ID 从 Python 改名为美食，断言内容标签为空、任务为 queued、目录版本已刷新、applied_count=0，且随后按当前目录重排可跑到终态不重复挂载。反向验证：临时还原旧比较后该用例失败，内容被错挂为「美食」，与审查记录一致。人工移除保护与退出／恢复行为未受影响。
 
 ## BUG-096：M18 采集条数配置不生效
 
@@ -1337,4 +1337,4 @@ Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级�
 - 原因／定位：`python/src/subscribe_flow/channels/github/adapter.py:GithubTrendingAdapter.fetch_page` 没有使用 request.item_budget；SyncService 已正确传入 1，commit_page 仍保存返回的整榜。
 - 修复范围：落实正式 GitHub 采集路径的预算，验证显式上限、默认值、重复及多榜组合，不改其他渠道的既有预算规则。
 - 证据：`verification/m16-m18-review/2026-10-19-r01/reproductions.json:m18_collection_ceiling`，固定隔离日榜、1 次夹具 HTTP 读取，无真实站点请求。
-- 状态：**待修复，已复现**；与 BUG-095 整轮交给原 MiniMax session。M18 源码 `91e25ea`，复核 HEAD `b86ce17`。
+- 状态：**已修复并验证**（2026-10-19）。根因：`GithubTrendingAdapter.fetch_page` 忽略 `request.item_budget`，整榜返回，`Core.commit_page` 全部落库；其他渠道都在适配器里按预算截取，GitHub 是唯一漏掉的。修复：入库上限取 `request.item_budget or default_refresh_budget` 并校验 1..ITEM_BUDGET；整页 HTML 仍完整下载、整榜仍完整解析，上限只作用于本轮带回多少条，未改分页大小也未隐藏设置。预算约束「本轮处理榜单前多少条」，已收录条目同样占额度并计入 skipped，与小红书／知乎既有去重语义一致（重复刷新不会因跳过旧内容一路前爬）；已知条目仍照常返回使页面非空、不被判无进展；被截断时 coverage 如实记 item_limit，整榜取完仍为 window_only；未新增指标键。验证：`collect_items=1` 存回 1、new_items=1、库中 1 条且榜单页只请求一次；缺省预算取回整榜；重复刷新 new_items=0 且 skipped=1；两榜共享仓库仍只存一条且来源归属不重复计数。

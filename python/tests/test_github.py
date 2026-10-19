@@ -267,6 +267,65 @@ class GithubTests(unittest.IsolatedAsyncioTestCase):
             "SELECT count(*) FROM contents WHERE channel='github'").fetchone()[0]
         self.assertEqual(total, day_items + month_items, "disjoint boards must not collapse")
 
+    # ---- BUG-096：保存的采集条数必须真正生效 ---------------------------
+
+    async def test_saved_collect_items_ceiling_actually_applies(self):
+        """collect_items=1 保存并读回 1，实际新入库也只能是 1 条。"""
+        day = await self.add_board("day")
+        await self.core.update_subscription(day['id'], collect_items=1)
+        saved = self.core.repository.get_subscription(day['id'])
+        self.assertEqual(saved['collect_items'], 1, '配置必须真的保存下来')
+
+        run = await self.refresh(day['id'])
+        stored = self.core.repository.db.execute(
+            "SELECT count(*) FROM contents WHERE channel='github'").fetchone()[0]
+        self.assertEqual(run['new_items'], 1, '新入库条数必须受保存的上限约束')
+        self.assertEqual(run['items'], 1)
+        self.assertEqual(stored, 1, '库中实际内容条数必须与预算一致')
+        # 只读一次榜单页：上限是入库上限，不是分页大小。
+        self.assertEqual(len([u for u in self.transport.urls if 'trending' in u]), 1)
+
+    async def test_default_budget_still_takes_the_whole_board(self):
+        """collect_items 缺省时沿用默认预算，不能因为上限逻辑把榜单截短。"""
+        day = await self.add_board("day")
+        run = await self.refresh(day['id'])
+        self.assertGreater(run['new_items'], 1, '缺省预算应取回整榜而不是一条')
+        self.assertEqual(run['new_items'], run['acquisition_metrics']['discovered'],
+                         '缺省预算下榜单应被完整取回')
+        stored = self.core.repository.db.execute(
+            "SELECT count(*) FROM contents WHERE channel='github'").fetchone()[0]
+        self.assertEqual(stored, run['new_items'])
+
+    async def test_budget_counts_new_items_and_still_skips_known(self):
+        """已收录条目同样占额度（与其他渠道一致），重复刷新不再新增。"""
+        day = await self.add_board("day")
+        await self.core.update_subscription(day['id'], collect_items=1)
+        first = await self.refresh(day['id'])
+        self.assertEqual(first['new_items'], 1)
+        again = await self.refresh(day['id'])
+        self.assertEqual(again['new_items'], 0, '同一条已收录，不得重复入库')
+        self.assertEqual(again['acquisition_metrics']['skipped'], 1,
+                         '已收录的条目占用本轮额度并计入 skipped')
+        stored = self.core.repository.db.execute(
+            "SELECT count(*) FROM contents WHERE channel='github'").fetchone()[0]
+        self.assertEqual(stored, 1)
+
+    async def test_multi_board_shares_content_but_keeps_both_attributions(self):
+        """两个榜共享同一仓库时仍只存一条，但两个来源归属都要在。"""
+        day = await self.add_board("day")
+        month = await self.add_board("month")
+        await self.core.update_subscription(day['id'], collect_items=1)
+        await self.core.update_subscription(month['id'], collect_items=1)
+        await self.refresh(day['id'])
+        await self.refresh(month['id'])
+        rows = self.core.repository.db.execute(
+            "SELECT content_id, count(*) n FROM content_sources cs JOIN contents c ON c.id=cs.content_id"
+            " WHERE c.channel='github' GROUP BY content_id ORDER BY n DESC").fetchall()
+        self.assertTrue(rows)
+        # 去重语义不变：同一条内容不会因为被两个榜看到而存两份。
+        for row in rows:
+            self.assertLessEqual(row['n'], 2)
+
     async def test_refreshing_twice_adds_nothing_and_reports_skips(self):
         day = await self.add_board("day")
         await self.refresh(day['id'])

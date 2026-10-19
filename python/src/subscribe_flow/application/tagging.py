@@ -313,9 +313,10 @@ class TaggingService:
             return
 
         applied, new_names = self._resolve(result, directory)
+        # 不再传请求开始时的目录快照：写回边界按数据库当前目录复核（BUG-095）。
         outcome = self.repo.apply_result(
             task['id'], applied_tag_ids=applied, new_tags=new_names,
-            expected_content_version=task['content_version'], catalog_version=catalog)
+            expected_content_version=task['content_version'])
         if outcome['outcome'] in ('succeeded',) and outcome['applied']:
             # 只在提交成功后通知界面（§3.6）。
             self.emit('content.changed', {'ids': [task['content_id']]})

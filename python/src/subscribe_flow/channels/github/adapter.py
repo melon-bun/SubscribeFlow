@@ -372,18 +372,38 @@ class GithubTrendingAdapter:
             raise ChannelError('SCHEMA_CHANGED', 'list_items', 'GitHub 趋势页结构已变化') from None
         if len(rows) > ITEM_BUDGET:
             raise ChannelError('SCHEMA_CHANGED', 'list_items', 'GitHub 趋势榜行数异常，请更新适配器')
+        # 订阅上保存的采集条数（collect_items）是入库上限，不是分页大小：
+        # 页面仍然整页下载、整榜解析，但本轮最多带 budget 条新内容回去。
+        budget = request.item_budget or self.describe().default_refresh_budget
+        if type(budget) is not int or not 1 <= budget <= ITEM_BUDGET:
+            raise ChannelError('INVALID_INPUT', 'list_items',
+                               f'GitHub 趋势榜本轮采集条数需为 1 到 {ITEM_BUDGET}')
         known = set(request.known_ids)
-        items, skipped = [], 0
+        items, skipped, truncated = [], 0, 0
         try:
             for row in rows:
+                # 预算约束的是「本轮处理榜单前多少条」，已收录的条目同样占额度：
+                # 与其他渠道（小红书／知乎）的既有去重语义一致，重复刷新不会因为
+                # 跳过旧内容而一路往前爬，每次看到的都是榜单同一段前 N 条。
+                if len(items) >= budget:
+                    truncated += 1
+                    continue
                 item = board_item(row, source, captured_at=captured_at)
                 if item.external_id in known:
+                    # 仍然返回：commit_page 会判重不重复入库，而且页面因此不为空，
+                    # 不会被上层判定为「没有进展」。
                     skipped += 1
                 items.append(item)
         except ValueError:
             raise ChannelError('SCHEMA_CHANGED', 'list_items', 'GitHub 趋势行的身份或归属无效') from None
-        metrics = {'profile_reads': 1, 'discovered': len(rows), 'skipped': skipped, 'detail_requests': 0}
-        return FetchPage(tuple(items), None, 'window_only', True, 'item_limit', metrics=metrics)
+        # 只用既有四个指标键，不新增：本渠道的指标集合是对外契约。
+        # 是否被上限截断由 coverage / end_evidence 如实表达。
+        metrics = {'profile_reads': 1, 'discovered': len(rows), 'skipped': skipped,
+                   'detail_requests': 0}
+        # 整榜都带走了才算窗口完整；被上限截断时如实说明只是取到一部分。
+        covered = truncated == 0
+        return FetchPage(tuple(items), None, 'window_only' if covered else 'item_limit',
+                         covered, 'item_limit' if covered else 'budget_exhausted', metrics=metrics)
 
     def match_item_url(self, url):
         return repo_link(url) is not None
