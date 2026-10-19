@@ -437,14 +437,40 @@ class TaggingRepository:
         """用户主动补打。范围与数量由界面先预览，这里只负责登记。
 
         不在升级或首次开启时自动扫全库——这是用户明确触发的动作（§3.5 第 10 条）。
+
+        幂等：优先复用该内容原有的任务行，而不是并排新建一条。原任务若是
+        skipped／cancelled／failed／blocked，说明用户已经修正了目录或配置，
+        正是重排它的时候；原任务若已 queued／running／retry_wait／succeeded，
+        则不重复处理——正在跑的不会被用户点击打断，打成标签的也不会重跑。
         """
         stamp = now()
         queued, skipped = [], 0
+        active_states = (QUEUED, RUNNING, RETRY_WAIT, SUCCEEDED)
         with self.database.transaction() as db:
             for content_id in list(dict.fromkeys(content_ids))[:limit]:
                 row = db.execute("SELECT id,updated_at FROM contents WHERE id=?", (content_id,)).fetchone()
                 if row is None:
                     skipped += 1
+                    continue
+                existing = db.execute(
+                    "SELECT id,state,round_no FROM tagging_tasks WHERE content_id=?"
+                    " ORDER BY created_at DESC LIMIT 1", (content_id,)).fetchone()
+                if existing is not None and existing['state'] in active_states:
+                    # 正在排队、执行中或已经成功：主动恢复不得重复处理。
+                    skipped += 1
+                    continue
+                if existing is not None:
+                    # 复用原任务：轮次加一，回到队列继续用它。
+                    round_no = existing['round_no'] + 1
+                    db.execute(
+                        "UPDATE tagging_tasks SET state='queued',config_version=?,catalog_version=?,mode=?,"
+                        "dedupe_key=?,round_no=?,attempts=0,max_attempts=3,next_attempt_at=NULL,"
+                        "lease_expires_at=NULL,error_code=NULL,error_message=NULL,skipped_reason=NULL,"
+                        "completed_at=NULL,origin='backfill',updated_at=? WHERE id=?",
+                        (config_version, catalog_version, mode,
+                         _dedupe(content_id, row['updated_at'], config_version, catalog_version,
+                                 'backfill', round_no), round_no, stamp, existing['id']))
+                    queued.append(content_id)
                     continue
                 key = _dedupe(content_id, row['updated_at'], config_version, catalog_version, 'backfill', 1)
                 cursor = db.execute(
@@ -463,7 +489,10 @@ class TaggingRepository:
         这里刻意**不**套用自动触发生效边界 `enabledSince`：开关关闭期间或
         开启之前收录的内容，本来就只能由用户主动补打处理（计划 §3.5 第 4 条），
         把它们排除出去会让「补打」这件事永远做不了它们。
-        已打过标的内容同样排除，重复补打不会重复请求模型。
+
+        可补打的判定是「没有正在排队或已经成功的任务」，而不是「完全没有任务记录」：
+        skipped／cancelled／failed／blocked 的内容正是用户修正目录或配置之后
+        需要重新处理的对象，若因为存在过任务记录就排除，用户将永远无法恢复它们。
         """
         clauses, args = ['1=1'], []
         if since:
@@ -473,7 +502,8 @@ class TaggingRepository:
         total = self.db.execute(f"SELECT count(*) FROM contents WHERE {where}", args).fetchone()[0]
         rows = self.db.execute(
             f"SELECT c.id,c.first_seen_at FROM contents c WHERE {where}"
-            " AND NOT EXISTS(SELECT 1 FROM tagging_tasks t WHERE t.content_id=c.id)"
+            " AND NOT EXISTS(SELECT 1 FROM tagging_tasks t WHERE t.content_id=c.id"
+            "                AND t.state IN ('queued','running','retry_wait','succeeded'))"
             " ORDER BY c.first_seen_at DESC LIMIT ?", (*args, limit)).fetchall()
         candidates = [dict(row) for row in rows]
         return {'total': total, 'pending': len(candidates),

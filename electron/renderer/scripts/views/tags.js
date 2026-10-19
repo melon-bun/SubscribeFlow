@@ -1216,7 +1216,10 @@
     container.appendChild(h("h2.t-h2", { text: "最近任务" }));
     var list = h("div.ai-tasklist");
     recent.forEach(function (task) {
-      var retryable = task.state === "failed" || task.state === "blocked";
+      // 未成功的任务都给出重试入口：failed／blocked 是失败与阻塞，skipped／cancelled
+      // 是当时条件不足（Jev 无目录、识别途中关闭）被跳过的。用户补齐目录或重新
+      // 开启之后，正需要从这里重试，否则这些内容没有任何主动恢复路径。
+      var retryable = task.state !== "succeeded";
       list.appendChild(
         h(
           "div.ai-status__row",

@@ -553,6 +553,97 @@ class M16Round2RegressionTests(_M16Fixture, unittest.TestCase):
                                    (saved['item_id'],)).fetchone()[0]
         self.assertLessEqual(rows, 1, '不得重复挂载')
 
+    # ---- BUG-097：用户修正条件后的主动恢复路径 -------------------------
+
+    def test_jev_empty_directory_skip_can_be_recovered_by_backfill(self):
+        """Jev 空目录被跳过后，补齐标签并切到 LLM，用户应能主动补打回来。"""
+        self.enable(mode='jev')          # 空目录：Jev 会跳过，不调模型
+        item = make_item('fixture', 'recover-1', 'Python 协程实践',
+                         '这篇讲 asyncio 协程调度与异步上下文管理器的实现与取舍。')
+        saved = self.repo.save_manual(item)
+        self.drain()
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['state'], 'skipped')
+        self.assertEqual(self.tags_of(saved['item_id']), [])
+
+        # 用户修正条件：建好标签目录并切换到 LLM，重新开启。
+        self.add_tag('Python')
+        self.enable(mode='llm', picks={'fixture:feed:recover-1': ['Python']})
+
+        preview = self.tagging.backfill_preview(limit=50)
+        self.assertEqual(preview['pending'], 1, 'skipped 的内容必须出现在补打范围内')
+        self.assertIn(saved['item_id'], preview['itemIds'])
+        result = self.tagging.backfill(limit=50)
+        self.assertEqual(result['queued'], 1, '预览与实际排队数量必须一致')
+
+        self.drain()
+        self.assertEqual(self.tags_of(saved['item_id']), ['Python'])
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['state'], 'succeeded')
+
+    def test_cancelled_inflight_content_can_be_recovered_by_backfill(self):
+        """识别在途时关闭开关被取消的内容，重新开启后应能主动补打回来。"""
+        provider = GatedProvider({'fixture:feed:recover-2': ['投资']})
+        self.enable(mode='llm')
+        self.add_tag('投资')
+        self._patch_provider(provider)
+        saved = self.repo.save_manual(make_item('fixture', 'recover-2', '定投记录',
+                                                '记录每月指数基金定投的执行情况与账户波动。'))
+
+        async def scenario():
+            work = asyncio.ensure_future(self.tagging._run_once())
+            while not provider.entered.is_set():
+                await asyncio.sleep(0.01)
+            self.core.settings.update('tagging', {'enabled': False})
+            provider.release.set()
+            await work
+
+        self.loop.run_until_complete(scenario())
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['state'], 'cancelled')
+        self.assertEqual(self.tags_of(saved['item_id']), [])
+
+        self.core.settings.update('tagging', {'enabled': True})
+        preview = self.tagging.backfill_preview(limit=50)
+        self.assertEqual(preview['pending'], 1, 'cancelled 的内容必须出现在补打范围内')
+        self.assertEqual(self.tagging.backfill(limit=50)['queued'], 1)
+        self.drain()
+        self.assertEqual(self.tags_of(saved['item_id']), ['投资'])
+
+    def test_backfill_reuses_task_and_never_reprocesses_active_or_succeeded(self):
+        """幂等：复用原任务；排队中、运行中和已成功的内容不被重复处理。"""
+        self.enable(mode='llm', picks={'fixture:feed:recover-3': ['开源']})
+        item = make_item('fixture', 'recover-3', '开源项目记录',
+                         '记录一个开源命令行工具的开发过程、依赖选择与踩过的坑。')
+        saved = self.repo.save_manual(item)
+        self.drain()
+        succeeded = self.tasks.list_tasks(limit=1)['items'][0]
+        self.assertEqual(succeeded['state'], 'succeeded')
+
+        # 补打预览不应再包含已成功的内容。
+        self.assertNotIn(saved['item_id'], self.tagging.backfill_preview(limit=50)['itemIds'])
+        result = self.tagging.backfill(item_ids=[saved['item_id']], limit=50)
+        self.assertEqual(result['queued'], 0, '已成功的内容不得被隐式重复处理')
+        self.assertEqual(self.tasks.list_tasks(limit=5)['total'], 1, '不得并排新建任务')
+        rows = self.repo.db.execute('SELECT count(*) FROM content_tags WHERE content_id=?',
+                                   (saved['item_id'],)).fetchone()[0]
+        self.assertEqual(rows, 1)
+
+    def test_backfill_reuses_the_original_skipped_task(self):
+        """skipped 的内容被补打时复用原任务行，而不是并排新建。"""
+        self.enable(mode='jev')
+        item = make_item('fixture', 'recover-4', '美食记录',
+                         '记录红烧肉的做法与火候控制要点，以及常见失败原因。')
+        saved = self.repo.save_manual(item)
+        self.drain()
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['state'], 'skipped')
+        self.add_tag('美食')
+        self.enable(mode='llm', picks={'fixture:feed:recover-4': ['美食']})
+
+        before = self.tasks.list_tasks(limit=5)['total']
+        self.assertEqual(self.tagging.backfill(item_ids=[saved['item_id']], limit=50)['queued'], 1)
+        self.assertEqual(self.tasks.list_tasks(limit=5)['total'], before,
+                         '应复用原任务而不是新建一条')
+        self.drain()
+        self.assertEqual(self.tags_of(saved['item_id']), ['美食'])
+
     def test_expired_lease_recovers_without_manual_call(self):
         """BUG-093：异常残留的过期租约由 worker 循环自行回收，不需手工调用。"""
         self.enable(mode='llm')
