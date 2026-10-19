@@ -52,7 +52,7 @@
 | BUG-095 | M16 在途标签目录变化未阻止旧结果落库，改名后误挂标签 | Codex 复验通过（2026-10-19，4ff8093） |
 | BUG-096 | M18 采集条数配置不生效，限制 1 条仍保存整榜 | Codex 验收通过，已修复（2026-10-19，0ab104c） |
 | BUG-097 | skipped／cancelled 的自动打标内容无法由用户主动恢复处理 | 已修复并由 Codex 验收（r02，26daa8a） |
-| BUG-098 | 正式打包遗漏托盘资源，安装包无法创建托盘 | r04 已修复并自验，待 Codex 验收 |
+| BUG-098 | 正式打包遗漏托盘资源，安装包无法创建托盘 | 已修复并由Codex验收（0acd56c，r04） |
 
 ## BUG-001：收件箱操作后未移出
 
@@ -1533,3 +1533,10 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
   未改版本号（仍 0.3.0）、未合并 main、未推送、未发布；未重跑全套测试与付费评估。
 - 状态：**已修复并自验**（2026-10-19-r04），等待 Codex 复核。
 - 相关提交：`5bfe97c`。
+
+
+### 2026-10-19 Codex验收 BUG-098（0acd56c）
+
+独立执行正式打包脚本实际staging片段并生成临时asar，运行时所需assets/logo.png存在；提取后与源逐字节一致、PNG有效、1254×1254，assets仅logo.png。正式TrayController.create仅替换OS边界后成功（nativeImage=1／tray=1）。白名单与运行逻辑未放宽，无开发路径回退。源码修复**已验收并关闭BUG-098**，不冒称真实OS托盘或完整0.4.5包已验收。证据verification/backlog-review/2026-10-19-r04-acceptance/REPORT.md及resource-acceptance.json。
+
+当前BUG-097／098修复均验收，继续用户已授权的合并main、0.4.5打包与上传；BUG-011仍用户搁置未解决，发布时披露。无登录／Key／真实模型／站点调用。
