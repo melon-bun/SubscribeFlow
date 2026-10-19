@@ -121,7 +121,26 @@ async function verify({window, core, root, mode}) {
     await click('保存采集条数');
     await until(`!document.querySelector('.dialog') && !!document.querySelector('[aria-label="设置采集条数"]')`);
     assert.equal((await core.call('subscription.list'))[0].collect_items,35);
-    // 35 items is two whole pages of 20, so the Core derives the job budget.
+    await click('回溯历史');
+    await until(`!!document.querySelector('.dialog')`);
+    assert.ok(await evaluate(`document.querySelector('.dialog').textContent.includes('本次最多采集 35 条')`));
+    await click('取消');
+    await click('设置采集条数');
+    await until(`!!document.querySelector('#collect-items')`);
+    assert.ok(await evaluate(`document.querySelector('.dialog').textContent.includes('最多采集 35 条') && !document.querySelector('.dialog').textContent.includes('约 40 条')`));
+    await evaluate(`document.querySelector('#collect-items').value='10'`);
+    await click('保存采集条数');
+    await until(`!document.querySelector('.dialog')`);
+    await click('回溯历史');
+    await until(`!!document.querySelector('.dialog')`);
+    assert.ok(await evaluate(`document.querySelector('.dialog').textContent.includes('本次最多采集 10 条') && !document.querySelector('.dialog').textContent.includes('20 条')`));
+    await click('取消');
+    await click('设置采集条数');
+    await until(`!!document.querySelector('#collect-items')`);
+    await evaluate(`document.querySelector('#collect-items').value='35'`);
+    await click('保存采集条数');
+    await until(`!document.querySelector('.dialog')`);
+    // Two page requests may be needed, but only 35 records can be saved.
     await core.call('sync.start',{subscription_id:(await core.call('subscription.list'))[0].id,mode:'refresh'});
     assert.equal((await core.call('sync.list'))[0].page_budget,2);
     await click('手动刷新');

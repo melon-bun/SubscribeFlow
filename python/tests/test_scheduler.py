@@ -91,7 +91,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.core.sync.page_budget_for(self.core.repository.get_subscription(sub['id']), 'backfill'), 10)
         self.assertEqual(self.core.sync.page_budget_for(self.core.repository.get_subscription(sub['id']), 'refresh'), 1)
 
-    async def test_explicit_page_budget_still_overrides_the_collect_item_ceiling(self):
+    async def test_explicit_page_budget_still_overrides_the_derived_page_budget(self):
         sub = await self.add()
         await self.core.update_subscription(sub['id'], collect_items=25)
         self.core.sync.start(sub['id'], mode='backfill', page_budget=7)

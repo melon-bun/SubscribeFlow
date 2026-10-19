@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import replace
 
 from subscribe_flow.contracts import ChannelError, Context, FetchRequest, Readiness
 from subscribe_flow.storage.repositories import now
@@ -22,8 +23,7 @@ class SyncService:
         self.resource_gap = 0
         self.guard = None
 
-    # The per-subscription ceiling is expressed in items. A page is one whole
-    # FetchRequest.limit request, so a short final page still costs a full round trip.
+    # Page budgets bound requests; collect_items separately bounds saved records.
     PAGE_ITEMS = 20
 
     @classmethod
@@ -101,6 +101,17 @@ class SyncService:
             context.check(operation)
             return value
 
+    @staticmethod
+    def _limit_page_items(page, remaining):
+        if remaining is None or len(page.items) + len(page.item_errors) <= remaining:
+            return page
+        # Error indices refer to positions in the original page. Failed records
+        # consume a place too, so later records cannot fill beyond the window.
+        errors = tuple(error for error in page.item_errors if error.index < remaining)
+        return replace(page, items=page.items[:remaining - len(errors)], item_errors=errors,
+                       next_cursor=None, terminal=False, end_evidence=None, candidate_progress=None,
+                       coverage="possible_gaps" if errors else "window_only")
+
     async def _run(self, job_id, budget):
         repository = self.repository
         try:
@@ -114,6 +125,12 @@ class SyncService:
                 return
             source = repository.source_for(job["subscription_id"])
             descriptor = next(d for d in self.gateway.describe() if d.channel == source.channel and d.backend == job["snapshot"]["backend"])
+            sub = repository.get_subscription(job["subscription_id"])
+            item_limit = (sub.get("collect_items") or None) if descriptor.budget_unit == "pages" else None
+            remaining = item_limit
+            # Keep the page size stable throughout a page-number traversal.
+            request_limit = min(descriptor.page_size, item_limit or descriptor.page_size)
+            item_budget = (item_limit or budget * descriptor.page_size) if descriptor.budget_unit == "pages" else budget
             known_ids = repository.complete_source_ids(source.key)
             # Cursor persistence is retained as evidence; page-number backends can
             # move while the app is closed, so a new run safely starts at the head.
@@ -124,9 +141,12 @@ class SyncService:
                 repository.assert_current(job)
                 context = self._context(job)
                 page = await self._request(job, 'list_items', lambda ctx: self.gateway.fetch_page(source,
-                    FetchRequest(mode=job["mode"], cursor=cursor, limit=descriptor.page_size,
+                    FetchRequest(mode=job["mode"], cursor=cursor, limit=request_limit,
                                  known_ids=known_ids if cursor is None else (),
-                                 item_budget=budget * descriptor.page_size if descriptor.budget_unit == "pages" else budget), ctx))
+                                 item_budget=item_budget), ctx))
+                page = self._limit_page_items(page, remaining)
+                if remaining is not None:
+                    remaining -= len(page.items) + len(page.item_errors)
                 if descriptor.budget_unit == "items":
                     consumed += len(page.items) + len(page.item_errors) + page.metrics.get("skipped", 0)
                 else:
@@ -134,7 +154,7 @@ class SyncService:
                 keys = {item.key for item in page.items}
                 if index == 0:
                     first_keys = keys
-                no_progress = index > 0 and not (keys - seen) and not page.scan_advanced
+                no_progress = index > 0 and not (keys - seen) and not page.item_errors and not page.scan_advanced
                 seen |= keys
                 job = repository.commit_page(job_id, page)
                 self._record_success(context)
@@ -145,20 +165,24 @@ class SyncService:
                     coverage = page.coverage if complete else "possible_gaps"
                     # Recheck the head after a multi-page traversal. If new entries
                     # appeared, save them but require another scan before completion.
-                    if complete and index > 0 and job["mode"] == "backfill" and not page.scan_advanced:
-                        head = await self._request(job, 'list_items', lambda ctx: self.gateway.fetch_page(source, FetchRequest(mode="refresh"), ctx))
+                    if complete and coverage in {"history_end", "refresh_interval"} and index > 0 and job["mode"] == "backfill" and not page.scan_advanced:
+                        if remaining == 0:
+                            repository.finish_scan(job_id, coverage="window_only")
+                            return
+                        head = await self._request(job, 'list_items', lambda ctx: self.gateway.fetch_page(source, FetchRequest(mode="refresh", limit=request_limit), ctx))
                         if {item.key for item in head.items} != first_keys or head.item_errors:
+                            head = self._limit_page_items(head, remaining)
                             repository.commit_page(job_id, head)
                             complete, coverage = False, "possible_gaps"
                     repository.finish_scan(job_id, coverage=coverage, complete=complete and coverage in {"history_end", "refresh_interval"}, checkpoint=page.candidate_progress)
                     return
-                if no_progress or (not page.items and not page.scan_advanced):
+                if no_progress or (not page.items and not page.item_errors and not page.scan_advanced):
                     raise ChannelError("NO_PROGRESS", "list_items", "分页未取得进展，保留已保存内容但不宣告历史完成")
                 if not page.next_cursor:
-                    repository.finish_scan(job_id, coverage="window_only")
+                    repository.finish_scan(job_id, coverage="possible_gaps" if job["item_errors"] else "window_only")
                     return
                 cursor = page.next_cursor
-                if consumed >= budget:
+                if consumed >= budget or remaining == 0:
                     break
                 await asyncio.sleep(0)  # Release the resource between bounded pages.
             job = repository.get_job(job_id)

@@ -75,7 +75,7 @@
           h('td',null,job ? h('div.table__time',null,h('span',{text:fmt.runState(job.state)}),h('small',{text:fmt.relative(job.startedAt,app.now)})) : h('span.muted',{text:'尚未采集'})),
           h('td',null,h('div.table__ops',null,
             ui.iconBtn('refresh','刷新来源',function () { startRun(app,c,'recent'); },{disabled:!c.enabled || !c.capabilities.canRefresh}),
-            ui.iconBtn('clock','回溯历史',function () { var pages = collectPages(c,c.defaultBackfillBudget || 10); ui.confirm({title:'回溯 ' + c.name,message:c.checkedItems ? '本次按主页顺序检查前 ' + pages + ' 条' + (c.contentNoun || '内容') + '。已收录的也占一个名额，跳过详情后不向后补足；结果不代表全部历史。' : c.incrementalDetails ? '本次最多读取 ' + pages + ' 条' + (c.contentNoun || '内容') + '详情，已完整收录的会跳过；主页分页扫描有上限，结果不代表全部历史。' : '本次最多读取 ' + pages + ' 页（约 ' + pages*(c.pageSize || 20) + ' 条）。当前渠道没有可靠末页证据，回溯成功也不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
+            ui.iconBtn('clock','回溯历史',function () { var pages = collectPages(c,c.defaultBackfillBudget || 10); ui.confirm({title:'回溯 ' + c.name,message:c.checkedItems ? '本次按主页顺序检查前 ' + pages + ' 条' + (c.contentNoun || '内容') + '。已收录的也占一个名额，跳过详情后不向后补足；结果不代表全部历史。' : c.incrementalDetails ? '本次最多读取 ' + pages + ' 条' + (c.contentNoun || '内容') + '详情，已完整收录的会跳过；主页分页扫描有上限，结果不代表全部历史。' : '本次最多采集 ' + (c.collectItems || pages*(c.pageSize || 20)) + ' 条内容。已收录或解析失败的条目也占名额，不向后补足；回溯成功不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
             ui.iconBtn('sliders',(c.collectItems ? '采集条数（当前 '+c.collectItems+' 条）' : '采集条数（默认）'),function () { collectDialog(app,c); },{disabled:!c.enabled,ariaLabel:'设置采集条数'}),
             ui.iconBtn('trash','取消追踪',function () { ui.confirm({title:'取消追踪 ' + c.name + '？',message:'已保存的历史内容会保留。再次添加相同 UID 可以恢复订阅。',confirmText:'取消追踪',danger:true}).then(function(ok) { if(ok) SF.app.act('subscription:' + c.id,async function () { await app.client.removeChannel(c.id); await SF.app.refreshData(true); }); }); },{danger:true}))));
       })))));
@@ -83,11 +83,11 @@
   function startRun(app,c,kind) {
     return SF.app.act('run:' + c.id,async function () { await app.client.startChannelRun(c.id,{kind:kind}); ui.toast('采集任务已创建'); await SF.app.refreshData(true); });
   }
-  // 界面按“条”表述，后端按整页请求换算；两处保持一致，确认框里的数字才不会骗人。
+  // 页数只用于请求预算；保存内容仍受精确条数上限约束。
   var PAGE_ITEMS = 20;
   function collectPages(c,fallback) { var n = c.collectItems || 0; return n ? c.incrementalDetails ? n : Math.ceil(n / (c.pageSize || PAGE_ITEMS)) : fallback; }
   function collectDialog(app,c) {
-    var saving = false, current = c.collectItems || 0, pageSize = c.pageSize || PAGE_ITEMS;
+    var saving = false, current = c.collectItems || 0;
     var error = h('p.field__error',{role:'alert'});
     var input = h('input.input',{id:'collect-items',type:'number',min:1,max:50,step:1,value:String(current || ''),placeholder:'留空使用默认',oninput:function () { error.textContent=''; }});
     var save = ui.btn('保存采集条数',{variant:'primary',onClick:async function () {
@@ -108,8 +108,8 @@
     }});
     var layer = ui.dialog({title:c.name + ' · 采集条数',body:h('div.col',{style:{gap:'16px'}},
       h('div.field',null,h('label.field__label',{htmlFor:'collect-items',text:'每次采集条数（1-50）'}),input,
-        h('p.field__hint',{text: c.checkedItems ? '默认刷新检查前 ' + c.defaultRefreshBudget + ' 条、回溯检查前 ' + c.defaultBackfillBudget + ' 条' + (c.contentNoun || '内容') + '；已收录的也占名额，只跳过详情。' : c.incrementalDetails ? '默认刷新最多 ' + c.defaultRefreshBudget + ' 条、回溯最多 ' + c.defaultBackfillBudget + ' 条详情；已完整收录的笔记跳过详情访问。' : current ? '当前 ' + current + ' 条，约 ' + Math.ceil(current/pageSize) + ' 页。同时作用于“刷新来源”和“回溯历史”。' : '当前使用默认：刷新来源 1 页，回溯历史 10 页。留空并保存可恢复默认。'})),
-      h('p.muted',{text:c.checkedItems ? '例如设置 5，前 5 条都已收录时不打开任何详情，也不继续向后找旧笔记补足 5 条。' : c.incrementalDetails ? '此设置限制本轮详情读取条数，主页扫描单独设有上限；可能因验证、取消或超时提前停止。' : '平台每页约 ' + pageSize + ' 条，条数会向上取整成整页请求；例如填 35 实际读取 2 页约 40 条。'}),error),
+        h('p.field__hint',{text: c.checkedItems ? '默认刷新检查前 ' + c.defaultRefreshBudget + ' 条、回溯检查前 ' + c.defaultBackfillBudget + ' 条' + (c.contentNoun || '内容') + '；已收录的也占名额，只跳过详情。' : c.incrementalDetails ? '默认刷新最多 ' + c.defaultRefreshBudget + ' 条、回溯最多 ' + c.defaultBackfillBudget + ' 条详情；已完整收录的笔记跳过详情访问。' : current ? '刷新与回溯每次最多采集 ' + current + ' 条内容。' : '当前使用默认：刷新来源 1 页，回溯历史 10 页。留空并保存可恢复默认。'})),
+      h('p.muted',{text:c.checkedItems ? '例如设置 5，前 5 条都已收录时不打开任何详情，也不继续向后找旧笔记补足 5 条。' : c.incrementalDetails ? '此设置限制本轮详情读取条数，主页扫描单独设有上限；可能因验证、取消或超时提前停止。' : '平台按页读取，最后一页只保存设定条数内的内容；例如填 35 最多采集 35 条。已收录或解析失败的条目也占名额，不向后补足。'}),error),
       footer:[ui.btn('取消',{onClick:function () { layer.close(); }}),save]});
   }
   function scheduleText(c) {
