@@ -644,6 +644,111 @@ class M16Round2RegressionTests(_M16Fixture, unittest.TestCase):
         self.drain()
         self.assertEqual(self.tags_of(saved['item_id']), ['美食'])
 
+    # ---- BUG-097 续修：详情更新后不得被自身旧快照永久挡住 ---------------
+
+    def _apply_detail_update(self, item_key, summary):
+        """走正式详情更新链路（create_job → running → apply_detail），不改库。"""
+        from subscribe_flow.contracts import Connection
+        from subscribe_flow.contracts.models import ContentPatch
+        self.repo.add_connection(Connection('fixture:default', 'fixture', 'direct-http', 'http:fixture'))
+        source = Source(channel='fixture', kind='user', external_id='detail-source',
+                        name='详情夹具来源', url='https://example.invalid/detail')
+        subscription = self.repo.subscribe(source, 'fixture:default')
+        job, _created = self.repo.create_job(subscription['id'], 'detail', item_key=item_key, trigger='manual')
+        self.repo.set_job_state(job['id'], 'running')
+        self.repo.apply_detail(job['id'], ContentPatch(item_key=item_key, fields={'summary': summary}))
+
+    def test_backfill_after_detail_update_recovers_to_terminal(self):
+        """正式详情更新后，被跳过的内容应能经补打恢复到终态并挂上标签。"""
+        self.enable(mode='jev')          # 空目录：Jev 跳过
+        saved = self.repo.save_manual(make_item('fixture', 'detail-1', 'Python 笔记',
+                                                '关于 Python 的一篇早期短笔记。'))
+        self.drain()
+        original = self.tasks.list_tasks(limit=1)['items'][0]
+        self.assertEqual(original['state'], 'skipped')
+
+        # 正式详情更新：正文补全，contents.updated_at 正常前进。
+        self._apply_detail_update(saved['item_id'],
+                                  '补全后的正文：介绍 asyncio 协程、事件循环与异步上下文管理器的完整实践。')
+        current = self.repo.get_content(saved['item_id'])['updated_at']
+        self.assertNotEqual(current, original['content_version'])
+
+        self.add_tag('Python')
+        self.enable(mode='llm', picks={'fixture:feed:detail-1': ['Python']})
+        self.assertEqual(self.tagging.backfill(limit=50)['queued'], 1)
+        # 新一轮必须基于当前正文建立快照，而不是沿用首次创建时的版本。
+        requeued = self.tasks.list_tasks(limit=1)['items'][0]
+        self.assertEqual(requeued['content_version'], current,
+                         '补打重排必须刷新为当前内容版本')
+
+        self.drain()
+        self.assertEqual(self.tags_of(saved['item_id']), ['Python'])
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['state'], 'succeeded')
+
+    def test_retry_after_detail_update_recovers_to_terminal(self):
+        """页面「重试」入口同样必须刷新内容版本，而不是复用旧快照。"""
+        provider = GatedProvider({'fixture:feed:detail-2': ['投资']})
+        self.enable(mode='llm')
+        self.add_tag('投资')
+        self._patch_provider(provider)
+        saved = self.repo.save_manual(make_item('fixture', 'detail-2', '定投记录',
+                                                '一次较早的定投记录，内容较短。'))
+
+        async def scenario():
+            work = asyncio.ensure_future(self.tagging._run_once())
+            while not provider.entered.is_set():
+                await asyncio.sleep(0.01)
+            self.core.settings.update('tagging', {'enabled': False})
+            provider.release.set()
+            await work
+
+        self.loop.run_until_complete(scenario())
+        cancelled = self.tasks.list_tasks(limit=1)['items'][0]
+        self.assertEqual(cancelled['state'], 'cancelled')
+
+        self._apply_detail_update(saved['item_id'], '补全后的正文：记录每月指数基金定投的执行与账户波动情况。')
+        current = self.repo.get_content(saved['item_id'])['updated_at']
+        self.core.settings.update('tagging', {'enabled': True})
+        provider.release.set()
+        provider.entered.clear()
+        self._patch_provider(StubProvider({'fixture:feed:detail-2': ['投资']}))
+
+        result = self.tagging.retry(cancelled['id'])
+        self.assertTrue(result['queued'])
+        retried = self.tasks.get_task(cancelled['id'])
+        self.assertEqual(retried['content_version'], current, '重试必须刷新为当前内容版本')
+
+        self.drain()
+        self.assertEqual(self.tags_of(saved['item_id']), ['投资'])
+
+    def test_inflight_content_change_still_blocks_late_result(self):
+        """新轮开始后内容再次变化，迟到结果仍必须被版本保护拦截。"""
+        self.enable(mode='jev')          # 空目录：先落一个 skipped，可经补打重排
+        saved = self.repo.save_manual(make_item('fixture', 'detail-3', '开源记录',
+                                                '记录一个开源命令行工具的开发过程。'))
+        self.drain()
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['state'], 'skipped')
+        self.add_tag('开源')
+        self.enable(mode='llm', picks={'fixture:feed:detail-3': ['开源']})
+        self.assertEqual(self.tagging.backfill(item_ids=[saved['item_id']], limit=50)['queued'], 1)
+
+        provider = GatedProvider({'fixture:feed:detail-3': ['开源']})
+        self._patch_provider(provider)
+
+        async def scenario():
+            work = asyncio.ensure_future(self.tagging._run_once())
+            while not provider.entered.is_set():
+                await asyncio.sleep(0.01)
+            # 请求在途，正文再次变化：这一轮基于旧正文发起，必须被拦下。
+            self._apply_detail_update(saved['item_id'], '正文在识别期间又被改了一次，内容已不同。')
+            provider.release.set()
+            await work
+
+        self.loop.run_until_complete(scenario())
+        self.assertEqual(self.tags_of(saved['item_id']), [], '在途变更后的迟到结果不得写入')
+        task = self.tasks.list_tasks(limit=1)['items'][0]
+        self.assertEqual(task['state'], 'skipped', '不得按旧结果判定成功')
+
     def test_expired_lease_recovers_without_manual_call(self):
         """BUG-093：异常残留的过期租约由 worker 循环自行回收，不需手工调用。"""
         self.enable(mode='llm')

@@ -414,6 +414,10 @@ class TaggingRepository:
         force 只给持有租约的后台 worker 用：它自己刚把任务认领成 running，
         仍需按新配置版本原地重排。没有 force 时，正在排队/运行的任务拒绝重跑，
         避免用户连点产生并发任务。
+
+        新一轮必须以**当前内容版本**建立快照：任务行保留的是上一轮发起识别时的
+        版本，若原样沿用，内容在此期间被正式更新（例如补采正文）之后，这一轮
+        就会被自己的旧快照永久挡成「内容已更新」，用户再怎么重试也恢复不了。
         """
         stamp = now()
         with self.database.transaction() as db:
@@ -422,15 +426,22 @@ class TaggingRepository:
                 raise ChannelError('NOT_FOUND', 'tagging.retry', '打标任务不存在')
             if not force and row['state'] in (QUEUED, RUNNING):
                 return {'queued': False, 'reason': '任务已在队列中'}
+            content = db.execute("SELECT updated_at FROM contents WHERE id=?",
+                                 (row['content_id'],)).fetchone()
+            if content is None:
+                raise ChannelError('NOT_FOUND', 'tagging.retry', '内容已不存在')
+            content_version = content['updated_at']
             round_no = row['round_no'] + 1
             db.execute(
-                "UPDATE tagging_tasks SET state='queued',config_version=?,catalog_version=?,mode=?,"
-                "dedupe_key=?,round_no=?,attempts=0,max_attempts=3,next_attempt_at=NULL,lease_expires_at=NULL,"
-                "error_code=NULL,error_message=NULL,skipped_reason=NULL,completed_at=NULL,updated_at=? WHERE id=?",
-                (config_version, catalog_version, mode,
-                 _dedupe(row['content_id'], row['content_version'], config_version, catalog_version,
+                "UPDATE tagging_tasks SET state='queued',content_version=?,config_version=?,"
+                "catalog_version=?,mode=?,dedupe_key=?,round_no=?,attempts=0,max_attempts=3,"
+                "next_attempt_at=NULL,lease_expires_at=NULL,error_code=NULL,error_message=NULL,"
+                "skipped_reason=NULL,completed_at=NULL,updated_at=? WHERE id=?",
+                (content_version, config_version, catalog_version, mode,
+                 _dedupe(row['content_id'], content_version, config_version, catalog_version,
                          row['origin'], round_no), round_no, stamp, task_id))
-        return {'queued': True, 'task_id': task_id, 'round': round_no}
+        return {'queued': True, 'task_id': task_id, 'round': round_no,
+                'contentVersion': content_version}
 
     def enqueue_backfill(self, content_ids, *, config_version, catalog_version, mode,
                          enabled_since=None, limit=500):
@@ -461,13 +472,15 @@ class TaggingRepository:
                     continue
                 if existing is not None:
                     # 复用原任务：轮次加一，回到队列继续用它。
+                    # content_version 必须同步刷新到当前内容版本，否则任务带着上一轮
+                    # 的旧快照，执行时会被自己的版本保护挡成「内容已更新」。
                     round_no = existing['round_no'] + 1
                     db.execute(
-                        "UPDATE tagging_tasks SET state='queued',config_version=?,catalog_version=?,mode=?,"
-                        "dedupe_key=?,round_no=?,attempts=0,max_attempts=3,next_attempt_at=NULL,"
-                        "lease_expires_at=NULL,error_code=NULL,error_message=NULL,skipped_reason=NULL,"
-                        "completed_at=NULL,origin='backfill',updated_at=? WHERE id=?",
-                        (config_version, catalog_version, mode,
+                        "UPDATE tagging_tasks SET state='queued',content_version=?,config_version=?,"
+                        "catalog_version=?,mode=?,dedupe_key=?,round_no=?,attempts=0,max_attempts=3,"
+                        "next_attempt_at=NULL,lease_expires_at=NULL,error_code=NULL,error_message=NULL,"
+                        "skipped_reason=NULL,completed_at=NULL,origin='backfill',updated_at=? WHERE id=?",
+                        (row['updated_at'], config_version, catalog_version, mode,
                          _dedupe(content_id, row['updated_at'], config_version, catalog_version,
                                  'backfill', round_no), round_no, stamp, existing['id']))
                     queued.append(content_id)
