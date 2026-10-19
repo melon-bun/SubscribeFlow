@@ -52,7 +52,7 @@
 | BUG-095 | M16 在途标签目录变化未阻止旧结果落库，改名后误挂标签 | Codex 复验通过（2026-10-19，4ff8093） |
 | BUG-096 | M18 采集条数配置不生效，限制 1 条仍保存整榜 | Codex 验收通过，已修复（2026-10-19，0ab104c） |
 | BUG-097 | skipped／cancelled 的自动打标内容无法由用户主动恢复处理 | 已修复并由 Codex 验收（r02，26daa8a） |
-| BUG-098 | 正式打包遗漏托盘资源，安装包无法创建托盘 | 已确认，待MiniMax修复／Codex验收 |
+| BUG-098 | 正式打包遗漏托盘资源，安装包无法创建托盘 | r04 已修复并自验，待 Codex 验收 |
 
 ## BUG-001：收件箱操作后未移出
 
@@ -1508,3 +1508,28 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 - 修复范围：仅正式资源打包与必要相对引用，保留显式白名单、不打包整个仓库、不以禁用托盘或去掉缺资源检查掩盖问题；无登录／Cookie／Key依赖。
 - 验证证据：verification/backlog-review/2026-10-19-replacement/package-tray-resource.json及REPORT.md。这是临时staging和实际缺资源分支验证，完整安装包与真实OS托盘尚未执行，未冒称通过。
 - 状态：**已确认，待MiniMax修复／Codex验收**。尚无产品修复提交。替换搁置BUG-011，只新增这一项修复，不扩成其他非致命小修；BUG-097已验收保留。
+
+### 2026-10-19-r04：已修复并自验（待 Codex 验收）
+
+- 根因：`scripts/package-macos.cjs` 的显式白名单只复制 `electron/{main,preload,renderer}`；
+  而 `electron/main/index.cjs:303` 用 `path.join(__dirname,'../../assets/logo.png')` 创建托盘，
+  打包后该路径解析到 app.asar 内的 `assets/logo.png`，而 staging 不含该目录，
+  `tray.cjs:55` 的缺资源检查直接抛「托盘图标不存在」。发布包托盘完全无法创建，
+  托盘菜单导航与常驻入口不可用；Main 仍保留主窗口降级，不是整应用启动崩溃。
+- 修复：在同一份显式白名单中补上这一个运行期真正需要的公开静态资源，只复制
+  `assets/logo.png`，不整目录打包（`assets/screenshots` 是开发用截图，不应进包）；
+  未复制工作区、runtime、docs、tests 或任何凭据。
+- 未用掩盖方式：未禁用托盘、未移除缺资源检查、未写死开发绝对路径、未回退开发目录、
+  未改窗口隐藏/显示逻辑；托盘计数、导航、退出、失败安全降级与窗口生命周期均未改动。
+- 验证（离线，不启动 Electron 窗口、不联网、不需登录/Key/模型）：
+  按正式白名单在临时目录组装 staging，用正式 Main 同一表达式解析出的路径留在 staging 内的
+  `assets/logo.png`、文件存在、为有效 PNG（1254×1254）、与源资源逐字节一致、staging 内
+  assets 仅含 logo.png、与工作区隔离；再加载**正式 TrayController**（仅替换 Electron 的
+  OS 边界）调用 create 成功，nativeImageCreates=1、trayCreates=1。
+  **反向对照**：按修复前白名单组装仍抛「托盘图标不存在」（0/0），证明该验证能抓住缺失而非恒绿。
+- 证据范围与未执行：`verification/backlog-minimax/2026-10-19-r04/REPORT.md`、`evidence/`。
+  这是资源组装与代码路径的隔离验证，**不是真实 macOS 托盘实机验收**；
+  未运行完整 `package:mac` 或正式 0.4.5 打包（会启动 Electron 并写 dist），正式构建在源码验收后执行；
+  未改版本号（仍 0.3.0）、未合并 main、未推送、未发布；未重跑全套测试与付费评估。
+- 状态：**已修复并自验**（2026-10-19-r04），等待 Codex 复核。
+- 相关提交：`5bfe97c`。
