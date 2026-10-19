@@ -20,7 +20,7 @@
 | BUG-008 | 关闭连接提醒后会遮蔽新的原因或任务结果 | 已修复 |
 | BUG-009 / KI-03 | 历史匿名会话投稿 -352；登录后阻塞结论已撤回 | 待定位（本次未复现） |
 | BUG-010 | 真实验收脚本复用旧等待任务，错误声称再次采集失败 | 已修复 |
-| BUG-011 | 真实回溯 200 条返回内容中有 7 条解析失败 | 未解决／外部待验收（r03核查未完成，无新样本） |
+| BUG-011 | 真实回溯 200 条返回内容中有 7 条解析失败 | 用户搁置，未解决；本轮由BUG-098替换 |
 | BUG-012 | 打包升级验收的旧库样本与版本号不一致 | 已修复 |
 | BUG-013 | M8 中优先级按钮的图标背景缺失 | 已修复 |
 | BUG-014 | 深色主题的成功提示文字与背景对比不足 | 已修复 |
@@ -52,6 +52,7 @@
 | BUG-095 | M16 在途标签目录变化未阻止旧结果落库，改名后误挂标签 | Codex 复验通过（2026-10-19，4ff8093） |
 | BUG-096 | M18 采集条数配置不生效，限制 1 条仍保存整榜 | Codex 验收通过，已修复（2026-10-19，0ab104c） |
 | BUG-097 | skipped／cancelled 的自动打标内容无法由用户主动恢复处理 | 已修复并由 Codex 验收（r02，26daa8a） |
+| BUG-098 | 正式打包遗漏托盘资源，安装包无法创建托盘 | 已确认，待MiniMax修复／Codex验收 |
 
 ## BUG-001：收件箱操作后未移出
 
@@ -235,6 +236,11 @@ HOST_CAPABILITY_UNAVAILABLE: this Runtime host cannot prompt for permission
 - **更正上一节“非脚本缺陷／恢复后直接运行”推断**：静态检查两个验收 helper 均把仓库根定位到 docs，生产源码路径不成立；JS 的 BilibiliAPI.request 还漏必需 AbortSignal。离线替身复核为 TypeError 且 fetchCalls=0，无真实网络。这些是未执行验收入口的缺陷，不能声称脚本已可用或宿主是唯一原因。
 - 状态继续 **未解决／外部待验收**，无产品修复。没有原7条／其他可归因样本或执行条件变化时，不反复空派、不自动重试平台。未来确需继续，应先在离线条件修正入口，再按原 profile／权限／最多3次API和1页验证，不能改路径绕过拒绝。
 - BUG-097 已通过，发布0.4.5仍等待本条验收；未合并main、未改版本、未打包／推送／发布。证据 `verification/backlog-review/2026-10-19-r03-acceptance/REPORT.md`、helper-static-review.json。
+
+
+### 2026-10-19 用户明确搁置 BUG-011
+
+用户暂不能进行登录等操作，授权本项先搁置并换一项修复。**BUG-011仍未解决，不作已修复销项**；不再探测平台、登录或权限恢复，待用户后续明确恢复。本轮替换为BUG-098（发布包托盘资源缺失），发布门槛随本次范围调整为已验收BUG-097与替换BUG-098，不因已搁置BUG-011无限等待。
 
 
 ## BUG-012：打包升级验收的旧库样本与版本号不一致
@@ -1490,3 +1496,15 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 - 41 项聚焦测试通过，包含新轮在途正文再次变化时不写旧标签、任务 skipped 的反向保护。真实模型／站点调用均 0，使用隔离数据。
 - 正式 Renderer 点击本轮未执行（MiniMax 报 HOST_CAPABILITY_UNAVAILABLE），不声称实机通过；按用户实质阻断标准只记录证据缺口，不为测试形式单独返修。
 - **状态：已修复并由 Codex 验收，关闭 BUG-097。** 证据 `verification/backlog-review/2026-10-19-r02-acceptance/REPORT.md`、reproductions.json、focused-tests.txt。BUG-011 仍未通过，不表示两个均完成；0.4.5 发布仍等待 BUG-011。
+
+
+## BUG-098：正式打包遗漏托盘资源，安装包无法创建托盘
+
+- 发现日期／优先级：2026-10-19，Codex按用户要求替换搁置BUG-011时核查，P1（核心发布功能不可用）。
+- 现象与复现：当前打包脚本仅复制electron/main、preload、renderer到staging，正式Main的托盘构造却读取打包根assets/logo.png。仓库源文件存在、按正式allowlist组装后缺失；加载正式TrayController.create实际抛“托盘图标不存在”，nativeImage／Tray均未创建。临时隔离组装已清理，无Electron／平台／模型调用。
+- 预期：正式发布包完整包含托盘所需资源，相对运行时引用正确，移动包位置仍可寻址。开发目录资源不能掩盖缺漏。
+- 根因：scripts/package-macos.cjs的显式资源白名单未覆盖M17新增托盘依赖assets/logo.png；electron/main/index.cjs引用../../assets/logo.png。
+- 影响边界：发布包无法创建托盘，托盘菜单导航与常驻入口不可用；Main会降级保留主窗口，不是整体启动崩溃。既有0.3.0历史包不能替代当前M17源码的资源验收。
+- 修复范围：仅正式资源打包与必要相对引用，保留显式白名单、不打包整个仓库、不以禁用托盘或去掉缺资源检查掩盖问题；无登录／Cookie／Key依赖。
+- 验证证据：verification/backlog-review/2026-10-19-replacement/package-tray-resource.json及REPORT.md。这是临时staging和实际缺资源分支验证，完整安装包与真实OS托盘尚未执行，未冒称通过。
+- 状态：**已确认，待MiniMax修复／Codex验收**。尚无产品修复提交。替换搁置BUG-011，只新增这一项修复，不扩成其他非致命小修；BUG-097已验收保留。
