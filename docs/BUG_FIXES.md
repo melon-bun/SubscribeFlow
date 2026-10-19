@@ -50,7 +50,7 @@
 | BUG-093 | 在途打标任务正常退出重启后卡在 running，过期也不自动恢复 | 已修复并验证（2026-10-18） |
 | BUG-094 | 成功挂载标签的任务未保存 Provider／实际模型元数据 | 仅记录，非致命；不单独派修 |
 | BUG-095 | M16 在途标签目录变化未阻止旧结果落库，改名后误挂标签 | Codex 复验通过（2026-10-19，4ff8093） |
-| BUG-096 | M18 采集条数配置不生效，限制 1 条仍保存整榜 | 重新打开，P1：26–50 合法配置导致采集失败 |
+| BUG-096 | M18 采集条数配置不生效，限制 1 条仍保存整榜 | r02 已修复并自验，待 Codex 验收 |
 
 ## BUG-001：收件箱操作后未移出
 
@@ -1349,3 +1349,22 @@ Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级�
 - 正式界面和 SubscriptionService 均允许 1–50；分别保存 26／50 后读取仍为 26／50，但正式同步任务均 failed、0 条入库、INVALID_INPUT「需为 1 到 25」。原数据榜单只有 12 行，上限更大应正常完成。
 - **当前状态：重新打开，尚未通过。** 继续同一 MiniMax session 完成剩余配置问题；不改小公共设置范围，不重做已通过 BUG-095。
 - 证据 `verification/m16-m18-review/2026-10-19-r01-acceptance/reproductions.json:m18_collection_ceiling`；46 项现有聚焦测试虽通过，但未覆盖该合法配置。全部离线隔离，无真实模型调用。
+
+### 2026-10-19-r02 续修完成（待 Codex 验收）
+
+- 根因：`4ff8093` 把两个语义不同的上限混为一谈——`ITEM_BUDGET = 25` 是榜单**结构异常保护**
+  （实测 11–22 行，超过即页面结构变了），而用户 `collect_items` 是**本次最多收多少条**。
+  用前者校验后者，使公共设置允许的 26／50 变成非法输入。
+- 修复：新增 `MAX_COLLECT_ITEMS = 50`（与 `SubscriptionService.validate_schedule` 的 0–50 一致，
+  界面 channels.js 为 1–50），用户预算按 `1 <= budget <= MAX_COLLECT_ITEMS` 校验；
+  `len(rows) > ITEM_BUDGET` 的结构异常保护保持不变；未缩小界面或公共校验范围规避问题，
+  未改分页大小、多榜归属与其他渠道语义。
+- 实际验证（隔离数据、固定榜单夹具，逐档正式路径实测）：1→存回1/入1；3→存回3/入3；
+  **26→存回26/succeeded/入 4；50→存回50/succeeded/入 4；0 默认→succeeded/入 4**。
+  26／50 修复前为 failed + INVALID_INPUT、0 条入库；现按榜单实际行数正常收录且不超过用户上限。
+  0／默认与 1 语义不变，已收录内容仍占窗口预算，多榜稳定 ID 去重与 content_sources 归属未改。
+  新增 2 项聚焦用例；`python.tests.test_github` + `python.tests.test_m16_tagging` 共 48 项 OK（exit 0）。
+- 证据：`verification/m16-m18-minimax/2026-10-19-r02/REPORT.md`、`evidence/focused-tests.txt`。
+  全部离线隔离，本轮真实模型调用 0 次，未读取真实 Key。
+- **状态：产品修复完成并自验，等待 Codex 复核**；本条编号不变，未另建重复条目。
+- 相关提交：本轮修复提交（分支 `feature/m18-github-trending`）。

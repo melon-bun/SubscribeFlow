@@ -46,6 +46,10 @@ BOARDS = {
 }
 # 实测 11–22 行；25 为结构异常的上限，不是行数假设。
 ITEM_BUDGET = 25
+# 用户可保存的采集条数上限，与公共设置保持一致（SubscriptionService.validate_schedule
+# 允许 0–50，0 表示使用渠道默认；界面 channels.js 同样给出 1–50）。
+# 它与 ITEM_BUDGET 是两件事：这是「最多收多少条」，不是「榜单最多有几行」。
+MAX_COLLECT_ITEMS = 50
 # 单条读取与来源解析不做连通性探测：这些操作本来就要读页面。
 NO_PROBE = {"match_item_url", "resolve_item", "read_item"}
 PATH = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
@@ -373,11 +377,16 @@ class GithubTrendingAdapter:
         if len(rows) > ITEM_BUDGET:
             raise ChannelError('SCHEMA_CHANGED', 'list_items', 'GitHub 趋势榜行数异常，请更新适配器')
         # 订阅上保存的采集条数（collect_items）是入库上限，不是分页大小：
-        # 页面仍然整页下载、整榜解析，但本轮最多带 budget 条新内容回去。
+        # 页面仍然整页下载、整榜解析，但本轮最多带 budget 条内容回去。
+        #
+        # 这里必须用公共设置允许的取值范围校验，而不是 ITEM_BUDGET——后者是榜单
+        # 结构异常的保护上限（榜单正常就只有 25 行以内），与「用户允许收多少条」
+        # 是两回事。用上限过大的配置并不要求榜单真的有那么多行：榜单只有 12 行时，
+        # 上限 50 应当正常收录 12 行，而不是让整次同步失败。
         budget = request.item_budget or self.describe().default_refresh_budget
-        if type(budget) is not int or not 1 <= budget <= ITEM_BUDGET:
+        if type(budget) is not int or not 1 <= budget <= MAX_COLLECT_ITEMS:
             raise ChannelError('INVALID_INPUT', 'list_items',
-                               f'GitHub 趋势榜本轮采集条数需为 1 到 {ITEM_BUDGET}')
+                               f'GitHub 趋势榜本轮采集条数需为 1 到 {MAX_COLLECT_ITEMS}')
         known = set(request.known_ids)
         items, skipped, truncated = [], 0, 0
         try:

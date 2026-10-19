@@ -296,6 +296,40 @@ class GithubTests(unittest.IsolatedAsyncioTestCase):
             "SELECT count(*) FROM contents WHERE channel='github'").fetchone()[0]
         self.assertEqual(stored, run['new_items'])
 
+    async def test_large_valid_budget_still_succeeds_on_a_short_board(self):
+        """上限大于榜单实际行数时应正常收录全部，而不是整次失败。
+
+        用户上限表示「最多收多少条」，不要求榜单真有那么多行。两个上限各自用一个
+        榜单验证：已收录的行会占用窗口预算，混在同一个榜上第二次就没有新增了。
+        """
+        for board, ceiling in (("day", 26), ("month", 50)):
+            subscription = await self.add_board(board)
+            await self.core.update_subscription(subscription['id'], collect_items=ceiling)
+            saved = self.core.repository.get_subscription(subscription['id'])
+            self.assertEqual(saved['collect_items'], ceiling, '配置必须保存得下')
+
+            run = await self.refresh(subscription['id'])
+            self.assertEqual(run['state'], 'succeeded', f'上限 {ceiling} 不应让任务失败')
+            self.assertGreater(run['new_items'], 0, f'上限 {ceiling} 应正常收录')
+            self.assertLessEqual(run['new_items'], ceiling,
+                                 '实际收录数不得超过用户上限')
+            stored = self.core.repository.db.execute(
+                "SELECT count(*) FROM contents WHERE channel='github'"
+                " AND id IN (SELECT content_id FROM content_sources cs"
+                " JOIN sources s ON s.id=cs.source_id WHERE s.external_id=?)",
+                (board,)).fetchone()[0]
+            self.assertEqual(stored, run['new_items'])
+
+    async def test_stored_budget_never_exceeds_the_actual_board(self):
+        """小上限仍然生效：超过用户预算的行不会被带入。"""
+        day = await self.add_board("day")
+        await self.core.update_subscription(day['id'], collect_items=3)
+        run = await self.refresh(day['id'])
+        self.assertEqual(run['new_items'], 3)
+        stored = self.core.repository.db.execute(
+            "SELECT count(*) FROM contents WHERE channel='github'").fetchone()[0]
+        self.assertEqual(stored, 3)
+
     async def test_budget_counts_new_items_and_still_skips_known(self):
         """已收录条目同样占额度（与其他渠道一致），重复刷新不再新增。"""
         day = await self.add_board("day")
