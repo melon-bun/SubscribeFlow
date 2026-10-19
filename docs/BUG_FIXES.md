@@ -49,6 +49,8 @@
 | BUG-092 | 历史补打漏掉启用前内容，预览与实际排队数量不一致 | 已修复并验证（2026-10-18） |
 | BUG-093 | 在途打标任务正常退出重启后卡在 running，过期也不自动恢复 | 已修复并验证（2026-10-18） |
 | BUG-094 | 成功挂载标签的任务未保存 Provider／实际模型元数据 | 仅记录，非致命；不单独派修 |
+| BUG-095 | M16 在途标签目录变化未阻止旧结果落库，改名后误挂标签 | 待修复，P1；2026-10-19 已复现 |
+| BUG-096 | M18 采集条数配置不生效，限制 1 条仍保存整榜 | 待修复，P1；2026-10-19 已复现 |
 
 ## BUG-001：收件箱操作后未移出
 
@@ -1315,3 +1317,24 @@ Codex 在审查中指出 M17 尚缺四项**真机级**证据，不能用类级�
 - 影响：任务历史缺少诊断字段；标签、任务终态及标签挂载数量正确，不影响收录、模型调用、配置、重试或补打。
 - 建议修复范围：后续有相关开发时在现有成功事务中补齐元数据，不做额外重构。
 - 验证结果／状态：问题已由真实调用复现；**仅记录，未修复，未派发**。产品基线 `ef6e3bb`，审查交付 `698fb7d`。
+
+
+## BUG-095：M16 在途标签目录变化未阻止旧结果落库
+
+- 日期／优先级：2026-10-19，Codex 重新核查 M16–M18，P1；实质标签数据错误。
+- 复现：正式 worker 基于 Python 标签目录发起识别；Provider 返回前通过正式 TagService 将同一 ID 改名为美食；返回旧目录中的 Python ID。目录版本已变化，但任务 succeeded，Python 内容被挂上美食。
+- 预期：写标签的事务中检查实际当前目录版本；旧识别不得挂到含义已变的标签，按当前版本重新排队。已有禁用／删除／人工移除保护继续生效。
+- 原因／定位：`python/src/subscribe_flow/application/tagging.py:_execute` 只重读当前配置，apply_result 参数 catalogue 仍为请求开始时的旧值；`storage/tagging.py:apply_result` 比较任务旧值和参数旧值，未读取实际当前目录。
+- 修复范围：补齐现有目录版本失效与事务写回，不另造模型调用路径；重新排队须能到达终态且不重复挂载。
+- 证据：`verification/m16-m18-review/2026-10-19-r01/reproductions.json:m16_stale_catalogue`，实际 state=succeeded/tags=[美食]；诊断脚本 exit 0 仅表示复现完成。无真实模型请求、无个人数据。
+- 状态：**待修复，已复现**；整体交给原 MiniMax session，与 BUG-096 同轮处理。产品基线 `ef6e3bb`，复核 HEAD `b86ce17`。
+
+## BUG-096：M18 采集条数配置不生效
+
+- 日期／优先级：2026-10-19，Codex 重新核查 M16–M18，P1；用户配置不生效及入库数量超过上限。
+- 复现：正式 Core.update_subscription 将日榜 collect_items 保存为 1，读回仍为 1；正式 SyncService 刷新 12 行榜单，实际 job_items=12/new_items=12，任务 succeeded。
+- 预期：遵守用户保存的采集上限和既有预算／去重语义；下载完整单页不代表允许无视入库上限。0／默认值、多榜共享归属和 window_only 口径应保留。
+- 原因／定位：`python/src/subscribe_flow/channels/github/adapter.py:GithubTrendingAdapter.fetch_page` 没有使用 request.item_budget；SyncService 已正确传入 1，commit_page 仍保存返回的整榜。
+- 修复范围：落实正式 GitHub 采集路径的预算，验证显式上限、默认值、重复及多榜组合，不改其他渠道的既有预算规则。
+- 证据：`verification/m16-m18-review/2026-10-19-r01/reproductions.json:m18_collection_ceiling`，固定隔离日榜、1 次夹具 HTTP 读取，无真实站点请求。
+- 状态：**待修复，已复现**；与 BUG-095 整轮交给原 MiniMax session。M18 源码 `91e25ea`，复核 HEAD `b86ce17`。
