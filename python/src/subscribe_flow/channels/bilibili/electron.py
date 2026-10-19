@@ -160,16 +160,31 @@ class BilibiliElectronAdapter:
             raise ChannelError("UNVERIFIED_EMPTY" if not rows else "SCHEMA_CHANGED", operation, "投稿列表与平台总数不一致，请稍后重新采集")
         items, errors = [], []
         for index, row in enumerate(rows):
+            # 逐条分因报错：以前所有原因都并成一句「缺少有效身份或标题」，
+            # 2026-10-05 那 7 条拒绝因此至今无法定位到具体字段。校验规则本身不变，
+            # 这里只让下一次的拒绝能被直接读懂；不放宽任何判定。
             try:
                 bvid = video_id(row["bvid"])
+            except (KeyError, TypeError, ValueError, ChannelError):
+                errors.append(ItemError(index, "SCHEMA_CHANGED", "视频条目缺少可用的 BVID 身份"))
+                continue
+            try:
                 if "mid" in row and str(row["mid"]) != source.external_id:
                     raise ValueError("source mismatch")
-                items.append(ContentItem("bilibili", "video", bvid, source, title(row["title"]),
+                name = title(row["title"])
+            except (KeyError, TypeError, ValueError, ChannelError):
+                if isinstance(row, dict) and "mid" in row and str(row["mid"]) != source.external_id:
+                    errors.append(ItemError(index, "SCHEMA_CHANGED", "视频条目作者与订阅来源不一致"))
+                else:
+                    errors.append(ItemError(index, "SCHEMA_CHANGED", "视频条目缺少可用标题"))
+                continue
+            try:
+                items.append(ContentItem("bilibili", "video", bvid, source, name,
                     f"https://www.bilibili.com/video/{bvid}", published=published(row.get("created")),
                     summary=row.get("description") if isinstance(row.get("description"), str) else None,
                     thumbnail=picture(row.get("pic"))))
-            except (KeyError, TypeError, ValueError, ChannelError):
-                errors.append(ItemError(index, "SCHEMA_CHANGED", "视频条目缺少有效身份或标题"))
+            except (TypeError, ValueError, ChannelError):
+                errors.append(ItemError(index, "SCHEMA_CHANGED", "视频条目字段无法转换为标准内容"))
         if rows and not items:
             raise ChannelError("SCHEMA_CHANGED", operation, "投稿页所有条目均无效")
         terminal = page*limit >= info["count"]
