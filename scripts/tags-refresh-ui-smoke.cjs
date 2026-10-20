@@ -91,6 +91,50 @@ async function run() {
   await until(`TagsRefreshStub.calls().some(c=>c.name==='tagging.backfill'&&c.args.limit===7)`);
   await idle();
   await screenshot('tags-ai-preview-confirmed');
+
+  // A request already sent may settle after leaving. Any invalidation queued
+  // behind it stays stale until its own tab is visible again.
+  const callCount = name => evaluate(`TagsRefreshStub.calls().filter(c=>c.name===${JSON.stringify(name)}).length`);
+  const openTab = async tab => {
+    await evaluate(`SF.app.navigate('tags', {tab:${JSON.stringify(tab)}}); void 0`);
+    await until(`SF.app.state.route.name==='tags' && SF.app.state.tagTab===${JSON.stringify(tab)}`);
+    await idle();
+  };
+  await openTab('list');
+  await evaluate(`TagsRefreshStub.configure({delays:{listTags:250}}); void 0`);
+  const tagsBefore = await callCount('listTags'), contentsBefore = await callCount('listTagContents');
+  await background(['tags']);
+  await until(`TagsRefreshStub.calls().filter(c=>c.name==='listTags').length===${tagsBefore + 1}`);
+  await evaluate(`SF.views.tags.invalidate(new Set(['tags'])); SF.app.navigate('inbox'); void 0`);
+  await until(`SF.app.state.route.name==='inbox'`);
+  await idle();
+  assert.equal(await callCount('listTags'), tagsBefore + 1, '离开标签页后不得启动目录补查');
+  assert.equal(await callCount('listTagContents'), contentsBefore, '目录回包不得在隐藏页接着查关联内容');
+  await openTab('list');
+  assert.equal(await callCount('listTags'), tagsBefore + 2, '重返标签列表后应补查保留的失效');
+
+  await evaluate(`TagsRefreshStub.configure({delays:{listTagContents:250}}); void 0`);
+  const associationBefore = await callCount('listTagContents');
+  await background(['content']);
+  await until(`TagsRefreshStub.calls().filter(c=>c.name==='listTagContents').length===${associationBefore + 1}`);
+  await evaluate(`SF.views.tags.invalidate(new Set(['content'])); SF.app.navigate('tags', {tab:'ai'}); void 0`);
+  await until(`SF.app.state.tagTab==='ai'`);
+  await idle();
+  assert.equal(await callCount('listTagContents'), associationBefore + 1, '切换到AI页后不得补查隐藏的关联内容');
+  await openTab('list');
+  assert.equal(await callCount('listTagContents'), associationBefore + 2, '返回列表后应补查关联内容');
+
+  await openTab('ai');
+  await evaluate(`TagsRefreshStub.configure({delays:{'tagging.status':250}}); void 0`);
+  const aiBefore = await callCount('tagging.status');
+  await background(['tagging']);
+  await until(`TagsRefreshStub.calls().filter(c=>c.name==='tagging.status').length===${aiBefore + 1}`);
+  await evaluate(`SF.views.tags.invalidate(new Set(['tagging'])); SF.app.navigate('tags', {tab:'list'}); void 0`);
+  await until(`SF.app.state.tagTab==='list'`);
+  await idle();
+  assert.equal(await callCount('tagging.status'), aiBefore + 1, '切换到列表后不得启动AI状态补查');
+  await openTab('ai');
+  assert.equal(await callCount('tagging.status'), aiBefore + 2, '返回AI页后应读取保留的任务失效');
   assert.deepEqual(errors, []);
   console.log('标签后台刷新验收通过：' + output);
   win.destroy();
