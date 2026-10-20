@@ -101,6 +101,13 @@ async function run() {
   assert.equal(await evaluate('RefreshTest.draws'),await evaluate('window.hiddenDraws'));
   await evaluate(`RefreshTest.state.route.name='overview';RefreshTest.draw()`);await idle();
   assert.ok(await evaluate('RefreshTest.calls.length')>before);
+  // Leaving during a multi-page window refresh stops not-yet-started pages.
+  await evaluate(`RefreshTest.hold=true;RefreshTest.refresh()`);await until('RefreshTest.pending.length>=2');
+  before=await evaluate('RefreshTest.calls.length');
+  await evaluate(`RefreshTest.state.route.name='tags';RefreshTest.hold=false;RefreshTest.release()`);await idle();
+  assert.equal(await evaluate('RefreshTest.calls.length'),before,'Hidden views must not start the second window page');
+  await evaluate(`RefreshTest.state.route.name='overview';RefreshTest.draw()`);await idle();
+  assert.equal(await count('[data-calendar-item]'),120,'Reopening revalidates the cancelled visible window');
   // Error retains month/day data; an explicit retry recovers without a reset.
   await evaluate(`RefreshTest.fail=true;RefreshTest.refresh()`);await idle();
   assert.equal(await count('[data-calendar-item]'),120);

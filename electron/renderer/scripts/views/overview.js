@@ -26,12 +26,13 @@
   // query finishes. Failed refreshes retain data and wait for an explicit retry.
   function request(state,work,apply,finish) {
     if(state.loading) return;
-    var revision=state.revision || 0;
+    var revision=state.revision || 0, cancelled=false;
     state.loading=true; state.stale=false; state.error=null;
     var task=Promise.resolve().then(work).then(function(result) {
       if(result!==null) { apply(result); state.loaded=true; }
+      else cancelled=true;
     }).catch(function(err) { state.error=err; state.loaded=true; }).then(function() {
-      state.loading=false; state.stale=(state.revision || 0)!==revision;
+      state.loading=false; state.stale=cancelled || (state.revision || 0)!==revision;
       finish();
     });
     pending.add(task);
@@ -91,7 +92,7 @@
     Object.assign(query,{from:app.selectedDate,to:app.selectedDate});
     function owns() { return dayCache===current && dayKey===key && JSON.stringify(calendarQuery(app))+':'+app.selectedDate===key; }
     request(current,function() {
-      return more ? app.client.listContents(Object.assign({},query,{limit:20,offset:current.next_offset})) : readWindow(app,query,Math.max(20,(current.items||[]).length),owns);
+      return more ? app.client.listContents(Object.assign({},query,{limit:20,offset:current.next_offset})) : readWindow(app,query,Math.max(20,(current.items||[]).length),function() { return owns() && visible(app,'calendar'); });
     },function(result) {
       if(!owns()) return;
       current.items=more ? current.items.concat(result.items.filter(function(item) { return !current.items.some(function(old) { return old.id===item.id; }); })) : result.items;
@@ -207,7 +208,7 @@
     var query=Object.assign({},boardQuery(app),{priority:id});
     function owns() { return board===owner && board[id]===group && JSON.stringify(boardQuery(app))===key; }
     request(group,function() {
-      return more ? app.client.listContents(Object.assign({},query,{offset:group.next_offset})) : readWindow(app,query,Math.max(20,(group.items||[]).length),owns);
+      return more ? app.client.listContents(Object.assign({},query,{offset:group.next_offset})) : readWindow(app,query,Math.max(20,(group.items||[]).length),function() { return owns() && visible(app,'priority'); });
     },function(result) {
       if(!owns()) return;
       group.items=more ? group.items.concat(result.items.filter(function(item) { return !group.items.some(function(old) { return old.id===item.id; }); })) : result.items;
