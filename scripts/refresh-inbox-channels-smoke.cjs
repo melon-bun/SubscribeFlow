@@ -65,6 +65,7 @@ async function verify() {
       listChannels:query => {T.reads.channels++;return T.channelsHandler ? T.channelsHandler(query) : Promise.resolve(T.clone({items:T.sources,total:T.sources.length}));},
       getSyncCoverage:id => {T.reads.coverage++;return Promise.resolve({label:'当前窗口',detail:'范围 '+id,complete:false});},
       savePrioritySettings:async value => {T.priorityWrite=value;},
+      setChannelEnabled:async (id, enabled) => {T.sources.find(source=>source.id===id).enabled=enabled;},
     };
     const state = T.state = {client,route:{name:'inbox'},filters:{quick:'all'},search:'',selectedId:null,counts:{total:20},platforms:[],
       session:{capabilities:{canIntake:false,canManageChannels:true},channels:[],connections:[]},runs:[],channelTab:'list',now:Date.now()};
@@ -145,6 +146,22 @@ async function verify() {
   const terminal = await evaluate('({...refreshTest.reads})');
   assert.equal(terminal.channels,before.channels);
   assert.equal(terminal.coverage,before.coverage+1,'only the completed source coverage is re-read');
+
+  // A focused switch is a submitted button, not an in-progress text edit. Its
+  // committed state must repaint while keyboard focus follows the replacement.
+  window.webContents.focus();
+  await evaluate(`document.querySelector('[data-channel-id="source-a"] [role="switch"]').focus();void 0`);
+  window.webContents.sendInputEvent({type:'keyDown',keyCode:'Space'});
+  window.webContents.sendInputEvent({type:'keyUp',keyCode:'Space'});
+  await until(`refreshTest.sources[0].enabled===false && document.querySelector('[data-channel-id="source-a"] [role="switch"]').getAttribute('aria-checked')==='false'`);
+  assert.equal(await evaluate(`document.activeElement===document.querySelector('[data-channel-id="source-a"] [role="switch"]')`),true,
+    'pausing a focused source keeps keyboard focus on its updated switch');
+  window.webContents.sendInputEvent({type:'keyDown',keyCode:'Space'});
+  window.webContents.sendInputEvent({type:'keyUp',keyCode:'Space'});
+  await until(`refreshTest.sources[0].enabled===true && document.querySelector('[data-channel-id="source-a"] [role="switch"]').getAttribute('aria-checked')==='true'`);
+  assert.equal(await evaluate(`document.activeElement===document.querySelector('[data-channel-id="source-a"] [role="switch"]')`),true,
+    'resuming the same source updates its committed state and retains keyboard focus');
+
   await evaluate(`refreshTest.channelsHandler=query=>new Promise((resolve,reject)=>refreshTest.pending.push({query,resolve,reject}));SF.views.channels.invalidate(['channels']);refreshTest.mount(true);void 0`);
   assert.equal(await evaluate('document.querySelectorAll("[data-channel-id]").length'),2);
   assert.equal(await evaluate('document.body.innerText.includes("正在载入渠道")'),false);
@@ -167,7 +184,8 @@ async function verify() {
 
   console.log(JSON.stringify({refreshViews:'passed',backgroundKeepsData:true,staleQueriesIgnored:true,
     inFlightInvalidationDrained:true,errorsKeepData:true,runProgressAvoidsSourceReads:true,
-    terminalCoverageReads:1,channelSearchKeepsFocus:true,realReconciler:await evaluate('refreshTest.realReconciler')}));
+    terminalCoverageReads:1,channelSearchKeepsFocus:true,focusedSwitchPauseResume:true,
+    keyboardFocusRetained:true,realReconciler:await evaluate('refreshTest.realReconciler')}));
   window.destroy();
 }
 
