@@ -13,7 +13,8 @@
     wechat: { id: "wechat", name: "微信公众号", short: "公众号", mark: "微" },
     weibo: { id: "weibo", name: "微博", short: "微博", mark: "博" },
     zhihu: { id: "zhihu", name: "知乎", short: "知乎", mark: "知" },
-    github: { id: "github", name: "GitHub", short: "GitHub", mark: "GH" },
+    /* GitHub 用官方实心标识（icon），其余平台仍用文字缩写（mark）。 */
+    github: { id: "github", name: "GitHub", short: "GitHub", mark: "GH", icon: "github" },
     other: { id: "other", name: "其他", short: "其他", mark: "?" },
   };
 
@@ -54,6 +55,28 @@
 
   var PRIORITY_ORDER = ["high", "medium", "low"];
 
+  /* M20 优先级名称：等级固定、顺序固定，只有显示名可由用户改。
+     「未设置」是无优先级状态，不是第四个等级，因此不能被占用为名称。 */
+  var PRIORITY_DEFAULT_NAMES = {high: "高优先级", medium: "中优先级", low: "低优先级"};
+  var PRIORITY_NONE_NAME = "未设置";
+  var PRIORITY_NAME_MAX = 12;
+
+  /** 应用新的显示名；缺项或空值退回默认名，等级本身不受影响。 */
+  function setPriorityNames(names) {
+    PRIORITY_ORDER.forEach(function (id) {
+      var value = names && typeof names[id] === "string" ? names[id].trim() : "";
+      PRIORITIES[id].name = value || PRIORITY_DEFAULT_NAMES[id];
+    });
+    return priorityNames();
+  }
+
+  /** 当前生效的三级显示名。 */
+  function priorityNames() {
+    var names = {};
+    PRIORITY_ORDER.forEach(function (id) { names[id] = PRIORITIES[id].name; });
+    return names;
+  }
+
   function platform(id) {
     return PLATFORMS[id] || PLATFORMS.other;
   }
@@ -75,8 +98,13 @@
     PLATFORMS: PLATFORMS,
     PRIORITIES: PRIORITIES,
     PRIORITY_ORDER: PRIORITY_ORDER,
+    PRIORITY_DEFAULT_NAMES: PRIORITY_DEFAULT_NAMES,
+    PRIORITY_NONE_NAME: PRIORITY_NONE_NAME,
+    PRIORITY_NAME_MAX: PRIORITY_NAME_MAX,
     platform: platform,
     priority: priority,
+    priorityNames: priorityNames,
+    setPriorityNames: setPriorityNames,
     normalizePlatform: normalizePlatform,
     normalizePriority: normalizePriority,
   };

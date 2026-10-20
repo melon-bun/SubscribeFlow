@@ -16,6 +16,7 @@ const {CredentialService} = require('./credentials.cjs');
 const {SettingsBridge} = require('./settings-bridge.cjs');
 const {ReminderScheduler} = require('./reminders.cjs');
 const {ReminderNotification} = require('./reminder-notification.cjs');
+const {PriorityLabels} = require('./priority-labels.cjs');
 const {TrayController} = require('./tray.cjs');
 const {WindowLifecycle} = require('./lifecycle.cjs');
 const {classifyStartupFailure, startupFailureRecord} = require('./startup-errors.cjs');
@@ -61,6 +62,18 @@ let quitting = false;
  */
 const resources = {core: null, channels: null, scheduler: null, tray: null, lifecycle: null,
                    notifier: null, ready: false, navigateIntent: null};
+/**
+ * M20 优先级显示名。提醒通知与托盘菜单在主进程生成，改名后这里要跟着更新，
+ * 否则用户改完名字看到的仍是旧名称。只影响文案，不影响统计口径与提醒周期。
+ */
+const priorityLabels = new PriorityLabels();
+
+/** 把设置里的优先级名称应用到主进程；拿不到就用默认名，不阻断提醒。 */
+function applyPriorityNames(settings) {
+  if (!settings || !settings.priority) return false;
+  priorityLabels.apply(settings.priority.names);
+  return true;
+}
 let suspended = false, powerUpdate = Promise.resolve();
 
 /** 导航意图投递：页面或 Core 未就绪时挂起，就绪后补发（BUG-076）。 */
@@ -95,6 +108,7 @@ async function wireReminders() {
       // 顺序很重要：先读当前设置，再读与之匹配的持久状态，最后才决定恢复还是
       // 新建周期。反过来会先建周期再把旧状态读进来覆盖它。
       const settings = await core.call('settings.get');
+      applyPriorityNames(settings);
       const state = await core.call('reminder.state').catch((error) => {
         diagnostic('reminder.state.read', {phase: 'reminder-state-read',
           name: error.name || null, message: String(error.message || error).slice(0, 300)});
@@ -264,6 +278,7 @@ async function start() {
     NotificationCtor: Notification,
     // 延迟解析：隔离测试可在应用启动之后再替换 OS 通知边界。
     ctorProvider: () => (typeof resources.testNotificationCtor === 'function' ? resources.testNotificationCtor : Notification),
+    priorityLabel: () => priorityLabels.high,
   });
   notifier.onClick = (view) => { void lifecycleRef.navigate({view}); };
   resources.notifier = notifier;
@@ -302,6 +317,7 @@ async function start() {
         quit: () => { void lifecycleRef.quit(); },
         iconPath: path.join(__dirname, '../../assets/logo.png'),
         template: process.platform === 'darwin',
+        priorityLabel: () => priorityLabels.high,
         now: () => Date.now(),
       });
       trayRef = tray;
@@ -383,7 +399,11 @@ async function start() {
       if (UI_METHODS.has(name)) {
         const value = await callUI(core, name, params, {settings: settingsBridge});
         // 保存成功后才响应提醒配置变化（BUG-074）。
-        if (name === 'saveSettings') applyReminderSettings(value);
+        if (name === 'saveSettings') {
+          applyReminderSettings(value);
+          // 优先级改名同样在保存成功后生效：提醒与托盘文案跟着换名。
+          applyPriorityNames(value);
+        }
         return {ok: true, value};
       }
       if (!params || typeof params !== 'object' || Array.isArray(params)) throw new Error('业务参数必须是对象');
@@ -433,6 +453,7 @@ async function start() {
       else if (rendererSmoke === 'window') await require('../../scripts/window-lifecycle-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'm17') await require('../../scripts/m17-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'settings') await require('../../scripts/settings-renderer.cjs').verify({window,core,root});
+      else if (rendererSmoke === 'v049') await require('../../scripts/v049-batch01-renderer.cjs').verify({window,core,root});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
       // 验收同样走 M17 的统一退出流程，否则关窗仍会被拦截为隐藏到托盘。
       await lifecycle.quit();

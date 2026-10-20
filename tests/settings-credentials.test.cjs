@@ -96,6 +96,12 @@ function fakeCore(initial) {
               },
             },
           };
+        } else if (params.section === 'priority') {
+          // 显示型分区：只换名称，配置版本不动（与 Core 的真实行为一致）。
+          settings = {
+            ...settings,
+            priority: { names: { ...settings.priority.names, ...((params.patch || {}).names || {}) } },
+          };
         } else {
           settings = { ...settings, savedVersion: settings.version + 1, reminder: { ...settings.reminder, ...params.patch } };
         }
@@ -119,6 +125,7 @@ const BASE_SETTINGS = {
     },
   },
   reminder: { enabled: false, intervalMinutes: 60, preset: '60' },
+  priority: { names: { high: '高优先级', medium: '中优先级', low: '低优先级' } },
 };
 
 test('保存密钥：先落密文再提交引用，并把密钥推进 Core', async () => {
@@ -291,4 +298,22 @@ test('结构损坏的凭据文件必须保留并报告，不能当作空库覆�
     await assert.rejects(credentials.put('jev-new', 'new-key'), {code: 'CREDENTIAL_STORE_UNREADABLE'});
     assert.equal(await fs.readFile(file, 'utf8'), raw);
   }
+});
+
+test('M20：优先级名称原样透传给界面，改名不动配置版本', async () => {
+  const dir = await tempDir();
+  const credentials = new CredentialService({dir, storage: fakeStorage()});
+  const core = fakeCore(BASE_SETTINGS);
+  const bridge = new SettingsBridge({core, credentials});
+  const saved = await bridge.write({section: 'priority', patch: {names: {high: '今天看'}}});
+  assert.deepEqual(saved.priority.names, {high: '今天看', medium: '中优先级', low: '低优先级'});
+  assert.equal(saved.version, 0, '显示型保存不应递增配置版本，否则在跑的打标任务会被判过期');
+  // 界面启动时读到的也必须是新名称，否则看板与提醒会各说各话。
+  const read = await bridge.read();
+  assert.equal(read.priority.names.high, '今天看');
+  // 优先级分区不接受凭据参数。
+  await assert.rejects(
+    () => bridge.write({section: 'priority', patch: {names: {high: '今天看'}}, credentials: {jev: 'x'}}),
+    /当前分区不接受这些密钥参数/,
+  );
 });

@@ -11,6 +11,7 @@
 const {Tray, Menu, nativeImage} = require('electron');
 
 const fs = require('node:fs');
+const {DEFAULT_PRIORITY_NAMES} = require('./priority-labels.cjs');
 
 function unavailableCounts() {
   return {pending: null, high: null, available: false};
@@ -21,9 +22,9 @@ function formatPending(count, available) {
   return `待处理 ${count} 条`;
 }
 
-function formatHigh(count, available) {
-  if (!available || count === null || count === undefined) return '高优先级未归档：数据暂不可用';
-  return `高优先级未归档 ${count} 条`;
+function formatHigh(count, available, label = DEFAULT_PRIORITY_NAMES.high) {
+  if (!available || count === null || count === undefined) return `${label}未归档：数据暂不可用`;
+  return `${label}未归档 ${count} 条`;
 }
 
 class TrayController {
@@ -35,6 +36,7 @@ class TrayController {
    * @param {() => void} deps.openSettings      打开设置
    * @param {() => void} deps.quit              明确退出
    * @param {string} deps.iconPath              按平台适配的图标
+   * @param {() => string} [deps.priorityLabel] 高优先级显示名（用户改名后菜单跟着改）
    * @param {() => object} [deps.now]           注入时钟，便于测试
    */
   constructor(deps) {
@@ -45,6 +47,10 @@ class TrayController {
     this.refreshTimer = null;
     this.refreshInFlight = false;
     this.lastRefreshedAt = null;
+    // 显示名可注入；缺省用默认名，提醒与菜单不会因为改名而变空。
+    this.priorityLabel = typeof deps.priorityLabel === 'function'
+      ? deps.priorityLabel
+      : () => DEFAULT_PRIORITY_NAMES.high;
   }
 
   /**
@@ -154,7 +160,7 @@ class TrayController {
       {type: 'separator'},
       // Core 不可用时仍可点击：点了会带着真实不可用状态打开列表，而不是显示空白。
       {label: formatPending(pending, available), click: () => { void this.openList('pending'); }},
-      {label: formatHigh(high, available), click: () => { void this.openList('high_unarchived'); }},
+      {label: formatHigh(high, available, this.priorityLabel()), click: () => { void this.openList('high_unarchived'); }},
       {type: 'separator'},
       {label: '设置…', click: () => this.openSettings()},
       {label: '退出应用', click: () => this.quit()},

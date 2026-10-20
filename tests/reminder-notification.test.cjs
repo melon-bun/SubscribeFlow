@@ -133,3 +133,17 @@ test('通知投递状态机区分五种结果', () => {
     created[0].closed = true;
   }
 });
+
+test('M20：提醒文案用当前的高优先级名称，统计口径不变', () => {
+  const {ReminderNotification} = require('../electron/main/reminder-notification.cjs');
+  const n = new ReminderNotification({
+    NotificationCtor: class { static isSupported() { return true; } },
+    priorityLabel: () => '今天看',
+  });
+  assert.equal(n.format({pendingCount: 3, highUnarchivedCount: 1}), '你有 3 条内容未处理；1 条今天看内容尚未归档。');
+  // 数字仍然按稳定等级统计：改名不改变「有几个」，只改变「叫什么」。
+  assert.equal(n.format({pendingCount: 0, highUnarchivedCount: 2}), '你有 2 条今天看内容尚未归档。');
+  // 没有注入名称时用默认名，提醒不会因为改名而变空。
+  const fallback = new ReminderNotification({NotificationCtor: class { static isSupported() { return true; } }});
+  assert.match(fallback.format({pendingCount: 1, highUnarchivedCount: 1}), /高优先级内容尚未归档/);
+});

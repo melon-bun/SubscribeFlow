@@ -473,6 +473,11 @@ textarea.input {
   background: var(--c-surface-3);
   color: var(--c-other);
 }
+/* GitHub 文字标识同样走黑字浅底，与图标标识保持同一套识别。 */
+.tag--github {
+  background: var(--c-github-bg);
+  color: var(--c-github-ink);
+}
 
 :root[data-theme="dark"] .tag--xiaohongshu {
   background: #341a20;
@@ -555,6 +560,19 @@ textarea.input {
 }
 .plat--other {
   background: var(--c-other);
+}
+
+/* GitHub：黑色图形 + 浅色承托底。侧栏标识块自带 color:#fff，
+   这里用组合选择器压过它，保证任何入口都画成同一套黑标。 */
+.plat--github,
+.side-row__icon.plat--github {
+  background: var(--c-github-bg);
+  color: var(--c-github-ink);
+}
+
+.plat--github svg {
+  fill: currentColor;
+  stroke: none;
 }
 
 .plat--lg {

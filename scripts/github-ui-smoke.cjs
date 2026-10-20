@@ -42,10 +42,31 @@ async function verifyGithub({evaluate, until, click, screenshot}) {
   assert.ok(card.includes('无需登录'), 'authentication must read as not required');
   await screenshot('m18-github-connection.png');
 
-  // ---- §9.2.7 the platform is identified with the GH mark in the UI ----
-  const marks = await evaluate(`Array.from(document.querySelectorAll('.plat--github')).map(n => n.textContent.trim())`);
+  // ---- §9.2.7 the platform is identified with the GitHub mark in the UI ----
+  // M19：GitHub 改用内置 SVG 标识（黑色图形 + 浅色承托底），不再是 GH 文字缩写。
+  const marks = await evaluate(`(() => {
+    const parse = (value) => {
+      const m = String(value).match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+      return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+    };
+    const luma = (rgb) => rgb ? 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] : null;
+    return Array.from(document.querySelectorAll('.plat--github')).map(n => {
+      const path = n.querySelector('svg path');
+      return {
+        svg: !!n.querySelector('svg'),
+        fill: path ? path.getAttribute('fill') : null,
+        ink: luma(parse(getComputedStyle(n).color)),
+        backing: luma(parse(getComputedStyle(n).backgroundColor)),
+      };
+    });
+  })()`);
   assert.ok(marks.length > 0, 'GitHub subscriptions must render a platform icon');
-  assert.deepEqual([...new Set(marks)], ['GH'], 'the GitHub platform mark must be GH');
+  for (const mark of marks) {
+    assert.ok(mark.svg, 'the GitHub platform mark must be the built-in SVG, not the GH abbreviation');
+    assert.equal(mark.fill, 'currentColor', 'the GitHub mark must inherit the ink color');
+    assert.notEqual(mark.backing, null, 'the GitHub mark must sit on a visible backing');
+    assert.ok(mark.ink < mark.backing, 'the GitHub mark must be a dark glyph on a light backing');
+  }
 
   // ---- §9.2.2 adding a source offers exactly the three boards ----
   await click('添加渠道或创作者');

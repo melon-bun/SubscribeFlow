@@ -202,6 +202,13 @@
   align-items: start;
 }
 
+/* M20：三个优先级名称输入框成组排列，与下面的说明文字分开。 */
+.setting-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
 /* ---------------- 开关行 ---------------- */
 
 .setting-row {

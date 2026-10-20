@@ -16,12 +16,28 @@ from subscribe_flow.contracts import ChannelError
 from subscribe_flow.storage.repositories import now
 
 MODES = ("jev", "llm")
-SECTIONS = ("tagging", "reminder")
+SECTIONS = ("tagging", "reminder", "priority")
 
 INTERVAL_PRESETS = (15, 30, 60, 120)
 INTERVAL_MIN = 5
 INTERVAL_MAX = 1440
 DEFAULT_INTERVAL = 60
+
+# M20 优先级名称：三级固定，顺序固定，只有显示名可改。
+# 「未设置」是无优先级状态，不是第四个等级，因此不能被占用为名称。
+PRIORITY_LEVELS = ("high", "medium", "low")
+PRIORITY_NONE_LABEL = "未设置"
+PRIORITY_NAME_MAX = 12
+DEFAULT_PRIORITY_NAMES = {
+    "high": "高优先级",
+    "medium": "中优先级",
+    "low": "低优先级",
+}
+
+# 只影响显示的分区：保存它们不递增配置版本。
+# 版本是自动打标判断「自己是否过期」的唯一依据，改个显示名不该让在跑的
+# 打标任务重跑、也不该动提醒计时（§M20 实施内容 4）。
+DISPLAY_ONLY_SECTIONS = ("priority",)
 
 # 初始设置含官方默认值；用户明确清空后仍保留空值，不在界面偷偷恢复。
 OFFICIAL_DEFAULTS = {
@@ -42,6 +58,7 @@ DEFAULTS = {
         },
     },
     "reminder": {"enabled": False, "intervalMinutes": DEFAULT_INTERVAL},
+    "priority": {"names": dict(DEFAULT_PRIORITY_NAMES)},
 }
 
 
@@ -91,6 +108,30 @@ def _validate_reference(value, scope_key):
     return value
 
 
+def _validate_priority_name(value, scope_key):
+    """单个优先级名称：去首尾空格后 1–12 字符，且不能占用「未设置」。"""
+    if not isinstance(value, str):
+        _fail("优先级名称必须是文本", "field", scope_key)
+    name = value.strip()
+    if not name:
+        _fail("优先级名称不能为空", "field", scope_key)
+    if len(name) > PRIORITY_NAME_MAX:
+        _fail("优先级名称不能超过 %d 个字符" % PRIORITY_NAME_MAX, "field", scope_key)
+    if name == PRIORITY_NONE_LABEL:
+        _fail("「%s」表示无优先级，不能用作优先级名称" % PRIORITY_NONE_LABEL, "field", scope_key)
+    return name
+
+
+def _readable_priority_name(value):
+    """读取时的宽松版本：存档被写坏就退回默认名，不让界面读到半个空名。"""
+    if not isinstance(value, str):
+        return None
+    name = value.strip()
+    if not name or len(name) > PRIORITY_NAME_MAX or name == PRIORITY_NONE_LABEL:
+        return None
+    return name
+
+
 def _missing_provider_items(provider):
     return [label for key, label in (("endpoint", "接口地址"), ("model", "模型标识"), ("credentialRef", "API Key"))
             if not provider.get(key)]
@@ -111,7 +152,7 @@ class SettingsService:
             if not isinstance(stored_section, dict):
                 continue
             for key, value in stored_section.items():
-                if key not in payload[section] or key == "providers":
+                if key not in payload[section] or key in ("providers", "names"):
                     continue
                 payload[section][key] = value
             if section == "tagging":
@@ -120,6 +161,13 @@ class SettingsService:
                     if isinstance(providers.get(mode), dict):
                         payload["tagging"]["providers"][mode].update(
                             {k: v for k, v in providers[mode].items() if k in payload["tagging"]["providers"][mode]})
+            if section == "priority":
+                # 逐级回落：旧配置没有这一项、或某一档写坏了，都用默认名补齐。
+                names = stored_section.get("names") or {}
+                for level in PRIORITY_LEVELS:
+                    name = _readable_priority_name(names.get(level))
+                    if name:
+                        payload["priority"]["names"][level] = name
         return record["version"], record["updatedAt"], payload
 
     def snapshot(self):
@@ -145,6 +193,7 @@ class SettingsService:
                         "enabledSince": payload["tagging"]["enabledSince"], "providers": providers},
             "reminder": {"enabled": payload["reminder"]["enabled"], "intervalMinutes": interval,
                          "preset": str(interval) if interval in INTERVAL_PRESETS else "custom"},
+            "priority": {"names": dict(payload["priority"]["names"])},
         }
 
     # ------------------------------------------------------------ 保存
@@ -154,20 +203,48 @@ class SettingsService:
             _fail("未知的设置分区")
         if not isinstance(patch, dict) or not patch:
             _fail("没有需要保存的修改")
-        _, _, payload = self._current()
+        version, _, payload = self._current()
         if section == "tagging":
             # 凭据引用要在完整性校验之前落进草稿：一次提交里同时给出地址、模型和
             # 新密钥是正常流程，先校验再合并会把这次提交误判成「缺 API Key」。
             merged = self._merge_tagging(payload["tagging"], patch, credential_refs)
+        elif section == "priority":
+            if credential_refs:
+                _fail("优先级名称不接受凭据引用")
+            merged = self._merge_priority(payload["priority"], patch)
         else:
             if credential_refs:
                 _fail("提醒设置不接受凭据引用")
             merged = self._merge_reminder(payload["reminder"], patch)
         payload[section] = merged
-        record = self.store.save(payload)
+        # 只影响显示的分区不递增版本：版本一动，在跑的打标任务会被判为过期而重跑。
+        next_version = version if section in DISPLAY_ONLY_SECTIONS else None
+        record = self.store.save(payload, version=next_version)
         result = self.snapshot()
         result["savedVersion"] = record["version"]
         return result
+
+    def _merge_priority(self, current, patch):
+        """三级名称只能改显示名：等级本身固定，缺失的沿用当前值。"""
+        if set(patch) - {"names"}:
+            _fail("包含不支持的优先级名称字段")
+        names = patch.get("names")
+        if not isinstance(names, dict):
+            _fail("优先级名称格式无效", "field", "names")
+        if set(names) - set(PRIORITY_LEVELS):
+            _fail("包含不支持的优先级等级", "field", "names")
+        merged = copy.deepcopy(current)
+        for level in PRIORITY_LEVELS:
+            if level in names:
+                merged["names"][level] = _validate_priority_name(names[level], "names." + level)
+        # 整体校验：不重名，也不占用「未设置」。
+        seen = {}
+        for level in PRIORITY_LEVELS:
+            value = merged["names"][level]
+            if value in seen:
+                _fail("三个优先级名称不能相同", "field", "names." + level)
+            seen[value] = level
+        return merged
 
     def _merge_tagging(self, current, patch, credential_refs=None):
         if set(patch) - {"enabled", "mode", "providers"}:

@@ -332,6 +332,9 @@
 .intake-priority__name {
   font-size: var(--fs-cap);
   color: var(--c-text-2);
+  /* M20：优先级名称可自定义到 12 字，超长时换行而不是撑破格子。 */
+  text-align: center;
+  word-break: break-word;
 }
 
 .intake-priority__opt--high .intake-priority__icon {

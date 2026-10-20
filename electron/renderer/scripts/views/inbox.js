@@ -182,9 +182,11 @@
       all:'查看所有已保存的内容，包括已读、稍后处理和已归档。',read:'已标记为已读的内容。',deferred:'已留待稍后处理的内容。',archived:'已归档的内容。'};
     /* 提醒口径切换：两个集合与通知里的数字同源，可以直接对照。 */
     var view = reminderView(app);
+    /* M20：提醒口径里点名的「高」按当前显示名走，改名后口径名称跟着变。 */
+    var highName = SF.catalog.priority('high').name;
     var viewToggle = h('div.chips.chips--views', {role:'group', 'aria-label':'提醒口径'}, [
       {id:'pending', label:'未处理', hint:'收件箱与稍后处理的并集，不含已读与已归档'},
-      {id:'high_unarchived', label:'高优先级未归档', hint:'最终优先级为高且未归档，包含已读内容'},
+      {id:'high_unarchived', label:highName + '未归档', hint:'最终优先级为「' + highName + '」且未归档，包含已读内容'},
     ].map(function (item) {
       var active = view === item.id;
       return ui.btn(item.label, {
@@ -200,11 +202,11 @@
     var head = h('div.view__head', {'data-refresh-key':'inbox-head'},
       h('div.view__head-text', null,
         h('div.view__title', null,
-          h('h1.t-h1', {text: view ? (view === 'pending' ? '未处理' : '高优先级未归档') : (titles[app.filters.quick] || '内容')}),
+          h('h1.t-h1', {text: view ? (view === 'pending' ? '未处理' : highName + '未归档') : (titles[app.filters.quick] || '内容')}),
           ui.countPill(cache.total == null ? '—' : cache.total, 'brand')),
         h('p.view__desc', {text: view
           ? (view === 'pending' ? '收件箱与稍后处理的并集；已读与已归档不计入。与提醒里的「未处理」数字同源。'
-                                : '最终优先级为高且尚未归档的内容，包含已读内容。与提醒里的「高优先级未归档」数字同源。')
+                                : '最终优先级为「' + highName + '」且尚未归档的内容，包含已读内容。与提醒里的「' + highName + '未归档」数字同源。')
           : (descriptions[app.filters.quick] || '按日期查看收录的内容。')}),
         viewToggle),
       h('div.view__actions', null, h('span.muted', {text:'按日历时间排列'}),

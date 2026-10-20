@@ -15,8 +15,9 @@ from pathlib import Path
 
 from subscribe_flow.application.credentials import CredentialBroker
 from subscribe_flow.application.settings import SettingsService
-from subscribe_flow.contracts import ChannelError
+from subscribe_flow.contracts import ChannelError, Connection, ContentItem, FetchPage, Source
 from subscribe_flow.storage.database import Database
+from subscribe_flow.storage.repositories import Repository
 from subscribe_flow.storage.settings import SettingsStore
 
 
@@ -175,6 +176,116 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(snapshot['tagging']['enabled'])
         self.assertEqual(snapshot['reminder']['intervalMinutes'], 45)
         self.assertNotIn('future', json.dumps(snapshot, ensure_ascii=False))
+
+
+class PriorityNameSettingsTests(unittest.TestCase):
+    """M20：三级优先级的显示名。
+
+    名称只影响显示：等级、顺序、来源继承、内容统计都不能被改名影响，
+    也不能让在跑的打标任务失效或动提醒计时。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / 'priority-names.sqlite3'
+        self.db = Database(self.path)
+        self.service = SettingsService(SettingsStore(self.db))
+        self.repo = Repository(self.db)
+        self.repo.add_connection(Connection('c', 'test', 'test', 'test'))
+        self.source = Source('test', 'author', 'a', 'Author', 'https://example.com/a', True)
+        self.sub = self.repo.subscribe(self.source, 'c')
+        self.repo.set_source_priority(self.sub['id'], 'high')
+        self.item = ContentItem('test', 'video', 'a', self.source, 'Title', 'https://example.com/a')
+        self.job, _ = self.repo.create_job(self.sub['id'], 'refresh')
+        self.repo.set_job_state(self.job['id'], 'running')
+        self.repo.commit_page(self.job['id'], FetchPage((self.item,), None, 'window_only'))
+
+    def tearDown(self):
+        self.db.close()
+        self.temp.cleanup()
+
+    def test_default_names_are_returned_when_nothing_is_stored(self):
+        snapshot = self.service.snapshot()
+        self.assertEqual(snapshot['priority']['names'],
+                         {'high': '高优先级', 'medium': '中优先级', 'low': '低优先级'})
+
+    def test_old_config_without_the_section_falls_back_to_defaults(self):
+        # 旧库里没有这一项，读取不能报错，也不能给出半截名字。
+        self.service.store.db.execute(
+            'INSERT INTO app_settings(id,version,payload,updated_at) VALUES(1,3,?,?)',
+            ('{"tagging":{"enabled":false},"reminder":{"enabled":false,"intervalMinutes":60}}', '2026-10-21'))
+        snapshot = self.service.snapshot()
+        self.assertEqual(snapshot['version'], 3)
+        self.assertEqual(snapshot['priority']['names'],
+                         {'high': '高优先级', 'medium': '中优先级', 'low': '低优先级'})
+
+    def test_names_are_trimmed_persisted_and_survive_restart(self):
+        self.service.update('priority', {'names': {'high': '  今天看  ', 'medium': '有空看', 'low': '以后再说'}})
+        self.assertEqual(self.service.snapshot()['priority']['names'],
+                         {'high': '今天看', 'medium': '有空看', 'low': '以后再说'})
+        reopened = SettingsService(SettingsStore(Database(self.path)))
+        self.assertEqual(reopened.snapshot()['priority']['names'],
+                         {'high': '今天看', 'medium': '有空看', 'low': '以后再说'})
+
+    def test_invalid_names_are_refused_with_the_exact_field(self):
+        cases = [
+            ({'names': {'high': '   '}}, 'names.high'),
+            ({'names': {'high': 'x' * 13}}, 'names.high'),
+            ({'names': {'medium': '未设置'}}, 'names.medium'),
+        ]
+        for patch, expected_key in cases:
+            with self.subTest(patch=patch):
+                with self.assertRaises(ChannelError) as caught:
+                    self.service.update('priority', patch)
+                self.assertEqual(caught.exception.scope, 'field')
+                self.assertEqual(caught.exception.scope_key, expected_key)
+
+    def test_a_single_valid_name_keeps_the_other_two(self):
+        self.service.update('priority', {'names': {'low': '同一'}})
+        self.assertEqual(self.service.snapshot()['priority']['names'],
+                         {'high': '高优先级', 'medium': '中优先级', 'low': '同一'})
+
+    def test_duplicated_names_are_refused(self):
+        with self.assertRaises(ChannelError) as caught:
+            self.service.update('priority', {'names': {'high': '重要', 'medium': '重要'}})
+        self.assertEqual(caught.exception.scope_key, 'names.medium')
+
+    def test_unknown_levels_cannot_be_added_or_removed(self):
+        for patch in ({'names': {'urgent': '紧急'}}, {'names': {'none': '无'}},
+                      {'names': {'high': '重要', 'medium': '中', 'low': '低', 'extra': '多'}}):
+            with self.subTest(patch=patch):
+                with self.assertRaises(ChannelError):
+                    self.service.update('priority', patch)
+
+    def test_rename_does_not_change_content_source_inheritance_or_counts(self):
+        before = self.repo.get_content(self.item.key)
+        counts_before = {level: self.repo.query_contents(priority=level)['total']
+                         for level in ('high', 'medium', 'low', 'none')}
+        self.service.update('priority', {'names': {'high': '今天看'}})
+        after = self.repo.get_content(self.item.key)
+        self.assertEqual(after['priority'], before['priority'])
+        self.assertEqual(after['source_priority'], before['source_priority'])
+        counts_after = {level: self.repo.query_contents(priority=level)['total']
+                        for level in ('high', 'medium', 'low', 'none')}
+        self.assertEqual(counts_after, counts_before)
+
+    def test_rename_does_not_bump_version_or_disturb_tagging_and_reminder(self):
+        self.service.update('tagging', {'mode': 'jev',
+                                         'providers': {'jev': {'endpoint': 'https://api.example.com/v1',
+                                                               'model': 'jev-latest'}},
+                                         'enabled': True},
+                            {'jev': 'jev-abc'})
+        self.service.update('reminder', {'enabled': True, 'intervalMinutes': 30})
+        before = self.service.snapshot()
+        self.service.update('priority', {'names': {'high': '今天看'}})
+        after = self.service.snapshot()
+        # 版本是自动打标判断自己是否过期的依据：只改显示名不能动它。
+        self.assertEqual(after['version'], before['version'])
+        self.assertEqual(after['tagging']['enabledSince'], before['tagging']['enabledSince'])
+        self.assertEqual(after['reminder'], before['reminder'])
+        # 其它分区照旧递增版本。
+        self.service.update('reminder', {'intervalMinutes': 45})
+        self.assertEqual(self.service.snapshot()['version'], before['version'] + 1)
 
 
 class CredentialBrokerTests(unittest.TestCase):

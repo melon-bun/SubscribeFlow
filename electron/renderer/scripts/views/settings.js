@@ -47,7 +47,20 @@
       title: "提醒设置",
       desc: "按固定间隔提醒还有多少内容未处理。",
     },
+    {
+      id: "priority",
+      label: "优先级名称",
+      icon: "priority-set",
+      title: "优先级名称",
+      desc: "为固定的三个优先级分别起名。等级与顺序不变，只改显示名称。",
+    },
   ];
+
+  /* M20：三个等级固定，只有显示名可改。顺序与 Core 一致，不可增删调换。 */
+  var PRIORITY_LEVELS = ["high", "medium", "low"];
+  var PRIORITY_LABELS = { high: "高优先级", medium: "中优先级", low: "低优先级" };
+  var PRIORITY_NONE_NAME = SF.catalog.PRIORITY_NONE_NAME;
+  var PRIORITY_NAME_MAX = SF.catalog.PRIORITY_NAME_MAX;
 
   var MODE_META = {
     jev: {
@@ -95,6 +108,7 @@
         },
       },
       reminder: { enabled: false, preset: "60", interval: 60 },
+      priority: { names: { high: "", medium: "", low: "" } },
     };
   }
 
@@ -115,6 +129,12 @@
     draft.reminder.preset = INTERVAL_PRESETS.some(function (p) { return p.value === String(interval); })
       ? String(interval)
       : "custom";
+    // 旧配置没有这一项时用默认名补齐：等级固定，只是名称回到出厂值。
+    var names = (settings.priority && settings.priority.names) || {};
+    PRIORITY_LEVELS.forEach(function (level) {
+      var value = typeof names[level] === "string" ? names[level] : "";
+      draft.priority.names[level] = value || SF.catalog.PRIORITY_DEFAULT_NAMES[level];
+    });
     return draft;
   }
 
@@ -172,7 +192,9 @@
   /* ---------------- 草稿与脏检查 ---------------- */
 
   function currentSection() {
-    return cache.section === "reminder" ? "reminder" : "tagging";
+    if (cache.section === "reminder") return "reminder";
+    if (cache.section === "priority") return "priority";
+    return "tagging";
   }
 
   function sectionDraft(section) {
@@ -183,6 +205,14 @@
   function isDirty(section) {
     var target = section || currentSection();
     if (!cache.saved || !cache.draft) return false;
+    if (target === "priority") {
+      var names = cache.draft.priority.names;
+      var savedNames = (cache.saved.priority && cache.saved.priority.names) || {};
+      return PRIORITY_LEVELS.some(function (level) {
+        var saved = typeof savedNames[level] === "string" ? savedNames[level] : SF.catalog.PRIORITY_DEFAULT_NAMES[level];
+        return (names[level] || "").trim() !== saved.trim();
+      });
+    }
     if (target === "reminder") {
       var r = cache.draft.reminder;
       var saved = cache.saved.reminder;
@@ -215,6 +245,11 @@
       var minutes = r.preset === "custom" ? Number(r.interval) : Number(r.preset);
       return { section: "reminder", patch: { enabled: !!r.enabled, intervalMinutes: minutes } };
     }
+    if (section === "priority") {
+      var names = {};
+      PRIORITY_LEVELS.forEach(function (level) { names[level] = cache.draft.priority.names[level]; });
+      return { section: "priority", patch: { names: names } };
+    }
     var t = cache.draft.tagging;
     var credentials = {};
     MODES.forEach(function (mode) {
@@ -235,9 +270,42 @@
     };
   }
 
+  /* M20 名称规则，与 Core 的校验一致：去首尾空格后 1–12 字符、三级不重名、
+     不占用「未设置」。前端先校一次给出即时反馈，Core 仍会再校一遍。 */
+  function priorityNameError(value) {
+    var name = (value || "").trim();
+    if (!name) return "优先级名称不能为空";
+    if (name.length > PRIORITY_NAME_MAX) return "优先级名称不能超过 " + PRIORITY_NAME_MAX + " 个字符";
+    if (name === PRIORITY_NONE_NAME) return "「" + PRIORITY_NONE_NAME + "」表示无优先级，不能用作优先级名称";
+    return null;
+  }
+
+  function validatePriorityNames(names) {
+    var errors = {};
+    var seen = {};
+    PRIORITY_LEVELS.forEach(function (level) {
+      var name = (names[level] || "").trim();
+      var message = priorityNameError(name);
+      if (!message && seen[name]) message = "三个优先级名称不能相同";
+      if (message) errors["names." + level] = message;
+      else seen[name] = level;
+    });
+    return errors;
+  }
+
   function saveSection(app, section) {
     if (savePromise) return savePromise;
     var epoch = generation;
+    if (section === "priority") {
+      var errors = validatePriorityNames(cache.draft.priority.names);
+      if (Object.keys(errors).length) {
+        // 不合法的名称不提交：输入原样保留，原因落到对应输入框下面。
+        cache.errors = errors;
+        cache.notice = { tone: "danger", text: "优先级名称不合法，请按提示修改后再保存。" };
+        paint(app);
+        return Promise.resolve(false);
+      }
+    }
     var params = buildSaveParams(section);
     cache.saving = section;
     cache.notice = null;
@@ -251,6 +319,10 @@
         cache.loaded = true;
         // 只重建刚提交的分区，清除其中的密钥明文，并使用服务端规范化后的值。
         discardSection(section);
+        if (section === "priority") {
+          // 立即生效：公共目录换名后，看板／卡片／筛选／提醒文案一起变。
+          SF.app.applyPriorityNames(settings.priority && settings.priority.names);
+        }
         cache.notice = settings.warnings && settings.warnings.length
           ? { tone: "warn", text: settings.warnings.join(" ") }
           : { tone: "success", text: "设置已保存。" };
@@ -865,11 +937,11 @@
             h("span.settings-list__name", { text: "未处理" }),
             h("span.settings-list__desc", { text: "收件箱与稍后处理的并集，排除已读和已归档。" })),
           h("li.settings-list__item", null,
-            h("span.settings-list__name", { text: "高优先级未归档" }),
-            h("span.settings-list__desc", { text: "最终优先级为高且尚未归档的内容，包含已读内容。" })),
+            h("span.settings-list__name", { text: SF.catalog.priority("high").name + "未归档" }),
+            h("span.settings-list__desc", { text: "最终优先级为「" + SF.catalog.priority("high").name + "」且尚未归档的内容，包含已读内容。" })),
           h("li.settings-list__item", null,
             h("span.settings-list__name", { text: "提醒措辞" }),
-            h("span.settings-list__desc", { text: "「你有 23 条内容未处理；5 条高优先级内容尚未归档。」两个数字不会相加。" }))
+            h("span.settings-list__desc", { text: "「你有 23 条内容未处理；5 条" + SF.catalog.priority("high").name + "内容尚未归档。」两个数字不会相加。" }))
         )
       ),
       buildNotificationBlock(app, notice),
@@ -1061,6 +1133,64 @@
     });
   }
 
+  /* ---------------- 优先级名称 ---------------- */
+
+  /**
+   * 恢复默认只改草稿，不直接落库：用户仍要点保存才会生效，
+   * 与本页其它分区的「先改草稿再保存」保持一致。
+   */
+  function restoreDefaultPriorityNames(app) {
+    PRIORITY_LEVELS.forEach(function (level) {
+      cache.draft.priority.names[level] = SF.catalog.PRIORITY_DEFAULT_NAMES[level];
+      clearFieldError("names." + level);
+    });
+    paint(app);
+  }
+
+  function buildPriority(app) {
+    var draft = cache.draft.priority.names;
+    var rows = PRIORITY_LEVELS.map(function (level, index) {
+      var key = "names." + level;
+      return field(
+        PRIORITY_LABELS[level],
+        textInput(draft[level], function (value) {
+          draft[level] = value;
+          // 输入过程中只清错并刷新底部，不重建表单，焦点留在输入框。
+          PRIORITY_LEVELS.forEach(function (other) { clearFieldError("names." + other); });
+          refreshFoot(app);
+        }, { placeholder: SF.catalog.PRIORITY_DEFAULT_NAMES[level] }),
+        {
+          hint: "固定第 " + (index + 1) + " 档，等级与顺序不变，只改显示名称。",
+          error: cache.errors[key],
+          errorKey: key,
+        }
+      );
+    });
+    return h(
+      "section.setting-block",
+      null,
+      h(
+        "div.setting-block__head",
+        null,
+        h(
+          "div",
+          null,
+          h("h3.setting-block__title", { text: "三个优先级的名称" }),
+          h("p.setting-block__desc", { text: "名称只影响显示：统计、筛选与提醒仍按固定等级计算，不会改动任何内容的优先级。" })
+        )
+      ),
+      h("div.setting-fields", null, rows),
+      h(
+        "div.setting-block__foot",
+        null,
+        ui.btn("恢复默认名称", {
+          size: "sm",
+          onClick: function () { restoreDefaultPriorityNames(app); },
+        })
+      )
+    );
+  }
+
   function buildBody(app) {
     if (!cache.draft) {
       if (cache.error) {
@@ -1091,7 +1221,11 @@
         desc: "正在从本地核心服务读取当前设置。",
       });
     }
-    var content = currentSection() === "reminder" ? buildReminder(app) : buildTagging(app);
+    var content = currentSection() === "reminder"
+      ? buildReminder(app)
+      : currentSection() === "priority"
+      ? buildPriority(app)
+      : buildTagging(app);
     return [buildNotice(), content];
   }
 
@@ -1114,7 +1248,7 @@
 
   /** 路由带 ?section= 时同步左栏选中项：直接改哈希进来也要落到对应分区。 */
   function setSection(section) {
-    cache.section = section === "reminder" ? "reminder" : "tagging";
+    cache.section = section === "reminder" ? "reminder" : section === "priority" ? "priority" : "tagging";
   }
 
   SF.views = SF.views || {};

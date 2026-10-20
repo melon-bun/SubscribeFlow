@@ -17,12 +17,13 @@
 
   /* ---------------- 侧栏筛选定义 ---------------- */
 
+  /* M20：优先级三行读当前显示名，所以每次渲染时取，不在模块加载时定死。 */
   var QUICK_FILTERS = [
     { id: "all", name: "全部更新", icon: "all-update", countKey: "total" },
     { id: "unread", name: "未处理", icon: "circle-check", countKey: "unread" },
-    { id: "high", name: "高优先级", icon: "priority-set", countKey: "high" },
-    { id: "medium", name: "中优先级", icon: "priority-set", countKey: "medium" },
-    { id: "low", name: "低优先级", icon: "priority-set", countKey: "low" },
+    { id: "high", name: null, icon: "priority-set", countKey: "high" },
+    { id: "medium", name: null, icon: "priority-set", countKey: "medium" },
+    { id: "low", name: null, icon: "priority-set", countKey: "low" },
     { id: "deferred", name: "稍后处理", icon: "flag", countKey: "deferred" },
     { id: "read", name: "已读", icon: "check", countKey: "read" },
     { id: "archived", name: "已归档", icon: "archive", countKey: "archived" },
@@ -45,6 +46,7 @@
     priorities: [],
     coreStatus: { state: "starting" },
     notice: null,
+    priorityNamesLoaded: false,
     dismissedStatus: null, // 已被手动关闭的状态栏签名；状态一变即失效
     counts: {},
     runs: [],
@@ -177,12 +179,14 @@
       null,
       h("div.side-group__title", { text: "快捷筛选" }),
       QUICK_FILTERS.filter(function (f) { return !["high", "medium", "low"].includes(f.id) || app.session.capabilities.canManagePriorities; }).map(function (f) {
+        // 优先级三行用当前显示名；其余筛选项名称固定。
+        var label = f.name || catalog.priority(f.id).name;
         return h(
           "button.side-row",
           {
             type: "button",
             "data-quick": f.id,
-            "aria-label": f.name, title: f.name,
+            "aria-label": label, title: label,
             onclick: function () {
               app.filters.quick = ['high','medium','low'].includes(f.id) ? 'all' : f.id;
               app.filters.priority = ['high','medium','low'].includes(f.id) ? f.id : null;
@@ -192,7 +196,7 @@
             },
           },
           h("span.side-row__icon", { "aria-hidden": "true" }, icon(f.icon, 13)),
-          h("span.side-row__label", { text: f.name }),
+          h("span.side-row__label", { text: label }),
           h("span.side-row__count", { text: String(app.counts[f.countKey] || 0) })
         );
       })
@@ -216,11 +220,7 @@
               render();
             },
           },
-          h(
-            "span.side-row__icon.plat.plat--" + meta.id,
-            { "aria-hidden": "true" },
-            meta.mark
-          ),
+          ui.platformIcon(meta.id, { className: "side-row__icon", decorative: true }),
           h("span.side-row__label", { text: meta.name }),
           h("span.side-row__count", { text: String(p.count) })
         );
@@ -415,6 +415,28 @@
   }
 
   var refreshPromise, queuedReasons = new Set();
+
+  /* M20 优先级显示名：启动时读一次设置，之后由设置页保存后直接应用。
+     显示名只影响文案，统计与筛选口径仍按稳定等级走。 */
+  function applyPriorityNames(names) {
+    if (!names) return false;
+    var before = catalog.priorityNames();
+    catalog.setPriorityNames(names);
+    var after = catalog.priorityNames();
+    return before.high !== after.high || before.medium !== after.medium || before.low !== after.low;
+  }
+
+  function loadPriorityNames() {
+    if (!app.client) return Promise.resolve(false);
+    return app.client.getSettings().then(function (settings) {
+      app.priorityNamesLoaded = true;
+      return applyPriorityNames(settings && settings.priority && settings.priority.names);
+    }).catch(function () {
+      // 读不到就先沿用默认名，下一轮刷新再试。
+      return false;
+    });
+  }
+
   function refreshData(force, reasons) {
     var requested = reasons ? new Set(reasons) : new Set([force ? 'all' : 'poll']);
     if (force && !reasons) {
@@ -443,6 +465,8 @@
             app.session = results[0]; app.counts = results[1]; app.platforms = results[2]; app.runs = results[3];
             app.now = Date.now(); app.notice = null;
             if (!app.selectedDate) app.selectedDate = fmt.ymd(app.now);
+            // 优先级显示名：首次装载后固定，设置页改名会直接应用并触发重绘。
+            if (!app.priorityNamesLoaded) await loadPriorityNames();
             // The periodic fallback also repairs missed invalidations, even when totals match.
             if (batch.has('poll')) ['content','tags','channels','runs','tagging'].forEach(function (reason) { batch.add(reason); });
             if (!app.session) continue;
@@ -716,6 +740,8 @@
     refreshCounts: refreshCounts,
     refreshRuns: refreshRuns,
     refreshSidebarCounts: refreshSidebarCounts,
+    // M20：设置页保存后立即把新名称应用到公共目录并重绘。
+    applyPriorityNames: applyPriorityNames,
   };
 
   if (document.readyState === "loading") {

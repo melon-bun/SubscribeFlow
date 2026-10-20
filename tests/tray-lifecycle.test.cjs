@@ -63,6 +63,25 @@ test('Core 不可用时菜单显示「数据暂不可用」，不伪造 0', () =
   assert.equal(formatHigh(1, true), '高优先级未归档 1 条');
 });
 
+test('M20：托盘菜单用当前的高优先级名称', () => {
+  assert.equal(formatHigh(1, true, '今天看'), '今天看未归档 1 条');
+  assert.equal(formatHigh(0, false, '今天看'), '今天看未归档：数据暂不可用');
+  // 没给名称时退回默认名，菜单不会因为改名而空掉。
+  const controller = new TrayController({
+    summary: async () => ({pendingCount: 1, highUnarchivedCount: 2}),
+    showWindow() {}, openList() {}, openSettings() {}, quit() {},
+    iconPath: '/dev/null', now: () => 1000,
+  });
+  assert.equal(controller.priorityLabel(), '高优先级');
+  const renamed = new TrayController({
+    summary: async () => ({pendingCount: 1, highUnarchivedCount: 2}),
+    showWindow() {}, openList() {}, openSettings() {}, quit() {},
+    iconPath: '/dev/null', now: () => 1000,
+    priorityLabel: () => '今天看',
+  });
+  assert.equal(renamed.priorityLabel(), '今天看');
+});
+
 test('统计读取失败后进入不可用状态，而不是显示 0', async () => {
   const controller = new TrayController({
     summary: async () => {

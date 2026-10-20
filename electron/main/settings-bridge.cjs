@@ -70,6 +70,8 @@ class SettingsBridge {
       updatedAt: settings.updatedAt,
       tagging,
       reminder: settings.reminder,
+      // 优先级显示名：Core 已经校验过，这里原样带给界面与提醒文案。
+      priority: settings.priority,
       credentials: { protection, providers },
       warnings,
     };

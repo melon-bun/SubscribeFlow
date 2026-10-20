@@ -159,14 +159,19 @@
     return h("span.tag.tag--" + p.id, { text: p.name });
   };
 
+  /**
+   * 平台标识块。有专属矢量图标的平台（GitHub）画图标，其余仍用两字缩写，
+   * 图形与底色统一由 .plat--<平台> 决定，避免各界面各画一套。
+   */
   ui.platformIcon = function (platformId, opts) {
     opts = opts || {};
     var p = catalog.platform(platformId);
-    return h(
-      "span.plat.plat--" + p.id + (opts.large ? ".plat--lg" : ""),
-      { title: p.name, "aria-label": p.name },
-      p.mark
-    );
+    var cls = "plat.plat--" + p.id + (opts.large ? ".plat--lg" : "") +
+      (opts.className ? "." + opts.className.split(" ").join(".") : "");
+    var body = p.icon ? icon(p.icon, opts.large ? 18 : 13) : p.mark;
+    // 宿主元素已经带 aria-label 时，标识本身只做装饰，避免读屏重复念两遍。
+    var label = opts.decorative ? { "aria-hidden": "true" } : { title: p.name, "aria-label": p.name };
+    return h("span." + cls, label, body);
   };
 
   ui.avatar = function (name, src, size) {

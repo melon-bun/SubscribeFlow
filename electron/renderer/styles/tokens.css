@@ -46,6 +46,10 @@
   --c-weibo: #ff8200;
   --c-zhihu: #0066ff;
   --c-other: #9aa0a8;
+  /* GitHub 不用品牌色块：官方标识是黑色的，用浅色承托底保证图形清晰可见。
+     深色主题沿用浅底，只把图形压成纯黑（见下方深色覆盖）。 */
+  --c-github-ink: #1b1f24;
+  --c-github-bg: #eceef1;
 
   /* ---- 状态色 ---- */
   --c-info: #2563eb;
@@ -171,6 +175,10 @@
   --c-success-bg: #16281a;
   --c-warn-bg: #2f2416;
   --c-danger-bg: #2e1a1d;
+
+  /* GitHub 标识在深色主题下仍用浅底 + 黑色图形，不随主题反色成浅图形。 */
+  --c-github-ink: #000;
+  --c-github-bg: #dcdfe3;
 
   --sh-2: 0 2px 8px rgba(0, 0, 0, 0.4);
   --sh-3: 0 8px 24px rgba(0, 0, 0, 0.5);

@@ -233,7 +233,7 @@
       ui.select([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},{ariaLabel:'看板收录方式'}),
       ui.select([{value:'all',label:'全部处理状态'},{value:'unread',label:'未处理'},{value:'read',label:'已读'},{value:'deferred',label:'稍后处理'},{value:'archived',label:'已归档'}],app.filters.quick,function(v) { app.filters.quick=v; SF.app.render(); },{ariaLabel:'看板处理状态'}),
       h('label.priority-date',null,h('span',{text:'日历日期'}),h('input.input',{type:'date','aria-label':'看板日期',value:app.filters.day||'',onchange:function(e) { app.filters.day=e.target.value || null; SF.app.renderContent(); }})),
-      ui.select([{value:'',label:'高 / 中 / 低'}].concat(levels.map(function(id) { return {value:id,label:catalog.priority(id).name}; })),app.filters.priority||'',function(v) { app.filters.priority=v||null; SF.app.render(); },{ariaLabel:'看板优先级'}),
+      ui.select([{value:'',label:'全部优先级'}].concat(levels.map(function(id) { return {value:id,label:catalog.priority(id).name}; })),app.filters.priority||'',function(v) { app.filters.priority=v||null; SF.app.render(); },{ariaLabel:'看板优先级'}),
       ui.btn('重置筛选',{onClick:function() { app.filters={quick:'all',platform:null,channelId:null}; app.search=''; SF.app.render(); }}),
       ui.btn('设置来源优先级',{onClick:function() { SF.app.navigate('channels',{tab:'priorities'}); }}));
     var unknown=board.none;
