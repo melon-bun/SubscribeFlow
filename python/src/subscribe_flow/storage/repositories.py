@@ -22,6 +22,17 @@ def encode(value) -> str:
     return json.dumps(jsonable(value), ensure_ascii=False, separators=(",", ":"), allow_nan=False)
 
 
+# M23：标签列表的排序白名单。值是 ORDER BY 片段，键是接口里公开的排序名。
+# usage 是查询里算出的挂载内容条数：人工与自动打标都写进 content_tags，
+# 同一内容同一标签只存一条（主键约束），因此天然「一条内容只计一次」，
+# 也与是否已读／已归档无关。
+TAG_SORTS = {
+    "name": "t.name COLLATE NOCASE, t.id",
+    "usage_desc": "usage DESC, t.name COLLATE NOCASE, t.id",
+    "usage_asc": "usage ASC, t.name COLLATE NOCASE, t.id",
+}
+
+
 class Repository:
     def __init__(self, database):
         self.database, self.db = database, database.connection
@@ -585,7 +596,7 @@ class Repository:
                 "synonyms": json.loads(row["synonyms"]), "contentCount": content_count,
                 "createdAt": row["created_at"], "updatedAt": row["updated_at"]}
 
-    def list_tags(self, query=None, enabled=None):
+    def list_tags(self, query=None, enabled=None, sort=None):
         clauses, args = ["1=1"], []
         if query:
             clauses.append("(instr(lower(name),lower(?))>0 OR instr(lower(synonyms),lower(?))>0)")
@@ -593,9 +604,12 @@ class Repository:
         if enabled is not None:
             clauses.append("enabled=?")
             args.append(int(enabled))
+        # M23：排序是显示层的事，用白名单映射，绝不让调用方拼 ORDER BY。
+        # 次数相同按名称再按稳定 ID 打破平局，零次标签照常参与排序。
+        order = TAG_SORTS.get(sort or "name", TAG_SORTS["name"])
         rows = self.db.execute(
             "SELECT t.*,(SELECT count(*) FROM content_tags ct WHERE ct.tag_id=t.id) AS usage "
-            f"FROM tags t WHERE {' AND '.join(clauses)} ORDER BY t.name COLLATE NOCASE", args)
+            f"FROM tags t WHERE {' AND '.join(clauses)} ORDER BY {order}", args)
         return [self._tag(row, row["usage"]) for row in rows]
 
     def get_tag(self, tag_id):

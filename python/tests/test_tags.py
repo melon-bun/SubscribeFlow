@@ -251,6 +251,65 @@ class TagTests(unittest.TestCase):
         # 停用不抹掉已有归类，内容仍然可以按这个标签被检索到。
         self.assertEqual(self.repo.query_contents(tags=[first['id']])['total'], 1)
 
+    # ------------------------------------------------- M23 使用次数排序
+
+    def test_usage_sort_counts_mounted_contents_and_breaks_ties_by_name(self):
+        """次数就是当前挂载该标签的内容条数：人工与自动都算，同一条内容只算一次。"""
+        many, few, zero_a, zero_b = self.make_tags('zebra', 'mango', 'apple', 'banana')
+        second, third = self.second_item(), self.dated_item('c', '2026-10-01T00:00:00+00:00')
+        self.tags.set_content(self.item.key, [many['id']])
+        self.tags.set_content(second.key, [many['id'], few['id']])
+        self.tags.set_content(third.key, [many['id']])
+        # 重复打标是幂等的：同一条内容不会把次数算成两条。
+        self.tags.set_content(self.item.key, [many['id']])
+
+        by_desc = self.tags.list_tags(sort='usage_desc')['items']
+        self.assertEqual([t['name'] for t in by_desc], ['zebra', 'mango', 'apple', 'banana'])
+        self.assertEqual([t['contentCount'] for t in by_desc], [3, 1, 0, 0])
+        by_asc = self.tags.list_tags(sort='usage_asc')['items']
+        self.assertEqual([t['name'] for t in by_asc], ['apple', 'banana', 'mango', 'zebra'])
+        self.assertEqual([t['contentCount'] for t in by_asc], [0, 0, 1, 3])
+
+    def test_sort_is_optional_and_unknown_values_are_rejected(self):
+        self.make_tags('zebra', 'apple')
+        # 旧调用不传排序：仍然按名称排，接口保持兼容。
+        self.assertEqual([t['name'] for t in self.tags.list_tags()['items']], ['apple', 'zebra'])
+        self.assertEqual([t['name'] for t in self.tags.list_tags(sort='name')['items']], ['apple', 'zebra'])
+        # 排序是受控参数：不允许调用方拼出任意 ORDER BY。
+        with self.assertRaises(ChannelError):
+            self.tags.list_tags(sort='name; DROP TABLE tags')
+
+    def test_sort_combines_with_keyword_and_enabled_filters(self):
+        keep, drop = self.make_tags('zebra', 'mango')
+        self.tags.set_content(self.item.key, [keep['id']])
+        self.tags.set_enabled(drop['id'], False)
+        items = self.tags.list_tags(sort='usage_desc', enabled=True)['items']
+        self.assertEqual([t['name'] for t in items], ['zebra'])
+        items = self.tags.list_tags(sort='usage_desc', enabled=False)['items']
+        self.assertEqual([t['name'] for t in items], ['mango'])
+        items = self.tags.list_tags(query='ze', sort='usage_desc')['items']
+        self.assertEqual([t['name'] for t in items], ['zebra'])
+
+    def test_usage_count_ignores_processing_state(self):
+        tag = self.make_tags('zebra')[0]
+        second = self.second_item()
+        self.tags.set_content(self.item.key, [tag['id']])
+        self.tags.set_content(second.key, [tag['id']])
+        # 处理状态与使用次数无关：已读的、已归档的都照样算在挂载条数里。
+        self.repo.update_content_state([self.item.key], {'read': True})
+        self.repo.update_content_state([second.key], {'archived': True})
+        counts = {t['name']: t['contentCount'] for t in self.tags.list_tags()['items']}
+        self.assertEqual(counts['zebra'], 2, '已读已归档的内容照样计入使用次数')
+
+    def test_removing_a_tag_reports_and_recounts_usage(self):
+        keep, drop = self.make_tags('zebra', 'mango')
+        self.tags.set_content(self.item.key, [keep['id']])
+        self.tags.set_content(self.item.key, [keep['id'], drop['id']])
+        self.tags.remove(drop['id'])
+        counts = {t['name']: t['contentCount'] for t in self.tags.list_tags()['items']}
+        self.assertEqual(counts['zebra'], 1)
+        self.assertNotIn('mango', counts)
+
     def test_tag_contents_listing_shares_the_content_filter(self):
         first, second = self.make_tags('旅行', '美食')
         other = self.second_item('b', 'Second')

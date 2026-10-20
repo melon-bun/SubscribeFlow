@@ -174,10 +174,12 @@ async function callUI(core, name, args, context) {
       return call('content.bulk_update', {item_ids: first, patch: contentPatch(second)});
     }
     case 'listTags': {
-      const query = object(first); keys(query, ['keyword', 'enabled']);
+      // M23：sort 是可选的显示层参数，不传就是按名称排（旧调用照常工作）。
+      const query = object(first); keys(query, ['keyword', 'enabled', 'sort']);
       const params = {};
       if (query.keyword) params.query = query.keyword;
       if (typeof query.enabled === 'boolean') params.enabled = query.enabled;
+      if (typeof query.sort === 'string' && query.sort) params.sort = query.sort;
       return call('tag.list', params);
     }
     case 'getTag':

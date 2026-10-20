@@ -235,7 +235,9 @@
     if (parent.matches('.scroll-y, .tags-ai, .kanban__list, .day-panel__list')) scroll.unshift(parent);
     var saved = scroll.map(function (node) {
       var top = node.getBoundingClientRect().top;
-      var anchor = node.scrollTop > 0 && Array.from(node.querySelectorAll('[data-content-id],[data-priority-item],[data-calendar-item]')).find(function (item) { return item.getBoundingClientRect().bottom > top; });
+      // M22：标签列表的行也带稳定标签 ID，和内容／优先级／日历项一样当锚点用：
+      // 列表重排后视口最上面那条标签仍然停在原处。
+      var anchor = node.scrollTop > 0 && Array.from(node.querySelectorAll('[data-content-id],[data-priority-item],[data-calendar-item],[data-tag-id]')).find(function (item) { return item.getBoundingClientRect().bottom > top; });
       return {node:node, top:node.scrollTop, left:node.scrollLeft, anchor:anchor, anchorTop:anchor && anchor.getBoundingClientRect().top};
     });
     var active = document.activeElement;

@@ -15,6 +15,7 @@ from subscribe_flow.contracts.tags import (
     RecognitionInput, TagSuggestion, validate_description, validate_synonyms,
     validate_tag_color, validate_tag_ids, validate_tag_name,
 )
+from subscribe_flow.storage.repositories import TAG_SORTS
 
 
 class TagService:
@@ -25,8 +26,11 @@ class TagService:
 
     # ------------------------------------------------------------ 标签管理
 
-    def list_tags(self, query=None, enabled=None):
-        tags = self.repository.list_tags(query, enabled)
+    def list_tags(self, query=None, enabled=None, sort=None):
+        # M23：排序是可选参数，不传就是按名称排（旧调用照常工作）。
+        if sort is not None and sort not in TAG_SORTS:
+            raise ChannelError("INVALID_INPUT", "tag.list", "不支持的标签排序方式")
+        tags = self.repository.list_tags(query, enabled, sort)
         return {"items": tags, "total": len(tags)}
 
     def get(self, tag_id):

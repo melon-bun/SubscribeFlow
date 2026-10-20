@@ -127,8 +127,10 @@ async function run() {
   await click('重试');
   await until(`TaggingStub.calls().some(call => call.name === 'tagging.retry' && call.args.task_id === 'task-0')`);
   await evaluate(`window.openedSettings = null; SF.app.openSettings = section => { window.openedSettings = section; }; void 0`);
-  await click('去设置 AI 模型配置');
-  assert.equal(await evaluate('window.openedSettings'), 'tagging');
+  // M21 起入口文案是「去设置 AI API 配置」（AI API 与识别策略分家了）。
+  await click('去设置 AI API 配置');
+  // M21 起 AI API 配置在独立的 'ai' 分区，识别策略搬到了标签页。
+  assert.equal(await evaluate('window.openedSettings'), 'ai');
   await click('刷新状态');
   await until(`document.querySelectorAll('.ai-task').length === 8`);
   await evaluate(`TaggingStub.setError('读取失败：' + 'long_error_without_separators'.repeat(20)); SF.views.tags.invalidate(new Set(['tagging'])); SF.views.tags.updateTagging(SF.app.state); void 0`);

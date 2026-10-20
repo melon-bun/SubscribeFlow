@@ -70,7 +70,7 @@ class Dispatcher:
             "content.get": (c.queries.content, {"item_id": str}, {"timezone": str}),
             "content.update": (c.content.update, {"item_id": str, "patch": dict}, {}),
             "content.bulk_update": (c.content.bulk_update, {"item_ids": list, "patch": dict}, {}),
-            "tag.list": (c.tags.list_tags, {}, {"query": str, "enabled": bool}),
+            "tag.list": (c.tags.list_tags, {}, {"query": str, "enabled": bool, "sort": str}),
             "tag.get": (c.tags.get, {"tag_id": str}, {}),
             "tag.create": (c.tags.create, {"name": str}, {"description": str, "color": str, "enabled": bool, "synonyms": list}),
             "tag.update": (c.tags.update, {"tag_id": str}, {"name": str, "description": str, "color": str, "synonyms": list}),

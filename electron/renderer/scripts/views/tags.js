@@ -56,7 +56,15 @@
     error: null,
     keyword: "",
     status: "all",
+    /* M23：排序只在本会话里保留，不进用户设置。
+       默认按名称，与旧行为一致；"usage_desc"/"usage_asc" 按使用次数排。 */
+    sort: "name",
     activeTagId: null,
+    /* 首次进入才默认选中第一条。标签被删掉或被筛掉之后不该又跳回首行。 */
+    autoSelect: true,
+    /* 用户主动换了搜索／筛选／排序：这一次允许回到结果顶部，
+       与「点行选中」「后台刷新」区分开。 */
+    resetScroll: false,
     /* 编辑副本存在模块作用域而不是闭包里：换颜色要整页重绘，
        放闭包里的话用户刚敲进去的描述会在点色块时消失。 */
     draft: null,
@@ -74,7 +82,50 @@
   var tagsRevision = 0, contentsRevision = 0;
   var draftVersion = 0;
 
-  function paint() { SF.app.renderView("tags"); }
+  function paint() {
+    var anchor = captureAnchor();
+    SF.app.renderView("tags");
+    restoreAnchor(anchor);
+  }
+
+  /**
+   * 可见行锚点（M22）：记住视口最上面那条标签，重排之后按它回到同一行。
+   * 光靠 scrollTop 不够——按使用次数排序时行会换位置，同一个 scrollTop
+   * 指向的已经不是同一条标签了。
+   */
+  function captureAnchor() {
+    if (cache.resetScroll) return null;
+    var wrap = document.querySelector(".tags-table-wrap");
+    if (!wrap) return null;
+    var top = wrap.getBoundingClientRect().top;
+    var rows = wrap.querySelectorAll("tbody tr[data-tag-id]");
+    for (var i = 0; i < rows.length; i++) {
+      var rect = rows[i].getBoundingClientRect();
+      if (rect.bottom > top) {
+        return { id: rows[i].getAttribute("data-tag-id"), offset: rect.top - top };
+      }
+    }
+    return null;
+  }
+
+  function restoreAnchor(anchor) {
+    var wrap = document.querySelector(".tags-table-wrap");
+    if (!wrap) return;
+    if (cache.resetScroll) {
+      // 用户主动换了搜索／筛选／排序：这一次允许回到结果顶部。
+      cache.resetScroll = false;
+      wrap.scrollTop = 0;
+      return;
+    }
+    if (!anchor) return;
+    var rows = wrap.querySelectorAll("tbody tr[data-tag-id]");
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].getAttribute("data-tag-id") !== anchor.id) continue;
+      var delta = rows[i].getBoundingClientRect().top - wrap.getBoundingClientRect().top - anchor.offset;
+      if (delta) wrap.scrollTop += delta;
+      return;
+    }
+  }
 
   function tabActive(app, tab) {
     return app.route.name === "tags" && app.tagTab === tab;
@@ -99,6 +150,8 @@
     if (cache.keyword) q.keyword = cache.keyword;
     if (cache.status === "enabled") q.enabled = true;
     else if (cache.status === "disabled") q.enabled = false;
+    // M23：排序随查询一起走，Core 侧用白名单解释。
+    if (cache.sort && cache.sort !== "name") q.sort = cache.sort;
     return q;
   }
 
@@ -140,11 +193,17 @@
           cache.total = res.total == null ? cache.tags.length : res.total;
           /* 首次进入默认选中第一条，右侧详情不会空着；
              但被选中的标签已经不在结果里（别处删了，或被筛掉了）就清空选中，
-             停在一个不存在的 id 上会让编辑区一片空白且关不掉。 */
-          if (!cache.activeTagId && cache.tags.length) cache.activeTagId = cache.tags[0].id;
+             停在一个不存在的 id 上会让编辑区一片空白且关不掉。
+             清掉之后不再自动跳回首行——用户筛掉它就是不想看它。 */
+          if (!cache.activeTagId && cache.tags.length && cache.autoSelect) {
+            cache.activeTagId = cache.tags[0].id;
+          }
+          // 只在首次进入时自动选第一条；之后选中由用户自己决定。
+          cache.autoSelect = false;
           if (cache.activeTagId && !hasTag(cache.activeTagId)) {
             cache.activeTagId = null;
             cache.draft = null;
+            cache.autoSelect = false;
           }
           if (!filtered()) cache.all = cache.tags;
           if (activeTag()) mergeDraft(activeTag());
@@ -359,6 +418,8 @@
       cache.keyword,
       function (v) {
         cache.keyword = v;
+        // 主动换搜索：这一次允许回到结果顶部。
+        cache.resetScroll = true;
         keepSearchFocus = true;
         clearTimeout(searchTimer);
         searchTimer = setTimeout(function () {
@@ -375,9 +436,23 @@
         "div.toolbar__tools",
         null,
         search,
-        /* 排序不设控件：后端 listTags 固定按名称返回（ORDER BY name COLLATE NOCASE），
-           契约里也没有排序参数。放一个只能切两三种排法的下拉，
-           不如让「标签按名称排列」成为一条稳定的规则。 */
+        /* M23：排序只是显示层的选择，随查询一起交给 Core 的白名单。
+           默认按名称；使用次数沿用 contentCount（挂载该标签的内容条数）。 */
+        ui.select(
+          [
+            { value: "name", label: "名称" },
+            { value: "usage_desc", label: "使用次数：从多到少" },
+            { value: "usage_asc", label: "使用次数：从少到多" },
+          ],
+          cache.sort,
+          function (v) {
+            cache.sort = v;
+            // 主动换排序：回到结果顶部，选中标签按 ID 保留。
+            cache.resetScroll = true;
+            load(app, { force: true });
+          },
+          { ariaLabel: "标签排序" }
+        ),
         ui.select(
           [
             { value: "all", label: "全部状态" },
@@ -387,6 +462,7 @@
           cache.status,
           function (v) {
             cache.status = v;
+            cache.resetScroll = true;
             load(app, { force: true });
           },
           { ariaLabel: "状态筛选" }
@@ -432,8 +508,10 @@
     }, 0);
 
     return h(
-      "div.panel.tags-table-wrap",
-      null,
+      "div.panel.tags-table-wrap.scroll-y",
+      /* M22：给滚动容器一个稳定身份。全局重绘会换掉整棵子树，
+         靠这个键才能把滚动位置还回来——否则点一行标签就跳回列表顶部。 */
+      { "data-scroll-key": "tags-table" },
       h(
         "table.table.table--tags",
         null,
@@ -467,6 +545,8 @@
       "tr",
       {
         "data-refresh-key": "tag-row:" + t.id,
+        /* 稳定标签 ID：可见行锚点靠它认出「同一条标签」。 */
+        "data-tag-id": t.id,
         "data-refresh-boundary": "true",
         class: t.id === cache.activeTagId ? "is-selected" : "",
         tabindex: "0",
@@ -528,7 +608,10 @@
     cache.draft = null;
     cache.draftError = null;
     cache.contentsLoading = true;
+    // M22：换选中只换右侧详情，左侧列表的滚动位置不能跟着跳。
+    var anchor = captureAnchor();
     SF.app.renderContent();
+    restoreAnchor(anchor);
     loadContents(app, id).then(function () {
       paint();
     });
