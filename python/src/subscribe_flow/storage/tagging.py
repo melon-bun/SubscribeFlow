@@ -16,6 +16,7 @@ import sqlite3
 import uuid
 
 from subscribe_flow.contracts import ChannelError
+from subscribe_flow.contracts.tags import AUTO_TAG_LIMIT, validate_description
 
 from .repositories import now, encode
 
@@ -253,7 +254,8 @@ class TaggingRepository:
         row = db.execute("SELECT count(*),max(updated_at),max(id) FROM tags").fetchone()
         return f"{row[0]}:{row[1] or ''}:{row[2] or ''}"
 
-    def apply_result(self, task_id, *, applied_tag_ids, new_tags, expected_content_version):
+    def apply_result(self, task_id, *, applied_tag_ids, new_tags, expected_content_version,
+                     tag_descriptions=None):
         """在同一事务里：复核版本与屏蔽 → 挂载/新建标签 → 完成任务。
 
         这是迟到结果的唯一拦截点。人工移除过的标签、已被禁用的标签、
@@ -266,6 +268,7 @@ class TaggingRepository:
         """
         stamp = now()
         applied = blocked = created = 0
+        described = []
         with self.database.transaction() as db:
             task = db.execute("SELECT * FROM tagging_tasks WHERE id=?", (task_id,)).fetchone()
             if task is None:
@@ -295,7 +298,11 @@ class TaggingRepository:
                 return {'applied': 0, 'blocked': 0, 'created': 0, 'outcome': 'requeued',
                         'reason': '标签目录已变化，将按当前目录重新识别'}
 
+            selected = set()
             for tag_id in dict.fromkeys(applied_tag_ids):
+                if len(selected) >= AUTO_TAG_LIMIT:
+                    break
+                selected.add(tag_id)
                 if not self._tag_usable(db, task['content_id'], tag_id):
                     blocked += 1
                     continue
@@ -303,20 +310,33 @@ class TaggingRepository:
                               (task['content_id'], tag_id)).fetchone():
                     blocked += 1
                     continue
+                if task['mode'] == 'llm':
+                    if self._fill_empty_description(db, tag_id, (tag_descriptions or {}).get(tag_id), stamp):
+                        described.append(tag_id)
                 cursor = db.execute(
                     "INSERT INTO content_tags(content_id,tag_id,origin,created_at)"
                     " VALUES(?,?,'suggested',?) ON CONFLICT(content_id,tag_id) DO NOTHING",
                     (task['content_id'], tag_id, stamp))
                 applied += cursor.rowcount if cursor.rowcount > 0 else 0
 
-            for name in new_tags:
-                tag_id = self._resolve_or_create(db, name, stamp)
+            for draft in (new_tags if task['mode'] == 'llm' else ()):
+                if len(selected) >= AUTO_TAG_LIMIT:
+                    break
+                description = validate_description(draft.get('description'))
+                if not description:
+                    _fail('LLM 新标签必须包含标签说明')
+                tag_id = self._resolve_or_create(db, draft['name'], description, stamp)
                 if tag_id is None:
                     continue
+                if tag_id in selected:
+                    continue
+                selected.add(tag_id)
                 if db.execute("SELECT 1 FROM content_tag_blocks WHERE content_id=? AND tag_id=?",
                               (task['content_id'], tag_id)).fetchone():
                     blocked += 1
                     continue
+                if self._fill_empty_description(db, tag_id, description, stamp):
+                    described.append(tag_id)
                 cursor = db.execute(
                     "INSERT INTO content_tags(content_id,tag_id,origin,created_at)"
                     " VALUES(?,?,'suggested',?) ON CONFLICT(content_id,tag_id) DO NOTHING",
@@ -327,7 +347,20 @@ class TaggingRepository:
 
             self._complete(db, task_id, SUCCEEDED, stamp,
                            applied_count=applied, blocked_count=blocked, created_count=created)
-        return {'applied': applied, 'blocked': blocked, 'created': created, 'outcome': SUCCEEDED}
+        return {'applied': applied, 'blocked': blocked, 'created': created,
+                'described': described, 'outcome': SUCCEEDED}
+
+    @staticmethod
+    def _fill_empty_description(db, tag_id, description, stamp):
+        """只补本次使用的空说明；事务内复核，已有人工说明永不覆盖。"""
+        row = db.execute('SELECT description FROM tags WHERE id=?', (tag_id,)).fetchone()
+        if row is None or (row['description'] or '').strip():
+            return False
+        description = validate_description(description)
+        if not description:
+            _fail('LLM 选中的空说明标签必须包含标签说明')
+        db.execute('UPDATE tags SET description=?,updated_at=? WHERE id=?', (description, stamp, tag_id))
+        return True
 
     def _complete(self, db, task_id, state, stamp, *, skipped_reason=None,
                   applied_count=0, blocked_count=0, created_count=0):
@@ -344,13 +377,13 @@ class TaggingRepository:
         return True
 
     @staticmethod
-    def _resolve_or_create(db, name, stamp):
+    def _resolve_or_create(db, name, description, stamp):
         """按名称/别名复用已有标签；没有才新建。并发同名时复用已存在记录。
 
         禁用标签不会被自动重新启用，也不允许通过同名新建绕过禁用。
         多个别名同时命中同一名称视为歧义，跳过并记原因（§3.4）。
         """
-        from subscribe_flow.contracts.tags import validate_tag_name, validate_synonyms, validate_tag_color
+        from subscribe_flow.contracts.tags import validate_tag_name
 
         clean = validate_tag_name(name)
         row = db.execute("SELECT id,enabled FROM tags WHERE name=? COLLATE NOCASE", (clean,)).fetchone()
@@ -374,7 +407,7 @@ class TaggingRepository:
         tag_id = uuid.uuid4().hex
         try:
             db.execute("INSERT INTO tags(id,name,description,color,enabled,synonyms,created_at,updated_at)"
-                       " VALUES(?,?,'','slate',1,'[]',?,?)", (tag_id, clean, stamp, stamp))
+                       " VALUES(?,?,?,'slate',1,'[]',?,?)", (tag_id, clean, description, stamp, stamp))
         except sqlite3.IntegrityError:
             # 并发同名创建：复用已存在的那条，不抛给用户。
             existing = db.execute("SELECT id,enabled FROM tags WHERE name=? COLLATE NOCASE", (clean,)).fetchone()

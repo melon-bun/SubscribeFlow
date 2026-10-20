@@ -10,6 +10,7 @@
 """
 
 import asyncio
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,6 +22,8 @@ from subscribe_flow.contracts.models import PublishedTime
 from tagging_engine.contracts import (
     Candidate, RecognitionError, RecognitionResult, STATUS_MATCHED, STATUS_NO_MATCH,
 )
+from tagging_engine.providers.jev import JevProvider
+from tagging_engine.providers.llm import LlmProvider
 
 
 def make_item(channel, external_id, title, summary, source_id='fixture-source'):
@@ -55,12 +58,15 @@ class StubProvider:
             tag = by_name.get(name)
             if tag is not None:
                 chosen.append(Candidate(tag_id=tag.id, name=tag.name, score=0.95,
-                                        score_kind='noul' if request.mode == 'jev' else 'llm'))
+                                        score_kind='noul' if request.mode == 'jev' else 'llm',
+                                        description=f'{name}主题与相关实践内容'))
             elif request.mode == 'llm':
-                chosen.append(Candidate(tag_id=None, name=name, score=0.9, score_kind='llm'))
+                chosen.append(Candidate(tag_id=None, name=name, score=0.9, score_kind='llm',
+                                        description=f'{name}主题与相关实践内容'))
         for tag in request.candidates:
             if tag.name in wanted and not any(c.tag_id == tag.id for c in chosen):
-                chosen.append(Candidate(tag_id=tag.id, name=tag.name, score=0.95, score_kind='llm'))
+                chosen.append(Candidate(tag_id=tag.id, name=tag.name, score=0.95, score_kind='llm',
+                                        description=f'{tag.name}主题与相关实践内容'))
         if not chosen:
             return RecognitionResult(provider='stub', status=STATUS_NO_MATCH, model='stub-model')
         return RecognitionResult(provider='stub', status=STATUS_MATCHED, model='stub-model',
@@ -334,6 +340,176 @@ class M16TaggingTests(_M16Fixture, unittest.TestCase):
         self.assertEqual(rows, 1)
 
 
+
+
+class M16TaggingRulesRegressionTests(_M16Fixture, unittest.TestCase):
+    """数量和说明走正式 Provider → worker → SQLite；仅 HTTP 响应用固定夹具。"""
+
+    class Transport:
+        def __init__(self, response):
+            self.response, self.requests = response, []
+
+        def post_json(self, url, payload, headers, timeout=None):
+            self.requests.append(payload)
+            return 200, self.response
+
+    def llm(self, values):
+        self.enable(mode='llm')
+        transport = self.Transport({'model': 'fixture-model', 'choices': [
+            {'message': {'content': json.dumps({'tags': values}, ensure_ascii=False)}}]})
+        self._patch_provider(LlmProvider(endpoint='https://example.invalid/v1', model='fixture',
+                                         api_key='fixture', transport=transport))
+        return transport
+
+    def save(self, external_id='rules'):
+        return self.repo.save_manual(make_item('fixture', external_id, '编程与学习实践',
+            '介绍 Python 开发、机器学习、工程实践及其相关主题的应用经验。'))['item_id']
+
+    def test_llm_over_limit_deduplicates_aliases_before_selecting_two_and_saves_scope(self):
+        python_tag = self.add_tag('Python', description='人工维护的 Python 分类范围')
+        self.core.tags.update(python_tag['id'], synonyms=['Py'])
+        self.llm([
+            {'tagId': python_tag['id'], 'score': 0.99, 'description': '模型不应覆盖人工说明'},
+            {'name': 'Py', 'score': 0.98, 'description': '重复的同类标签'},
+            {'name': '机器学习', 'score': 0.97, 'description': '模型训练、算法及评估方法',
+             'reason': '文章介绍了一个分类器'},
+            {'name': '工程', 'score': 0.95, 'description': '工程设计与系统实践'},
+        ])
+        item_id = self.save()
+        self.drain()
+        self.assertEqual(self.tags_of(item_id), ['Python', '机器学习'])
+        self.assertEqual(self.repo.get_tag(python_tag['id'])['description'], '人工维护的 Python 分类范围')
+        created = self.repo.get_tag(self.repo.find_tag_by_name('机器学习'))
+        self.assertEqual(created['description'], '模型训练、算法及评估方法')
+        self.assertIsNone(self.repo.find_tag_by_name('工程'), '未选中的第三类不能偷偷创建')
+        task = self.tasks.list_tasks(limit=1)['items'][0]
+        self.assertEqual((task['state'], task['applied_count']), ('succeeded', 2))
+
+    def test_llm_fills_selected_empty_scopes_by_id_name_and_alias_only_once(self):
+        for index, identity_kind in enumerate(('id', 'name', 'alias')):
+            with self.subTest(identity=identity_kind):
+                tag = self.add_tag(f'空说明{index}')
+                self.core.tags.update(tag['id'], synonyms=[f'别名{index}'])
+                untouched = self.add_tag(f'未命中{index}')
+                identity = {'tagId': tag['id']} if identity_kind == 'id' else {
+                    'name': tag['name'] if identity_kind == 'name' else f'别名{index}'}
+                transport = self.llm([dict(identity, description=' 开发工具与编程实践 ', reason='本条提到工具')])
+                item_id = self.save(f'fill-{index}')
+                self.drain()
+                self.assertEqual(self.tags_of(item_id), [tag['name']])
+                self.assertEqual(self.repo.get_tag(tag['id'])['description'], '开发工具与编程实践')
+                self.assertEqual(self.repo.get_tag(untouched['id'])['description'], '')
+                self.assertEqual(len(transport.requests), 1, '自己补说明不应让同一任务重排再调用模型')
+                self.assertEqual(self.tasks.summary()['active'], 0)
+
+    def test_jev_ranks_all_threshold_matches_and_only_applies_two(self):
+        tags = [self.add_tag(f'分类{i}') for i in range(5)]
+        self.enable(mode='jev')
+        transport = self.Transport({'model': 'jev-fixture', 'answers': {
+            tag['id']: {'type': 'noul', 'noul': score}
+            for tag, score in zip(tags, (0.81, 0.99, 0.88, 0.95, 0.9))}})
+        self._patch_provider(JevProvider(endpoint='https://example.invalid/jev', model='fixture',
+                                         api_key='fixture', transport=transport))
+        item_id = self.save()
+        self.drain()
+        self.assertEqual(self.tags_of(item_id), ['分类1', '分类3'])
+        self.assertEqual(len(transport.requests[0]['questions']), 5, '结果上限不应少评估候选目录')
+        self.assertTrue(all(tag['description'] == '' for tag in self.repo.list_tags()),
+                        'Jev 不擅自生成说明')
+
+    def test_worker_enforces_limit_even_when_provider_ignores_request(self):
+        tags = [self.add_tag(f'类别{i}', description='已有分类范围') for i in range(4)]
+        for mode in ('llm', 'jev'):
+            with self.subTest(mode=mode):
+                self.enable(mode=mode)
+                result = RecognitionResult(provider=mode, status=STATUS_MATCHED, candidates=tuple(
+                    Candidate(tag_id=tag['id'], score=score)
+                    for tag, score in zip(tags, (0.4, 0.9, 0.8, 0.99))))
+                self._patch_provider(type('OverLimitProvider', (), {'recognize': lambda _self, req: result})())
+                item_id = self.save(f'over-limit-{mode}')
+                self.drain()
+                self.assertEqual(self.tags_of(item_id), ['类别1', '类别3'])
+
+    def test_invalid_llm_scope_fails_task_without_creating_empty_tags(self):
+        existing = self.add_tag('已有空说明')
+        for index, value in enumerate(({'name': '新建缺说明', 'reason': '匹配理由'},
+                                       {'tagId': existing['id']},
+                                       {'name': '超长说明', 'description': '长' * 201})):
+            with self.subTest(value=value):
+                self.llm([value])
+                item_id = self.save(f'invalid-{index}')
+                self.drain()
+                task = self.repo.db.execute('SELECT state,error_code,error_message FROM tagging_tasks WHERE content_id=?',
+                                             (item_id,)).fetchone()
+                self.assertEqual((task['state'], task['error_code']), ('failed', 'invalid_response'))
+                self.assertIn('说明', task['error_message'])
+                self.assertEqual(self.tags_of(item_id), [])
+        self.assertEqual(len(self.repo.list_tags()), 1)
+        self.assertEqual(self.repo.get_tag(existing['id'])['description'], '')
+
+    def test_transaction_limits_existing_and_new_tags_together(self):
+        tags = [self.add_tag(f'已有{i}', description='已有范围') for i in range(3)]
+        self.enable()
+        item_id = self.save()
+        self.tagging._register()
+        task = self.tasks.next_task()
+        result = self.tasks.apply_result(
+            task['id'], applied_tag_ids=[tags[0]['id']], expected_content_version=task['content_version'],
+            new_tags=[{'name': '新类一', 'description': '新类一范围'},
+                      {'name': '新类二', 'description': '新类二范围'}])
+        self.assertEqual(result['applied'], 2)
+        self.assertEqual(self.tags_of(item_id), ['已有0', '新类一'])
+        self.assertIsNone(self.repo.find_tag_by_name('新类二'))
+
+    def test_transaction_also_limits_existing_ids_in_both_modes(self):
+        tags = [self.add_tag(f'已有{i}', description='已有范围') for i in range(3)]
+        for mode in ('llm', 'jev'):
+            with self.subTest(mode=mode):
+                self.enable(mode=mode)
+                item_id = self.save(f'storage-{mode}')
+                self.tagging._register()
+                task = self.tasks.next_task()
+                result = self.tasks.apply_result(task['id'], applied_tag_ids=[tag['id'] for tag in tags],
+                    new_tags=[], expected_content_version=task['content_version'])
+                self.assertEqual(result['applied'], 2)
+                self.assertEqual(self.tags_of(item_id), ['已有0', '已有1'])
+
+    def test_in_flight_manual_scope_edit_is_preserved_after_requeue(self):
+        tag = self.add_tag('Python')
+        item_id = 'fixture:feed:manual-scope'
+        provider = GatedProvider({item_id: ['Python']})
+        self.enable()
+        self._patch_provider(provider)
+        self.save('manual-scope')
+
+        async def scenario():
+            work = asyncio.ensure_future(self.tagging._run_once())
+            while not provider.entered.is_set():
+                await asyncio.sleep(0.01)
+            self.core.tags.update(tag['id'], description='用户在请求期间填写的分类范围')
+            provider.release.set()
+            await work
+
+        self.loop.run_until_complete(scenario())
+        self.assertEqual(self.repo.get_tag(tag['id'])['description'], '用户在请求期间填写的分类范围')
+        self.assertEqual(self.tags_of(item_id), [])
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['state'], 'queued')
+        self._patch_provider(StubProvider({item_id: ['Python']}))
+        self.drain()
+        self.assertEqual(self.tags_of(item_id), ['Python'])
+        self.assertEqual(self.repo.get_tag(tag['id'])['description'], '用户在请求期间填写的分类范围')
+
+    def test_scope_fill_notifies_tag_page_when_association_already_exists(self):
+        tag = self.add_tag('Python')
+        self.llm([{'tagId': tag['id'], 'description': 'Python 语言、工具与开发实践'}])
+        item_id = self.save()
+        self.core.tags.set_content(item_id, [tag['id']])
+        events = []
+        self.tagging.emit = lambda name, payload: events.append((name, payload))
+        self.drain()
+        self.assertEqual(self.repo.get_tag(tag['id'])['description'], 'Python 语言、工具与开发实践')
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['applied_count'], 0)
+        self.assertIn(('tags.changed', {'ids': [tag['id']]}), events)
 
 
 class GatedProvider(StubProvider):

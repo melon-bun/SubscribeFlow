@@ -16,6 +16,8 @@ MAX_DESCRIPTION = 200
 MAX_SYNONYMS = 8
 MAX_SYNONYM = 40
 MAX_CANDIDATES = 8
+# 自动打标两种模式共用的最终数量上限；人工标签不受影响。
+AUTO_TAG_LIMIT = 2
 
 
 def validate_tag_name(name, field='name'):
