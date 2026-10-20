@@ -9,6 +9,32 @@
   /* 后端 content.bulk_set_tags 的硬上限。界面先拦一道，好过只丢一个后端错误码上来。 */
   var BULK_LIMIT = 100, BULK_CLEAR = '__clear__';
 
+  function hasReason(reasons, names) {
+    return names.some(function (name) { return reasons && (reasons.has ? reasons.has(name) : reasons.indexOf(name) >= 0); });
+  }
+  function invalidate(reasons) {
+    if (!hasReason(reasons, ['all', 'content', 'tags', 'channels'])) return;
+    cache.stale = true;
+    cache.revision = (cache.revision || 0) + 1;
+    if (hasReason(reasons, ['all', 'channels'])) cache.sourcesRequested = false;
+    if (hasReason(reasons, ['all', 'tags'])) invalidateTags();
+  }
+  function invalidateTags() {
+    tagCache.stale = true;
+    tagCache.revision = (tagCache.revision || 0) + 1;
+  }
+  function renderView() { SF.app.renderView('inbox'); }
+  function identity(app) { return JSON.stringify([app.filters, app.search, reminderView(app)]); }
+  function mergeItem(previous, fresh) {
+    if (!previous) return fresh;
+    Object.keys(previous).forEach(function (key) { if (!(key in fresh)) delete previous[key]; });
+    return Object.assign(previous, fresh);
+  }
+  function whenIdle() {
+    var pending = [cache.promise, cache.sourcesPromise, tagCache.promise].filter(Boolean);
+    return pending.length ? Promise.all(pending).then(whenIdle) : Promise.resolve();
+  }
+
   /* ---------------- 标签目录 ---------------- */
 
   /**
@@ -17,22 +43,33 @@
    * 只能由自己这块 DOM 重新画一次。
    */
   function ensureTags(app, done) {
-    if (tagCache.loaded) { if (done) done(); return; }
+    if (tagCache.loaded && !tagCache.stale) { if (done) done(); return; }
     tagCache.waiting = tagCache.waiting || [];
     if (tagCache.loading) { if (done) tagCache.waiting.push(done); return; }
     /* 目录拿不到时退化成空列表：内容侧照常可用，只是没有可添加的标签。 */
     if (!app.client || !app.client.listTags) { tagCache = {loaded: true, items: []}; if (done) done(); return; }
-    var current = tagCache; current.loading = true;
+    var current = tagCache, revision = current.revision || 0;
+    current.loading = true; current.stale = false;
     if (done) current.waiting.push(done);
     function flush() { (current.waiting || []).forEach(function (fn) { try { fn(); } catch (e) {} }); current.waiting = []; }
-    app.client.listTags({}).then(function (r) {
+    current.promise = app.client.listTags({}).then(function (r) {
       if (tagCache !== current) return;
+      if ((current.revision || 0) !== revision) { current.stale = true; return; }
       Object.assign(tagCache, r, {loaded: true, loading: false});
+      delete current.error;
       flush();
     }).catch(function (err) {
       if (tagCache !== current) return;
-      Object.assign(tagCache, {loaded: true, loading: false, error: err, items: []});
+      if ((current.revision || 0) !== revision) { current.stale = true; return; }
+      Object.assign(tagCache, {loaded: true, loading: false, error: err});
+      if (!current.items) current.items = [];
       flush();
+    }).finally(function () {
+      current.loading = false; current.promise = null;
+      if (current === tagCache) {
+        if (current.stale) ensureTags(app);
+        renderView();
+      }
     });
   }
 
@@ -92,19 +129,25 @@
   }
 
   function render(app) {
-    var key = JSON.stringify([app.filters, app.search]);
+    var key = identity(app);
     if (key !== queryKey) { queryKey = key; offset = 0; cache = {}; selected.clear(); previousIds = []; selectLast = false; }
-    if (!cache.loaded && !cache.loading) {
-      var current = cache; current.loading = true;
-      app.client.listContents(query(app)).then(function (r) {
-        if (cache !== current) return;
+    if ((!cache.loaded || cache.stale) && !cache.loading) {
+      var current = cache, revision = current.revision || 0, requestOffset = offset;
+      current.loading = true; current.stale = false;
+      current.promise = app.client.listContents(query(app)).then(function (r) {
+        if (cache !== current || identity(app) !== key || offset !== requestOffset) return;
+        if ((current.revision || 0) !== revision) { current.stale = true; return; }
         if (!r.items.length && offset) {
           offset = r.total ? Math.floor((r.total - 1) / 20) * 20 : 0;
           selectLast = true;
-          if (r.total) { cache = {}; SF.app.renderContent(); return; }
+          if (r.total) { cache = {}; renderView(); return; }
         }
+        var hadData = !!current.loaded;
+        var previousItems = new Map((current.items || []).map(function (item) { return [item.id, item]; }));
+        r.items = r.items.map(function (item) { return mergeItem(previousItems.get(item.id), item); });
         Object.assign(cache, r, {loaded: true, loading: false});
-        if (!r.items.some(function (c) { return c.id === app.selectedId; })) {
+        delete current.error; delete current.refreshError;
+        if (app.route.name === 'inbox' && (!hadData || app.selectedId != null) && !r.items.some(function (c) { return c.id === app.selectedId; })) {
           var ids = r.items.map(function (c) { return c.id; });
           var index = previousIds.indexOf(app.selectedId);
           var next = index < 0 ? null : previousIds.slice(index + 1).find(function (id) { return ids.includes(id); });
@@ -117,13 +160,20 @@
         previousIds = r.items.map(function (c) { return c.id; });
         selectLast = false;
         selected = new Set(Array.from(selected).filter(function (id) { return r.items.some(function (c) { return c.id === id; }); }));
-        SF.app.renderContent();
-      }).catch(function (err) { if (cache !== current) return; Object.assign(cache, {loaded: true, loading: false, error: err}); SF.app.renderContent(); });
+      }).catch(function (err) {
+        if (cache !== current || identity(app) !== key || offset !== requestOffset) return;
+        if ((current.revision || 0) !== revision) { current.stale = true; return; }
+        if (current.loaded) current.refreshError = err;
+        else { current.loaded = true; current.error = err; }
+      }).finally(function () {
+        current.loading = false; current.promise = null;
+        if (cache === current && identity(app) === key && offset === requestOffset) renderView();
+      });
     }
     /* 目录就绪后只重画真正依赖它的地方：筛选面板开着才需要整块重画，
        详情里的编辑器自己 repaint。目录到达不该把用户正在操作的 DOM 整页换掉——
        那会让进行中的点击落空，也让读屏焦点丢失。 */
-    if (!tagCache.loaded) ensureTags(app, function () { if (tagPanelOpen) SF.app.renderContent(); });
+    if (!tagCache.loaded || tagCache.stale) ensureTags(app);
     var isInbox = app.filters.quick === 'unread';
     var titles = {unread:'收件箱',all:'全部更新',read:'已读',deferred:'稍后处理',archived:'已归档'};
     var descriptions = {unread:'待处理的创作者更新；标记已读、稍后处理或归档后会移出收件箱。',
@@ -145,7 +195,7 @@
       });
     }));
     if (!view) viewToggle = null;
-    var head = h('div.view__head', null,
+    var head = h('div.view__head', {'data-refresh-key':'inbox-head'},
       h('div.view__head-text', null,
         h('div.view__title', null,
           h('h1.t-h1', {text: view ? (view === 'pending' ? '未处理' : '高优先级未归档') : (titles[app.filters.quick] || '内容')}),
@@ -159,8 +209,8 @@
         ui.btn('添加内容', {variant:'primary', icon:'plus', disabled:!app.session.capabilities.canIntake,
           title: app.session.capabilities.canIntake ? '粘贴链接收录单条内容' : '当前渠道尚未支持单条链接收录',
           onClick:function () { SF.intakeDialog.open(app); }}),
-        ui.btn('重新查询', {icon:'refresh', onClick:function () { cache = {}; SF.app.refreshData(true); }})));
-    var chips = h('div.inbox__toolbar', null,
+        ui.btn('重新查询', {icon:'refresh', onClick:function () { invalidate(['content']); SF.app.refreshData(true); }})));
+    var chips = h('div.inbox__toolbar', {'data-refresh-key':'inbox-filters'},
       h('div.chips', null,
         h('button.chip' + (!app.filters.platform ? '.is-active' : ''), {type:'button', onclick:function () { app.filters.platform = null; SF.app.render(); }},
           h('span', {text:'全部'}), h('span.chip__count', {text:String(app.counts.total || 0)})),
@@ -170,10 +220,11 @@
         }),
         app.filters.channelId || app.filters.sourceId || app.filters.day ? ui.btn('清除来源 / 日期筛选', {onClick:function () { app.filters.channelId = null; app.filters.sourceId = null; delete app.filters.day; SF.app.render(); }}) : null));
     chips.appendChild(ui.select([{value:'',label:'全部优先级'}].concat(['high','medium','low','none'].map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), app.filters.priority || '', function(value) { app.filters.priority=value || null; SF.app.render(); }, {ariaLabel:'筛选优先级'}));
-    if (!cache.sourcesRequested) {
+    if (!cache.sourcesRequested && !cache.sourcesPromise) {
       var sourceOwner=cache; sourceOwner.sourcesRequested=true;
-      app.client.listContentSources({}).then(function(r) {if(cache===sourceOwner) {sourceOwner.sources=r.items; SF.app.renderContent();}})
-        .catch(function(err) {if(cache===sourceOwner) {sourceOwner.sourcesError=err; SF.app.renderContent();}});
+      sourceOwner.sourcesPromise = app.client.listContentSources({}).then(function(r) {if(cache===sourceOwner) {sourceOwner.sources=r.items; delete sourceOwner.sourcesError; renderView();}})
+        .catch(function(err) {if(cache===sourceOwner) {sourceOwner.sourcesError=err; renderView();}})
+        .finally(function () { sourceOwner.sourcesPromise = null; if (cache === sourceOwner && !sourceOwner.sourcesRequested) renderView(); });
     }
     chips.appendChild(ui.select([{value:'',label:'全部来源'}].concat((cache.sources||[]).map(function(s) {return {value:s.id,label:SF.catalog.platform(s.platform).name+' · '+s.name};})), app.filters.sourceId||'',function(v) {app.filters.sourceId=v||null;app.filters.channelId=null;SF.app.render();},{ariaLabel:'筛选来源'}));
     chips.appendChild(ui.select([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},{ariaLabel:'筛选收录方式'}));
@@ -189,8 +240,8 @@
       {label:'添加来源', variant:'primary', onClick:function () { SF.app.navigate('channels'); }},
       {label:'清除筛选', onClick:function () { app.filters = {quick:app.filters.quick, platform:null, channelId:null}; app.search = ''; SF.app.render(); }}].concat(isInbox ? [
       {label:'查看全部更新', onClick:function () { app.filters = {quick:'all', platform:null, channelId:null}; app.search = ''; SF.app.render(); }}] : [])});
-    else body = h('div.inbox__grid.scroll-y', {'data-scroll-key':'contents:' + offset}, cache.items.map(function (item) {
-      return h('div.content-selection', null, ui.check(selected.has(item.id), function () { if (selected.has(item.id)) selected.delete(item.id); else selected.add(item.id); SF.app.renderContent(); }, '选择 ' + item.title),
+    else body = h('div.inbox__grid.scroll-y', {'data-scroll-key':'contents:' + offset,'data-refresh-key':'contents:' + offset}, cache.items.map(function (item) {
+      return h('div.content-selection', {'data-refresh-key':'content-selection:' + item.id}, ui.check(selected.has(item.id), function () { if (selected.has(item.id)) selected.delete(item.id); else selected.add(item.id); SF.app.renderContent(); }, '选择 ' + item.title),
         withTags(ui.contentCard(item, {selected:app.selectedId === item.id, now:app.now,
           onSelect:function () { app.selectedId = item.id; SF.app.renderContent(); },
           onMenu:function (e) { e.stopPropagation(); ui.menu([
@@ -198,25 +249,26 @@
             {label:'打开原文', onClick:function () { SF.app.act('open:' + item.id, function () { return app.client.openContent(item.id); }); }}
           ], e.currentTarget); }}), item));
     }));
-    var bulk = selected.size ? h('div.inbox__toolbar', null, h('span', {text:'已选 ' + selected.size + ' 条'}),
+    var bulk = selected.size ? h('div.inbox__toolbar', {'data-refresh-key':'inbox-bulk'}, h('span', {text:'已选 ' + selected.size + ' 条'}),
       ['已读', '稍后处理', '归档'].map(function (label, i) { return ui.btn(label, {onClick:function () {
         var ids = Array.from(selected), state = {}; state[['read','deferred','archived'][i]] = true;
         SF.app.act('bulk', async function () { await app.client.bulkUpdate(ids, {state:state}); selected.clear(); await SF.app.refreshData(true); });
       }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复跟随来源'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true); }); },{ariaLabel:'批量设置优先级'}), bulkTagControl(app), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
-    var pager = cache.loaded && !cache.error ? h('div.inbox__toolbar', null,
+    var pager = cache.loaded && !cache.error ? h('div.inbox__toolbar', {'data-refresh-key':'inbox-pager'},
       h('span.muted', {text:'共 ' + cache.total + ' 条 · 第 ' + (Math.floor(offset / 20) + 1) + ' 页'}),
       ui.btn('上一页', {disabled:offset === 0, onClick:function () { offset = Math.max(0, offset - 20); cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }}),
       ui.btn('下一页', {disabled:cache.next_offset == null, onClick:function () { offset = cache.next_offset; cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }})) : null;
     var item = cache.items && cache.items.find(function (c) { return c.id === app.selectedId; });
-    return {main:h('div.view', {'data-view':'inbox'}, head, h('div.view__body.inbox', null, chips, tagPanel, bulk, body, pager)),
-      aside:item && !cache.error ? h('aside.detail', {'aria-label':'内容详情'},
+    return {main:h('div.view', {'data-view':'inbox','data-refresh-key':'inbox:' + key + ':' + offset}, head, h('div.view__body.inbox', {'data-refresh-key':'inbox-body'}, chips, tagPanel, bulk,
+      cache.refreshError ? h('p.field__error', {role:'status','data-refresh-key':'inbox-refresh-error',text:'更新失败，正在显示已加载内容：' + cache.refreshError.message}) : null, body, pager)),
+      aside:item && !cache.error ? h('aside.detail', {'aria-label':'内容详情','data-refresh-key':'detail:' + item.id},
         h('div.detail__head', null, h('span', {text:'内容详情'}), h('div.spacer'), ui.iconBtn('close', '关闭详情', function () { app.selectedId = null; SF.app.renderContent(); })),
         h('div.detail__body.scroll-y', {'data-scroll-key':'detail:' + item.id}, detailBody(app, item, function (fresh, settled) { repaintContent(app, fresh, settled); }))) : null};
   }
   function repaintContent(app, fresh, settled) {
     // 写入等待期间列表可能失效或离开此页，迟到回执不能访问已清空的缓存。
     var index = (cache.items || []).findIndex(function (item) { return item.id === fresh.id; });
-    if (index >= 0 && !settled) cache.items[index] = fresh;
+    if (index >= 0 && !settled) mergeItem(cache.items[index], fresh);
     if (app.route.name === 'inbox') SF.app.renderContent();
   }
   function contentPending(id) { return SF.app.isPending('content:' + id); }
@@ -257,7 +309,8 @@
   /* ---------------- 详情里的标签编辑器 ---------------- */
 
   function priorityControls(app,item,repaint) {
-    return h('div.detail__section',null,h('div.detail__section-title',{text:'优先级'}),
+    return h('div.detail__section',{'data-refresh-key':'priority:' + item.id,'data-refresh-boundary':true,
+      'data-refresh-preserve':JSON.stringify([item.priority, item.priorityOverride, contentPending(item.id)])},h('div.detail__section-title',{text:'优先级'}),
       h('p.field__hint',{text:item.priorityOverride ? '此内容已单独设置，不受来源默认值变化影响。' : '跟随来源 · 当前' + SF.catalog.priority(item.priority).name}),
       h('div.priority-grid',{'aria-label':'内容优先级'}, SF.catalog.PRIORITY_ORDER.map(function(id) {
         var meta=SF.catalog.priority(id);
@@ -271,7 +324,8 @@
   }
 
   function tagControls(app, item, repaint) {
-    var box = h('div.detail__section', null);
+    var box = h('div.detail__section', {'data-refresh-key':'tags:' + item.id,'data-refresh-boundary':true,
+      'data-refresh-preserve':JSON.stringify([item.tags, tagCache.items, tagCache.loaded, tagCache.error && tagCache.error.message])});
     function paint() {
       while (box.firstChild) box.removeChild(box.firstChild);
       var tags = item.tags || [];
@@ -327,7 +381,7 @@
     }
     paint();
     /* 目录晚到时只重画这一块：这个详情区被 overview 的弹窗复用，不能靠主区域重绘带回来。 */
-    if (!tagCache.loaded) ensureTags(app, function () { if (box.isConnected) paint(); });
+    if (!tagCache.loaded || tagCache.stale) ensureTags(app, function () { if (box.isConnected) paint(); });
     return box;
   }
 
@@ -346,7 +400,7 @@
   function tagFilterPanel(app) {
     var picked = pickedTags(app), mode = app.filters.tagMode === 'all' ? 'all' : 'any';
     var list = allTags().concat(picked.filter(function (t) { return t.unavailable; }));
-    return h('div.tag-filter', {role:'group', 'aria-label':'按标签筛选'},
+    return h('div.tag-filter', {role:'group', 'aria-label':'按标签筛选','data-refresh-key':'inbox-tag-filters'},
       h('div.tag-filter__head', null,
         h('span.tag-filter__title', {text:'按标签筛选'}),
         h('div.spacer'),
@@ -445,6 +499,9 @@
     var lines = text.split('\n').filter(function (line) { return line.trim(); }).length;
     var section = h('div.detail__section', null,
       h('div.detail__section-title', {text:whole ? (item.kind==='pin' ? '想法正文' : '文章正文') : '内容摘要'}));
+    section.setAttribute('data-refresh-key', 'body:' + item.id);
+    section.setAttribute('data-refresh-boundary', '');
+    section.setAttribute('data-refresh-preserve', JSON.stringify([item.kind, item.summary]));
     if (!whole || !item.summary || lines <= BODY_LINES) {
       section.appendChild(h('p.detail__summary'+(whole ? '.detail__text' : ''), {text:text}));
       return section;
@@ -496,6 +553,6 @@
      每次刷新都重取只会多出一轮异步往返和一次多余重绘。真正该重取的是
      tags.changed 事件，以及本视图自己写入标签之后。 */
   SF.views = SF.views || {};
-  SF.views.inbox = {render:render, reset:function () { cache = {}; }, detailBody:detailBody,
-    invalidateTags:function () { tagCache = {}; }};
+  SF.views.inbox = {render:render, reset:function () { cache = {}; }, invalidate:invalidate,
+    whenIdle:whenIdle, detailBody:detailBody, invalidateTags:invalidateTags};
 })(window);

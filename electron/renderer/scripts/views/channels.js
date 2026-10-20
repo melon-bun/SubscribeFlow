@@ -3,7 +3,68 @@
   'use strict';
   var SF = global.SF, h = SF.dom.h, ui = SF.ui, fmt = SF.fmt;
   var cache = {}, keyword = '', searchTimer;
-  function reload() { cache = {}; SF.app.renderContent(); }
+  var runStates = new Map(), runScrollPositions = new Map();
+  function reload() { cache = {keyword:keyword}; renderView(); }
+  function renderView() { SF.app.renderView('channels'); }
+  function invalidate(reasons) {
+    var relevant = ['all', 'channels'].some(function (name) { return reasons && (reasons.has ? reasons.has(name) : reasons.indexOf(name) >= 0); });
+    if (!relevant) return;
+    cache.stale = true; cache.revision = (cache.revision || 0) + 1;
+  }
+  function whenIdle() {
+    var pending = [cache.promise, cache.coveragePromise].filter(Boolean);
+    return pending.length ? Promise.all(pending).then(whenIdle) : Promise.resolve();
+  }
+  function freshSource(previous, fresh) {
+    if (!previous) return fresh;
+    Object.keys(previous).forEach(function (key) { if (!(key in fresh)) delete previous[key]; });
+    return Object.assign(previous, fresh);
+  }
+  function refreshCoverage(app) {
+    if (!cache.loaded || !cache.items || cache.loading || cache.coveragePromise || !cache.coverageDirty || !cache.coverageDirty.size) return;
+    var current = cache, ids = Array.from(current.coverageDirty);
+    current.coverageDirty.clear();
+    current.coveragePromise = (async function () {
+      for (var id of ids) {
+        if (current !== cache) return;
+        var index = current.items.findIndex(function (source) { return source.id === id; });
+        if (index < 0) continue;
+        try {
+          var coverage = await app.client.getSyncCoverage(id);
+          if (current !== cache) return;
+          index = current.items.findIndex(function (source) { return source.id === id; });
+          if (index >= 0) current.coverage[index] = coverage;
+        } catch (error) { if (current === cache) current.refreshError = error; }
+      }
+    })().finally(function () {
+      current.coveragePromise = null;
+      if (current === cache) { renderView(); refreshCoverage(app); }
+    });
+  }
+  function latestRun(app, id) {
+    var job = app.runs.find(function (run) { return run.channelId === id; });
+    return job ? h('div.table__time',null,h('span',{text:fmt.runState(job.state)}),h('small',{text:fmt.relative(job.startedAt,app.now)})) : h('span.muted',{text:'尚未采集'});
+  }
+  function updateRuns(app) {
+    var active = ['queued', 'running', 'waiting'];
+    app.runs.forEach(function (run) {
+      if ((!runStates.has(run.id) || active.includes(runStates.get(run.id))) && !active.includes(run.state)) {
+        cache.coverageDirty = cache.coverageDirty || new Set();
+        cache.coverageDirty.add(run.channelId);
+      }
+      runStates.set(run.id, run.state);
+    });
+    var ids = new Set(app.runs.map(function (run) { return run.id; }));
+    runStates.forEach(function (_state, id) { if (!ids.has(id)) runStates.delete(id); });
+    var host = document.querySelector('[data-view="channels"]');
+    if (!host) return;
+    host.querySelectorAll('[data-channel-run]').forEach(function (cell) {
+      SF.dom.render(cell, latestRun(app, cell.dataset.channelRun));
+    });
+    var panel = host.querySelector('[data-runs-panel]');
+    if (panel) SF.dom.reconcileWithScroll(panel, Array.from(runsPanel(app).childNodes), runScrollPositions);
+    refreshCoverage(app);
+  }
   function descriptorFor(app, connection) {
     return (app.session.channels || []).filter(function (d) { return d.channel === connection.channel && d.backend === connection.backend; })[0] || {};
   }
@@ -14,25 +75,47 @@
     return !!(ops.resolve_source && ops.resolve_source.supported);
   }
   function render(app) {
-    if (!cache.loaded && !cache.loading) {
-      var current = cache; current.loading = true;
-      app.client.listChannels({keyword:keyword}).then(async function (result) {
+    if (cache.keyword !== keyword) cache = {keyword:keyword};
+    if (!runStates.size) app.runs.forEach(function (run) { runStates.set(run.id, run.state); });
+    if ((!cache.loaded || cache.stale) && !cache.loading) {
+      var current = cache, revision = current.revision || 0, requestKeyword = keyword;
+      current.loading = true; current.stale = false;
+      delete current.refreshError;
+      current.promise = app.client.listChannels({keyword:requestKeyword}).then(async function (result) {
         var coverage = [];
         // Keep bridge requests bounded even when many authors are subscribed.
         for (var c of result.items) {
-          if (current !== cache) return;
+          if (current !== cache || requestKeyword !== keyword || (current.revision || 0) !== revision) return;
           try { coverage.push(await app.client.getSyncCoverage(c.id)); }
-          catch (err) { coverage.push({label:'覆盖读取失败', detail:err.message, complete:false}); }
+          catch (err) {
+            var previous = (current.items || []).findIndex(function (source) { return source.id === c.id; });
+            coverage.push(previous >= 0 && current.coverage[previous] || {label:'覆盖读取失败', detail:err.message, complete:false});
+            if (current.loaded) current.refreshError = err;
+          }
         }
-        if (current !== cache) return;
-        Object.assign(cache, {loaded:true, loading:false, items:result.items, coverage:coverage}); SF.app.renderContent();
-      }).catch(function (err) { if (current !== cache) return; Object.assign(cache,{loaded:true,loading:false,error:err}); SF.app.renderContent(); });
+        if (current !== cache || requestKeyword !== keyword) return;
+        if ((current.revision || 0) !== revision) { current.stale = true; return; }
+        var previous = new Map((current.items || []).map(function (source) { return [source.id, source]; }));
+        Object.assign(cache, {loaded:true, loading:false, items:result.items.map(function (source) { return freshSource(previous.get(source.id), source); }), coverage:coverage});
+        delete current.error;
+      }).catch(function (err) {
+        if (current !== cache || requestKeyword !== keyword) return;
+        if ((current.revision || 0) !== revision) { current.stale = true; return; }
+        if (current.loaded) current.refreshError = err;
+        else Object.assign(current, {loaded:true, error:err});
+      }).finally(function () {
+        current.loading = false; current.promise = null;
+        if (current === cache && requestKeyword === keyword) renderView();
+      });
     }
+    refreshCoverage(app);
     var body;
     if (cache.error) body = ui.state({icon:'alert',title:'渠道读取失败',desc:cache.error.message,actions:[{label:'重试',onClick:reload}]});
-    else if (!cache.loaded) body = ui.state({icon:'clock', title:'正在载入渠道…'});
-    else body = h('div.col.grow.channels-content.scroll-y', {style:{gap:'20px'}}, app.channelTab==='priorities' ? prioritySettings(app) : channelList(app), app.channelTab==='priorities' ? null : bottomPanels(app));
-    return h('div.view', {'data-view':'channels'}, h('div.view__head', null,
+    else body = h('div.col.grow.channels-content.scroll-y', {style:{gap:'20px'},'data-refresh-key':'channel-content:' + app.channelTab},
+      cache.refreshError ? h('p.field__error',{role:'status','data-refresh-key':'channel-refresh-error',text:'更新失败，正在显示已加载内容：' + cache.refreshError.message}) : null,
+      app.channelTab==='priorities' ? cache.loaded ? prioritySettings(app) : ui.state({icon:'clock',title:'正在载入渠道…'}) : channelList(app),
+      app.channelTab==='priorities' || !cache.loaded ? null : bottomPanels(app));
+    return h('div.view', {'data-view':'channels','data-refresh-key':'channels:' + app.channelTab}, h('div.view__head', null,
       h('div.view__head-text', null, h('h1.t-h1',{text:'渠道管理'}), h('p.view__desc',{text:'管理关注的创作者，选择手动或自动刷新，并查看采集状态。'})),
       h('div.view__actions', null, ui.btn('添加渠道或创作者',{variant:'primary',icon:'plus',disabled:!app.session.capabilities.canManageChannels,onClick:function () { addDialog(app); }}))),
       h('div.inbox__toolbar',null,['list','priorities'].map(function(tab) { return ui.btn(tab==='list'?'渠道列表':'优先级设置',{variant:app.channelTab===tab?'primary':'ghost',onClick:function() { app.channelTab=tab; SF.app.navigate('channels',{tab:tab}); SF.app.renderContent(); }}); })),
@@ -51,19 +134,22 @@
           catch(err) { select._input.value=c.defaultPriority || ''; ui.toast(err.message,'danger'); }
           finally { saving=false; select._input.disabled=false; }
         },{ariaLabel:'来源优先级 '+c.name});
-        return h('div.source-priority-row',{'data-priority-source':c.id},ui.avatar(c.name),h('div.grow',null,h('strong',{text:c.name}),h('div.muted',{text:SF.catalog.platform(c.platform).name+' · '+(c.enabled?'追踪中':'已暂停')})),select);
+        return h('div.source-priority-row',{'data-priority-source':c.id,'data-refresh-key':'source-priority:' + c.id,
+          'data-refresh-boundary':true,'data-refresh-preserve':JSON.stringify(c)},ui.avatar(c.name),h('div.grow',null,h('strong',{text:c.name}),h('div.muted',{text:SF.catalog.platform(c.platform).name+' · '+(c.enabled?'追踪中':'已暂停')})),select);
       }) : ui.state({icon:'folder-open',title:'还没有可设置的来源',desc:'添加来源后可在这里设置默认优先级。'}));
   }
   function channelList(app) {
-    var toolbar = h('div.channels__toolbar', null, h('h2.t-h2',{text:'全部渠道（' + cache.items.length + '）'}), h('div.spacer'),
+    var toolbar = h('div.channels__toolbar', {'data-refresh-key':'channel-toolbar'}, h('h2.t-h2',{text:'全部渠道（' + (cache.items ? cache.items.length : '—') + '）'}), h('div.spacer'),
       ui.searchInput('搜索创作者或链接...', keyword, function (v) { keyword = v; clearTimeout(searchTimer); searchTimer = setTimeout(reload,240); }),
       ui.btn('重新查询',{icon:'refresh',onClick:function () { SF.app.refreshData(true); }}));
-    if (!cache.items.length) return h('div',null,toolbar,h('div.panel',null,ui.state({icon:'folder-open',title:keyword ? '没有匹配的来源' : '还没有添加任何来源',desc:'使用作者 UID、主页链接或搜索结果添加来源，然后手动刷新。',actions:[{label:'添加来源',variant:'primary',onClick:function () { addDialog(app); }}]})));
-    return h('div',null,toolbar,h('div.panel.channels__table-wrap',null,h('table.table.live-channels',null,
+    if (!cache.loaded) return h('div',{'data-refresh-key':'channel-list'},toolbar,ui.state({icon:'clock',title:'正在载入渠道…'}));
+    if (!cache.items.length) return h('div',{'data-refresh-key':'channel-list'},toolbar,h('div.panel',null,ui.state({icon:'folder-open',title:keyword ? '没有匹配的来源' : '还没有添加任何来源',desc:'使用作者 UID、主页链接或搜索结果添加来源，然后手动刷新。',actions:[{label:'添加来源',variant:'primary',onClick:function () { addDialog(app); }}]})));
+    return h('div',{'data-refresh-key':'channel-list'},toolbar,h('div.panel.channels__table-wrap',null,h('table.table.live-channels',null,
       h('thead',null,h('tr',null,['平台','创作者 / 频道名','主页','同步方式','状态','覆盖范围','最近任务','操作'].map(function (label) { return h('th',{text:label}); }))),
       h('tbody',null,cache.items.map(function (c,i) {
-        var job = app.runs.find(function (r) { return r.channelId === c.id; }), cov = cache.coverage[i];
-        return h('tr',{'data-channel-id':c.id},
+        var cov = cache.coverage[i];
+        return h('tr',{'data-channel-id':c.id,'data-refresh-key':'channel:' + c.id,'data-refresh-boundary':true,
+          'data-refresh-preserve':JSON.stringify([c,cov])},
           h('td',null,ui.platformIcon(c.platform)),
           h('td',null,h('div.channel-cell',null,ui.avatar(c.name),h('div.channel-cell__text',null,h('div.channel-cell__name',{text:c.name}),h('div.channel-cell__desc',{text:'UID ' + c.externalId})))),
           h('td',null,ui.btn('打开主页',{size:'sm',icon:'external',onClick:function () { SF.app.act('source:' + c.id,function () { return app.client.openChannel(c.id); }); }})),
@@ -72,7 +158,7 @@
             h('small',{text:scheduleText(c)}))),
           h('td',null,ui.toggle(c.enabled,function (enabled) { SF.app.act('subscription:' + c.id,async function () { await app.client.setChannelEnabled(c.id,enabled); await SF.app.refreshData(true); }); },{label:(c.enabled?'暂停 ':'恢复 ') + c.name})),
           h('td',null,h('button.coverage-cell' + (cov.complete?'':'.coverage-cell--limited'),{type:'button',title:cov.detail,onclick:function () { ui.dialog({title:c.name + ' · 覆盖范围',body:ui.notice({tone:cov.complete?'info':'warn',text:cov.detail})}); }},SF.icon(cov.complete?'check':'clock',14),h('span',{text:cov.label}))),
-          h('td',null,job ? h('div.table__time',null,h('span',{text:fmt.runState(job.state)}),h('small',{text:fmt.relative(job.startedAt,app.now)})) : h('span.muted',{text:'尚未采集'})),
+          h('td',{'data-channel-run':c.id},latestRun(app,c.id)),
           h('td',null,h('div.table__ops',null,
             ui.iconBtn('refresh','刷新来源',function () { startRun(app,c,'recent'); },{disabled:!c.enabled || !c.capabilities.canRefresh}),
             ui.iconBtn('clock','回溯历史',function () { var pages = collectPages(c,c.defaultBackfillBudget || 10); ui.confirm({title:'回溯 ' + c.name,message:c.checkedItems ? '本次按主页顺序检查前 ' + pages + ' 条' + (c.contentNoun || '内容') + '。已收录的也占一个名额，跳过详情后不向后补足；结果不代表全部历史。' : c.incrementalDetails ? '本次最多读取 ' + pages + ' 条' + (c.contentNoun || '内容') + '详情，已完整收录的会跳过；主页分页扫描有上限，结果不代表全部历史。' : '本次最多采集 ' + (c.collectItems || pages*(c.pageSize || 20)) + ' 条内容。已收录或解析失败的条目也占名额，不向后补足；回溯成功不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
@@ -148,7 +234,7 @@
       footer:[ui.btn('取消',{onClick:function () { layer.close(); }}),save]});
   }
   function bottomPanels(app) {
-    return h('div.channels__bottom',null,
+    return h('div.channels__bottom',{'data-refresh-key':'channel-bottom'},
       h('section.panel.live-panel',null,h('h2.t-h2',{text:'渠道与连接'}),app.session.connections.map(function (c) {
         var r = c.readiness, ops = descriptorFor(app, c).operations || {};
         var intakeOnly = !(ops.resolve_source && ops.resolve_source.supported);
@@ -167,17 +253,21 @@
             !intakeOnly && c.backend === 'electron-session' ? ui.btn('应用内登录 ' + SF.catalog.platform(c.channel).name,{onClick:function () { SF.app.act('login:' + c.id,function () { return app.client.loginConnection(c.id); }); }}) : null,
             ui.btn('检查连接',{onClick:function () { SF.app.act('check:' + c.id,async function () { await app.client.checkConnection(c.id); await SF.app.refreshData(true); }); }})));
       }),h('p.field__hint',{text:'自动采集遇到登录或访问验证会暂停，处理后检查连接即可恢复。采集失败时仍可查看本地内容。'})),
-      h('section.panel.live-panel',null,h('h2.t-h2',{text:'最近任务（最多 100 条）'}),
+      runsPanel(app));
+  }
+  function runsPanel(app) {
+    return h('section.panel.live-panel',{'data-runs-panel':'','data-refresh-key':'recent-runs'},h('h2.t-h2',{text:'最近任务（最多 100 条）'}),
         app.runs.length ? h('div.run-list',null,app.runs.map(function (run) {
           var canCancel = ['queued','running','waiting'].includes(run.state);
           var canRetry = ['failed','partial','waiting','interrupted','cancelled'].includes(run.state);
-          return h('div.run-row',{'data-run-id':run.id},h('div.row',null,h('strong',{text:run.channelName}),h('div.spacer'),ui.tag(fmt.runState(run.state))),
+          return h('div.run-row',{'data-run-id':run.id,'data-refresh-key':'run:' + run.id,
+            'data-refresh-boundary':true,'data-refresh-preserve':JSON.stringify(run)},h('div.row',null,h('strong',{text:run.channelName}),h('div.spacer'),ui.tag(fmt.runState(run.state))),
             h('p',{text:run.message}), h('p.muted',{text:({manual:'手动',automatic:'自动',recovery:'恢复'}[run.trigger] || '手动') + ' · ' + ({initial:'初次获取',refresh:'近期刷新',backfill:'历史回溯',detail:'详情补充'}[run.kind] || run.kind) + (run.kind === 'detail' ? ' · 更新已有内容' : Object.keys(run.acquisitionMetrics || {}).length ? ' · 已保存 ' + run.items + ' 条 · 新增 ' + run.newItems + ' 条' : ' · 已提交 ' + run.pages + ' 页 · ' + run.items + ' 条 · 新增 ' + run.newItems + ' 条')}),
             run.kind !== 'detail' ? h('p.scope-note',{text:fmt.coverage(run.scope)}) : null,
             ['queued','running'].includes(run.state) ? ui.progress(0,true) : null,
             canCancel ? ui.btn('取消任务',{onClick:function () { SF.app.act('cancel:' + run.id,async function () { await app.client.cancelRun(run.id); await SF.app.refreshData(true); }); }}) : null,
             canRetry ? ui.btn('重试任务',{onClick:function () { SF.app.act('retry:' + run.id,async function () { await app.client.retryRun(run.id); await SF.app.refreshData(true); }); }}) : null);
-        })) : h('p.muted',{text:'还没有采集任务'})));
+        })) : h('p.muted',{text:'还没有采集任务'}));
   }
   function addDialog(app) {
     var connections = app.session.connections.filter(function (c) { return c.enabled && subscribable(app, c); });
@@ -268,5 +358,5 @@
       beforeClose:function(){return !searchLocked;},onClose:function(){closed=true;requestId++;}});
   }
   SF.views = SF.views || {};
-  SF.views.channels = {render:render,reset:function(){cache={};}};
+  SF.views.channels = {render:render,reset:function(){cache={};},invalidate:invalidate,whenIdle:whenIdle,updateRuns:updateRuns};
 })(window);
