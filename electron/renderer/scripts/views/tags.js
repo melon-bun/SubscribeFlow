@@ -1264,10 +1264,16 @@
             onClick: function () {
               if (recognition.saving) return;
               // 保存失败就留在本页：草稿还在，用户能改了再试。
-              saveRecognition(app, function (ok) { done(ok); if (ok) layer.close(); });
+              saveRecognition(app, function (ok) { done(ok); layer.close(); });
             },
           }),
         ],
+        // 通用关闭路径（Escape、右上角关闭、点遮罩）必须结算，
+        // 否则这个 Promise 永远悬着，app.js 的导航锁也永远解不开（BUG-105）。
+        // 结算成「继续编辑」：草稿保留、路由恢复、用户可以接着改或再走。
+        onClose: function () {
+          done(false);
+        },
       });
     });
   }

@@ -679,18 +679,25 @@
       if (was === "tags" && app.tagTab === "ai" && parseHash().name !== "tags" &&
           parseHash().name !== "settings" && SF.views.tags.hasRecognitionDraft()) {
         leavingSettings = true;
-        SF.views.tags.confirmLeave(app).then(function (proceed) {
-          leavingSettings = false;
-          if (!proceed) {
-            history.replaceState(null, "", "#/tags?tab=ai");
-            refreshRoute();
-            if (app.session) render();
-            return;
-          }
+        var stayOnTags = function () {
+          history.replaceState(null, "", "#/tags?tab=ai");
           refreshRoute();
-          app.selectedId = null;
           if (app.session) render();
-        });
+        };
+        // 确认流程无论成功、失败还是被关掉，都必须释放导航锁：
+        // 锁不释放的话，之后所有 hashchange 都会被直接忽略（BUG-105）。
+        Promise.resolve()
+          .then(function () { return SF.views.tags.confirmLeave(app); })
+          .then(function (proceed) {
+            if (!proceed) { stayOnTags(); return; }
+            refreshRoute();
+            app.selectedId = null;
+            if (app.session) render();
+          }, function () {
+            // 确认流程本身出错：按继续编辑处理，草稿保留，不把人困在原地。
+            stayOnTags();
+          })
+          .finally(function () { leavingSettings = false; });
         return;
       }
       refreshRoute();
