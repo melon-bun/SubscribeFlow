@@ -1829,7 +1829,130 @@
   min-width: 0;
 }
 
-/* ---------------- AI 空态 ---------------- */
+/* ---------------- AI 自动识别 ---------------- */
+
+/* tags-fill 只用于居中的空态；任务面板始终纵向排布，并在视图内滚动。 */
+.tags-ai {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s-6);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--s-6);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.tags-ai > * {
+  flex: none;
+  min-width: 0;
+}
+
+/* 限定在本页，避免修改设置页复用的状态样式。 */
+.tags-ai .ai-status {
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.tags-ai .ai-status__row {
+  grid-template-columns: 112px minmax(0, 180px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.tags-ai .ai-status__row > * {
+  min-width: 0;
+}
+
+.tags-ai .badge {
+  justify-self: start;
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.tags-ai__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+
+.tags-ai__actions .btn {
+  max-width: 100%;
+  min-height: 34px;
+  height: auto;
+  padding-top: var(--s-2);
+  padding-bottom: var(--s-2);
+  white-space: normal;
+}
+
+.tags-ai__section,
+.ai-tasklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+}
+
+.ai-task {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: var(--s-3) var(--s-4);
+  padding: var(--s-5);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+}
+
+.ai-task__name {
+  min-width: 0;
+  font-size: var(--fs-base);
+  font-weight: 500;
+}
+
+.ai-task__state {
+  grid-column: 2;
+}
+
+.ai-task > .btn {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.ai-task__note {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--c-text-3);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+.tags-ai .tags-empty__note {
+  margin-top: 0;
+}
+
+@media (max-width: 1080px) {
+  .tags-ai .ai-status__row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: var(--s-2) var(--s-4);
+  }
+
+  .tags-ai .ai-status__note {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 800px) {
+  .tags-ai {
+    padding: var(--s-5);
+  }
+}
 
 .tags-empty {
   display: flex;

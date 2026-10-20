@@ -3,7 +3,7 @@
    --------------------------------------------------------------------------
    两个页签：
      #/tags?tab=list  标签列表 + 右侧标签详情
-     #/tags?tab=ai    AI 自动识别（后端未接入，给设计化空态）
+     #/tags?tab=ai    AI 自动识别：后台任务、失败重试与历史补打
 
    「标签规则」整页属于后续模块，本期不做。因此本页不会出现任何指向规则的入口：
    放一个点了没反应的按钮，比诚实地说明「还没有这个功能」更糟。
@@ -1041,7 +1041,7 @@
   }
 
   /* =====================================================================
-     页二：AI 自动识别（尚未接入）
+     页二：AI 自动识别
      ===================================================================== */
 
   /**
@@ -1052,7 +1052,7 @@
    * 补打是用户主动动作，先显示范围与数量再执行，不在打开页面时自动扫全库。
    */
   function buildAiPage(app) {
-    var body = h("div.panel.tags-fill");
+    var body = h("div.panel.tags-ai");
     body.appendChild(h("div.tags-empty", null, h("p", { text: "正在读取自动打标状态…" })));
     loadAiPanel(app, body);
     return body;
@@ -1072,7 +1072,11 @@
         renderAiPanel(app, container, status);
       })
       .catch(function (err) {
-        container.textContent = err && err.message ? err.message : "读取自动打标状态失败。";
+        container.textContent = "";
+        container.appendChild(h("p.tags-empty__desc", {
+          role: "alert",
+          text: err && err.message ? err.message : "读取自动打标状态失败。",
+        }));
       });
   }
 
@@ -1088,8 +1092,8 @@
   };
   var STATE_TONE = {
     queued: "neutral",
-    running: "info",
-    retry_wait: "warning",
+    running: "brand",
+    retry_wait: "warn",
     blocked: "danger",
     succeeded: "success",
     skipped: "neutral",
@@ -1117,7 +1121,7 @@
 
     container.appendChild(
       h(
-        "div.tags-empty__actions",
+        "div.tags-ai__actions",
         null,
         ui.btn("刷新状态", {
           icon: "refresh",
@@ -1136,11 +1140,13 @@
     );
 
     // 历史补打：先给范围与数量，用户确认后才排队。
-    var backfillBox = h("div.ai-status");
-    container.appendChild(backfillBox);
+    var backfillSection = h("section.ai-status");
+    var backfillBox = h("div");
+    container.appendChild(backfillSection);
+    backfillSection.appendChild(backfillBox);
     backfillBox.appendChild(aiStatusRow("历史内容补打", "未执行", "neutral", "只处理尚未打标过的内容，不会重复请求已完成的标签。"));
     var backfillActions = h(
-      "div.tags-empty__actions",
+      "div.tags-ai__actions",
       null,
       ui.btn("查看可补打范围", {
         icon: "search",
@@ -1150,7 +1156,7 @@
             .then(function (preview) {
               backfillBox.textContent = "";
               backfillBox.appendChild(
-                aiStatusRow("历史内容补打", preview.pending + " 条可补打", "info",
+                aiStatusRow("历史内容补打", preview.pending + " 条可补打", "brand",
                   "范围内共 " + preview.total + " 条内容，最多补打 " + preview.limit + " 条。")
               );
               backfillActions.textContent = "";
@@ -1201,7 +1207,7 @@
         },
       })
     );
-    container.appendChild(backfillActions);
+    backfillSection.appendChild(backfillActions);
 
     if (!recent.length) {
       container.appendChild(
@@ -1213,8 +1219,9 @@
       return;
     }
 
-    container.appendChild(h("h2.t-h2", { text: "最近任务" }));
-    var list = h("div.ai-tasklist");
+    var tasksSection = h("section.tags-ai__section", { "aria-label": "最近任务" },
+      h("h2.t-h2", { text: "最近任务" }));
+    var list = h("ol.ai-tasklist");
     recent.forEach(function (task) {
       // 未成功的任务都给出重试入口：failed／blocked 是失败与阻塞，skipped／cancelled
       // 是当时条件不足（Jev 无目录、识别途中关闭）被跳过的。用户补齐目录或重新
@@ -1222,12 +1229,12 @@
       var retryable = task.state !== "succeeded";
       list.appendChild(
         h(
-          "div.ai-status__row",
+          "li.ai-task",
           null,
-          h("span.ai-status__name", { text: task.content_id }),
-          h("span.badge.badge--" + (STATE_TONE[task.state] || "neutral"),
+          h("span.ai-task__name", { text: task.content_id }),
+          h("span.ai-task__state.badge.badge--" + (STATE_TONE[task.state] || "neutral"),
             { text: STATE_LABEL[task.state] || task.state }),
-          h("span.ai-status__note", {
+          h("span.ai-task__note", {
             text:
               (task.provider ? task.provider + " " + (task.model || "") + " · " : "") +
               (task.skipped_reason || task.error_message ||
@@ -1236,6 +1243,7 @@
           retryable
             ? ui.btn("重试", {
                 icon: "refresh",
+                size: "sm",
                 onClick: function () {
                   client.retryTaggingTask(task.id).then(
                     function () {
@@ -1253,7 +1261,8 @@
         )
       );
     });
-    container.appendChild(list);
+    tasksSection.appendChild(list);
+    container.appendChild(tasksSection);
   }
 
   /** 状态徽章顺带说清「为什么是这个状态」，避免只丢一个词让用户猜。 */
