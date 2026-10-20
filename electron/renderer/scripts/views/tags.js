@@ -76,6 +76,10 @@
 
   function paint() { SF.app.renderView("tags"); }
 
+  function tabActive(app, tab) {
+    return app.route.name === "tags" && app.tagTab === tab;
+  }
+
   function invalidate(reasons) {
     if (reasons.has("all") || reasons.has("tags")) { tagsStale = true; tagsRevision++; }
     if (reasons.has("all") || reasons.has("tags") || reasons.has("content") || reasons.has("channels")) {
@@ -121,6 +125,9 @@
     var epoch = generation;
     inflight = (async function () {
       do {
+        // Keep queued invalidations for the next visit; never start a hidden
+        // follow-up batch after the outstanding request has settled.
+        if (!tabActive(app, "list")) { tagsStale = true; return; }
         var revision = tagsRevision, q = query(), key = JSON.stringify(q);
         tagsStale = false;
         cache.loading = true;
@@ -154,6 +161,7 @@
       } while (tagsStale && epoch === generation);
     })().finally(function () {
       if (epoch === generation) {
+        cache.loading = false;
         inflight = null;
         paint();
         restoreSearchFocus();
@@ -163,6 +171,7 @@
   }
 
   function loadContents(app, tagId) {
+    if (!tabActive(app, "list")) { contentsStale = true; return Promise.resolve(); }
     cache.contentsError = null;
     if (!tagId) {
       cache.contents = [];
@@ -175,6 +184,7 @@
     cache.contentsTagId = tagId;
     contentsPromise = (async function () {
       do {
+        if (!tabActive(app, "list")) { contentsStale = true; return; }
         var revision = contentsRevision;
         contentsStale = false;
         cache.contentsLoading = true;
@@ -211,7 +221,7 @@
   function restoreSearchFocus() {
     if (!keepSearchFocus) return;
     keepSearchFocus = false;
-    if (SF.app.state.route.name !== "tags") return;
+    if (!tabActive(SF.app.state, "list")) return;
     var input = document.querySelector("[data-tag-search] input");
     if (!input) return;
     input.focus();
@@ -1158,10 +1168,12 @@
   }
 
   function loadAiPanel(app) {
+    if (!tabActive(app, "ai")) { aiState.stale = true; return Promise.resolve(); }
     if (aiState.promise) return aiState.promise;
     var owner = aiState, epoch = generation;
     owner.promise = (async function () {
       do {
+        if (!tabActive(app, "ai")) { owner.stale = true; return; }
         var revision = owner.revision;
         owner.stale = false;
         try {
