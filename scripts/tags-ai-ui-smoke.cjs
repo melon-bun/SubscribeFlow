@@ -105,7 +105,7 @@ async function run() {
     error_message: ['blocked', 'failed'].includes(state) ? '连接失败：' + 'upstream_gateway_timeout_without_separators'.repeat(7) : null,
     applied_count: state === 'succeeded' ? 2 : 0,
   }));
-  await evaluate(`TaggingStub.setStatus(${JSON.stringify({summary: {total: 28, active: 3, needsAttention: 2}, recent})}); SF.app.renderContent()`);
+  await evaluate(`TaggingStub.setStatus(${JSON.stringify({summary: {total: 28, active: 3, needsAttention: 2}, recent})}); SF.views.tags.invalidate(new Set(['tagging'])); SF.views.tags.updateTagging(SF.app.state); void 0`);
   await until(`document.querySelectorAll('.ai-task').length === 8`);
   for (const theme of ['light', 'dark']) {
     await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(theme)}`);
@@ -131,7 +131,7 @@ async function run() {
   assert.equal(await evaluate('window.openedSettings'), 'tagging');
   await click('刷新状态');
   await until(`document.querySelectorAll('.ai-task').length === 8`);
-  await evaluate(`TaggingStub.setError('读取失败：' + 'long_error_without_separators'.repeat(20)); SF.app.renderContent()`);
+  await evaluate(`TaggingStub.setError('读取失败：' + 'long_error_without_separators'.repeat(20)); SF.views.tags.invalidate(new Set(['tagging'])); SF.views.tags.updateTagging(SF.app.state); void 0`);
   await until(`document.body.innerText.includes('读取失败：')`);
   await checkLayout();
   await screenshot('tags-ai-load-error');
