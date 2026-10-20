@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace
 
 MODES = ('jev', 'llm')
 
@@ -32,7 +32,9 @@ ERROR_RETRYABLE = frozenset({ERROR_RATE_LIMITED, ERROR_TIMEOUT, ERROR_NETWORK})
 MIN_TEXT = 8
 MAX_TEXT = 4000
 MAX_CANDIDATES = 5
+MAX_LLM_CANDIDATES = 2
 MAX_TAG_NAME = 40
+MAX_TAG_DESCRIPTION = 200
 
 
 class RecognitionError(Exception):
@@ -158,10 +160,13 @@ class Candidate:
     score: float | None = None
     score_kind: str | None = None
     reason: str | None = None
+    # 标签的分类范围，与这条内容为什么匹配的 reason 分开保存。
+    description: str | None = None
 
     def to_dict(self) -> dict:
         return {'tagId': self.tag_id, 'name': self.name, 'score': self.score,
-                'scoreKind': self.score_kind, 'reason': self.reason}
+                'scoreKind': self.score_kind, 'reason': self.reason,
+                'description': self.description}
 
 
 @dataclass(frozen=True)
@@ -215,7 +220,12 @@ def check_candidate(raw: dict, *, allow_new: bool) -> Candidate:
     reason = raw.get('reason')
     if reason is not None and not isinstance(reason, str):
         raise ValueError('理由必须是文本')
-    return Candidate(tag_id, name, score, score_kind, (reason or '').strip() or None)
+    description = raw.get('description')
+    if description is not None:
+        if not isinstance(description, str) or len(description) > MAX_TAG_DESCRIPTION:
+            raise ValueError(f'标签说明需为不超过 {MAX_TAG_DESCRIPTION} 个字符的文本')
+        description = description.strip() or None
+    return Candidate(tag_id, name, score, score_kind, (reason or '').strip() or None, description)
 
 
 def check_candidates(values, *, allow_new: bool, limit: int) -> tuple[Candidate, ...]:
@@ -232,3 +242,54 @@ def check_candidates(values, *, allow_new: bool, limit: int) -> tuple[Candidate,
         seen.add(key)
         unique.append(candidate)
     return tuple(unique)
+
+
+def rank_candidates(candidates):
+    """有分值时按相关度降序；缺失分值和同分项保留模型给出的顺序。"""
+    return sorted(candidates, key=lambda candidate: (candidate.score is None, -(candidate.score or 0)))
+
+
+def check_llm_candidates(values, *, catalogue, limit):
+    """校验 LLM 结果、按稳定身份去重并只保留最相关的两个。
+
+    通用识别入口仍兼容最多五个原始候选；LLM 即使不遵守提示词，也不能把
+    多余候选带到业务层。新标签和本次命中的空说明标签必须提供分类范围，
+    已有非空说明由目录保留。
+    """
+    if not isinstance(values, list):
+        raise ValueError('候选列表必须是数组')
+    if len(values) > MAX_CANDIDATES:
+        raise ValueError(f'候选数量超过上限 {MAX_CANDIDATES}')
+    candidates = tuple(check_candidate(value, allow_new=True) for value in values)
+    by_id = {tag.id: tag for tag in catalogue}
+    by_name = {tag.name.casefold(): tag.id for tag in catalogue}
+    by_alias = {}
+    for tag in catalogue:
+        for name in tag.synonyms:
+            by_alias.setdefault(name.casefold(), set()).add(tag.id)
+    normalized = []
+    for candidate in candidates:
+        if candidate.tag_id is not None:
+            if candidate.tag_id not in by_id:
+                raise ValueError('模型返回了不在本次候选目录中的标签 ID')
+        else:
+            name = candidate.name.casefold()
+            matches = {by_name[name]} if name in by_name else by_alias.get(name, set())
+            if len(matches) == 1:
+                candidate = replace(candidate, tag_id=next(iter(matches)))
+            elif len(matches) > 1:
+                continue  # 歧义别名不自动归并，也不占用一个有效类别的名额。
+        existing = by_id.get(candidate.tag_id)
+        if not candidate.description and not (existing and existing.description.strip()):
+            raise ValueError('新标签或已有空说明标签缺少标签说明')
+        normalized.append(candidate)
+    selected, seen = [], set()
+    for candidate in rank_candidates(normalized):
+        key = candidate.tag_id or candidate.name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(candidate)
+        if len(selected) >= min(limit, MAX_LLM_CANDIDATES):
+            break
+    return tuple(selected)

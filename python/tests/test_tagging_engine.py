@@ -265,17 +265,21 @@ class LlmProviderTests(unittest.TestCase):
         self.assertEqual([c.name for c in result.candidates], ['机器学习'])
 
     def test_accepts_fenced_and_surrounded_json(self):
-        for content in ('```json\n{"tags":[{"name":"A"}]}\n```', '好的，结果是：{"tags":[{"name":"A"}]} 完毕'):
+        for content in ('```json\n{"tags":[{"name":"A","description":"A 类主题"}]}\n```',
+                        '好的，结果是：{"tags":[{"name":"A","description":"A 类主题"}]} 完毕'):
             with self.subTest(content=content):
                 result = self.provider(FakeTransport([self.reply(content)])).recognize(request(mode='llm'))
                 self.assertEqual([c.name for c in result.candidates], ['A'])
 
     def test_allows_new_names_but_jev_does_not(self):
-        result = self.provider(FakeTransport([self.reply('{"tags":[{"name":"新标签","reason":"合适"}]}')])) \
+        result = self.provider(FakeTransport([self.reply(
+            '{"tags":[{"name":"新标签","description":"主题与分类范围","reason":"合适"}]}')])) \
             .recognize(request(mode='llm'))
         candidate = result.candidates[0]
         self.assertIsNone(candidate.tag_id)
         self.assertEqual(candidate.name, '新标签')
+        self.assertEqual(candidate.description, '主题与分类范围')
+        self.assertEqual(candidate.to_dict()['description'], '主题与分类范围')
         self.assertIsNone(candidate.score, 'LLM 自报的分值缺失就保持缺失，不编造')
 
     def test_unparsable_content_is_invalid_response(self):
@@ -290,9 +294,43 @@ class LlmProviderTests(unittest.TestCase):
         self.assertEqual(result.candidates, ())
 
     def test_missing_usage_is_left_empty(self):
-        body = {'model': 'demo-1', 'choices': [{'message': {'content': '{"tags":[{"name":"A"}]}'}}]}
+        body = {'model': 'demo-1', 'choices': [{'message': {
+            'content': '{"tags":[{"name":"A","description":"A 类主题"}]}'}}]}
         result = self.provider(FakeTransport([body])).recognize(request(mode='llm'))
         self.assertIsNone(result.usage, '服务没给用量就不能编造')
+
+    def test_over_limit_output_keeps_the_two_most_relevant_unique_tags(self):
+        catalogue = [
+            {'id': 't1', 'name': 'Python', 'description': 'Python 编程', 'synonyms': ['Py']},
+            {'id': 't2', 'name': '机器学习', 'description': '模型训练'},
+            {'id': 't3', 'name': '工程', 'description': '工程实践'},
+        ]
+        values = [{'tagId': 't1', 'score': 0.3}, {'name': 'Py', 'score': 0.99},
+                  {'tagId': 't2', 'score': 0.9}, {'tagId': 't3', 'score': 0.8}]
+        transport = FakeTransport([self.reply(json.dumps({'tags': values}))])
+        result = self.provider(transport).recognize(request(mode='llm', candidates=catalogue))
+        self.assertEqual([candidate.tag_id for candidate in result.candidates], ['t1', 't2'])
+        self.assertEqual([candidate.score for candidate in result.candidates], [0.99, 0.9])
+        prompt = transport.requests[0]['payload']['messages'][0]['content']
+        self.assertIn('最多 2 个标签', prompt)
+        self.assertIn('按相关度从高到低排列', prompt)
+        self.assertIn('已有空说明标签', prompt)
+
+    def test_missing_scores_keep_model_relevance_order_and_honor_smaller_limit(self):
+        values = [{'name': name, 'description': f'{name}主题'} for name in ('第三', '第一', '第二')]
+        for limit, expected in ((5, ['第三', '第一']), (1, ['第三'])):
+            with self.subTest(limit=limit):
+                result = self.provider(FakeTransport([self.reply(json.dumps({'tags': values}))])).recognize(
+                    request(mode='llm', candidates=[], limit=limit))
+                self.assertEqual([candidate.name for candidate in result.candidates], expected)
+                self.assertTrue(all(candidate.score is None for candidate in result.candidates))
+
+    def test_exact_name_wins_over_another_tags_alias(self):
+        catalogue = [{'id': 'a', 'name': 'AI', 'description': '人工智能'},
+                     {'id': 'b', 'name': '阅读', 'description': '读书', 'synonyms': ['AI']}]
+        result = self.provider(FakeTransport([self.reply('{"tags":[{"name":"AI"}]}')])).recognize(
+            request(mode='llm', candidates=catalogue))
+        self.assertEqual(result.candidates[0].tag_id, 'a')
 
     def test_error_codes_are_classified(self):
         for code, retryable in (('auth_failed', False), ('rate_limited', True),
@@ -327,7 +365,7 @@ class LlmOutputValidationTests(unittest.TestCase):
 
     def test_known_tag_id_is_accepted(self):
         result = self.provider('{"tags":[{"tagId":"t1"}]}').recognize(
-            request(mode='llm', candidates=[{'id': 't1', 'name': 'Python'}]))
+            request(mode='llm', candidates=[{'id': 't1', 'name': 'Python', 'description': '编程语言'}]))
         self.assertEqual([c.tag_id for c in result.candidates], ['t1'])
 
     def test_output_violations_are_model_errors_not_input_errors(self):
@@ -342,6 +380,30 @@ class LlmOutputValidationTests(unittest.TestCase):
                     self.provider(content).recognize(request(mode='llm'))
                 self.assertEqual(caught.exception.code, 'invalid_response')
                 self.assertFalse(caught.exception.retryable)
+
+    def test_new_tag_description_is_required_and_reason_cannot_substitute(self):
+        for description in (None, '', '   ', 42, '长' * 201):
+            with self.subTest(description=description):
+                value = {'name': '新标签', 'description': description, 'reason': '这条内容与主题相关'}
+                with self.assertRaises(RecognitionError) as caught:
+                    self.provider(json.dumps({'tags': [value]})).recognize(request(mode='llm'))
+                self.assertEqual(caught.exception.code, 'invalid_response')
+                self.assertIn('说明', caught.exception.message)
+                self.assertFalse(caught.exception.retryable)
+
+    def test_reused_empty_description_requires_generated_scope_for_id_name_and_alias(self):
+        catalogue = [{'id': 't1', 'name': 'Python', 'synonyms': ['Py']}]
+        for identity in ({'tagId': 't1'}, {'name': 'Python'}, {'name': 'Py'}):
+            with self.subTest(identity=identity):
+                with self.assertRaises(RecognitionError) as caught:
+                    self.provider(json.dumps({'tags': [identity]})).recognize(
+                        request(mode='llm', candidates=catalogue))
+                self.assertEqual(caught.exception.code, 'invalid_response')
+                with_scope = dict(identity, description=' Python 编程语言与开发实践 ')
+                result = self.provider(json.dumps({'tags': [with_scope]})).recognize(
+                    request(mode='llm', candidates=catalogue))
+                self.assertEqual(result.candidates[0].tag_id, 't1')
+                self.assertEqual(result.candidates[0].description, 'Python 编程语言与开发实践')
 
 
 class RegistryTests(unittest.TestCase):

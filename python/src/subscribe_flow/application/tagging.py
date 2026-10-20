@@ -14,20 +14,18 @@ import asyncio
 import logging
 
 from subscribe_flow.contracts import ChannelError
-from subscribe_flow.contracts.tags import RecognitionInput
+from subscribe_flow.contracts.tags import AUTO_TAG_LIMIT
 from subscribe_flow.storage.repositories import now
 
 from tagging_engine import build_provider
 from tagging_engine.contracts import (
     ERROR_AUTH, ERROR_NOT_CONFIGURED, ERROR_RATE_LIMITED, CandidateTag,
     RecognitionError, RecognitionRequest, STATUS_INSUFFICIENT_TEXT, STATUS_MATCHED,
-    STATUS_NO_MATCH, MAX_CANDIDATES,
+    STATUS_NO_MATCH, MAX_CANDIDATES, check_llm_candidates, rank_candidates,
 )
 
 LOG = logging.getLogger(__name__)
 
-# 每次自动标签的数量上限（计划 §3.4：不强凑数量，允许无匹配）。
-AUTO_TAG_LIMIT = 5
 # 后台同时执行的模型请求数。更高会让延迟抖动，也更容易触发限流。
 MAX_ACTIVE = 2
 # 一轮轮询间隔。事件表才是恢复依据，这个只决定响应快慢。
@@ -123,15 +121,28 @@ class TaggingService:
             content_version=task['content_version'])
 
     @staticmethod
-    def _resolve(result, directory):
-        """识别结果 → (已有标签 ID 列表, 新标签名列表)。
+    def _resolve(result, directory, mode):
+        """识别结果 → (已有标签 ID, 带说明的新标签, 已有标签待补齐的说明)。
 
         按计划 §3.4：先按现有名称/明确别名复用；Jev 不允许新建（引擎已保证）。
         目录里没有的 ID 一律丢弃——模型不能凭空指认一个不存在的标签。
         """
         by_id = {tag['id']: tag for tag in directory}
-        applied, new_names, seen = [], [], set()
-        for candidate in result.candidates:
+        candidates = result.candidates
+        if mode == 'llm':
+            # 再守住业务边界：替换 Provider 也不能绕过数量与新标签说明约束。
+            try:
+                candidates = check_llm_candidates(
+                    [candidate.to_dict() for candidate in candidates],
+                    catalogue=tuple(CandidateTag.from_dict(tag) for tag in directory),
+                    limit=AUTO_TAG_LIMIT)
+            except ValueError as error:
+                raise RecognitionError('invalid_response', f'模型返回的标签不符合约定：{error}',
+                                       retryable=False) from None
+        applied, new_tags, descriptions, seen = [], [], {}, set()
+        for candidate in rank_candidates(candidates):
+            if len(applied) + len(new_tags) >= AUTO_TAG_LIMIT:
+                break
             if candidate.tag_id:
                 tag = by_id.get(candidate.tag_id)
                 # 目录版本已在落库前复核；这里再挡一次禁用/已删标签。
@@ -142,6 +153,10 @@ class TaggingService:
                     continue
                 seen.add(key)
                 applied.append(tag['id'])
+                if mode == 'llm' and not (tag.get('description') or '').strip():
+                    descriptions[tag['id']] = candidate.description
+                continue
+            if mode != 'llm':
                 continue
             name = (candidate.name or '').strip()
             if not name:
@@ -150,8 +165,8 @@ class TaggingService:
             if key in seen:
                 continue
             seen.add(key)
-            new_names.append(name)
-        return applied, new_names
+            new_tags.append({'name': name, 'description': candidate.description})
+        return applied, new_tags, descriptions
 
     # ------------------------------------------------------------ 后台任务
 
@@ -312,17 +327,24 @@ class TaggingService:
             self.emit('tagging.changed', {'succeeded': task['id']})
             return
 
-        applied, new_names = self._resolve(result, directory)
+        try:
+            applied, new_tags, descriptions = self._resolve(result, directory, task['mode'])
+        except RecognitionError as error:
+            self.repo.finish(task['id'], 'failed', error_code=error.code, error_message=error.message)
+            self.emit('tagging.changed', {'failed': task['id']})
+            return
         # 不再传请求开始时的目录快照：写回边界按数据库当前目录复核（BUG-095）。
         outcome = self.repo.apply_result(
-            task['id'], applied_tag_ids=applied, new_tags=new_names,
-            expected_content_version=task['content_version'])
+            task['id'], applied_tag_ids=applied, new_tags=new_tags,
+            expected_content_version=task['content_version'], tag_descriptions=descriptions)
         if outcome['outcome'] in ('succeeded',) and outcome['applied']:
             # 只在提交成功后通知界面（§3.6）。
             self.emit('content.changed', {'ids': [task['content_id']]})
             self.emit('tags.changed', {'ids': applied})
         if outcome.get('created'):
             self.emit('tags.changed', {'created': outcome['created']})
+        if outcome.get('described'):
+            self.emit('tags.changed', {'ids': outcome['described']})
         self.emit('tagging.changed', {'completed': task['id'], 'outcome': outcome['outcome']})
 
     async def _loop(self):
