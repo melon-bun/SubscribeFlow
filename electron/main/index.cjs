@@ -454,6 +454,7 @@ async function start() {
       else if (rendererSmoke === 'm17') await require('../../scripts/m17-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'settings') await require('../../scripts/settings-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'v049') await require('../../scripts/v049-batch01-renderer.cjs').verify({window,core,root});
+      else if (rendererSmoke === 'v049b2') await require('../../scripts/v049-batch02-renderer.cjs').verify({window,core,root});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
       // 验收同样走 M17 的统一退出流程，否则关窗仍会被拦截为隐藏到托盘。
       await lifecycle.quit();

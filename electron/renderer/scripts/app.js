@@ -86,7 +86,10 @@
       : null;
     if (name === "settings") {
       // 分区始终带回路由参数：直接改哈希进来时左栏与正文必须对得上。
-      return { name: name, params: { section: params.section === "reminder" ? "reminder" : "tagging" } };
+      // M21：分区是 ai／reminder／priority，未知值回落到 ai。
+      var section = params.section === "reminder" ? "reminder"
+        : params.section === "priority" ? "priority" : "ai";
+      return { name: name, params: { section: section } };
     }
     if (!NAV.some(function (n) { return n.id === name; })) name = "inbox";
     return { name: name, params: params };
@@ -663,11 +666,30 @@
             if (app.session) render();
           } else {
             // 留在设置页：把哈希拉回来，用户继续编辑刚才的草稿。
-            var section = SF.views.settings.currentSection() === "reminder" ? "reminder" : "tagging";
+            var section = SF.views.settings.currentSection();
             history.replaceState(null, "", "#/settings?section=" + section);
             refreshRoute();
             if (app.session) render();
           }
+        });
+        return;
+      }
+      // M21：标签页的识别设置也可能有草稿，离开前同样先问一句。
+      // 去设置页不算离开：草稿就在模块状态里，回来还在，用户可以先去补齐 API。
+      if (was === "tags" && app.tagTab === "ai" && parseHash().name !== "tags" &&
+          parseHash().name !== "settings" && SF.views.tags.hasRecognitionDraft()) {
+        leavingSettings = true;
+        SF.views.tags.confirmLeave(app).then(function (proceed) {
+          leavingSettings = false;
+          if (!proceed) {
+            history.replaceState(null, "", "#/tags?tab=ai");
+            refreshRoute();
+            if (app.session) render();
+            return;
+          }
+          refreshRoute();
+          app.selectedId = null;
+          if (app.session) render();
         });
         return;
       }

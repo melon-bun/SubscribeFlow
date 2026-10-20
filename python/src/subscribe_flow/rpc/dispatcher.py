@@ -95,7 +95,8 @@ class Dispatcher:
             # M16 自动打标：状态、重试与用户主动补打。设置类方法刻意不在这里，
             # 自动打标只用配置引用，密钥始终留在主进程受保护凭据里。
             "tagging.status": (c.tagging.status, {}, {}),
-            "tagging.test": (c.tagging.test_connection, {}, {}),
+            # M21：可以指定要测哪一类 API。只测这一类，不改打标方式、不触发打标。
+            "tagging.test": (c.tagging.test_connection, {}, {"mode": str}),
             "tagging.tasks": (c.tagging.tasks, {}, {"states": list, "limit": int, "offset": int}),
             "tagging.retry": (c.tagging.retry, {"task_id": str}, {}),
             "tagging.backfill_preview": (c.tagging.backfill_preview, {}, {"limit": int}),

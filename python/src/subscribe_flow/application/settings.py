@@ -1,14 +1,20 @@
-"""M15 应用设置服务。
+"""M15 应用设置服务（M21 拆分 AI API 与识别策略）。
 
 职责边界：
 - 只处理非敏感配置。密钥由 Main 的凭据服务保管，这里只保存凭据引用，
   因此这个类无论被谁调用都不可能返回或保存明文密钥。
-- 按页保存：一次只提交一个分区（AI 模型配置 / 提醒设置），
+- 按页保存：一次只提交一个分区（AI API 配置 / 识别策略 / 提醒设置 / 优先级名称），
   避免修改提醒参数时顺手把另一页没填完的 API 配置一起存进去（§2.1）。
-- 每次保存递增配置版本。自动打标与提醒都以这个版本判断自己是否过期。
+- M21 起配置职责分开：
+  ``ai.providers`` 只放连接参数（接口地址、模型标识、凭据引用），
+  ``tagging.enabled/mode/enabledSince`` 只放识别策略。
+  保存 API 不碰策略，保存策略不碰 API；两边互不覆盖。
+- 配置版本只在「当前生效的识别配置」变化时递增。自动打标以它判断在途结果
+  是否过期；优先级别名、提醒参数这类无关保存不该让在跑的打标任务重跑。
 """
 
 import copy
+import json
 import re
 from urllib.parse import urlparse
 
@@ -16,7 +22,11 @@ from subscribe_flow.contracts import ChannelError
 from subscribe_flow.storage.repositories import now
 
 MODES = ("jev", "llm")
-SECTIONS = ("tagging", "reminder", "priority")
+SECTIONS = ("ai", "tagging", "reminder", "priority")
+
+# M21：这两个分区影响识别结果，保存它们要推进配置版本。
+# 提醒与优先级别名不影响识别结果，保存它们不推进版本。
+RECOGNITION_SECTIONS = ("ai", "tagging")
 
 INTERVAL_PRESETS = (15, 30, 60, 120)
 INTERVAL_MIN = 5
@@ -34,11 +44,6 @@ DEFAULT_PRIORITY_NAMES = {
     "low": "低优先级",
 }
 
-# 只影响显示的分区：保存它们不递增配置版本。
-# 版本是自动打标判断「自己是否过期」的唯一依据，改个显示名不该让在跑的
-# 打标任务重跑、也不该动提醒计时（§M20 实施内容 4）。
-DISPLAY_ONLY_SECTIONS = ("priority",)
-
 # 初始设置含官方默认值；用户明确清空后仍保留空值，不在界面偷偷恢复。
 OFFICIAL_DEFAULTS = {
     "jev": {"endpoint": "https://api.typesafe.ai/v1/systemone", "model": "jev-latest"},
@@ -48,15 +53,15 @@ REFERENCE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 MODEL_PATTERN = re.compile(r"^[^\s\x00-\x1f\x7f]{1,256}$")
 
 DEFAULTS = {
-    "tagging": {
-        "enabled": False,
-        "mode": "llm",
-        "enabledSince": None,
+    # M21：连接参数独立成区，只放“怎么连”。
+    "ai": {
         "providers": {
             "jev": {**OFFICIAL_DEFAULTS["jev"], "credentialRef": None},
             "llm": {"endpoint": "", "model": "", "credentialRef": None},
         },
     },
+    # M21：识别策略独立成区，只放“用不用、怎么识别”。
+    "tagging": {"enabled": False, "mode": "llm", "enabledSince": None},
     "reminder": {"enabled": False, "intervalMinutes": DEFAULT_INTERVAL},
     "priority": {"names": dict(DEFAULT_PRIORITY_NAMES)},
 }
@@ -137,6 +142,49 @@ def _missing_provider_items(provider):
             if not provider.get(key)]
 
 
+def _stored_providers(stored):
+    """从存档里取出两类 API 的连接参数。
+
+    M21 起新结构是 ``ai.providers``；旧结构把同样的参数放在 ``tagging.providers``。
+    两者都可能出现：新结构优先，旧结构只补新结构没有的字段。
+    转换是幂等的——读一次再存一次，结果与原来等价。
+    """
+    legacy = stored.get("tagging")
+    legacy = legacy.get("providers") if isinstance(legacy, dict) else None
+    modern = stored.get("ai")
+    modern = modern.get("providers") if isinstance(modern, dict) else None
+    result = {}
+    for mode in MODES:
+        old = legacy.get(mode) if isinstance(legacy, dict) and isinstance(legacy.get(mode), dict) else {}
+        new = modern.get(mode) if isinstance(modern, dict) and isinstance(modern.get(mode), dict) else {}
+        values = {}
+        for key in ("endpoint", "model", "credentialRef"):
+            if key in new:
+                values[key] = new[key]
+            elif key in old:
+                values[key] = old[key]
+        result[mode] = values
+    return result
+
+
+def _recognition_fingerprint(payload):
+    """当前生效的识别配置指纹。
+
+    只有它变了，在途的识别结果才需要作废重跑。因此：
+    - 改动当前方式所用的 API、切换方式、启停识别 → 指纹变 → 推进版本；
+    - 改另一种暂未使用的 API、改优先级别名、改提醒参数 → 指纹不变 → 版本不动。
+    """
+    mode = payload["tagging"]["mode"]
+    provider = payload["ai"]["providers"][mode]
+    return json.dumps({
+        "mode": mode,
+        "enabled": bool(payload["tagging"]["enabled"]),
+        "endpoint": provider.get("endpoint") or "",
+        "model": provider.get("model") or "",
+        "credentialRef": provider.get("credentialRef") or "",
+    }, sort_keys=True, ensure_ascii=False)
+
+
 class SettingsService:
     def __init__(self, store):
         self.store = store
@@ -155,12 +203,6 @@ class SettingsService:
                 if key not in payload[section] or key in ("providers", "names"):
                     continue
                 payload[section][key] = value
-            if section == "tagging":
-                providers = stored_section.get("providers") or {}
-                for mode in MODES:
-                    if isinstance(providers.get(mode), dict):
-                        payload["tagging"]["providers"][mode].update(
-                            {k: v for k, v in providers[mode].items() if k in payload["tagging"]["providers"][mode]})
             if section == "priority":
                 # 逐级回落：旧配置没有这一项、或某一档写坏了，都用默认名补齐。
                 names = stored_section.get("names") or {}
@@ -168,13 +210,17 @@ class SettingsService:
                     name = _readable_priority_name(names.get(level))
                     if name:
                         payload["priority"]["names"][level] = name
+        # 连接参数独立成区；旧结构 tagging.providers 走同一条兼容读取。
+        for mode, values in _stored_providers(stored).items():
+            payload["ai"]["providers"][mode].update(
+                {k: v for k, v in values.items() if k in payload["ai"]["providers"][mode]})
         return record["version"], record["updatedAt"], payload
 
     def snapshot(self):
         version, updated_at, payload = self._current()
         providers = {}
         for mode in MODES:
-            provider = payload["tagging"]["providers"][mode]
+            provider = payload["ai"]["providers"][mode]
             missing = _missing_provider_items(provider)
             providers[mode] = {
                 "endpoint": provider["endpoint"],
@@ -187,10 +233,12 @@ class SettingsService:
             }
         interval = payload["reminder"]["intervalMinutes"]
         return {
+            # 配置版本：只在影响识别结果的配置变化时递增（见 _recognition_fingerprint）。
             "version": version,
             "updatedAt": updated_at,
+            "ai": {"providers": providers},
             "tagging": {"enabled": payload["tagging"]["enabled"], "mode": payload["tagging"]["mode"],
-                        "enabledSince": payload["tagging"]["enabledSince"], "providers": providers},
+                        "enabledSince": payload["tagging"]["enabledSince"]},
             "reminder": {"enabled": payload["reminder"]["enabled"], "intervalMinutes": interval,
                          "preset": str(interval) if interval in INTERVAL_PRESETS else "custom"},
             "priority": {"names": dict(payload["priority"]["names"])},
@@ -204,10 +252,15 @@ class SettingsService:
         if not isinstance(patch, dict) or not patch:
             _fail("没有需要保存的修改")
         version, _, payload = self._current()
-        if section == "tagging":
+        fingerprint = _recognition_fingerprint(payload)
+        if section == "ai":
             # 凭据引用要在完整性校验之前落进草稿：一次提交里同时给出地址、模型和
             # 新密钥是正常流程，先校验再合并会把这次提交误判成「缺 API Key」。
-            merged = self._merge_tagging(payload["tagging"], patch, credential_refs)
+            merged = self._merge_ai(payload["ai"], patch, credential_refs)
+        elif section == "tagging":
+            if credential_refs:
+                _fail("识别策略不接受凭据引用")
+            merged = self._merge_tagging(payload["tagging"], patch, payload["ai"]["providers"])
         elif section == "priority":
             if credential_refs:
                 _fail("优先级名称不接受凭据引用")
@@ -217,12 +270,40 @@ class SettingsService:
                 _fail("提醒设置不接受凭据引用")
             merged = self._merge_reminder(payload["reminder"], patch)
         payload[section] = merged
-        # 只影响显示的分区不递增版本：版本一动，在跑的打标任务会被判为过期而重跑。
-        next_version = version if section in DISPLAY_ONLY_SECTIONS else None
+        # 版本是自动打标判断在途结果是否过期的唯一依据：只在当前生效的识别配置
+        # 真的变了才推进。优先级别名、提醒参数、另一种暂未使用的 API 都不动它。
+        next_version = None if _recognition_fingerprint(payload) != fingerprint else version
         record = self.store.save(payload, version=next_version)
         result = self.snapshot()
         result["savedVersion"] = record["version"]
         return result
+
+    def _merge_ai(self, current, patch, credential_refs=None):
+        """只合并连接参数：接口地址、模型标识与凭据引用。
+
+        允许保存尚未补齐的参数——填一半也要存得住，否则用户得先把另一类
+        API 配完才能保存这一类。缺项在快照里如实标成「未配置完整」。
+        """
+        if set(patch) - {"providers"}:
+            _fail("包含不支持的 AI API 配置字段")
+        providers = patch.get("providers")
+        if not isinstance(providers, dict) or not providers:
+            _fail("AI API 配置格式无效", "field", "providers")
+        if set(providers) - set(MODES):
+            _fail("包含不支持的识别方式", "field", "providers")
+        merged = copy.deepcopy(current)
+        for mode, fields in providers.items():
+            if not isinstance(fields, dict) or set(fields) - {"endpoint", "model"}:
+                # 密钥字段永远不接受：密钥只能经凭据引用提交。
+                _fail("包含不支持的识别配置字段", "field", "providers")
+            target = merged["providers"][mode]
+            if "endpoint" in fields:
+                target["endpoint"] = _validate_endpoint(fields["endpoint"], mode + ".endpoint")
+            if "model" in fields:
+                target["model"] = _validate_model(fields["model"], mode + ".model")
+        # 凭据引用由 Main 在写入受保护密钥之后给出；引用缺失说明这一版不换密钥。
+        merged = self._apply_references(merged, credential_refs, "ai")
+        return merged
 
     def _merge_priority(self, current, patch):
         """三级名称只能改显示名：等级本身固定，缺失的沿用当前值。"""
@@ -246,8 +327,13 @@ class SettingsService:
             seen[value] = level
         return merged
 
-    def _merge_tagging(self, current, patch, credential_refs=None):
-        if set(patch) - {"enabled", "mode", "providers"}:
+    def _merge_tagging(self, current, patch, providers):
+        """只合并识别策略：开关与方式。连接参数不在这里改。
+
+        API 不完整时不能开启，也不能把已开启的识别切到跑不起来的方式：
+        保存策略时若目标方式缺参数，要说清缺什么，而不是存下一个坏状态。
+        """
+        if set(patch) - {"enabled", "mode"}:
             _fail("包含不支持的自动打标字段")
         merged = copy.deepcopy(current)
         if "enabled" in patch:
@@ -258,28 +344,13 @@ class SettingsService:
             if patch["mode"] not in MODES:
                 _fail("识别方式无效", "field", "mode")
             merged["mode"] = patch["mode"]
-        providers = patch.get("providers")
-        if providers is not None:
-            if not isinstance(providers, dict) or set(providers) - set(MODES):
-                _fail("包含不支持的识别方式")
-            for mode, fields in providers.items():
-                if not isinstance(fields, dict) or set(fields) - {"endpoint", "model"}:
-                    # 密钥字段永远不接受：密钥只能经凭据引用提交。
-                    _fail("包含不支持的识别配置字段", "field", "providers")
-                target = merged["providers"][mode]
-                if "endpoint" in fields:
-                    target["endpoint"] = _validate_endpoint(fields["endpoint"], mode + ".endpoint")
-                if "model" in fields:
-                    target["model"] = _validate_model(fields["model"], mode + ".model")
-        # 凭据引用由 Main 在写入受保护密钥之后给出；引用缺失说明这一版不换密钥。
-        merged = self._apply_references(merged, credential_refs, "tagging")
         if merged["enabled"] and merged["enabledSince"] is None:
             # 记录生效边界：只覆盖此后首次保存的内容，关闭期间收录的需主动补打。
             merged["enabledSince"] = now()
         if not merged["enabled"]:
             merged["enabledSince"] = None
         if merged["enabled"]:
-            missing = _missing_provider_items(merged["providers"][merged["mode"]])
+            missing = _missing_provider_items(providers[merged["mode"]])
             if missing:
                 names = {"jev": "Jev 已有标签分类", "llm": "LLM 自由生成标签"}
                 name = names[merged["mode"]]
@@ -310,8 +381,8 @@ class SettingsService:
             return merged
         if not isinstance(credential_refs, dict):
             _fail("凭据引用格式无效")
-        if section != "tagging" and credential_refs:
-            _fail("提醒设置不接受凭据引用")
+        if section != "ai":
+            _fail("当前分区不接受凭据引用")
         for mode, reference in credential_refs.items():
             if mode not in MODES:
                 _fail("凭据引用对应的识别方式无效")

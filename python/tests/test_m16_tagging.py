@@ -114,11 +114,12 @@ class _M16Fixture:
         """用固定配置开启自动打标，并把 Provider 替换成同契约的替身。"""
         for m in ('jev', 'llm'):
             self.core.credentials.provide(f'ref-{m}', f'sk-test-{m}')
-        self.core.settings.update('tagging', {
-            'enabled': True, 'mode': mode,
+        # M21：连接参数与识别策略分开保存，两次保存互不覆盖。
+        self.core.settings.update('ai', {
             'providers': {m: {'endpoint': f'https://api.test.invalid/{m}', 'model': 'test-model'}
                           for m in ('jev', 'llm')}},
             credential_refs={'jev': 'ref-jev', 'llm': 'ref-llm'})
+        self.core.settings.update('tagging', {'enabled': True, 'mode': mode})
         provider = StubProvider(picks) if picks is not None else self.stub
         self._patch_provider(provider)
         # 断言读的是当前真正接线的那个替身。
@@ -167,6 +168,48 @@ class M16TaggingTests(_M16Fixture, unittest.TestCase):
         task = self.tasks.list_tasks(limit=1)['items'][0]
         self.assertEqual(task['state'], 'succeeded')
         self.assertEqual(task['applied_count'], 1)
+
+    def test_connection_test_targets_only_the_requested_api(self):
+        """M21：连接测试只测指定的那一类 API。
+
+        不改当前打标方式、不启停识别，也不产生任何标签。
+        """
+        self.enable()
+        import subscribe_flow.application.tagging as module
+        seen = []
+        original = module.build_provider
+
+        def spy(mode, **kwargs):
+            seen.append(mode)
+            return original(mode, **kwargs)
+
+        module.build_provider = spy
+        self.addCleanup(lambda: setattr(module, 'build_provider', original))
+
+        # 当前方式是 llm，指定测 jev 时组装的必须是 jev 那一类。
+        outcome = self.loop.run_until_complete(self.tagging.test_connection('jev'))
+        self.assertTrue(outcome['ok'], outcome)
+        self.assertEqual(seen, ['jev'])
+        # 测完不能动当前方式与开关。
+        snapshot = self.core.settings.snapshot()
+        self.assertEqual(snapshot['tagging']['mode'], 'llm')
+        self.assertTrue(snapshot['tagging']['enabled'])
+        # 连接测试只发一次探测请求，不登记任何打标任务。
+        self.assertEqual(self.stub.calls, 1)
+        self.assertEqual(self.tasks.list_tasks(limit=5)['total'], 0, '连接测试不产生打标任务')
+
+    def test_connection_test_reports_missing_items_without_changing_the_strategy(self):
+        """M21：被测的那一类没配齐时如实报缺项，不改配置也不改方式。"""
+        self.enable()
+        # 把 llm 的连接参数清空：它就没有 API Key 了。
+        self.core.settings.update('ai', {'providers': {'llm': {'endpoint': '', 'model': ''}}}, {'llm': None})
+        outcome = self.loop.run_until_complete(self.tagging.test_connection('llm'))
+        self.assertFalse(outcome['ok'])
+        self.assertIn('API Key', outcome['message'])
+        self.assertIn('接口地址', outcome['message'])
+        snapshot = self.core.settings.snapshot()
+        self.assertEqual(snapshot['tagging']['mode'], 'llm')
+        self.assertTrue(snapshot['tagging']['enabled'])
 
     def test_subscription_save_shares_the_same_fact(self):
         """订阅首次保存与手动保存共用同一种事件，来源不同不重复登记。"""
@@ -593,7 +636,7 @@ class M16Round2RegressionTests(_M16Fixture, unittest.TestCase):
 
         # 用户在设置页保存修正后的凭据与配置：设置版本前进，worker 必须发现。
         self.core.credentials.provide('ref-llm', 'sk-corrected')
-        self.core.settings.update('tagging', {'providers': {'llm': {'model': 'fixed-model'}}})
+        self.core.settings.update('ai', {'providers': {'llm': {'model': 'fixed-model'}}})
         self._patch_provider(StubProvider({'fixture:feed:fix-1': ['安全']}))
 
         self.drain()

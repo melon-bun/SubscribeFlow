@@ -1124,17 +1124,291 @@
    */
   var aiState = { busy: false, stale: true, revision: 0 };
 
+  /* M21：识别设置。连接参数在设置页的「AI API 配置」，这里只管策略：
+     开关、用哪种识别方式，以及当前方式所用的 API 能不能跑。
+     草稿与已保存值分开存：后台状态刷新不能把用户正在改的东西冲掉。 */
+  var recognition = {
+    loaded: false,
+    promise: null,
+    error: null,
+    saved: null,   // 已保存的策略 {enabled, mode}
+    draft: null,   // 草稿 {enabled, mode}
+    providers: {}, // 两类 API 的配置摘要（只读，来自设置快照）
+    missing: {},   // 每一类缺什么
+    saving: false,
+    notice: null,
+    stale: false,
+  };
+
+  var RECOGNITION_MODES = [
+    { id: "jev", label: "Jev 已有标签分类", desc: "从你已经启用的标签里挑选合适的，不新建标签。" },
+    { id: "llm", label: "LLM 自由生成标签", desc: "由模型判断该用哪些标签，必要时可以新建标签并挂载。" },
+  ];
+
+  function recognitionProvider(mode) {
+    return recognition.providers[mode] || {};
+  }
+
+  /** 当前草稿选中的方式缺什么：缺项就说不清，别让用户以为能直接开。 */
+  function recognitionMissing(mode) {
+    return (recognition.missing && recognition.missing[mode]) || [];
+  }
+
+  function loadRecognition(app) {
+    if (recognition.promise) return recognition.promise;
+    var owner = recognition;
+    owner.promise = app.client.getSettings().then(function (settings) {
+      if (owner !== recognition) return;
+      owner.error = null;
+      owner.loaded = true;
+      owner.stale = false;
+      var tagging = settings.tagging || {};
+      owner.saved = { enabled: !!tagging.enabled, mode: tagging.mode || "llm" };
+      // 已经有草稿时不覆盖：用户正在改的东西不能被后台刷新冲掉。
+      if (!owner.draft) owner.draft = { enabled: owner.saved.enabled, mode: owner.saved.mode };
+      var providers = (settings.ai && settings.ai.providers) || {};
+      owner.providers = providers;
+      owner.missing = {};
+      RECOGNITION_MODES.forEach(function (item) {
+        var provider = providers[item.id] || {};
+        owner.missing[item.id] = provider.missing || [];
+      });
+      paintRecognition(app);
+    }, function (err) {
+      if (owner !== recognition) return;
+      owner.error = err.message || "读取识别设置失败。";
+      paintRecognition(app);
+    }).finally(function () {
+      if (owner === recognition) owner.promise = null;
+    });
+    return owner.promise;
+  }
+
+  function recognitionDirty() {
+    if (!recognition.saved || !recognition.draft) return false;
+    return recognition.draft.enabled !== recognition.saved.enabled ||
+      recognition.draft.mode !== recognition.saved.mode;
+  }
+
+  /**
+   * 保存识别策略。这里只提交 enabled 与 mode：不携带任何 API 字段，
+   * 因此不会覆盖用户刚在设置页改好的连接参数。
+   */
+  function saveRecognition(app, done) {
+    if (recognition.saving || !recognition.draft) { if (done) done(false); return; }
+    var draft = recognition.draft;
+    var missing = recognitionMissing(draft.mode);
+    if (draft.enabled && missing.length) {
+      recognition.notice = {
+        tone: "danger",
+        text: "「" + (RECOGNITION_MODES.filter(function (m) { return m.id === draft.mode; })[0] || {}).label +
+          "」还缺" + missing.join("、") + "，先去「AI API 配置」补齐再启用。",
+      };
+      paintRecognition(app);
+      if (done) done(false);
+      return;
+    }
+    recognition.saving = true;
+    recognition.notice = null;
+    paintRecognition(app);
+    app.client.saveSettings({ section: "tagging", patch: { enabled: !!draft.enabled, mode: draft.mode } })
+      .then(function (settings) {
+        recognition.saving = false;
+        recognition.saved = { enabled: !!settings.tagging.enabled, mode: settings.tagging.mode };
+        // 保存成功后以服务端返回的值为准，方式可能与草稿不同。
+        recognition.draft = { enabled: recognition.saved.enabled, mode: recognition.saved.mode };
+        recognition.notice = { tone: "success", text: "识别设置已保存。" };
+        // 策略变了，后台任务状态要跟着重新读一次。
+        aiState.stale = true; aiState.revision++; loadAiPanel(app);
+        paintRecognition(app);
+        if (done) done(true);
+      }, function (err) {
+        recognition.saving = false;
+        // 保存失败保留草稿：用户改的东西不能因为一次失败就没了。
+        recognition.notice = { tone: "danger", text: err.message || "识别设置未能保存。" };
+        paintRecognition(app);
+        if (done) done(false);
+      });
+  }
+
+  /**
+   * 离开标签页时若识别设置还有草稿，先问保存还是放弃。
+   * 与设置页同一套原则：不让用户以为改了就已经生效。
+   */
+  function confirmRecognitionLeave(app) {
+    if (!recognitionDirty()) return Promise.resolve(true);
+    return new Promise(function (resolve) {
+      var settled = false;
+      var layer;
+      function done(value) { if (settled) return; settled = true; resolve(value); }
+      layer = ui.dialog({
+        title: "识别设置还有未保存的修改",
+        beforeClose: function () { return !recognition.saving; },
+        body: h("div.settings-leave", null,
+          h("p.settings-leave__lead", { text: "识别设置还有未保存的修改。可以先保存，也可以放弃这些修改直接离开。" }),
+          h("p.settings-leave__note", { text: "识别方式与自动打标开关在保存前不会生效。连接参数在「AI API 配置」里，不受这里影响。" })),
+        footer: [
+          h("div.spacer"),
+          ui.btn("继续编辑", { onClick: function () { if (recognition.saving) return; done(false); layer.close(); } }),
+          ui.btn("放弃修改", {
+            variant: "danger",
+            onClick: function () {
+              if (recognition.saving) return;
+              if (recognition.saved) recognition.draft = { enabled: recognition.saved.enabled, mode: recognition.saved.mode };
+              done(true); layer.close();
+            },
+          }),
+          ui.btn("保存并离开", {
+            variant: "primary",
+            disabled: recognition.saving,
+            onClick: function () {
+              if (recognition.saving) return;
+              // 保存失败就留在本页：草稿还在，用户能改了再试。
+              saveRecognition(app, function (ok) { done(ok); if (ok) layer.close(); });
+            },
+          }),
+        ],
+      });
+    });
+  }
+
+  function buildRecognition(app) {
+    var children = [];
+    if (recognition.error) {
+      children.push(h("p.field__error", { role: "alert", text: recognition.error }));
+    }
+    if (!recognition.loaded) {
+      children.push(h("p.field__hint", { text: recognition.error ? "" : "正在读取识别设置…" }));
+      return h("section.ai-status", { "aria-label": "识别设置" }, children);
+    }
+    var draft = recognition.draft;
+    var provider = recognitionProvider(draft.mode);
+    var missing = recognitionMissing(draft.mode);
+    var modeLabel = (RECOGNITION_MODES.filter(function (m) { return m.id === draft.mode; })[0] || {}).label || draft.mode;
+
+    children.push(
+      h(
+        "div.ai-status__row",
+        null,
+        h("span.ai-status__name", { text: "自动打标" }),
+        h("span.ai-status__note", {
+          text: draft.enabled
+            ? "开启中：此后收录的内容会进入后台队列并由模型打标。"
+            : "已关闭：新收录的内容不会自动打标，需要时可手动补打。",
+        }),
+        h("div.switch", {
+          role: "switch",
+          tabindex: "0",
+          "aria-checked": draft.enabled ? "true" : "false",
+          "aria-label": "启用自动打标",
+          onclick: function () {
+            draft.enabled = !draft.enabled;
+            recognition.notice = null;
+            paintRecognition(app);
+          },
+        }, h("span.switch__knob"))
+      )
+    );
+    children.push(
+      h(
+        "div.ai-status__row",
+        null,
+        h("span.ai-status__name", { text: "识别方式" }),
+        h("span.ai-status__note", { text: "两种方式互斥选择，切换后另一种的 API 配置仍然保留。" })
+      )
+    );
+    children.push(
+      h(
+        "div.mode-picker",
+        null,
+        RECOGNITION_MODES.map(function (item) {
+          var picked = draft.mode === item.id;
+          return h(
+            "button.mode-card" + (picked ? ".is-active" : ""),
+            {
+              type: "button",
+              role: "radio",
+              "aria-checked": picked ? "true" : "false",
+              onclick: function () {
+                draft.mode = item.id;
+                recognition.notice = null;
+                paintRecognition(app);
+              },
+            },
+            h("span.mode-card__mark", { "aria-hidden": "true" }, picked ? icon("check", 13) : null),
+            h(
+              "span.mode-card__text",
+              null,
+              h("span.mode-card__title", { text: item.label }),
+              h("span.mode-card__desc", { text: item.desc }),
+              // 缺项提前标出来：用户点之前就知道这一类还跑不起来。
+              recognitionMissing(item.id).length
+                ? h("span.mode-card__desc", { text: "API 未配置完整，缺：" + recognitionMissing(item.id).join("、") })
+                : null
+            )
+          );
+        })
+      )
+    );
+    // 当前方式用的 API 摘要与可用状态：缺什么直接写出来。
+    children.push(
+      h(
+        "div.ai-status__row",
+        null,
+        h("span.ai-status__name", { text: "当前方式的 API" }),
+        h("span.ai-status__note", {
+          text: missing.length
+            ? modeLabel + " 尚未配置完整，缺：" + missing.join("、") + "。"
+            : modeLabel + " 使用 " + (provider.endpoint || "") + " · " + (provider.model || "") + "，配置完整。",
+        }),
+        h("span.badge.badge--" + (missing.length ? "danger" : "success"), {
+          text: missing.length ? "未配置完整" : "可用",
+        })
+      )
+    );
+    if (recognition.notice) {
+      children.push(h("p.field__hint.field__hint--danger", { role: "alert", text: recognition.notice.text }));
+    }
+    children.push(
+      h(
+        "div.tags-ai__actions",
+        null,
+        ui.btn("前往 AI API 配置", { icon: "sliders", onClick: function () { SF.app.openSettings("ai"); } }),
+        ui.btn(recognition.saving ? "正在保存…" : "保存识别设置", {
+          variant: "primary",
+          disabled: recognition.saving || !recognitionDirty(),
+          onClick: function () { saveRecognition(app); },
+        })
+      )
+    );
+    return h("section.ai-status", { "aria-label": "识别设置" }, children);
+  }
+
+  function paintRecognition(app) {
+    var panel = mountedAi(app);
+    if (!panel) return;
+    var slot = panel.querySelector('[data-ai-slot="recognition"]');
+    if (!slot) return;
+    SF.dom.render(slot, buildRecognition(app));
+  }
+
   function buildAiPage(app) {
     if ((!aiState.loaded || aiState.stale) && !aiState.promise && (!aiState.error || aiState.stale)) loadAiPanel(app);
+    // M21：识别设置在上方，独立于任务与补打面板。草稿与后台刷新互不干扰。
+    // 此刻这块面板还没挂在页面上，说明是刚进入本页：重读一次设置，
+    // 让「当前方式的 API」摘要反映用户刚在设置页改的内容。页内重绘不重读。
+    if (!mountedAi(app)) recognition.stale = true;
+    if ((!recognition.loaded || recognition.stale) && !recognition.promise && !recognition.error) loadRecognition(app);
     return h("div.panel.tags-ai.scroll-y", {
       "data-refresh-key": "tags-ai:" + generation,
       "data-refresh-preserve": "always",
       "data-scroll-key": "tags-ai",
     },
+      h("section.ai-status", {"data-ai-slot": "recognition", "data-refresh-key": "tags-recognition", "data-refresh-preserve": "always"}, buildRecognition(app)),
       h("div.tags-ai__status", {"data-ai-slot": "status"}, aiStatus(app)),
       h("div.tags-ai__actions", null,
         ui.btn("刷新状态", {icon: "refresh", onClick: function () { aiState.stale = true; aiState.revision++; loadAiPanel(app); }}),
-        ui.btn("去设置 AI 模型配置", {variant: "primary", icon: "sliders", onClick: function () { SF.app.openSettings("tagging"); }})),
+        ui.btn("去设置 AI API 配置", {variant: "primary", icon: "sliders", onClick: function () { SF.app.openSettings("ai"); }})),
       h("section.ai-status", {"data-ai-slot": "backfill", "data-refresh-key": "tags-backfill", "data-refresh-preserve": "always"}, backfillBody(app)),
       h("div.tags-ai__section", {"data-ai-slot": "tasks"}, aiTasks(app))
     );
@@ -1310,5 +1584,8 @@
   }
 
   SF.views = SF.views || {};
-  SF.views.tags = { render: render, reset: reset, invalidate: invalidate, updateBackground: updateBackground, updateTagging: updateTagging, whenIdle: whenIdle, TABS: TABS };
+  SF.views.tags = { render: render, reset: reset, invalidate: invalidate, updateBackground: updateBackground, updateTagging: updateTagging, whenIdle: whenIdle, TABS: TABS,
+    // M21：识别设置的草稿保护。
+    hasRecognitionDraft: function () { return recognitionDirty(); },
+    confirmLeave: confirmRecognitionLeave };
 })(window);

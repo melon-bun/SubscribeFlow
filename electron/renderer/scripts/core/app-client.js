@@ -181,7 +181,10 @@
     // M16 自动打标。直接走 RPC 通道名：这些方法不接受也不返回密钥，
     // 因此不需要经过主进程的凭据编排。
     client.getTaggingStatus = function () { return invoke('tagging.status', {}); };
-    client.testTaggingConnection = function () { return invoke('tagging.test', {}); };
+    // M21：可以指定要测哪一类 API。只测这一类，不改打标方式、不触发打标。
+    client.testTaggingConnection = function (mode) {
+      return mode ? invoke('tagging.test', { mode: mode }) : invoke('tagging.test', {});
+    };
     client.listTaggingTasks = function (params) { return invoke('tagging.tasks', params || {}); };
     client.retryTaggingTask = function (taskId) { return invoke('tagging.retry', { task_id: taskId }); };
     client.previewTaggingBackfill = function (limit) {

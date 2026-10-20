@@ -50,18 +50,22 @@ class TaggingService:
     # ------------------------------------------------------------ 组装
 
     def snapshot(self):
-        """当前配置版本与生效状态。每次组装前重新读，不缓存快照。"""
+        """当前配置版本与生效状态。每次组装前重新读，不缓存快照。
+
+        M21：连接参数在 ``ai.providers``，识别策略在 ``tagging``。这里把两者
+        合成识别服务要的形状，调用方不必知道配置被拆成了两个分区。
+        """
         config = self.settings.snapshot()
-        tagging = config['tagging']
+        tagging = dict(config['tagging'])
+        tagging['providers'] = config['ai']['providers']
         return config, tagging
 
-    def _provider_for(self, tagging):
-        """按当前模式组装正式 Provider。
+    def _provider_for(self, mode, providers):
+        """按指定方式组装正式 Provider。
 
         密钥只在这一刻从内存凭据容器取用，不落库、不进日志、不返回给界面。
         """
-        mode = tagging['mode']
-        provider = tagging['providers'][mode]
+        provider = providers[mode]
         reference = provider.get('credentialRef')
         api_key = self.credentials.secret_for(reference) if reference else None
         missing = [label for key, label in (('endpoint', '接口地址'), ('model', '模型标识'))
@@ -74,21 +78,28 @@ class TaggingService:
         return build_provider(mode, endpoint=provider['endpoint'], model=provider['model'],
                               api_key=api_key)
 
-    async def test_connection(self):
+    async def test_connection(self, mode=None):
         """设置页「测试连接」：复用正式 Provider 与固定样例，反馈真实结果。
+
+        M21：可以指定要测哪一类 API。只测这一类，不改当前打标方式、
+        不启停自动打标，也不产生任何标签。
 
         走的是与后台任务完全相同的组装路径，因此这里通过不等于后台也能用，
         反之亦然——不存在只给界面演示的假通路。
         """
         config, tagging = self.snapshot()
+        target = mode or tagging['mode']
+        if target not in ('jev', 'llm'):
+            return {'ok': False, 'code': 'invalid_input',
+                    'message': '要测试的识别方式无效。', 'retryable': False}
         sample = RecognitionRequest(
             item_id='connection-test',
             text='这是一段用于验证接口连通性的固定样例文本，内容涉及编程与开发工具。',
-            title='连接测试', mode=tagging['mode'],
+            title='连接测试', mode=target,
             candidates=(CandidateTag('sample-probe', '连接测试标签', '仅用于验证接口是否可用'),),
             limit=1, content_version=self.clock())
         try:
-            provider = self._provider_for(tagging)
+            provider = self._provider_for(target, tagging['providers'])
         except RecognitionError as error:
             return {'ok': False, 'code': error.code, 'message': error.message, 'retryable': False}
         try:
@@ -273,7 +284,7 @@ class TaggingService:
             return
 
         try:
-            provider = self._provider_for(tagging)
+            provider = self._provider_for(task['mode'], tagging['providers'])
         except RecognitionError as error:
             self.repo.block(task['id'], code=error.code, message=error.message)
             self.emit('tagging.changed', {'blocked': task['id']})

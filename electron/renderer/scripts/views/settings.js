@@ -34,11 +34,11 @@
 
   var SECTIONS = [
     {
-      id: "tagging",
-      label: "AI 模型配置",
+      id: "ai",
+      label: "AI API 配置",
       icon: "zap",
-      title: "AI 模型配置",
-      desc: "配置识别模型与 API。自动打标接在信息采集之后，只添加标签，不覆盖你的手动整理。",
+      title: "AI API 配置",
+      desc: "配置两类 AI 接口的连接参数。这里只管「怎么连」；是否启用、用哪种识别方式在「标签 → AI 自动识别」里决定。",
     },
     {
       id: "reminder",
@@ -66,11 +66,15 @@
     jev: {
       label: "Jev 已有标签分类",
       desc: "从你已经创建并启用的标签里挑选合适的，不新建标签。",
+      apiLabel: "Jev",
+      apiDesc: "Jev 已有标签分类服务的接口：接口地址、模型标识与 API Key。",
       defaults: { endpoint: "https://api.typesafe.ai/v1/systemone", model: "jev-latest" },
     },
     llm: {
       label: "LLM 自由生成标签",
       desc: "由模型判断该用哪些标签，必要时可以新建标签并挂载。",
+      apiLabel: "LLM",
+      apiDesc: "自由生成标签所用的模型接口：接口地址、模型标识与 API Key。",
       defaults: null,
     },
   };
@@ -86,12 +90,12 @@
     errors: {}, // 字段路径 -> 原因，例如 jev.endpoint
     notice: null,
     saving: null,
-    section: "tagging",
+    section: "ai",
     editing: { jev: false, llm: false }, // 是否正在替换密钥
     cleared: { jev: false, llm: false }, // 是否已勾选清除
     notification: null,
-    testing: false,
-    testResult: null, // 最近一次连接测试的真实结果（只有成败与模型标识，没有密钥）
+    testingApi: {}, // 正在测试连接的方式
+    testResultApi: {}, // 各方式最近一次连接测试的真实结果（只有成败与模型标识，没有密钥）
     notificationLoading: false,
   };
   var generation = 0;
@@ -99,9 +103,8 @@
 
   function emptyDraft() {
     return {
-      tagging: {
-        enabled: false,
-        mode: "llm",
+      // M21：设置页只管连接参数。识别策略在标签管理页，不在这里。
+      ai: {
         providers: {
           jev: { endpoint: "", model: "", secret: "" },
           llm: { endpoint: "", model: "", secret: "" },
@@ -115,13 +118,11 @@
   /** 草稿必须与保存基线一致；官方默认值由 Core 的初始设置提供。 */
   function draftFrom(settings) {
     var draft = emptyDraft();
-    var tagging = settings.tagging;
-    draft.tagging.enabled = !!tagging.enabled;
-    draft.tagging.mode = tagging.mode;
+    var providers = (settings.ai && settings.ai.providers) || {};
     MODES.forEach(function (mode) {
-      var saved = tagging.providers[mode] || {};
-      draft.tagging.providers[mode].endpoint = saved.endpoint || "";
-      draft.tagging.providers[mode].model = saved.model || "";
+      var saved = providers[mode] || {};
+      draft.ai.providers[mode].endpoint = saved.endpoint || "";
+      draft.ai.providers[mode].model = saved.model || "";
     });
     var interval = settings.reminder.intervalMinutes;
     draft.reminder.enabled = !!settings.reminder.enabled;
@@ -194,7 +195,7 @@
   function currentSection() {
     if (cache.section === "reminder") return "reminder";
     if (cache.section === "priority") return "priority";
-    return "tagging";
+    return "ai";
   }
 
   function sectionDraft(section) {
@@ -218,19 +219,33 @@
       var saved = cache.saved.reminder;
       return r.enabled !== !!saved.enabled || Number(r.interval) !== Number(saved.intervalMinutes);
     }
-    var t = cache.draft.tagging;
-    var savedTagging = cache.saved.tagging;
-    if (t.enabled !== !!savedTagging.enabled || t.mode !== savedTagging.mode) return true;
-    var dirty = MODES.some(function (mode) {
-      var savedProvider = savedTagging.providers[mode] || {};
+    // M21：只比较连接参数。两类 API 各自独立，保存一类不牵动另一类。
+    var a = cache.draft.ai;
+    var savedProviders = (cache.saved.ai && cache.saved.ai.providers) || {};
+    return MODES.some(function (mode) {
+      var savedProvider = savedProviders[mode] || {};
       return (
-        t.providers[mode].endpoint !== (savedProvider.endpoint || "") ||
-        t.providers[mode].model !== (savedProvider.model || "") ||
-        !!t.providers[mode].secret ||
+        a.providers[mode].endpoint !== (savedProvider.endpoint || "") ||
+        a.providers[mode].model !== (savedProvider.model || "") ||
+        !!a.providers[mode].secret ||
         cache.cleared[mode]
       );
     });
-    return dirty;
+  }
+
+  /** 哪些 API 改动了：只把这些提交，其它类的配置不参与这次保存。 */
+  function dirtyApiModes() {
+    var a = cache.draft.ai;
+    var savedProviders = (cache.saved.ai && cache.saved.ai.providers) || {};
+    return MODES.filter(function (mode) {
+      var savedProvider = savedProviders[mode] || {};
+      return (
+        a.providers[mode].endpoint !== (savedProvider.endpoint || "") ||
+        a.providers[mode].model !== (savedProvider.model || "") ||
+        !!a.providers[mode].secret ||
+        cache.cleared[mode]
+      );
+    });
   }
 
   function dirtySections() {
@@ -250,24 +265,17 @@
       PRIORITY_LEVELS.forEach(function (level) { names[level] = cache.draft.priority.names[level]; });
       return { section: "priority", patch: { names: names } };
     }
-    var t = cache.draft.tagging;
+    // M21：只提交改动过的那类 API 的连接参数，不携带任何识别策略字段。
+    var a = cache.draft.ai;
+    var modes = dirtyApiModes();
+    var providers = {};
     var credentials = {};
-    MODES.forEach(function (mode) {
+    modes.forEach(function (mode) {
+      providers[mode] = { endpoint: a.providers[mode].endpoint, model: a.providers[mode].model };
       if (cache.cleared[mode]) credentials[mode] = null;
-      else if (t.providers[mode].secret) credentials[mode] = t.providers[mode].secret;
+      else if (a.providers[mode].secret) credentials[mode] = a.providers[mode].secret;
     });
-    return {
-      section: "tagging",
-      patch: {
-        enabled: !!t.enabled,
-        mode: t.mode,
-        providers: {
-          jev: { endpoint: t.providers.jev.endpoint, model: t.providers.jev.model },
-          llm: { endpoint: t.providers.llm.endpoint, model: t.providers.llm.model },
-        },
-      },
-      credentials: credentials,
-    };
+    return { section: "ai", patch: { providers: providers }, credentials: credentials };
   }
 
   /* M20 名称规则，与 Core 的校验一致：去首尾空格后 1–12 字符、三级不重名、
@@ -349,7 +357,7 @@
 
   function discardSection(section) {
     cache.draft[section] = draftFrom(cache.saved)[section];
-    if (section === "tagging") {
+    if (section === "ai") {
       MODES.forEach(function (mode) {
         cache.editing[mode] = false;
         cache.cleared[mode] = false;
@@ -506,15 +514,15 @@
     return h("span.badge" + (tone ? ".badge--" + tone : ""), { text: text });
   }
 
-  /* ---------------- AI 模型配置 ---------------- */
+  /* ---------------- AI API 配置 ---------------- */
 
   function buildProvider(app, mode) {
     var meta = MODE_META[mode];
-    var draft = cache.draft.tagging.providers[mode];
+    var draft = cache.draft.ai.providers[mode];
     var state = (cache.saved && cache.saved.credentials.providers[mode]) || { configured: false, usable: false, unresolved: false };
     var protection = (cache.saved && cache.saved.credentials.protection) || { available: false, reason: "正在读取保护能力" };
-    var active = cache.draft.tagging.mode === mode;
-    var status = providerStatus(state, protection, cache.saved.tagging.providers[mode]);
+    var savedProvider = (cache.saved && cache.saved.ai && cache.saved.ai.providers[mode]) || {};
+    var status = providerStatus(state, protection, savedProvider);
 
     var keyRow = buildKeyField(app, mode, state, protection, draft);
     var children = [
@@ -524,10 +532,10 @@
         h(
           "div",
           null,
-          h("h3.setting-block__title", { text: meta.label }),
-          h("p.setting-block__desc", { text: meta.desc })
+          h("h3.setting-block__title", { text: meta.apiLabel }),
+          h("p.setting-block__desc", { text: meta.apiDesc })
         ),
-        active ? badge("当前模式", "brand") : badge("已保留")
+        badge(state.configured ? "已配置" : "未配置完整", state.configured ? "success" : "neutral")
       ),
       h(
         "div.setting-block__status",
@@ -562,6 +570,7 @@
         { hint: "服务侧的模型标识，不是显示别名。", error: cache.errors[mode + ".model"], errorKey: mode + ".model" }
       ),
       keyRow,
+      buildProviderTest(app, mode),
     ];
     if (meta.defaults) {
       children.push(
@@ -581,7 +590,54 @@
         )
       );
     }
-    return h("section.setting-block" + (active ? "" : ".setting-block--idle"), null, children);
+    return h("section.setting-block", null, children);
+  }
+
+  /**
+   * 连接测试只测这一类 API：不改当前打标方式、不启停自动打标，也不产生任何标签。
+   * 走的是与后台打标完全相同的组装路径，因此这里通过不等于后台也能用，
+   * 反之亦然——不存在只给界面演示的假通路。
+   */
+  function buildProviderTest(app, mode) {
+    var running = !!cache.testingApi[mode];
+    var result = cache.testResultApi[mode];
+    return h(
+      "div.setting-block__foot",
+      null,
+      ui.btn(running ? "正在测试…" : "测试连接", {
+        disabled: running,
+        icon: "refresh",
+        onClick: function () {
+          cache.testingApi[mode] = true;
+          cache.testResultApi[mode] = null;
+          SF.app.renderContent();
+          app.client.testTaggingConnection(mode).then(
+            function (value) {
+              cache.testingApi[mode] = false;
+              cache.testResultApi[mode] = value;
+              SF.app.renderContent();
+            },
+            function (err) {
+              cache.testingApi[mode] = false;
+              cache.testResultApi[mode] = {
+                ok: false,
+                message: (err && err.message) || "连接测试失败，请检查接口地址、模型标识与 API Key。",
+              };
+              SF.app.renderContent();
+            }
+          );
+        },
+      }),
+      result
+        ? h("span.field__hint", {
+            text: result.ok
+              ? "连接正常：" + (result.provider || "") + " " +
+                (result.model || result.requestedModel || "") +
+                "，返回 " + result.candidates + " 个候选标签"
+              : "测试失败：" + result.message,
+          })
+        : h("span.field__hint", { text: "测试会发出一次真实的模型请求，但不会保存任何标签。" })
+    );
   }
 
   function providerStatus(state, protection, provider) {
@@ -717,35 +773,9 @@
     if (node.parentNode) node.parentNode.removeChild(node);
   }
 
-  function buildTagging(app) {
-    var t = cache.draft.tagging;
-    var savedTagging = cache.saved.tagging;
-    var boundary = t.enabled && savedTagging.enabledSince
-      ? "生效边界：只覆盖 " + fmt.absolute(savedTagging.enabledSince) + " 之后首次收录的内容；关闭期间收录的内容需要在「标签 → AI 自动识别」里补打。"
-      : "开启后只覆盖此后首次收录的内容，之前的内容不会被自动打标。";
+  function buildAi(app) {
+    // M21：这一页只管连接参数。开关与识别方式在标签管理页，两边互不覆盖。
     return [
-      h(
-        "section.setting-block",
-        null,
-        switchRow(
-          "启用自动打标",
-          "开启后由后台任务读取配置并调用模型（不影响提醒与手动标签）。" + boundary,
-          t.enabled,
-          function (next) {
-            t.enabled = next;
-            clearFieldError("enabled");
-            paint(app);
-          }
-        ),
-        cache.errors.enabled
-          ? h(
-              "p.field__error",
-              { role: "alert", "data-error-key": "enabled" },
-              icon("alert", 13),
-              h("span", { text: cache.errors.enabled })
-            )
-          : null
-      ),
       h(
         "section.setting-block",
         null,
@@ -755,115 +785,16 @@
           h(
             "div",
             null,
-            h("h3.setting-block__title", { text: "识别方式" }),
-            h("p.setting-block__desc", { text: "两种方式互斥选择，各自的配置分别保存，切换后仍保留另一种。" })
-          )
-        ),
-        h(
-          "div.mode-picker",
-          null,
-          MODES.map(function (mode) {
-            var picked = t.mode === mode;
-            return h(
-              "button.mode-card" + (picked ? ".is-active" : ""),
-              {
-                type: "button",
-                role: "radio",
-                "aria-checked": picked ? "true" : "false",
-                onclick: function () {
-                  t.mode = mode;
-                  clearFieldError("mode");
-                  paint(app);
-                },
-              },
-              h("span.mode-card__mark", { "aria-hidden": "true" }, picked ? icon("check", 13) : null),
-              h(
-                "span.mode-card__text",
-                null,
-                h("span.mode-card__title", { text: MODE_META[mode].label }),
-                h("span.mode-card__desc", { text: MODE_META[mode].desc })
-              )
-            );
-          })
-        ),
-        cache.errors.mode
-          ? h(
-              "p.field__error",
-              { role: "alert", "data-error-key": "mode" },
-              icon("alert", 13),
-              h("span", { text: cache.errors.mode })
-            )
-          : null
-      ),
-      // 两种方式并排：切换后另一种仍保留，摆在同一屏才看得出这一点。
-      h("div.setting-grid", null, buildProvider(app, "jev"), buildProvider(app, "llm")),
-      buildTestBlock(app),
-    ];
-  }
-
-  /**
-   * 连接测试属于 M16 的真实模型调用。M15 没有可调用的 Provider，
-   * 这里如实标为不可用，而不是给一个点了会「成功」的假按钮。
-   */
-  function buildTestBlock(app) {
-    // 真实连接测试：复用正式 Provider 与固定样例，反馈真实结果。
-    // 配置不全时给出明确原因，不会静默成功，也不会回显任何密钥。
-    var running = !!cache.testing;
-    var ready = !!(cache.testResult && cache.testResult.ok);
-    return h(
-      "section.setting-block" + (ready ? "" : ".setting-block--muted"),
-      null,
-      h(
-        "div.setting-block__head",
-        null,
-        h(
-          "div",
-          null,
-          h("h3.setting-block__title", { text: "连接测试" }),
-          h("p.setting-block__desc", {
-            text: "用固定的测试文本验证认证、模型调用和输出结构，走的是与后台打标完全相同的接口配置。",
-          })
-        ),
-        badge(running ? "测试中" : ready ? "连接正常" : "可随时测试", ready ? "success" : "neutral")
-      ),
-      h(
-        "div.setting-block__foot",
-        null,
-        ui.btn(running ? "正在测试…" : "测试连接", {
-          disabled: running,
-          icon: "refresh",
-          onClick: function () {
-            cache.testing = true;
-            cache.testResult = null;
-            SF.app.renderContent();
-            app.client.testTaggingConnection().then(
-              function (result) {
-                cache.testing = false;
-                cache.testResult = result;
-                SF.app.renderContent();
-              },
-              function (err) {
-                cache.testing = false;
-                cache.testResult = {
-                  ok: false,
-                  message: (err && err.message) || "连接测试失败，请检查接口地址、模型标识与 API Key。",
-                };
-                SF.app.renderContent();
-              }
-            );
-          },
-        }),
-        cache.testResult
-          ? h("span.field__hint", {
-              text: cache.testResult.ok
-                ? "连接正常：" + (cache.testResult.provider || "") + " " +
-                  (cache.testResult.model || cache.testResult.requestedModel || "") +
-                  "，返回 " + cache.testResult.candidates + " 个候选标签"
-                : "测试失败：" + cache.testResult.message,
+            h("h3.setting-block__title", { text: "两类接口各自独立" }),
+            h("p.setting-block__desc", {
+              text: "分别填写、分别保存，允许先保存没填齐的参数，缺项会在状态里如实标出。是否启用自动打标、使用哪一种识别方式，在「标签 → AI 自动识别」里设置。",
             })
-          : h("span.field__hint", { text: "测试会发出一次真实的模型请求，但不会保存任何标签。" })
-      )
-    );
+          )
+        )
+      ),
+      // 两种接口并排：各自独立，填好一类就能先存一类。
+      h("div.setting-grid", null, buildProvider(app, "jev"), buildProvider(app, "llm")),
+    ];
   }
 
   /* ---------------- 提醒设置 ---------------- */
@@ -1225,7 +1156,7 @@
       ? buildReminder(app)
       : currentSection() === "priority"
       ? buildPriority(app)
-      : buildTagging(app);
+      : buildAi(app);
     return [buildNotice(), content];
   }
 
@@ -1248,7 +1179,7 @@
 
   /** 路由带 ?section= 时同步左栏选中项：直接改哈希进来也要落到对应分区。 */
   function setSection(section) {
-    cache.section = section === "reminder" ? "reminder" : section === "priority" ? "priority" : "tagging";
+    cache.section = section === "reminder" ? "reminder" : section === "priority" ? "priority" : "ai";
   }
 
   SF.views = SF.views || {};

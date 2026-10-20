@@ -41,7 +41,7 @@ class SettingsBridge {
     const known = new Map(entries.map((entry) => [entry.reference, entry]));
     const providers = {};
     for (const mode of PROVIDERS) {
-      const reference = settings.tagging.providers[mode].credentialRef;
+      const reference = settings.ai.providers[mode].credentialRef;
       const entry = reference ? known.get(reference) : null;
       providers[mode] = {
         configured: !!entry,
@@ -52,14 +52,12 @@ class SettingsBridge {
         unresolved: !!reference && !entry,
       };
     }
-    const tagging = {
-      enabled: settings.tagging.enabled,
-      mode: settings.tagging.mode,
-      enabledSince: settings.tagging.enabledSince,
+    // M21：连接参数（ai）与识别策略（tagging）分开带给界面，两页各管各的。
+    const ai = {
       providers: Object.fromEntries(
         PROVIDERS.map((mode) => {
           // 引用不进界面：它只是主进程与凭据文件之间的内部句柄。
-          const { credentialRef, ...visible } = settings.tagging.providers[mode];
+          const { credentialRef, ...visible } = settings.ai.providers[mode];
           return [mode, visible];
         })
       ),
@@ -68,7 +66,12 @@ class SettingsBridge {
       version: settings.version,
       savedVersion: settings.savedVersion,
       updatedAt: settings.updatedAt,
-      tagging,
+      ai,
+      tagging: {
+        enabled: settings.tagging.enabled,
+        mode: settings.tagging.mode,
+        enabledSince: settings.tagging.enabledSince,
+      },
       reminder: settings.reminder,
       // 优先级显示名：Core 已经校验过，这里原样带给界面与提醒文案。
       priority: settings.priority,
@@ -87,7 +90,8 @@ class SettingsBridge {
     if (secrets !== undefined && (secrets === null || typeof secrets !== 'object' || Array.isArray(secrets))) {
       throw new Error('密钥参数无效');
     }
-    if (secrets && (Object.keys(secrets).some((mode) => !PROVIDERS.includes(mode)) || section !== 'tagging')) {
+    // M21：密钥属于连接参数，因此只跟「AI API 配置」这一页走。
+    if (secrets && (Object.keys(secrets).some((mode) => !PROVIDERS.includes(mode)) || section !== 'ai')) {
       throw new Error('当前分区不接受这些密钥参数');
     }
     const staged = [];
@@ -141,7 +145,7 @@ class SettingsBridge {
   }
 
   _references(settings) {
-    return PROVIDERS.map((mode) => settings.tagging.providers[mode].credentialRef).filter(Boolean);
+    return PROVIDERS.map((mode) => settings.ai.providers[mode].credentialRef).filter(Boolean);
   }
 
   /**
@@ -158,7 +162,7 @@ class SettingsBridge {
   async _sync(current) {
     const wanted = new Set();
     for (const mode of PROVIDERS) {
-      const reference = current.tagging.providers[mode].credentialRef;
+      const reference = current.ai.providers[mode].credentialRef;
       if (!reference) continue;
       const secret = await this.credentials.get(reference);
       if (!secret) continue;

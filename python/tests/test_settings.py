@@ -42,7 +42,7 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(snapshot['reminder']['enabled'])
         self.assertEqual(snapshot['reminder']['intervalMinutes'], 60)
         self.assertEqual(snapshot['reminder']['preset'], '60')
-        self.assertFalse(snapshot['tagging']['providers']['jev']['configured'])
+        self.assertFalse(snapshot['ai']['providers']['jev']['configured'])
 
     # ------------------------------------------------------------ 提醒
 
@@ -68,40 +68,52 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(ChannelError):
             self.service.update('reminder', {'enabled': True}, {'jev': 'jev-abc'})
 
-    # ------------------------------------------------------------ 自动打标
+    # ------------------------------------------------------------ AI API 与识别策略
 
-    def provider_patch(self, endpoint='https://api.typesafe.ai/v1/systemone', model='jev-latest'):
-        return {'mode': 'jev', 'providers': {'jev': {'endpoint': endpoint, 'model': model}}}
+    def api_patch(self, mode='jev', endpoint='https://api.typesafe.ai/v1/systemone', model='jev-latest'):
+        """M21：连接参数走独立的 ai 分区。"""
+        return {'providers': {mode: {'endpoint': endpoint, 'model': model}}}
 
     def test_enabling_requires_complete_configuration(self):
+        self.service.update('ai', self.api_patch(endpoint='', model=''), {'jev': 'jev-abc'})
+        self.service.update('tagging', {'mode': 'jev'})
         with self.assertRaises(ChannelError) as caught:
-            self.service.update('tagging', {'enabled': True, **self.provider_patch(endpoint='', model='')})
+            self.service.update('tagging', {'enabled': True})
         message = caught.exception.message
         self.assertIn('Jev', message)
-        for missing in ('接口地址', '模型标识', 'API Key'):
+        for missing in ('接口地址', '模型标识'):
             self.assertIn(missing, message)
 
     def test_one_save_can_supply_fields_and_credential_together(self):
-        self.service.update('tagging', self.provider_patch(), {'jev': 'jev-abc'})
+        self.service.update('ai', self.api_patch(), {'jev': 'jev-abc'})
+        self.service.update('tagging', {'mode': 'jev'})
         self.service.update('tagging', {'enabled': True})
         snapshot = self.service.snapshot()
         self.assertTrue(snapshot['tagging']['enabled'])
-        self.assertTrue(snapshot['tagging']['providers']['jev']['configured'])
+        self.assertTrue(snapshot['ai']['providers']['jev']['configured'])
+
+    def test_api_can_be_saved_incomplete(self):
+        # M21：允许先保存没填齐的参数，不必等另一类 API 配完。
+        self.service.update('ai', self.api_patch(mode='llm', endpoint='https://api.example.com/v1', model=''))
+        snapshot = self.service.snapshot()
+        self.assertFalse(snapshot['ai']['providers']['llm']['configured'])
+        self.assertIn('模型标识', snapshot['ai']['providers']['llm']['missing'])
 
     def test_switching_mode_keeps_the_other_configuration(self):
-        self.service.update('tagging', self.provider_patch(), {'jev': 'jev-abc'})
+        self.service.update('ai', self.api_patch(), {'jev': 'jev-abc'})
+        self.service.update('tagging', {'mode': 'jev'})
         self.service.update('tagging', {'enabled': True})
-        self.service.update('tagging', {
-            'mode': 'llm',
-            'providers': {'llm': {'endpoint': 'https://api.example.com/v1', 'model': 'demo'}},
-        }, {'llm': 'llm-xyz'})
-        providers = self.service.snapshot()['tagging']['providers']
+        self.service.update('ai', self.api_patch(mode='llm', endpoint='https://api.example.com/v1', model='demo'),
+                            {'llm': 'llm-xyz'})
+        self.service.update('tagging', {'mode': 'llm'})
+        providers = self.service.snapshot()['ai']['providers']
         self.assertTrue(providers['jev']['configured'], '切换模式不能丢掉另一种方式的配置')
         self.assertTrue(providers['llm']['configured'])
         self.assertEqual(providers['llm']['endpoint'], 'https://api.example.com/v1')
 
     def test_switching_to_unconfigured_mode_while_enabled_is_refused(self):
-        self.service.update('tagging', self.provider_patch(), {'jev': 'jev-abc'})
+        self.service.update('ai', self.api_patch(), {'jev': 'jev-abc'})
+        self.service.update('tagging', {'mode': 'jev'})
         self.service.update('tagging', {'enabled': True})
         with self.assertRaises(ChannelError) as caught:
             self.service.update('tagging', {'mode': 'llm'})
@@ -109,7 +121,8 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(self.service.snapshot()['tagging']['mode'], 'jev')
 
     def test_enabled_boundary_is_recorded_and_cleared(self):
-        self.service.update('tagging', self.provider_patch(), {'jev': 'jev-abc'})
+        self.service.update('ai', self.api_patch(), {'jev': 'jev-abc'})
+        self.service.update('tagging', {'mode': 'jev'})
         self.service.update('tagging', {'enabled': True})
         started = self.service.snapshot()['tagging']['enabledSince']
         self.assertIsNotNone(started)
@@ -126,18 +139,23 @@ class SettingsTests(unittest.TestCase):
                       {'providers': {'jev': {'model': 'has space'}}}):
             with self.subTest(patch=patch):
                 with self.assertRaises(ChannelError):
+                    self.service.update('ai', patch)
+        for patch in ({'mode': 'other'}, {'enabled': 'yes'}, {'unknown': 1},
+                      {'providers': {'llm': {'endpoint': 'https://x.dev/v1'}}}):
+            with self.subTest(patch=patch):
+                with self.assertRaises(ChannelError):
                     self.service.update('tagging', patch)
 
     def test_field_errors_name_the_exact_input(self):
         with self.assertRaises(ChannelError) as caught:
-            self.service.update('tagging', {'providers': {'llm': {'model': 'has space'}}})
+            self.service.update('ai', {'providers': {'llm': {'model': 'has space'}}})
         self.assertEqual(caught.exception.scope, 'field')
         self.assertEqual(caught.exception.scope_key, 'llm.model')
 
     def test_model_identifiers_may_contain_provider_namespaces(self):
         for model in ('vendor/model-name', 'org/model:revision', 'plain-model'):
-            self.service.update('tagging', {'providers': {'llm': {'model': model}}})
-            self.assertEqual(self.service.snapshot()['tagging']['providers']['llm']['model'], model)
+            self.service.update('ai', {'providers': {'llm': {'model': model}}})
+            self.assertEqual(self.service.snapshot()['ai']['providers']['llm']['model'], model)
 
     def test_provider_field_types_and_malformed_urls_are_field_errors(self):
         for field, values in {
@@ -148,23 +166,15 @@ class SettingsTests(unittest.TestCase):
             for value in values:
                 with self.subTest(field=field, value=value):
                     with self.assertRaises(ChannelError) as caught:
-                        self.service.update('tagging', {'providers': {'llm': {field: value}}})
+                        self.service.update('ai', {'providers': {'llm': {field: value}}})
                     self.assertEqual(caught.exception.scope_key, 'llm.' + field)
 
     def test_secrets_never_reach_storage(self):
-        self.service.update('tagging', self.provider_patch(), {'jev': 'jev-abc'})
+        self.service.update('ai', self.api_patch(), {'jev': 'jev-abc'})
         raw = self.db.connection.execute('SELECT payload FROM app_settings').fetchone()[0]
         self.assertNotIn('sk-', raw)
         self.assertNotIn('apikey_', raw)
         self.assertNotIn('secret', raw)
-
-    def test_version_increases_on_every_save(self):
-        versions = [self.service.snapshot()['version']]
-        for section, patch, refs in (('tagging', self.provider_patch(), {'jev': 'jev-abc'}),
-                                     ('reminder', {'enabled': True}, None)):
-            self.service.update(section, patch, refs)
-            versions.append(self.service.snapshot()['version'])
-        self.assertEqual(versions, [0, 1, 2])
 
     def test_unknown_stored_fields_are_ignored(self):
         self.service.update('reminder', {'enabled': True})
@@ -270,11 +280,11 @@ class PriorityNameSettingsTests(unittest.TestCase):
         self.assertEqual(counts_after, counts_before)
 
     def test_rename_does_not_bump_version_or_disturb_tagging_and_reminder(self):
-        self.service.update('tagging', {'mode': 'jev',
-                                         'providers': {'jev': {'endpoint': 'https://api.example.com/v1',
-                                                               'model': 'jev-latest'}},
-                                         'enabled': True},
+        self.service.update('ai', {'providers': {'jev': {'endpoint': 'https://api.example.com/v1',
+                                                          'model': 'jev-latest'}}},
                             {'jev': 'jev-abc'})
+        self.service.update('tagging', {'mode': 'jev'})
+        self.service.update('tagging', {'enabled': True})
         self.service.update('reminder', {'enabled': True, 'intervalMinutes': 30})
         before = self.service.snapshot()
         self.service.update('priority', {'names': {'high': '今天看'}})
@@ -283,9 +293,146 @@ class PriorityNameSettingsTests(unittest.TestCase):
         self.assertEqual(after['version'], before['version'])
         self.assertEqual(after['tagging']['enabledSince'], before['tagging']['enabledSince'])
         self.assertEqual(after['reminder'], before['reminder'])
-        # 其它分区照旧递增版本。
+        # 其它分区照旧只影响自己的内容。
         self.service.update('reminder', {'intervalMinutes': 45})
-        self.assertEqual(self.service.snapshot()['version'], before['version'] + 1)
+        self.assertEqual(self.service.snapshot()['reminder']['intervalMinutes'], 45)
+        self.assertEqual(self.service.snapshot()['version'], before['version'],
+                         'M21 起提醒保存同样不推进识别版本')
+
+
+class AiStrategySeparationTests(unittest.TestCase):
+    """M21：AI API 配置与识别策略分开。
+
+    连接参数在 ai.providers，识别策略在 tagging。两页各自保存，互不覆盖；
+    旧结构 tagging.providers 仍然读得出来，转换幂等，不重置开关与启用时间。
+    配置版本只在当前生效的识别配置真的变了时才前进。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / 'ai-strategy.sqlite3'
+        self.db = Database(self.path)
+        self.service = SettingsService(SettingsStore(self.db))
+
+    def tearDown(self):
+        self.db.close()
+        self.temp.cleanup()
+
+    def write_raw(self, payload, version=3):
+        self.service.store.db.execute(
+            'INSERT OR REPLACE INTO app_settings(id,version,payload,updated_at) VALUES(1,?,?,?)',
+            (version, payload, '2026-10-21'))
+
+    def test_old_tagging_providers_are_read_into_the_new_section(self):
+        self.write_raw(json.dumps({
+            'tagging': {'enabled': True, 'mode': 'jev', 'enabledSince': '2026-10-01T00:00:00+00:00',
+                        'providers': {'jev': {'endpoint': 'https://old.example.com/v1', 'model': 'old-model',
+                                              'credentialRef': 'jev-old'},
+                                      'llm': {'endpoint': 'https://llm.example.com/v1', 'model': 'llm-old',
+                                              'credentialRef': 'llm-old'}}},
+            'reminder': {'enabled': True, 'intervalMinutes': 30},
+        }))
+        snapshot = self.service.snapshot()
+        self.assertEqual(snapshot['ai']['providers']['jev']['endpoint'], 'https://old.example.com/v1')
+        self.assertEqual(snapshot['ai']['providers']['jev']['model'], 'old-model')
+        self.assertEqual(snapshot['ai']['providers']['jev']['credentialRef'], 'jev-old')
+        self.assertEqual(snapshot['ai']['providers']['llm']['endpoint'], 'https://llm.example.com/v1')
+        # 策略也必须原样读出：开关、方式与启用时间都不能被升级重置。
+        self.assertTrue(snapshot['tagging']['enabled'])
+        self.assertEqual(snapshot['tagging']['mode'], 'jev')
+        self.assertEqual(snapshot['tagging']['enabledSince'], '2026-10-01T00:00:00+00:00')
+        self.assertEqual(snapshot['reminder']['intervalMinutes'], 30)
+
+    def test_conversion_is_idempotent_and_keeps_the_key(self):
+        self.write_raw(json.dumps({
+            'tagging': {'enabled': True, 'mode': 'jev', 'enabledSince': '2026-10-01T00:00:00+00:00',
+                        'providers': {'jev': {'endpoint': 'https://old.example.com/v1', 'model': 'old-model',
+                                              'credentialRef': 'jev-old'}}}}))
+        before = self.service.snapshot()
+        # 升级后的第一次保存：把旧结构转成新结构，值不能变。
+        self.service.update('ai', {'providers': {'llm': {'endpoint': 'https://llm.example.com/v1',
+                                                          'model': 'llm-new'}}})
+        after = self.service.snapshot()
+        self.assertEqual(after['ai']['providers']['jev'], before['ai']['providers']['jev'])
+        self.assertTrue(after['tagging']['enabled'])
+        self.assertEqual(after['tagging']['enabledSince'], before['tagging']['enabledSince'])
+        # 再存一次结果相同：转换是幂等的。
+        self.service.update('ai', {'providers': {'llm': {'endpoint': 'https://llm.example.com/v1',
+                                                          'model': 'llm-new'}}})
+        self.assertEqual(self.service.snapshot()['ai']['providers'], after['ai']['providers'])
+        raw = self.db.connection.execute('SELECT payload FROM app_settings').fetchone()[0]
+        self.assertIn('jev-old', raw, '凭据引用不能因为结构迁移丢掉')
+
+    def test_new_structure_wins_over_the_legacy_one(self):
+        self.write_raw(json.dumps({
+            'ai': {'providers': {'jev': {'endpoint': 'https://new.example.com/v1', 'model': 'new-model',
+                                         'credentialRef': 'jev-new'}}},
+            'tagging': {'enabled': True, 'mode': 'jev',
+                        'providers': {'jev': {'endpoint': 'https://old.example.com/v1', 'model': 'old-model',
+                                              'credentialRef': 'jev-old'}}}}))
+        provider = self.service.snapshot()['ai']['providers']['jev']
+        self.assertEqual(provider['endpoint'], 'https://new.example.com/v1')
+        self.assertEqual(provider['credentialRef'], 'jev-new')
+
+    def test_api_save_does_not_touch_the_strategy(self):
+        self.service.update('ai', {'providers': {'jev': {'endpoint': 'https://api.example.com/v1',
+                                                          'model': 'jev-model'}}}, {'jev': 'jev-abc'})
+        self.service.update('tagging', {'mode': 'jev', 'enabled': True})
+        before = self.service.snapshot()['tagging']
+        self.service.update('ai', {'providers': {'llm': {'endpoint': 'https://llm.example.com/v1',
+                                                          'model': 'llm-model'}}})
+        after = self.service.snapshot()['tagging']
+        self.assertEqual(after['enabled'], before['enabled'])
+        self.assertEqual(after['mode'], before['mode'])
+        self.assertEqual(after['enabledSince'], before['enabledSince'])
+
+    def test_strategy_save_does_not_touch_the_api(self):
+        self.service.update('ai', {'providers': {'jev': {'endpoint': 'https://api.example.com/v1',
+                                                          'model': 'jev-model'}}}, {'jev': 'jev-abc'})
+        before = self.service.snapshot()['ai']['providers']
+        self.service.update('tagging', {'mode': 'jev', 'enabled': True})
+        self.assertEqual(self.service.snapshot()['ai']['providers'], before)
+
+    def test_tagging_section_refuses_credential_references(self):
+        with self.assertRaises(ChannelError):
+            self.service.update('tagging', {'mode': 'jev'}, {'jev': 'jev-abc'})
+
+    def test_version_does_not_move_for_unrelated_saves(self):
+        self.service.update('ai', {'providers': {'llm': {'endpoint': 'https://llm.example.com/v1',
+                                                          'model': 'llm-model'}}}, {'llm': 'llm-abc'})
+        version = self.service.snapshot()['version']
+        # 当前方式仍是 llm：改 jev 的 API、改进级别名、改提醒都不该动识别版本。
+        self.service.update('ai', {'providers': {'jev': {'endpoint': 'https://jev.example.com/v1',
+                                                          'model': 'jev-model'}}})
+        self.service.update('priority', {'names': {'high': '今天看'}})
+        self.service.update('reminder', {'enabled': True, 'intervalMinutes': 30})
+        self.assertEqual(self.service.snapshot()['version'], version,
+                         '无关保存不该让在途的识别任务失效')
+
+    def test_version_moves_when_the_active_api_changes(self):
+        self.service.update('ai', {'providers': {'llm': {'endpoint': 'https://llm.example.com/v1',
+                                                          'model': 'llm-model'}}}, {'llm': 'llm-abc'})
+        version = self.service.snapshot()['version']
+        self.service.update('ai', {'providers': {'llm': {'endpoint': 'https://llm2.example.com/v1',
+                                                          'model': 'llm-model'}}})
+        self.assertEqual(self.service.snapshot()['version'], version + 1,
+                         '当前方式所用的 API 变了，在途结果必须作废')
+
+    def test_version_moves_when_the_mode_switches(self):
+        self.service.update('ai', {'providers': {'jev': {'endpoint': 'https://jev.example.com/v1',
+                                                          'model': 'jev-model'}}}, {'jev': 'jev-abc'})
+        version = self.service.snapshot()['version']
+        self.service.update('tagging', {'mode': 'jev'})
+        self.assertEqual(self.service.snapshot()['version'], version + 1,
+                         '切换识别方式必须让旧结果作废')
+
+    def test_version_moves_when_recognition_is_switched_off(self):
+        self.service.update('ai', {'providers': {'llm': {'endpoint': 'https://llm.example.com/v1',
+                                                          'model': 'llm-model'}}}, {'llm': 'llm-abc'})
+        self.service.update('tagging', {'enabled': True})
+        version = self.service.snapshot()['version']
+        self.service.update('tagging', {'enabled': False})
+        self.assertEqual(self.service.snapshot()['version'], version + 1)
 
 
 class CredentialBrokerTests(unittest.TestCase):

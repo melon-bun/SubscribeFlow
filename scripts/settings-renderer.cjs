@@ -57,7 +57,7 @@ async function verify({window, core, root}) {
   assert.equal(await evaluate(`location.hash.includes('object')`), false, '入口不能把点击事件写入路由');
   assert.equal(await evaluate(`!!document.querySelector('.sidebar')`), false, '设置是整页大面板，不套侧栏');
   const navLabels = await evaluate(`Array.from(document.querySelectorAll('.settings-nav__label')).map(n => n.textContent)`);
-  assert.deepEqual(navLabels, ['AI 模型配置', '提醒设置', '优先级名称']);
+  assert.deepEqual(navLabels, ['AI API 配置', '提醒设置', '优先级名称']);
   assert.equal(await evaluate(`!!document.querySelector('.settings__foot')`), true, '底部操作区必须存在');
   assert.ok(await evaluate(`document.querySelector('[aria-label="关闭设置"]')`), '必须有可聚焦的关闭入口');
   await screenshot('m15-settings-tagging.png');
@@ -79,8 +79,12 @@ async function verify({window, core, root}) {
   })()`);
   await evaluate(`SF.app.refreshData(true)`);
   assert.equal(await evaluate(`window.__draftInput === document.activeElement && window.__draftInput.isConnected && window.__draftInput.value === 'unsaved-draft-key'`), true, '后台内容刷新必须保留草稿和焦点');
-  const disabledBeforeSave = await evaluate(`document.body.innerText.includes('测试连接') && !!Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === '测试连接' && b.disabled)`);
-  assert.equal(disabledBeforeSave, true, 'M15 没有真实 Provider，连接测试必须明确不可用');
+  // M21：连接测试按 API 独立，两类各有一个按钮。这里只确认按钮在位，
+  // 不去点它——那会发出一次真实的模型请求，不属于本脚本的离线验收范围。
+  const testButtons = await evaluate(`Array.from(document.querySelectorAll('button')).filter(b => b.textContent.trim() === '测试连接').length`);
+  assert.equal(testButtons, 2, '两类 API 各自有一个测试连接按钮');
+  assert.equal(await evaluate(`!!document.querySelector('.switch[aria-label="启用自动打标"]')`), false, '自动打标开关不在设置页');
+  assert.equal(await evaluate(`!!document.querySelector('.mode-picker')`), false, '识别方式不在设置页');
 
   /* ---------- 切到提醒分区：草稿留在原页，不丢也不弹窗 ---------- */
   await evaluate(`Array.from(document.querySelectorAll('.settings-nav__item')).find(b => b.textContent.includes('提醒设置')).click()`);
@@ -88,7 +92,7 @@ async function verify({window, core, root}) {
   assert.equal(await evaluate(`!!document.querySelector('.dialog')`), false, '页内切换分区不该拦用户');
   assert.equal(await evaluate(`document.querySelector('.settings-nav__dot') !== null`), true, '未保存提示应跟着草稿留在左栏');
   const keptDraft = await evaluate(`(() => {
-    Array.from(document.querySelectorAll('.settings-nav__item')).find(b => b.textContent.includes('AI 模型配置')).click();
+    Array.from(document.querySelectorAll('.settings-nav__item')).find(b => b.textContent.includes('AI API 配置')).click();
     return Array.from(document.querySelectorAll('.setting-block input'))[0].value;
   })()`);
   assert.equal(keptDraft, 'https://example.com/draft-only', '切回原分区草稿还在');
@@ -99,7 +103,7 @@ async function verify({window, core, root}) {
   await evaluate(`location.hash = '#/inbox'`);
   await until(`!!document.querySelector('.dialog')`);
   const leaveText = await evaluate(`document.querySelector('.settings-leave__lead').textContent`);
-  assert.ok(leaveText.includes('AI 模型配置'), '弹窗要点名还有未保存的分区');
+  assert.ok(leaveText.includes('AI API 配置'), '弹窗要点名还有未保存的分区');
   // 草稿在另一页、当前页干净：说清保存写不进任何东西，且保存按钮不可点
   assert.ok((await evaluate(`document.querySelector('.settings-leave__note').textContent`)).includes('没有未保存的修改'));
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('.dialog button')).find(b => b.textContent.trim() === '保存并离开').disabled`), true);
@@ -145,7 +149,7 @@ async function verify({window, core, root}) {
   })()`);
   await click('取消');
   assert.equal((await core.call('settings.get')).reminder.enabled, true, '取消不能写入');
-  await click('AI 模型配置');
+  await click('AI API 配置');
   assert.equal(await evaluate(`document.querySelector('input[type=password]').value`), 'unsaved-draft-key', '保存或取消提醒设置都不能清掉 AI 密钥草稿');
   assert.equal(await evaluate(`document.querySelector('.setting-block input').value`), 'https://example.com/draft-only');
   await click('提醒设置');
@@ -189,15 +193,15 @@ async function verify({window, core, root}) {
   await evaluate(`location.hash = '#/inbox'`);
   await until(`!!document.querySelector('.settings-leave__note')`);
   assert.ok((await evaluate(`document.querySelector('.settings-leave__note').textContent`)).includes('只会保存'));
-  assert.ok((await evaluate(`document.querySelector('.settings-leave__note').textContent`)).includes('AI 模型配置'));
+  assert.ok((await evaluate(`document.querySelector('.settings-leave__note').textContent`)).includes('AI API 配置'));
   await click('保存并离开');
   await until(`!!document.querySelector('.sidebar')`);
   assert.equal((await core.call('settings.get')).reminder.intervalMinutes, 90, '保存并离开只保存当前页');
-  assert.equal((await core.call('settings.get')).tagging.providers.jev.credentialRef, null, '另一页草稿不能被提交');
+  assert.equal((await core.call('settings.get')).ai.providers.jev.credentialRef, null, '另一页草稿不能被提交');
 
   // 另一页有草稿、当前页干净：保存按钮必须不可点，并说清保存写不进东西
-  await evaluate(`location.hash = '#/settings?section=tagging'`);
-  await until(`!!document.querySelector('.settings') && document.querySelector('.settings__title').textContent === 'AI 模型配置'`);
+  await evaluate(`location.hash = '#/settings?section=ai'`);
+  await until(`!!document.querySelector('.settings') && document.querySelector('.settings__title').textContent === 'AI API 配置'`);
   await until(`!!document.querySelector('.setting-block input')`);
   assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '保存并离开须放弃其他页草稿');
   await evaluate(`(() => {
@@ -213,13 +217,13 @@ async function verify({window, core, root}) {
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('.dialog button')).find(b => b.textContent.trim() === '保存并离开').disabled`), true);
   await click('放弃修改');
   await until(`!!document.querySelector('.sidebar')`);
-  await evaluate(`location.hash = '#/settings?section=tagging'`);
+  await evaluate(`location.hash = '#/settings?section=ai'`);
   await until(`!!document.querySelector('.setting-block input')`);
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('.setting-block input'))[0].value`), 'https://api.typesafe.ai/v1/systemone', '放弃后应回到已保存的值');
 
   /* ---------- S03 凭据 ---------- */
-  await evaluate(`Array.from(document.querySelectorAll('.settings-nav__item')).find(b => b.textContent.includes('AI 模型配置')).click()`);
-  await until(`document.querySelector('.settings__title').textContent === 'AI 模型配置'`);
+  await evaluate(`Array.from(document.querySelectorAll('.settings-nav__item')).find(b => b.textContent.includes('AI API 配置')).click()`);
+  await until(`document.querySelector('.settings__title').textContent === 'AI API 配置'`);
   const secret = 'apikey_smoke_value_do_not_leak';
   await evaluate(`(() => {
     const fill = (index, value) => {
@@ -237,8 +241,8 @@ async function verify({window, core, root}) {
   await until(`document.querySelector('.settings__foot-hint')?.textContent !== '正在保存…'`);
   await until(`document.body.innerText.includes('已保存（不回显）')`);
   settings = await core.call('settings.get');
-  assert.equal(settings.tagging.providers.jev.endpoint, 'https://api.typesafe.ai/v1/systemone');
-  assert.ok(settings.tagging.providers.jev.credentialRef, 'Core 只保存引用');
+  assert.equal(settings.ai.providers.jev.endpoint, 'https://api.typesafe.ai/v1/systemone');
+  assert.ok(settings.ai.providers.jev.credentialRef, 'Core 只保存引用');
 
   // 磁盘上是密文，不是明文
   const file = path.join(dataDir, 'credentials.json');
@@ -256,7 +260,10 @@ async function verify({window, core, root}) {
   assert.ok(await evaluate(`document.body.innerText.includes('已保存（不回显）')`), '界面只显示已保存，不回显');
   // 已保存的那种方式不再留密钥输入框；没配的那种方式仍要能输入
   const jevBlock = await evaluate(`(() => {
-    const block = Array.from(document.querySelectorAll('.setting-block')).find(b => b.textContent.includes('Jev 已有标签分类'));
+    const block = Array.from(document.querySelectorAll('.setting-block')).find(b => {
+      const title = b.querySelector('.setting-block__title');
+      return title && title.textContent.trim() === 'Jev';
+    });
     return {hasPassword: !!block.querySelector('input[type=\"password\"]'), filled: Array.from(document.querySelectorAll('input')).some(i => i.value === ${JSON.stringify(secret)})};
   })()`);
   assert.equal(jevBlock.hasPassword, false, '已保存的方式不该再有密钥输入框');
@@ -265,7 +272,7 @@ async function verify({window, core, root}) {
   await screenshot('m15-settings-credentials.png');
 
   // 放弃“清除密钥”后不能遗留清除标记，下一次保存必须保留原引用。
-  const savedReference = settings.tagging.providers.jev.credentialRef;
+  const savedReference = settings.ai.providers.jev.credentialRef;
   await click('清除');
   await evaluate(`location.hash = '#/inbox'`);
   await until(`!!document.querySelector('.dialog')`);
@@ -282,7 +289,7 @@ async function verify({window, core, root}) {
   await click('保存设置');
   await until(`document.querySelector('.settings__foot-hint')?.textContent !== '正在保存…'`);
   assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '规范化后的地址应成为新基线');
-  assert.equal((await core.call('settings.get')).tagging.providers.jev.credentialRef, savedReference);
+  assert.equal((await core.call('settings.get')).ai.providers.jev.credentialRef, savedReference);
 
   // 用脱敏状态替身模拟系统账户变化：真实保护系统不应被验收脚本修改。
   await evaluate(`location.hash = '#/inbox'`);
@@ -323,8 +330,8 @@ async function verify({window, core, root}) {
   await until(`!!document.querySelector('.settings') && document.querySelector('.settings__title').textContent === '提醒设置'`);
   await new Promise(resolve => setTimeout(resolve, 400));
   assert.ok(await evaluate(`document.querySelector('.setting-inline select').value === 'custom'`), '自定义间隔应重启后仍在');
-  await evaluate(`location.hash = '#/settings?section=tagging'`);
-  await until(`document.querySelector('.settings__title').textContent === 'AI 模型配置'`);
+  await evaluate(`location.hash = '#/settings?section=ai'`);
+  await until(`document.querySelector('.settings__title').textContent === 'AI API 配置'`);
   await new Promise(resolve => setTimeout(resolve, 400));
   assert.ok(await evaluate(`document.body.innerText.includes('已保存（不回显）')`), '重启后仍应显示密钥已保存');
 
@@ -346,7 +353,7 @@ async function verify({window, core, root}) {
     credentialEncrypted: true,
     keyHiddenInUi: true,
     survivesRestart: true,
-    connectionTestDisabled: true,
+    connectionTestNotInvoked: true,
   }));
 }
 
