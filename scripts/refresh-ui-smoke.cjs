@@ -43,6 +43,8 @@ app.whenReady().then(async()=>{
   assert.equal(await evaluate('auditCard.isConnected && auditDetail.isConnected'),true);
   assert.equal(await evaluate(`document.activeElement===auditInput && auditInput.value==='未提交搜索' && auditInput.selectionStart===1 && auditInput.selectionEnd===3`),true);
   assert.ok(Math.abs(await evaluate('auditAnchor.getBoundingClientRect().top-auditTop'))<=1,'新卡片插入保留阅读锚点');
+  assert.equal(await evaluate(`document.querySelector('.view__title .count-pill').textContent`),'41','列表总数最终与Core一致');
+  await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
   fs.writeFileSync(path.join(output,'content-arrived.png'),(await win.webContents.capturePage()).toPNG());
   await evaluate(`auditInput.value='';auditInput.blur();
     window.auditText=document.querySelector('.detail__summary').firstChild;window.auditRange=document.createRange();auditRange.setStart(auditText,2);auditRange.setEnd(auditText,12);getSelection().removeAllRanges();getSelection().addRange(auditRange);window.auditSelected=getSelection().toString();window.auditReadCount=RefreshFixture.calls().listContents;RefreshFixture.emit('content.changed',{ids:['fixture-0']});void 0`);
