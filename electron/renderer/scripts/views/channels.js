@@ -236,24 +236,102 @@
   function bottomPanels(app) {
     return h('div.channels__bottom',{'data-refresh-key':'channel-bottom'},
       h('section.panel.live-panel',null,h('h2.t-h2',{text:'渠道与连接'}),app.session.connections.map(function (c) {
-        var r = c.readiness, ops = descriptorFor(app, c).operations || {};
-        var intakeOnly = !(ops.resolve_source && ops.resolve_source.supported);
-        return h('div.connection-card',null,h('h3',{text:SF.catalog.platform(c.channel).name}),
-          intakeOnly
-            ? h('p.muted',{text:'仅支持自主添加：在收件箱粘贴文章链接即可收录，无需登录，也不订阅公众号。'})
-            : (c.backend === 'electron-session'
-                ? h('p.muted',{text:'使用应用内独立会话，无需启动 Chrome。登录后关闭登录窗口，再检查连接。'})
-                : c.backend === 'direct-http'
-                  ? h('p.muted',{text:'由核心进程直接读取公开网页，不使用浏览器会话，也不需要登录。'})
-                  : null),
-          h('p',{text:r ? r.reason : '尚未检查采集环境'}),
-          h('p.muted',{text:'认证：' + ({unknown:'尚未确认',required:'需要登录',available:'已有可用会话',not_required:'无需登录'}[r && r.authentication] || '尚未确认')}),
-          r ? h('p.muted',{text:'检查时间：' + fmt.absolute(r.checked_at)}) : null,
-          h('div.row.row-gap-3',null,
-            !intakeOnly && c.backend === 'electron-session' ? ui.btn('应用内登录 ' + SF.catalog.platform(c.channel).name,{onClick:function () { SF.app.act('login:' + c.id,function () { return app.client.loginConnection(c.id); }); }}) : null,
-            ui.btn('检查连接',{onClick:function () { SF.app.act('check:' + c.id,async function () { await app.client.checkConnection(c.id); await SF.app.refreshData(true); }); }})));
+        return connectionRow(app,c);
       }),h('p.field__hint',{text:'自动采集遇到登录或访问验证会暂停，处理后检查连接即可恢复。采集失败时仍可查看本地内容。'})),
       runsPanel(app));
+  }
+
+  /* M24：渠道与连接折叠列表。
+     展开状态只存在本次会话：离开再回来还在，重启应用全部收起。
+     用稳定连接 ID 记录，不同渠道互不影响。 */
+  var expandedConnections = new Set();
+
+  function toggleConnection(id) {
+    if (expandedConnections.has(id)) expandedConnections.delete(id);
+    else expandedConnections.add(id);
+    renderView();
+  }
+
+  /**
+   * 连接状态（M24）：只用 readiness 的真实语义映射。
+   *
+   * 「无需登录」只说明这个能力不要求登录，不等于可用性检查已经通过：
+   * 真正跑过采集检查（operation=list_items）的 ready 才算「可用」，
+   * 其余按各自能力如实说明，不拿一句「无需登录」糊弄过去。
+   */
+  function connectionStatus(app, c) {
+    var ops = descriptorFor(app, c).operations || {};
+    var intakeOnly = !(ops.resolve_source && ops.resolve_source.supported);
+    var r = c.readiness;
+    if (SF.app.isPending('check:' + c.id)) {
+      return {tone:'brand', label:'检查中', reason:'正在检查采集环境…'};
+    }
+    if (intakeOnly) {
+      // 仅自主添加的渠道没有采集环境可查：说清它能做什么，不假装有状态可查。
+      if (r && r.state === 'blocked') return {tone:'danger', label:'连接异常', reason:r.reason};
+      return {tone:'neutral', label:'仅自主添加', reason:'只支持在收件箱粘贴文章链接收录，不订阅也不采集。'};
+    }
+    if (!r || r.state === 'unknown') return {tone:'neutral', label:'待检查', reason:'尚未检查采集环境'};
+    if (r.state === 'ready') {
+      if (r.operation === 'list_items') return {tone:'success', label:'可用', reason:r.reason};
+      // 公开读取类渠道：能力不要求登录，但可用性还没被真正检查过。
+      return {tone:'neutral', label:'待检查', reason:r.reason};
+    }
+    if (r.state === 'blocked') {
+      if (r.authentication === 'required' || r.authentication === 'expired') {
+        return {tone:'warn', label:'需登录', reason:r.reason};
+      }
+      if ((r.actions || []).indexOf('open_browser') >= 0) {
+        return {tone:'warn', label:'需处理访问验证', reason:r.reason};
+      }
+      return {tone:'danger', label:'连接异常', reason:r.reason};
+    }
+    return {tone:'danger', label:'连接异常', reason:r.reason || '连接不可用'};
+  }
+
+  function connectionRow(app, c) {
+    var ops = descriptorFor(app, c).operations || {};
+    var intakeOnly = !(ops.resolve_source && ops.resolve_source.supported);
+    var status = connectionStatus(app, c);
+    var r = c.readiness;
+    var open = expandedConnections.has(c.id);
+    var detailId = 'connection-detail-' + c.id;
+    var name = SF.catalog.platform(c.channel).name;
+    return h('div.connection-row' + (open ? '.is-open' : ''),{'data-connection-id':c.id},
+      h('button.connection-row__head',{
+        type:'button',
+        'aria-expanded':open ? 'true' : 'false',
+        'aria-controls':detailId,
+        onclick:function () { toggleConnection(c.id); }
+      },
+        SF.icon(open ? 'chevron-down' : 'chevron-right',14),
+        h('span.connection-row__name',{text:name}),
+        h('span.spacer'),
+        h('span.badge.badge--' + status.tone,{text:status.label})),
+      h('div.connection-row__detail',{id:detailId},
+        intakeOnly
+          ? h('p.muted',{text:'仅支持自主添加：在收件箱粘贴文章链接即可收录，无需登录，也不订阅公众号。'})
+          : (c.backend === 'electron-session'
+              ? h('p.muted',{text:'使用应用内独立会话，无需启动 Chrome。登录后关闭登录窗口，再检查连接。'})
+              : c.backend === 'direct-http'
+                ? h('p.muted',{text:'由核心进程直接读取公开网页，不使用浏览器会话，也不需要登录。'})
+                : null),
+        h('p',{text:r ? r.reason : '尚未检查采集环境'}),
+        h('p.muted',{text:'认证：' + ({unknown:'尚未确认',required:'需要登录',available:'已有可用会话',not_required:'无需登录'}[r && r.authentication] || '尚未确认')}),
+        r ? h('p.muted',{text:'检查时间：' + fmt.absolute(r.checked_at)}) : null,
+        h('div.row.row-gap-3',null,
+          !intakeOnly && c.backend === 'electron-session' ? ui.btn('应用内登录 ' + name,{onClick:function () { SF.app.act('login:' + c.id,function () { return app.client.loginConnection(c.id); }); }}) : null,
+          ui.btn('检查连接',{onClick:function () {
+            // 结果直接写回会话数据：状态立刻更新，不必等全量刷新的时序；
+            // 动作结束后再重绘一次，那时「检查中」已经解除。展开状态不受影响。
+            SF.app.act('check:' + c.id,async function () {
+              renderView();                                  // 「检查中」立刻出现
+              var result = await app.client.checkConnection(c.id);
+              var connection = (app.session.connections || []).filter(function (x) { return x.id === c.id; })[0];
+              if (connection) connection.readiness = result;
+              await SF.app.refreshData(true);
+            }).finally(function () { renderView(); });
+          }}))));
   }
   function runsPanel(app) {
     return h('section.panel.live-panel',{'data-runs-panel':'','data-refresh-key':'recent-runs'},h('h2.t-h2',{text:'最近任务（最多 100 条）'}),

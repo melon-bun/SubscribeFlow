@@ -1229,8 +1229,29 @@
 .live-channels th:nth-child(8) { width: 150px; }
 .live-panel { padding: 22px; min-width: 0; }
 .live-panel h2 { margin-bottom: 16px; }
-.connection-card, .run-row { padding: 14px 0; border-bottom: 1px solid var(--c-border); }
-.connection-card p, .run-row p { margin: 8px 0; line-height: 1.6; overflow-wrap: anywhere; }
+.run-row { padding: 14px 0; border-bottom: 1px solid var(--c-border); }
+.run-row p { margin: 8px 0; line-height: 1.6; overflow-wrap: anywhere; }
+/* M24：渠道与连接折叠列表。收起时只留名称、状态与展开指示；
+   展开区是独立区块，键盘可聚焦，窄窗也不隐藏里面的操作。 */
+.connection-row { border-bottom: 1px solid var(--c-border); }
+.connection-row__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: 12px var(--s-2);
+  border-radius: var(--r-sm);
+  color: var(--c-text);
+  font: inherit;
+  text-align: left;
+  transition: background var(--dur-1) var(--ease);
+}
+.connection-row__head:hover { background: var(--c-surface-2); }
+.connection-row__head:focus-visible { outline: 2px solid var(--c-brand); outline-offset: -2px; }
+.connection-row__name { font-weight: 600; }
+.connection-row__detail { display: none; padding: 0 var(--s-2) 14px calc(var(--s-2) + 22px); }
+.connection-row.is-open .connection-row__detail { display: block; }
+.connection-row__detail p { margin: 8px 0; line-height: 1.6; overflow-wrap: anywhere; }
 .run-list { max-height: 330px; overflow-y: auto; }
 .run-row .btn + .btn { margin-left: 8px; }
 .source-results { display: flex; flex-direction: column; gap: 10px; }
