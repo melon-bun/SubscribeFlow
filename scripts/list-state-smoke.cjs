@@ -34,12 +34,14 @@ async function verifyListState({evaluate, until, click, screenshot, core, window
     await evaluate('SF.app.render()');
     assert.equal(await scroll(list),350,'Full shell rebuild preserves scroll');
 
-    // Explicitly traverse the asynchronous loading state, not just a synchronous repaint.
-    await evaluate(`window.listOriginal=SF.app.state.client.listContents; window.listReleases=[]; SF.app.state.client.listContents=q=>new Promise(resolve=>window.listReleases.push(()=>resolve(window.listOriginal(q)))); SF.app.refreshData(true); void 0`);
-    await until(`!!document.querySelector('.skeleton-card') && !document.querySelector('.inbox__grid.scroll-y') && window.listReleases.length>0`);
+    // Hold a background request open and inspect the populated intermediate state.
+    await evaluate(`window.listKept=document.querySelector('.content-card'); window.listHost=document.querySelector('.inbox__grid.scroll-y'); window.listOriginal=SF.app.state.client.listContents; window.listReleases=[]; SF.app.state.client.listContents=q=>new Promise(resolve=>window.listReleases.push(()=>resolve(window.listOriginal(q)))); SF.app.refreshData(true); void 0`);
+    await until(`window.listReleases.length>0`);
+    assert.equal(await evaluate(`window.listKept.isConnected && document.querySelector('.inbox__grid.scroll-y')===window.listHost && !document.querySelector('.skeleton-card')`),true,'Background read preserves populated nodes');
+    assert.equal(await scroll(list),350,'In-flight refresh preserves scroll');
     await evaluate(`window.listReleases.splice(0).forEach(release=>release()); void 0`);
     await loaded(20);
-    assert.equal(await scroll(list),350,'Loading placeholder must not erase saved scroll');
+    assert.equal(await scroll(list),350,'Background refresh must not erase saved scroll');
     await evaluate(`SF.app.state.client.listContents=window.listOriginal; delete window.listOriginal; delete window.listReleases; void 0`);
 
     const failedId=await evaluate('SF.app.state.selectedId');

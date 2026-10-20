@@ -64,11 +64,29 @@
   };
 
   var searchTimer = null;
-  var subscribed = false;
   var keepSearchFocus = false;
   /* 在飞的列表请求。写操作与 tags.changed 会几乎同时各触发一次刷新，
      没有这个句柄就无法区分「已经有人在读」和「我这次必须读到最新的」。 */
   var inflight = null;
+  var contentsPromise = null;
+  var generation = 0, contentsGeneration = 0;
+  var tagsStale = true, contentsStale = true;
+  var tagsRevision = 0, contentsRevision = 0;
+  var draftVersion = 0;
+
+  function paint() { SF.app.renderView("tags"); }
+
+  function tabActive(app, tab) {
+    return app.route.name === "tags" && app.tagTab === tab;
+  }
+
+  function invalidate(reasons) {
+    if (reasons.has("all") || reasons.has("tags")) { tagsStale = true; tagsRevision++; }
+    if (reasons.has("all") || reasons.has("tags") || reasons.has("content") || reasons.has("channels")) {
+      contentsStale = true; contentsRevision++;
+    }
+    if (reasons.has("all") || reasons.has("tagging")) { aiState.stale = true; aiState.revision++; }
+  }
 
   /* ---------------- 取数 ---------------- */
 
@@ -98,65 +116,62 @@
     return null;
   }
 
-  /**
-   * 列表只在「没读过」时拉一次。renderContent 会被搜索、启停、保存反复调用，
-   * 没有 loaded 标记就会把同一份数据一遍遍重新请求。
-   */
+  /** 已显示的目录保留到后台读取成功。读取期间的新失效合并为最后一轮补查。 */
   function load(app, options) {
     var force = !!(options && options.force);
-    if (inflight) {
-      /* 写操作之后的强制刷新不能被「已有请求在飞」吞掉：
-         tags.changed 会在服务端提交的瞬间先触发一次刷新，那次请求读到的是
-         写入之前的数据；被吞掉的话，改完名列表就停在旧名字上。
-         所以强制刷新排到当前请求之后再跑一次，而不是直接返回。 */
-      return force ? inflight.then(function () { return load(app, { force: true }); }) : inflight;
-    }
-    if (cache.loaded && !force) return Promise.resolve();
-    var current = cache;
-    current.loading = true;
-    current.error = null;
-    inflight = app.client
-      .listTags(query(app))
-      .then(function (res) {
-        if (current !== cache) return;
-        cache.tags = res.items || [];
-        cache.total = res.total == null ? cache.tags.length : res.total;
-        /* 首次进入默认选中第一条，右侧详情不会空着；
-           但被选中的标签已经不在结果里（别处删了，或被筛掉了）就清空选中，
-           停在一个不存在的 id 上会让编辑区一片空白且关不掉。 */
-        if (!cache.activeTagId && cache.tags.length) cache.activeTagId = cache.tags[0].id;
-        if (cache.activeTagId && !hasTag(cache.activeTagId)) {
-          cache.activeTagId = null;
-          cache.draft = null;
+    if (force) { tagsStale = true; tagsRevision++; }
+    if (inflight) return inflight;
+    if (cache.loaded && !tagsStale) return Promise.resolve();
+    var epoch = generation;
+    inflight = (async function () {
+      do {
+        // Keep queued invalidations for the next visit; never start a hidden
+        // follow-up batch after the outstanding request has settled.
+        if (!tabActive(app, "list")) { tagsStale = true; return; }
+        var revision = tagsRevision, q = query(), key = JSON.stringify(q);
+        tagsStale = false;
+        cache.loading = true;
+        cache.error = null;
+        try {
+          var res = await app.client.listTags(q);
+          if (epoch !== generation) return;
+          if (key !== JSON.stringify(query()) || revision !== tagsRevision) { tagsStale = true; continue; }
+          cache.tags = res.items || [];
+          cache.total = res.total == null ? cache.tags.length : res.total;
+          /* 首次进入默认选中第一条，右侧详情不会空着；
+             但被选中的标签已经不在结果里（别处删了，或被筛掉了）就清空选中，
+             停在一个不存在的 id 上会让编辑区一片空白且关不掉。 */
+          if (!cache.activeTagId && cache.tags.length) cache.activeTagId = cache.tags[0].id;
+          if (cache.activeTagId && !hasTag(cache.activeTagId)) {
+            cache.activeTagId = null;
+            cache.draft = null;
+          }
+          if (!filtered()) cache.all = cache.tags;
+          if (activeTag()) mergeDraft(activeTag());
+          cache.loaded = true;
+          cache.loading = false;
+          syncCount(app);
+          await loadContents(app, cache.activeTagId);
+        } catch (err) {
+          if (epoch !== generation) return;
+          if (revision !== tagsRevision || key !== JSON.stringify(query())) { tagsStale = true; continue; }
+          cache.loading = false;
+          cache.error = err;
         }
-        if (!filtered()) cache.all = cache.tags;
-        cache.loaded = true;
+      } while (tagsStale && epoch === generation);
+    })().finally(function () {
+      if (epoch === generation) {
         cache.loading = false;
-        syncCount(app);
-        return loadContents(app, cache.activeTagId);
-      })
-      .then(function () {
-        if (current !== cache) return;
-        SF.app.renderContent();
-        restoreSearchFocus();
-      })
-      .catch(function (err) {
-        if (current !== cache) return;
-        cache.loaded = true;
-        cache.loading = false;
-        cache.error = err;
-        SF.app.renderContent();
-      })
-      /* 先清 inflight 再返回：上面的 renderContent 会同步再进来一次 load，
-         那时必须已经能看到「没有请求在飞」，否则这次重绘会读不到数据。 */
-      .then(function (r) {
         inflight = null;
-        return r;
-      });
+        paint();
+        restoreSearchFocus();
+      }
+    });
     return inflight;
   }
 
   function loadContents(app, tagId) {
+    if (!tabActive(app, "list")) { contentsStale = true; return Promise.resolve(); }
     cache.contentsError = null;
     if (!tagId) {
       cache.contents = [];
@@ -164,21 +179,34 @@
       cache.contentsLoading = false;
       return Promise.resolve();
     }
-    var current = cache;
-    cache.contentsLoading = true;
-    return app.client
-      .listTagContents(tagId, { limit: CONTENTS_PREVIEW })
-      .then(function (res) {
-        if (current !== cache) return;
-        cache.contents = res.items || [];
-        cache.contentsTotal = res.total == null ? cache.contents.length : res.total;
-        cache.contentsLoading = false;
-      })
-      .catch(function (err) {
-        if (current !== cache) return;
-        cache.contentsLoading = false;
-        cache.contentsError = err;
-      });
+    if (contentsPromise && cache.contentsTagId === tagId) return contentsPromise;
+    var epoch = generation, ticket = ++contentsGeneration;
+    cache.contentsTagId = tagId;
+    contentsPromise = (async function () {
+      do {
+        if (!tabActive(app, "list")) { contentsStale = true; return; }
+        var revision = contentsRevision;
+        contentsStale = false;
+        cache.contentsLoading = true;
+        try {
+          var res = await app.client.listTagContents(tagId, { limit: CONTENTS_PREVIEW });
+          if (epoch !== generation || ticket !== contentsGeneration || cache.activeTagId !== tagId) return;
+          if (revision !== contentsRevision) { contentsStale = true; continue; }
+          cache.contents = res.items || [];
+          cache.contentsTotal = res.total == null ? cache.contents.length : res.total;
+          cache.contentsLoaded = true;
+          cache.contentsError = null;
+        } catch (err) {
+          if (epoch !== generation || ticket !== contentsGeneration || cache.activeTagId !== tagId) return;
+          cache.contentsError = err;
+        }
+      } while (contentsStale);
+    })().finally(function () {
+      if (epoch !== generation || ticket !== contentsGeneration) return;
+      cache.contentsLoading = false;
+      contentsPromise = null;
+    });
+    return contentsPromise;
   }
 
   /** 侧栏计数据此更新。筛选状态下的 total 只是筛选结果，不能拿来当总数。 */
@@ -193,6 +221,7 @@
   function restoreSearchFocus() {
     if (!keepSearchFocus) return;
     keepSearchFocus = false;
+    if (!tabActive(SF.app.state, "list")) return;
     var input = document.querySelector("[data-tag-search] input");
     if (!input) return;
     input.focus();
@@ -200,34 +229,19 @@
     if (input.setSelectionRange) input.setSelectionRange(end, end);
   }
 
-  /**
-   * 标签变更事件。自己的写操作也会触发它，所以这里不判断来源，
-   * 只做「丢掉旧结果、重新读一次」——重复读一次的代价远小于读到过期数据。
-   */
-  function subscribe(app) {
-    if (subscribed || !app.client || typeof app.client.on !== "function") return;
-    subscribed = true;
-    var release = app.client.on("tags.changed", function () {
-      cache.loaded = false;
-      cache.loading = false;
-      /* 上一次查询失败时不能把错误状态一直挂着：事件说明后端是活的，
-         直接清掉让这次重绘重新拉一次，否则用户只能靠切页签绕出去。 */
-      cache.error = null;
-      if (app.route.name !== "tags") return;
-      SF.app.renderContent();
-    });
-    if (release && typeof release === "function" && app.unsubscribe) app.unsubscribe.push(release);
-  }
-
   function reset() {
-    /* 数据变了就丢掉已读结果重读，但保留搜索词、筛选和选中项：
-       用户正在输入时把输入框清空，比多请求一次更糟。 */
+    generation++; contentsGeneration++;
+    inflight = null; contentsPromise = null;
+    tagsStale = true; contentsStale = true;
+    aiState = { busy: false, stale: true, revision: 0 };
+    /* 硬重置用于清理会话；普通内容和任务事件只走 invalidate。 */
     cache.tags = [];
     cache.all = null;
     cache.contents = [];
     cache.contentsTotal = 0;
     cache.contentsLoading = false;
     cache.contentsError = null;
+    cache.contentsLoaded = false;
     cache.loaded = false;
     cache.loading = false;
     cache.error = null;
@@ -238,8 +252,10 @@
   /* ---------------- 视图入口 ---------------- */
 
   function render(app) {
-    subscribe(app);
-    if (!cache.loaded && !cache.loading && !cache.error) load(app);
+    if (app.tagTab !== "ai") {
+      if ((!cache.loaded || tagsStale) && !cache.loading && (!cache.error || tagsStale)) load(app);
+      else if (contentsStale && cache.activeTagId && !cache.contentsLoading) loadContents(app, cache.activeTagId).then(paint);
+    }
     return h(
       "div.view.view--tags",
       { "data-view": "tags" },
@@ -294,7 +310,7 @@
   function buildBody(app) {
     /* AI 页不依赖标签列表：标签查询失败时它也应该照常显示 */
     if (app.tagTab === "ai") return buildAiPage(app);
-    if (cache.error) {
+    if (cache.error && !cache.loaded) {
       return h(
         "div.panel.tags-fill",
         null,
@@ -330,7 +346,9 @@
     return h(
       "div.tags-layout",
       null,
-      h("div.tags-list", null, buildToolbar(app), buildTable(app)),
+      h("div.tags-list", null, buildToolbar(app),
+        cache.error ? h("p.field__error", {role: "alert", text: "标签刷新失败：" + cache.error.message}) : null,
+        buildTable(app)),
       buildEditor(app)
     );
   }
@@ -351,7 +369,7 @@
     search.setAttribute("data-tag-search", "");
     return h(
       "div.panel.tags-toolbar",
-      null,
+      {"data-refresh-key": "tags-toolbar"},
       h("h2.toolbar__title.t-h2", { text: "全部标签（" + cache.total + "）" }),
       h(
         "div.toolbar__tools",
@@ -448,6 +466,8 @@
     return h(
       "tr",
       {
+        "data-refresh-key": "tag-row:" + t.id,
+        "data-refresh-boundary": "true",
         class: t.id === cache.activeTagId ? "is-selected" : "",
         tabindex: "0",
         onclick: function (e) {
@@ -502,12 +522,15 @@
     cache.activeTagId = id;
     cache.contents = [];
     cache.contentsTotal = 0;
+    cache.contentsLoaded = false;
+    contentsGeneration++;
+    contentsPromise = null;
     cache.draft = null;
     cache.draftError = null;
     cache.contentsLoading = true;
     SF.app.renderContent();
     loadContents(app, id).then(function () {
-      SF.app.renderContent();
+      paint();
     });
   }
 
@@ -582,6 +605,7 @@
       "aria-label": "标签名称",
       oninput: function (e) {
         draft.name = e.target.value;
+        markField("name");
         nameCount.textContent = draft.name.length + "/" + MAX_NAME;
         /* 开始改名字就把上一次的冲突提示收掉：它描述的是上一个名字的结果 */
         cache.draftError = null;
@@ -597,6 +621,7 @@
       placeholder: "这个标签用来收什么样的内容？",
       oninput: function (e) {
         draft.description = e.target.value;
+        markField("description");
         descCount.textContent = draft.description.length + "/" + MAX_DESCRIPTION;
       },
     }, draft.description);
@@ -607,7 +632,7 @@
 
     return h(
       "aside.tags-editor",
-      { "data-tag-editor": t.id },
+      { "data-tag-editor": t.id, "data-refresh-key": "tag-editor:" + t.id },
       h(
         "div.tags-editor__head",
         null,
@@ -645,14 +670,14 @@
       ),
       h(
         "div.tags-editor__body.scroll-y",
-        null,
+        {"data-scroll-key": "tag-editor:" + t.id},
         h(
           "div.tags-editor__section",
           null,
           h("div.tags-editor__section-title", { text: "基本信息" }),
           h(
             "div.field",
-            null,
+            fieldProps(t, draft, "name"),
             h(
               "label.field__label.tags-label-row",
               { htmlFor: "tag-name" },
@@ -666,7 +691,7 @@
           ),
           h(
             "div.field",
-            null,
+            fieldProps(t, draft, "description"),
             h(
               "label.field__label.tags-label-row",
               { htmlFor: "tag-desc" },
@@ -678,7 +703,7 @@
           ),
           h(
             "div.field",
-            null,
+            fieldProps(t, draft, "color"),
             h("span.field__label", { text: "标签颜色" }),
             h(
               "div.tags-field-preview",
@@ -696,13 +721,13 @@
           ),
           h(
             "div.field",
-            null,
+            fieldProps(t, draft, "synonyms"),
             h(
               "div.field__label.tags-label-row",
               null,
               h("span", { text: "别名 / 同义词" }),
               h("div.spacer"),
-              ui.btn("复制别名", { size: "sm", onClick: function () { copySynonyms(t); } })
+              ui.btn("复制别名", { size: "sm", onClick: function () { copySynonyms(activeTag() || t); } })
             ),
             h("p.field__hint", {
               text: "搜索时输入别名也能找到这个标签。最多 " + MAX_SYNONYMS + " 个，每个不超过 " + MAX_SYNONYM + " 字。",
@@ -712,6 +737,7 @@
                 ui.toast("别名最多 " + MAX_SYNONYMS + " 个，多出来的没有保存", "error");
               }
               draft.synonyms = list.slice(0, MAX_SYNONYMS);
+              markField("synonyms");
               setFieldError(aliasError, "");
             }),
             aliasError
@@ -719,7 +745,7 @@
         ),
         h(
           "div.tags-editor__section",
-          null,
+          {"data-refresh-key": "tag-associations:" + t.id},
           h("div.tags-editor__section-title", { text: "关联" }),
           h(
             "div.tags-mini-stats",
@@ -740,7 +766,7 @@
         ),
         h(
           "div.tags-editor__section",
-          null,
+          {"data-refresh-key": "tag-contents:" + t.id, "data-refresh-boundary": "true"},
           h(
             "div.tags-editor__section-title",
             null,
@@ -753,19 +779,19 @@
       ),
       h(
         "div.tags-editor__foot",
-        null,
+        {"data-refresh-key": "tag-footer:" + t.id, "data-refresh-boundary": "true"},
         ui.btn("删除标签", {
           variant: "danger",
           icon: "trash",
           onClick: function () {
-            removeTag(app, t);
+            removeTag(app, activeTag() || t);
           },
         }),
         h("div.spacer"),
         ui.btn("保存修改", {
           variant: "primary",
           onClick: function () {
-            saveTag(app, t, aliasError);
+            saveTag(app, activeTag() || t, aliasError);
           },
         })
       )
@@ -781,9 +807,51 @@
         description: t.description || "",
         color: t.color,
         synonyms: (t.synonyms || []).slice(),
+        version: ++draftVersion,
       };
+      cache.draft.base = draftValues(t);
     }
     return cache.draft;
+  }
+
+  function draftValues(t) {
+    return {name: t.name, description: t.description || "", color: t.color, synonyms: (t.synonyms || []).slice()};
+  }
+
+  function fieldDirty(draft, field) {
+    return JSON.stringify(draft[field]) !== JSON.stringify(draft.base[field]);
+  }
+
+  function mergeDraft(t) {
+    var draft = cache.draft;
+    if (!draft || draft.id !== t.id) return;
+    var fresh = draftValues(t);
+    Object.keys(fresh).forEach(function (field) {
+      if (!fieldDirty(draft, field) && !fieldFocused(field)) draft[field] = fresh[field];
+    });
+    draft.base = fresh;
+  }
+
+  function fieldProps(t, draft, field) {
+    return {
+      "data-tag-field": field,
+      "data-refresh-key": "tag-field:" + t.id + ":" + draft.version + ":" + field,
+      "data-refresh-boundary": "true",
+      "data-refresh-preserve": fieldDirty(draft, field) || fieldFocused(field) ? "editing:" + draft.version : null,
+      onfocusin: function (e) { e.currentTarget.setAttribute("data-refresh-preserve", "editing:" + draft.version); },
+      onfocusout: function (e) {
+        if (!fieldDirty(draft, field) && !e.currentTarget.contains(e.relatedTarget)) e.currentTarget.removeAttribute("data-refresh-preserve");
+      },
+    };
+  }
+
+  function fieldFocused(field) {
+    return document.activeElement && document.activeElement.closest('[data-tag-field="' + field + '"]');
+  }
+
+  function markField(field) {
+    var el = document.querySelector('[data-tag-field="' + field + '"]');
+    if (el && cache.draft) el.setAttribute("data-refresh-preserve", "editing:" + cache.draft.version);
   }
 
   function previewBox(draft) {
@@ -798,6 +866,7 @@
   }
 
   function saveTag(app, t, aliasError) {
+    aliasError = document.querySelector('[data-tag-field="synonyms"] .field__error') || aliasError;
     var draft = cache.draft;
     if (!draft) return Promise.resolve();
     var name = draft.name.trim();
@@ -823,7 +892,9 @@
            用户的注意力还在输入框上，提示一闪而过根本来不及看。 */
         if (isNameError(err)) {
           cache.draftError = (err && err.message) || "标签名称已存在";
-          SF.app.renderContent();
+          var liveError = document.querySelector('[data-tag-field="name"] .field__error');
+          if (liveError) setFieldError(liveError, cache.draftError);
+          paint();
           return;
         }
         ui.toast((err && err.message) || "保存失败", "error");
@@ -995,13 +1066,13 @@
   /* ---------------- 标签下的内容 ---------------- */
 
   function buildContents(app, t) {
-    if (cache.contentsLoading) return h("p.field__hint", { text: "正在读取内容…" });
-    if (cache.contentsError) {
+    if (cache.contentsLoading && !cache.contentsLoaded) return h("p.field__hint", { text: "正在读取内容…" });
+    if (cache.contentsError && !cache.contentsLoaded) {
       return h(
         "div.col",
         { style: { gap: "8px" } },
         h("p.field__hint", { text: "内容读取失败：" + (cache.contentsError.message || "未知错误") }),
-        ui.btn("重新读取", { size: "sm", onClick: function () { loadContents(app, t.id).then(function () { SF.app.renderContent(); }); } })
+        ui.btn("重新读取", { size: "sm", onClick: function () { loadContents(app, t.id).then(paint); } })
       );
     }
     if (!cache.contents.length) {
@@ -1051,218 +1122,180 @@
    * app.client 的正式 RPC 方法，页面不判断演示 / 真实，也不自己拼模型参数。
    * 补打是用户主动动作，先显示范围与数量再执行，不在打开页面时自动扫全库。
    */
+  var aiState = { busy: false, stale: true, revision: 0 };
+
   function buildAiPage(app) {
-    var body = h("div.panel.tags-ai");
-    body.appendChild(h("div.tags-empty", null, h("p", { text: "正在读取自动打标状态…" })));
-    loadAiPanel(app, body);
-    return body;
-  }
-
-  var aiState = { busy: false };
-
-  function loadAiPanel(app, container) {
-    var client = app.client;
-    if (!client || typeof client.getTaggingStatus !== "function") {
-      container.textContent = "自动打标尚未接入。";
-      return;
-    }
-    client
-      .getTaggingStatus()
-      .then(function (status) {
-        renderAiPanel(app, container, status);
-      })
-      .catch(function (err) {
-        container.textContent = "";
-        container.appendChild(h("p.tags-empty__desc", {
-          role: "alert",
-          text: err && err.message ? err.message : "读取自动打标状态失败。",
-        }));
-      });
-  }
-
-  var STATE_LABEL = {
-    queued: "排队中",
-    running: "识别中",
-    retry_wait: "等待重试",
-    blocked: "需要处理",
-    succeeded: "已完成",
-    skipped: "已跳过",
-    failed: "失败",
-    cancelled: "已取消",
-  };
-  var STATE_TONE = {
-    queued: "neutral",
-    running: "brand",
-    retry_wait: "warn",
-    blocked: "danger",
-    succeeded: "success",
-    skipped: "neutral",
-    failed: "danger",
-    cancelled: "neutral",
-  };
-
-  function renderAiPanel(app, container, status) {
-    var summary = (status && status.summary) || {};
-    var recent = (status && status.recent) || [];
-    var client = app.client;
-    container.textContent = "";
-
-    container.appendChild(
-      h(
-        "div.ai-status",
-        null,
-        aiStatusRow("后台任务", summary.total ? summary.total + " 条已登记" : "暂无任务", "neutral",
-          summary.active ? summary.active + " 条正在排队或执行。" : "当前没有排队或执行中的任务。"),
-        aiStatusRow("需要处理", summary.needsAttention ? summary.needsAttention + " 条失败或被阻塞" : "没有需要处理的任务",
-          summary.needsAttention ? "danger" : "neutral",
-          summary.needsAttention ? "认证失败或配置缺失会阻塞，改好配置后自动恢复。" : "所有任务都已正常结束。")
-      )
+    if ((!aiState.loaded || aiState.stale) && !aiState.promise && (!aiState.error || aiState.stale)) loadAiPanel(app);
+    return h("div.panel.tags-ai.scroll-y", {
+      "data-refresh-key": "tags-ai:" + generation,
+      "data-refresh-preserve": "always",
+      "data-scroll-key": "tags-ai",
+    },
+      h("div.tags-ai__status", {"data-ai-slot": "status"}, aiStatus(app)),
+      h("div.tags-ai__actions", null,
+        ui.btn("刷新状态", {icon: "refresh", onClick: function () { aiState.stale = true; aiState.revision++; loadAiPanel(app); }}),
+        ui.btn("去设置 AI 模型配置", {variant: "primary", icon: "sliders", onClick: function () { SF.app.openSettings("tagging"); }})),
+      h("section.ai-status", {"data-ai-slot": "backfill", "data-refresh-key": "tags-backfill", "data-refresh-preserve": "always"}, backfillBody(app)),
+      h("div.tags-ai__section", {"data-ai-slot": "tasks"}, aiTasks(app))
     );
+  }
 
-    container.appendChild(
-      h(
-        "div.tags-ai__actions",
-        null,
-        ui.btn("刷新状态", {
-          icon: "refresh",
+  function mountedAi(app) {
+    if (app.route.name !== "tags" || app.tagTab !== "ai") return null;
+    return document.querySelector('[data-view="tags"] .tags-ai');
+  }
+
+  function paintAi(app) {
+    var panel = mountedAi(app);
+    if (!panel) return;
+    var top = panel.scrollTop;
+    SF.dom.render(panel.querySelector('[data-ai-slot="status"]'), aiStatus(app));
+    SF.dom.render(panel.querySelector('[data-ai-slot="tasks"]'), aiTasks(app));
+    panel.scrollTop = top;
+  }
+
+  function paintBackfill(app) {
+    var panel = mountedAi(app);
+    if (panel) SF.dom.render(panel.querySelector('[data-ai-slot="backfill"]'), backfillBody(app));
+  }
+
+  function trackAi(owner, promise) {
+    var actions = owner.actions || (owner.actions = new Set());
+    actions.add(promise);
+    function settled() { actions.delete(promise); }
+    promise.then(settled, settled);
+    return promise;
+  }
+
+  function loadAiPanel(app) {
+    if (!tabActive(app, "ai")) { aiState.stale = true; return Promise.resolve(); }
+    if (aiState.promise) return aiState.promise;
+    var owner = aiState, epoch = generation;
+    owner.promise = (async function () {
+      do {
+        if (!tabActive(app, "ai")) { owner.stale = true; return; }
+        var revision = owner.revision;
+        owner.stale = false;
+        try {
+          var status = await app.client.getTaggingStatus();
+          if (owner !== aiState || epoch !== generation) return;
+          if (revision !== owner.revision) { owner.stale = true; continue; }
+          owner.status = status;
+          owner.loaded = true;
+          owner.error = null;
+        } catch (err) {
+          if (owner !== aiState || epoch !== generation) return;
+          if (revision !== owner.revision) { owner.stale = true; continue; }
+          owner.error = err.message || "读取自动打标状态失败。";
+        }
+      } while (owner.stale);
+    })().finally(function () {
+      if (owner !== aiState || epoch !== generation) return;
+      owner.promise = null;
+      paintAi(app);
+    });
+    return owner.promise;
+  }
+
+  function aiStatus(app) {
+    var children = [];
+    if (aiState.error) children.push(h("p.tags-empty__desc", {role: "alert", text: aiState.error}));
+    if (!aiState.loaded) {
+      if (!aiState.error) children.push(h("p.field__hint", {text: "正在读取自动打标状态…"}));
+      else children.push(ui.btn("重新读取", {onClick: function () { aiState.stale = true; loadAiPanel(app); }}));
+      return children;
+    }
+    var summary = (aiState.status && aiState.status.summary) || {};
+    children.push(h("div.ai-status", null,
+      aiStatusRow("后台任务", summary.total ? summary.total + " 条已登记" : "暂无任务", "neutral",
+        summary.active ? summary.active + " 条正在排队或执行。" : "当前没有排队或执行中的任务。"),
+      aiStatusRow("需要处理", summary.needsAttention ? summary.needsAttention + " 条失败或被阻塞" : "没有需要处理的任务",
+        summary.needsAttention ? "danger" : "neutral",
+        summary.needsAttention ? "认证失败或配置缺失会阻塞，改好配置后自动恢复。" : "所有任务都已正常结束。")));
+    return children;
+  }
+
+  function backfillBody(app) {
+    var owner = aiState;
+    var preview = owner.preview;
+    var text = preview ? preview.pending + " 条可补打" : owner.backfillResult || "未执行";
+    var note = preview ? "范围内共 " + preview.total + " 条内容，最多补打 " + preview.limit + " 条。" : "只处理尚未打标过的内容，不会重复请求已完成的标签。";
+    return [aiStatusRow("历史内容补打", text, preview ? "brand" : "neutral", note),
+      owner.backfillError ? h("p.field__error", {role: "alert", text: owner.backfillError}) : null,
+      h("div.tags-ai__actions", null,
+        preview ? ui.btn(owner.busy ? "正在排队…" : "立即补打 " + preview.limit + " 条", {
+          icon: "zap", variant: "primary", disabled: owner.busy,
           onClick: function () {
-            loadAiPanel(app, container);
+            if (owner.busy) return;
+            owner.busy = true; owner.backfillError = null; paintBackfill(app);
+            trackAi(owner, app.client.runTaggingBackfill(preview.limit).then(function (result) {
+              if (owner !== aiState) return;
+              owner.preview = null; owner.backfillResult = "已排队 " + result.queued + " 条";
+              owner.stale = true; owner.revision++; loadAiPanel(app);
+            }, function (err) { if (owner === aiState) owner.backfillError = err.message || "补打未能排队，请检查设置。"; })
+              .finally(function () { if (owner === aiState) { owner.busy = false; paintBackfill(app); } }));
+          },
+        }) : ui.btn(owner.busy ? "正在读取范围…" : "查看可补打范围", {
+          icon: "search", disabled: owner.busy,
+          onClick: function () {
+            if (owner.busy) return;
+            owner.busy = true; owner.backfillError = null; paintBackfill(app);
+            trackAi(owner, app.client.previewTaggingBackfill(200).then(function (result) {
+              if (owner === aiState) owner.preview = result;
+            }, function (err) { if (owner === aiState) owner.backfillError = err.message || "读取范围失败。"; })
+              .finally(function () { if (owner === aiState) { owner.busy = false; paintBackfill(app); } }));
           },
         }),
-        ui.btn("去设置 AI 模型配置", {
-          variant: "primary",
-          icon: "sliders",
-          onClick: function () {
-            SF.app.openSettings("tagging");
-          },
-        })
-      )
-    );
+        preview ? ui.btn("取消", {icon: "close", disabled: owner.busy, onClick: function () { owner.preview = null; owner.backfillError = null; paintBackfill(app); }}) : null)
+    ];
+  }
 
-    // 历史补打：先给范围与数量，用户确认后才排队。
-    var backfillSection = h("section.ai-status");
-    var backfillBox = h("div");
-    container.appendChild(backfillSection);
-    backfillSection.appendChild(backfillBox);
-    backfillBox.appendChild(aiStatusRow("历史内容补打", "未执行", "neutral", "只处理尚未打标过的内容，不会重复请求已完成的标签。"));
-    var backfillActions = h(
-      "div.tags-ai__actions",
-      null,
-      ui.btn("查看可补打范围", {
-        icon: "search",
-        onClick: function () {
-          client
-            .previewTaggingBackfill(200)
-            .then(function (preview) {
-              backfillBox.textContent = "";
-              backfillBox.appendChild(
-                aiStatusRow("历史内容补打", preview.pending + " 条可补打", "brand",
-                  "范围内共 " + preview.total + " 条内容，最多补打 " + preview.limit + " 条。")
-              );
-              backfillActions.textContent = "";
-              backfillActions.appendChild(
-                ui.btn("立即补打 " + preview.limit + " 条", {
-                  variant: "primary",
-                  icon: "zap",
-                  onClick: function () {
-                    if (aiState.busy) return;
-                    aiState.busy = true;
-                    client.runTaggingBackfill(preview.limit).then(
-                      function (result) {
-                        aiState.busy = false;
-                        backfillBox.textContent = "";
-                        backfillBox.appendChild(
-                          aiStatusRow("历史内容补打", "已排队 " + result.queued + " 条", "success",
-                            "任务已进入后台队列，完成后这里会显示结果。")
-                        );
-                        loadAiPanel(app, container);
-                      },
-                      function (err) {
-                        aiState.busy = false;
-                        backfillBox.textContent = "";
-                        backfillBox.appendChild(
-                          aiStatusRow("历史内容补打", "补打失败", "danger",
-                            (err && err.message) || "补打未能排队，请检查设置。")
-                        );
-                      }
-                    );
-                  },
-                })
-              );
-              backfillActions.appendChild(
-                ui.btn("取消", {
-                  icon: "close",
-                  onClick: function () {
-                    loadAiPanel(app, container);
-                  },
-                })
-              );
-            })
-            .catch(function (err) {
-              backfillBox.textContent = "";
-              backfillBox.appendChild(
-                aiStatusRow("历史内容补打", "无法读取范围", "danger", (err && err.message) || "读取失败。")
-              );
-            });
-        },
-      })
-    );
-    backfillSection.appendChild(backfillActions);
+  var STATE_LABEL = {queued: "排队中", running: "识别中", retry_wait: "等待重试", blocked: "需要处理", succeeded: "已完成", skipped: "已跳过", failed: "失败", cancelled: "已取消"};
+  var STATE_TONE = {queued: "neutral", running: "brand", retry_wait: "warn", blocked: "danger", succeeded: "success", skipped: "neutral", failed: "danger", cancelled: "neutral"};
 
-    if (!recent.length) {
-      container.appendChild(
-        h("div.tags-empty__note", null, icon("info", 15),
-          h("div", null,
-            h("p.tags-empty__note-t", { text: "还没有自动打标任务" }),
-            h("p", { text: "开启自动打标后，新收录的内容会进入后台队列。人工标签不受影响，随时可用。" })))
-      );
-      return;
-    }
+  function aiTasks(app) {
+    if (!aiState.loaded) return null;
+    var recent = (aiState.status && aiState.status.recent) || [];
+    if (!recent.length) return h("div.tags-empty__note", null, icon("info", 15),
+      h("div", null, h("p.tags-empty__note-t", {text: "还没有自动打标任务"}),
+        h("p", {text: "开启自动打标后，新收录的内容会进入后台队列。人工标签不受影响，随时可用。"})));
+    var owner = aiState;
+    return h("section.tags-ai__section", {"aria-label": "最近任务"},
+      h("h2.t-h2", {text: "最近任务"}),
+      owner.retryError ? h("p.field__error", {role: "alert", text: owner.retryError}) : null,
+      h("ol.ai-tasklist", null, recent.map(function (task) {
+        return h("li.ai-task", {"data-task-id": task.id},
+          h("span.ai-task__name", {text: task.content_id}),
+          h("span.ai-task__state.badge.badge--" + (STATE_TONE[task.state] || "neutral"), {text: STATE_LABEL[task.state] || task.state}),
+          h("span.ai-task__note", {text:
+            (task.provider ? task.provider + " " + (task.model || "") + " · " : "") +
+            (task.skipped_reason || task.error_message || (task.applied_count ? "已挂载 " + task.applied_count + " 个标签" : "无匹配标签"))}),
+          task.state !== "succeeded" ? ui.btn("重试", {icon: "refresh", size: "sm", onClick: function () {
+            trackAi(owner, app.client.retryTaggingTask(task.id).then(function () {
+              if (owner !== aiState) return;
+              owner.retryError = null; owner.stale = true; owner.revision++; loadAiPanel(app);
+            }, function (err) { if (owner === aiState) { owner.retryError = err.message || "重试未能排队。"; paintAi(app); } }));
+          }}) : null);
+      })));
+  }
 
-    var tasksSection = h("section.tags-ai__section", { "aria-label": "最近任务" },
-      h("h2.t-h2", { text: "最近任务" }));
-    var list = h("ol.ai-tasklist");
-    recent.forEach(function (task) {
-      // 未成功的任务都给出重试入口：failed／blocked 是失败与阻塞，skipped／cancelled
-      // 是当时条件不足（Jev 无目录、识别途中关闭）被跳过的。用户补齐目录或重新
-      // 开启之后，正需要从这里重试，否则这些内容没有任何主动恢复路径。
-      var retryable = task.state !== "succeeded";
-      list.appendChild(
-        h(
-          "li.ai-task",
-          null,
-          h("span.ai-task__name", { text: task.content_id }),
-          h("span.ai-task__state.badge.badge--" + (STATE_TONE[task.state] || "neutral"),
-            { text: STATE_LABEL[task.state] || task.state }),
-          h("span.ai-task__note", {
-            text:
-              (task.provider ? task.provider + " " + (task.model || "") + " · " : "") +
-              (task.skipped_reason || task.error_message ||
-                (task.applied_count ? "已挂载 " + task.applied_count + " 个标签" : "无匹配标签")),
-          }),
-          retryable
-            ? ui.btn("重试", {
-                icon: "refresh",
-                size: "sm",
-                onClick: function () {
-                  client.retryTaggingTask(task.id).then(
-                    function () {
-                      loadAiPanel(app, container);
-                    },
-                    function (err) {
-                      container.appendChild(
-                        h("p.tags-empty__desc", { text: (err && err.message) || "重试未能排队。" })
-                      );
-                    }
-                  );
-                },
-              })
-            : null
-        )
-      );
-    });
-    tasksSection.appendChild(list);
-    container.appendChild(tasksSection);
+  function updateTagging(app) {
+    if (!aiState.loaded || aiState.stale) return loadAiPanel(app);
+    return aiState.promise || Promise.resolve();
+  }
+
+  function updateBackground(app) {
+    if (app.tagTab !== "ai" || !mountedAi(app)) return false;
+    updateTagging(app);
+    return true;
+  }
+
+  async function whenIdle() {
+    var pending;
+    do {
+      pending = [inflight, contentsPromise, aiState.promise].concat(Array.from(aiState.actions || [])).filter(Boolean);
+      if (pending.length) await Promise.all(pending);
+    } while (inflight || contentsPromise || aiState.promise || (aiState.actions && aiState.actions.size));
   }
 
   /** 状态徽章顺带说清「为什么是这个状态」，避免只丢一个词让用户猜。 */
@@ -1277,5 +1310,5 @@
   }
 
   SF.views = SF.views || {};
-  SF.views.tags = { render: render, reset: reset, TABS: TABS };
+  SF.views.tags = { render: render, reset: reset, invalidate: invalidate, updateBackground: updateBackground, updateTagging: updateTagging, whenIdle: whenIdle, TABS: TABS };
 })(window);

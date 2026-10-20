@@ -384,52 +384,91 @@
       h("div.notice.notice--" + tone, null, icon("info", 16),
         h("div.notice__body", null, h("div.notice__title", { text: title }), h("div.notice__text", { text: detail })),
         actions,
-        closable ? ui.iconBtn("close", "关闭提示", function () { app.dismissedStatus = key; renderContent(); }) : null));
+        closable ? ui.iconBtn("close", "关闭提示", function () { app.dismissedStatus = key; patchStatusBar(); }) : null));
   }
 
-  function invalidate() {
-    // 内容/任务刷新与设置草稿无关；设置在重新进入页面时单独读取。
-    Object.entries(SF.views).forEach(function (entry) { if (entry[0] !== "settings") entry[1].reset(); });
+  function invalidateViews(reasons) {
+    Object.entries(SF.views).forEach(function (entry) {
+      if (entry[0] !== "settings" && entry[1].invalidate) entry[1].invalidate(reasons);
+    });
   }
-  var refreshPromise, refreshAgain = false;
-  function refreshData(force) {
-    // 主动写入后的刷新已经包含已提交事件，取消其延迟刷新，避免重复替换正在操作的视图。
-    if (force) clearTimeout(eventTimer);
-    if (refreshPromise) { refreshAgain = refreshAgain || !!force; return refreshPromise; }
+
+  function currentView() { return SF.views[app.route.name]; }
+
+  function patchStatusBar() {
+    var host = document.querySelector('.shell__body');
+    if (!host || app.route.name === 'settings') return;
+    var old = host.querySelector(':scope > .status-bar'), fresh = buildStatusBar();
+    if (!fresh) { if (old) old.remove(); return; }
+    if (old) SF.dom.reconcileWithScroll(old, Array.from(fresh.childNodes), scrollPositions);
+    else host.insertBefore(fresh, host.firstChild);
+  }
+
+  function repaintBackground(reasons) {
+    patchStatusBar();
+    if (app.route.name === 'settings') return;
+    var view = currentView();
+    if (!view) return;
+    if (view.updateBackground && view.updateBackground(app, reasons)) return;
+    if (app.route.name === 'channels' && view.updateRuns && reasons.has('runs')) view.updateRuns(app);
+    if (['all','content','tags','channels'].some(function (reason) { return reasons.has(reason); })) renderView(app.route.name);
+  }
+
+  var refreshPromise, queuedReasons = new Set();
+  function refreshData(force, reasons) {
+    var requested = reasons ? new Set(reasons) : new Set([force ? 'all' : 'poll']);
+    if (force && !reasons) {
+      clearTimeout(eventTimer); clearTimeout(eventDeadline);
+      pendingEvents.forEach(function (reason) { requested.add(reason); });
+      pendingEvents.clear(); urgentEvents = false; eventTimer = eventDeadline = null;
+    }
+    requested.forEach(function (reason) { queuedReasons.add(reason); });
+    if (refreshPromise) return refreshPromise;
     refreshPromise = (async function () {
-      var mustRefresh = !!force;
       try {
-        do {
-          refreshAgain = false;
+        while (queuedReasons.size) {
+          var batch = new Set(queuedReasons); queuedReasons.clear();
+          var all = batch.has('all') || batch.has('poll') || !app.session;
+          var readCounts = all || batch.has('content') || batch.has('tags') || batch.has('channels');
+          var readSession = all || batch.has('connection') || batch.has('channels');
+          var readRuns = all || batch.has('runs');
           try {
-            var results = await Promise.all([app.client.getSession(), app.client.getCounts(), app.client.listPlatforms(), app.client.getRuns()]);
-            // 读取期间又有写入/失效：这批快照已过期。先完成下一轮，避免把旧列表
-            // 短暂显示为已就绪；所有等待者共用覆盖整个刷新队列的 Promise。
-            if (refreshAgain) { mustRefresh = true; continue; }
-            var changed = mustRefresh || JSON.stringify(app.runs) !== JSON.stringify(results[3]) || JSON.stringify(app.counts) !== JSON.stringify(results[1]) || JSON.stringify(app.session && app.session.connection) !== JSON.stringify(results[0].connection);
+            var results = await Promise.all([
+              readSession ? app.client.getSession() : app.session,
+              readCounts ? app.client.getCounts() : app.counts,
+              readCounts ? app.client.listPlatforms() : app.platforms,
+              readRuns ? app.client.getRuns() : app.runs
+            ]);
+            var sidebarChanged = JSON.stringify(app.counts) !== JSON.stringify(results[1]) || JSON.stringify(app.platforms) !== JSON.stringify(results[2]);
             app.session = results[0]; app.counts = results[1]; app.platforms = results[2]; app.runs = results[3];
             app.now = Date.now(); app.notice = null;
             if (!app.selectedDate) app.selectedDate = fmt.ymd(app.now);
-            if (changed) invalidate();
-            if (!(app.route.name === "settings" && document.querySelector(".settings"))) {
-              if (!document.querySelector(".shell__body")) render();
-              else { refreshSidebarCounts(); if (changed) renderContent(); }
+            // The periodic fallback also repairs missed invalidations, even when totals match.
+            if (batch.has('poll')) ['content','tags','channels','runs','tagging'].forEach(function (reason) { batch.add(reason); });
+            if (!app.session) continue;
+            if ((batch.has('tags') || batch.has('all')) && app.tagCount !== null) {
+              app.tagCount = null; sidebarChanged = true;
             }
+            invalidateViews(batch);
+            if (app.route.name !== 'settings' && !document.querySelector('.shell__body')) render();
+            else {
+              if (sidebarChanged) refreshSidebarCounts();
+              repaintBackground(batch);
+            }
+            // Writes may await this promise; include the active view's follow-up reads.
+            var view = currentView();
+            if (batch.has('all') && view && view.whenIdle) await view.whenIdle();
           } catch (err) {
-            if (refreshAgain) { mustRefresh = true; continue; }
             app.notice = err.message;
-            if (!(app.route.name === "settings" && document.querySelector(".settings"))) {
-              if (app.session) renderContent(); else showStartup("无法读取本地服务", err.message);
-            }
+            if (app.session) patchStatusBar();
+            else showStartup("无法读取本地服务", err.message);
           }
-        } while (refreshAgain);
-      } finally {
-        refreshPromise = null;
-      }
+        }
+      } finally { refreshPromise = null; }
     })();
     return refreshPromise;
   }
-  function refreshRuns() { return refreshData(true); }
+  function refreshRuns() { return refreshData(false, ['runs']); }
 
   function buildMain() {
     var view;
@@ -450,15 +489,25 @@
     return { main: result, aside: null };
   }
 
-  function renderContent() {
+  function renderContent(options) {
     if (app.route.name === "settings") {
-      render();
+      if (!options || !options.background) render();
       return;
     }
     var host = document.querySelector(".shell__body");
     if (!host) return;
-    SF.tooltip.hide(); // 锚点会被整体替换，旧提示要跟着收掉
-    SF.dom.renderWithScroll(host, buildShellBody(), scrollPositions);
+    if (options && options.background) {
+      SF.dom.reconcileWithScroll(host, buildShellBody(), scrollPositions);
+      app.contentEl = host.querySelector('.workspace > :first-child');
+    } else {
+      SF.tooltip.hide();
+      SF.dom.renderWithScroll(host, buildShellBody(), scrollPositions);
+    }
+  }
+
+  // Async results can only repaint the route that requested them.
+  function renderView(name) {
+    if (app.route.name === name && app.session) renderContent({background:true});
   }
 
   function buildShellBody() {
@@ -490,9 +539,9 @@
   function restart() {
     return act("restart", async function () {
       app.coreStatus = {state: "starting"};
-      if (app.session) renderContent();
+      if (app.session) patchStatusBar();
       try { await app.client.restartCore(); await connect(); }
-      catch (err) { app.coreStatus = {state: "error", message: err.message}; if (app.session) renderContent(); else showStartup("核心服务不可用", err.message); }
+      catch (err) { app.coreStatus = {state: "error", message: err.message}; if (app.session) patchStatusBar(); else showStartup("核心服务不可用", err.message); }
     });
   }
   async function connect() {
@@ -502,10 +551,49 @@
       showStartup(app.coreStatus.state === "starting" ? "正在启动核心服务…" : "核心服务不可用", app.coreStatus.message || "请稍后重新查询，或重启核心服务。");
     } catch (err) { showStartup("核心服务不可用", err.message); }
   }
-  var eventTimer, pollTimer;
-  function scheduleRefresh() {
+  var eventTimer, eventDeadline, pollTimer, urgentEvents = false, pendingEvents = new Set();
+  var rawAliases = new Map();
+  function flushEvents() {
+    clearTimeout(eventTimer); clearTimeout(eventDeadline);
+    eventTimer = eventDeadline = null; urgentEvents = false;
+    if (!pendingEvents.size) return;
+    var reasons = new Set(pendingEvents); pendingEvents.clear();
+    refreshData(false, reasons);
+  }
+  function scheduleRefresh(reasons, immediate) {
+    reasons.forEach(function (reason) { pendingEvents.add(reason); });
     clearTimeout(eventTimer);
-    eventTimer = setTimeout(function () { refreshData(true); }, 100);
+    urgentEvents = urgentEvents || !!immediate;
+    eventTimer = setTimeout(flushEvents, urgentEvents ? 0 : 120);
+    if (!eventDeadline) eventDeadline = setTimeout(flushEvents, 600);
+  }
+  function suppressAliases(names) {
+    names.forEach(function (name) { rawAliases.set(name, Date.now()); });
+  }
+  function subscribeChanges() {
+    function on(name, fn) { app.unsubscribe.push(app.client.on(name, fn)); }
+    on('sync.changed', function (run) {
+      suppressAliases(['run','runs']);
+      var terminal = run && !['queued','running'].includes(run.state);
+      scheduleRefresh(terminal ? ['runs','content','connection'] : ['runs'], terminal);
+    });
+    on('content.changed', function (data) {
+      suppressAliases(['content']);
+      if (data && Array.isArray(data.ids) && !data.ids.length) return;
+      scheduleRefresh(['content']);
+    });
+    on('subscription.changed', function () { suppressAliases(['channels']); scheduleRefresh(['channels']); });
+    on('scheduler.changed', function () { suppressAliases(['channels']); scheduleRefresh(['channels']); });
+    on('tags.changed', function () { suppressAliases(['content']); scheduleRefresh(['tags']); });
+    on('tagging.changed', function () { scheduleRefresh(['tagging']); });
+    // Older bridge consumers still emit aliases. The desktop sends the typed
+    // event first, so one notification never starts two queries.
+    [['content','content'],['run','runs'],['channels','channels']].forEach(function (entry) {
+      on(entry[0], function () {
+        if (Date.now() - (rawAliases.get(entry[0]) || 0) < 50) return;
+        scheduleRefresh([entry[1]]);
+      });
+    });
   }
   function boot() {
     try { app.theme = global.localStorage.getItem("sf.theme") || "light"; } catch (_) {}
@@ -519,14 +607,7 @@
       return;
     }
     refreshRoute();
-    ["content", "run", "channels"].forEach(function (event) { app.unsubscribe.push(app.client.on(event, scheduleRefresh)); });
-    /* 标签只在 tags.changed 时失效。跟着内容刷新一起重取没有意义，
-       只会多一轮异步往返，并把用户正在点的 DOM 整块换掉。 */
-    app.unsubscribe.push(app.client.on("tags.changed", function () {
-      if (SF.views.inbox) SF.views.inbox.invalidateTags();
-      app.tagCount = null;
-      scheduleRefresh();
-    }));
+    subscribeChanges();
     /* M17：通知点击。主进程会先恢复窗口再下发意图；这里清空旧过滤并打开
        对应口径的统一列表——不还原通知里那个可能已经过时的数量。 */
     app.unsubscribe.push(app.client.on("reminder.navigate", function (intent) {
@@ -538,7 +619,7 @@
     app.unsubscribe.push(app.client.on("core.status", function (status) {
       app.coreStatus = status;
       if (status.state === "ready") refreshData(true);
-      else if (app.session) renderContent();
+      else if (app.session) patchStatusBar();
       else showStartup("核心服务" + (status.state === "starting" ? "正在启动…" : "不可用"), status.message || "请重新查询或重启服务。");
     }));
     var leavingSettings = false;
@@ -577,7 +658,7 @@
     });
     global.addEventListener("beforeunload", function () {
       app.unsubscribe.forEach(function (release) { release(); });
-      clearInterval(pollTimer); clearTimeout(eventTimer); clearTimeout(searchTimer);
+      clearInterval(pollTimer); clearTimeout(eventTimer); clearTimeout(eventDeadline); clearTimeout(searchTimer);
     });
     // Re-query persisted state as a fallback for lost/coalesced invalidation events.
     pollTimer = setInterval(function () { if (app.coreStatus.state === "ready") refreshData(false); }, 15000);
@@ -615,7 +696,7 @@
     var sidebar = document.querySelector(".sidebar");
     if (!sidebar) return;
     var fresh = buildSidebar();
-    SF.dom.renderWithScroll(sidebar, Array.from(fresh.childNodes), scrollPositions);
+    SF.dom.reconcileWithScroll(sidebar, Array.from(fresh.childNodes), scrollPositions);
     syncNavState();
   }
 
@@ -630,6 +711,7 @@
     boot: boot,
     render: render,
     renderContent: renderContent,
+    renderView: renderView,
     navigate: navigate,
     refreshCounts: refreshCounts,
     refreshRuns: refreshRuns,
