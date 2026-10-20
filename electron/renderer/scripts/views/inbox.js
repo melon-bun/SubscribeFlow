@@ -56,6 +56,8 @@
       if (tagCache !== current) return;
       if ((current.revision || 0) !== revision) { current.stale = true; return; }
       Object.assign(tagCache, r, {loaded: true, loading: false});
+      var count = r.total == null ? (r.items || []).length : r.total;
+      if (app.tagCount !== count) { app.tagCount = count; SF.app.refreshSidebarCounts(); }
       delete current.error;
       flush();
     }).catch(function (err) {

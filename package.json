@@ -28,7 +28,9 @@
     "smoke:bilibili:live": "node scripts/bilibili-live.cjs",
     "bilibili:login": "node scripts/bilibili-live.cjs --login",
     "package:mac": "node scripts/package-macos.cjs",
-    "smoke:packaged": "node scripts/packaged-smoke.cjs"
+    "smoke:packaged": "node scripts/packaged-smoke.cjs",
+    "smoke:refresh:ui": "electron scripts/refresh-ui-smoke.cjs",
+    "smoke:refresh:views": "node scripts/refresh-inbox-channels-smoke.cjs && electron scripts/overview-refresh-ui-smoke.cjs && electron scripts/tags-refresh-ui-smoke.cjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

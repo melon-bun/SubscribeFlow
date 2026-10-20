@@ -25,7 +25,13 @@ const allowed = new Set([
   'listTags', 'getTag', 'createTag', 'updateTag', 'setTagEnabled', 'removeTag', 'listTagContents',
   'setContentTags', 'bulkSetTags',
 ]);
-const events = new Set(['core.status', 'sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'tags.changed', 'tagging.changed', 'run', 'runs', 'content', 'channels', 'reminder.navigate']);
+const events = new Set(['core.status', 'sync.changed', 'intake.changed', 'content.changed', 'subscription.changed', 'scheduler.changed', 'tags.changed', 'tagging.changed', 'run', 'runs', 'content', 'channels', 'reminder.navigate']);
+// All renderer subscriptions share one IPC listener, including typed events
+// and compatibility aliases. Route changes only mutate the per-event sets.
+const eventHandlers = new Map();
+ipcRenderer.on('subscribe-flow:event', (_event, eventName, data) => {
+  for (const handler of eventHandlers.get(eventName) || []) handler(data);
+});
 // Plain result envelopes cross contextBridge intact. Renderer creates its own
 // Error so code/scope/retry fields are not discarded while crossing contexts.
 async function request(name, params = {}) {
@@ -45,8 +51,12 @@ contextBridge.exposeInMainWorld('SubscribeFlow', Object.freeze({
   },
   on(name, handler) {
     if (!events.has(name) || typeof handler !== 'function') throw new Error('事件订阅无效');
-    const listener = (_event, eventName, data) => { if (eventName === name) handler(data); };
-    ipcRenderer.on('subscribe-flow:event', listener);
-    return () => ipcRenderer.removeListener('subscribe-flow:event', listener);
+    if (!eventHandlers.has(name)) eventHandlers.set(name, new Set());
+    const handlers = eventHandlers.get(name);
+    handlers.add(handler);
+    return () => {
+      handlers.delete(handler);
+      if (!handlers.size && eventHandlers.get(name) === handlers) eventHandlers.delete(name);
+    };
   },
 }));

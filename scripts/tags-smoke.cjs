@@ -287,7 +287,7 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   await evaluate(`SF.app.navigate('inbox'); SF.app.renderContent()`);
   await until(`!!document.querySelector('.tag-filter')`);
   await until(`Array.from(document.querySelectorAll('.tag-filter button')).some(b => b.textContent.trim() === '清除标签筛选' && !b.disabled)`);
-  assert.ok(await evaluate(`document.querySelector('.tag-filter').textContent.includes('已删除标签')`));
+  await until(`document.querySelector('.tag-filter')?.textContent.includes('已删除标签')`);
   await clickWhenReady('清除标签筛选', '.tag-filter');
   await until(`SF.app.state.filters.tags.length === 0 && document.querySelectorAll('.content-card').length === 20`);
   await evaluate(`document.querySelector('[data-nav="tags"]').click()`);
