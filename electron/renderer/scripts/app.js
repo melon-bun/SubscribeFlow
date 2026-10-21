@@ -34,6 +34,8 @@
     { id: "overview", name: "内容总览", icon: "calendar" },
     { id: "channels", name: "渠道管理", icon: "sliders" },
     { id: "tags", name: "标签", icon: "tag" },
+    // M28：笔记入口始终可达，与当前有没有笔记无关。
+    { id: "notes", name: "笔记", icon: "edit" },
   ];
 
   /* ---------------- 应用状态 ---------------- */
@@ -60,6 +62,8 @@
     tagTab: "list",
     // 标签总数由标签视图读到后回填；null 表示还没读过，不显示 0 冒充「没有标签」
     tagCount: null,
+    // M28：笔记数同理，由笔记页读到后回填。
+    noteCount: null,
     theme: "light",
     search: "",
     contentEl: null,
@@ -154,6 +158,8 @@
             ? h("span.count-pill.count-pill--brand", { text: String(app.counts.unread || 0) })
             : n.id === "tags" && app.tagCount != null
             ? h("span.count-pill", { text: String(app.tagCount) })
+            : n.id === "notes" && app.noteCount != null
+            ? h("span.count-pill", { text: String(app.noteCount) })
             : null;
         return h(
           "button.nav__item",
@@ -502,6 +508,7 @@
     if (app.route.name === "overview") view = SF.views.overview;
     else if (app.route.name === "channels") view = SF.views.channels;
     else if (app.route.name === "tags") view = SF.views.tags;
+    else if (app.route.name === "notes") view = SF.views.notes;
     else view = SF.views.inbox;
 
     var result = view.render(app);
@@ -708,8 +715,9 @@
       // M27：内容详情里的笔记有未保存的文字时，离开当前页先问一句。
       // 与设置页、识别设置同一套机制；确认流程无论成功、失败还是被关掉，
       // 都必须释放导航锁，否则之后所有 hashchange 都会被忽略（BUG-105）。
-      if (SF.views.inbox && SF.views.inbox.hasNoteDraft && SF.views.inbox.hasNoteDraft()) {
-        var leaving = SF.views.inbox.confirmLeave(app);
+      var leavingView = was === "notes" ? SF.views.notes : SF.views.inbox;
+      if (leavingView && leavingView.hasNoteDraft && leavingView.hasNoteDraft()) {
+        var leaving = leavingView.confirmLeave(app);
         if (leaving && typeof leaving.then === "function") {
           leavingSettings = true;
           var stayHere = function () {

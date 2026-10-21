@@ -458,6 +458,7 @@ async function start() {
       else if (rendererSmoke === 'v049b3') await require('../../scripts/v049-batch03-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'm26') await require('../../scripts/m26-notes-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'm27') await require('../../scripts/m27-note-editor-renderer.cjs').verify({window,core,root});
+      else if (rendererSmoke === 'm28') await require('../../scripts/m28-notes-view-renderer.cjs').verify({window,core,root});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
       // 验收同样走 M17 的统一退出流程，否则关窗仍会被拦截为隐藏到托盘。
       await lifecycle.quit();

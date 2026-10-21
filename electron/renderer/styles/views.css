@@ -2133,3 +2133,266 @@
 .source-candidate__avatar { width:40px; height:40px; border-radius:50%; object-fit:cover; flex-shrink:0; }
 .source-candidate .col { min-width:0; overflow-wrap:anywhere; gap:4px; }
 .source-platforms { flex-wrap: wrap; }
+
+/* ---------------- M28 笔记页：原标题目录 + 阅读区 ---------------- */
+
+.notes-layout {
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr);
+  gap: var(--s-7);
+  align-items: start;
+}
+
+.notes-toc {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+}
+
+.notes-toc__tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.notes-toc__filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-2);
+}
+
+.notes-toc__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  align-items: center;
+}
+
+.notes-toc__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 2px var(--s-2);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-2);
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.notes-toc__tag.is-active {
+  border-color: var(--c-brand-border);
+  background: var(--c-brand-weak);
+  color: var(--c-brand);
+}
+
+.notes-toc__tag-count {
+  color: var(--c-text-3);
+  font-size: var(--fs-sm);
+}
+
+.notes-toc__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+/* 目录只放原标题：长标题换行，不截断。 */
+.notes-toc__item {
+  display: block;
+  width: 100%;
+  padding: var(--s-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--c-text-2);
+  font: inherit;
+  font-size: var(--fs-cap);
+  line-height: 1.6;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notes-toc__item:hover {
+  background: var(--c-surface-2);
+}
+
+.notes-toc__item.is-active {
+  border-color: var(--c-brand-border);
+  background: var(--c-brand-weak);
+  color: var(--c-brand);
+}
+
+.notes-toc__title {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.notes-toc__empty {
+  padding: var(--s-4) 0;
+}
+
+.notes-toc__foot,
+.notes-toc__pager {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+
+.notes-reader {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+}
+
+.notes-reader__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.notes-reader__title {
+  margin: 0;
+  font-size: var(--fs-xl, 20px);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.notes-reader__meta {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+
+.notes-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-5);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+}
+
+.notes-card__meta,
+.notes-modal__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+.notes-card__source {
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+
+.notes-card__title {
+  margin: 0;
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.notes-card__summary {
+  margin: 0;
+  font-size: var(--fs-cap);
+  color: var(--c-text-2);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.notes-card__tags {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+.notes-card__hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+
+.notes-modal__inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.notes-modal__title {
+  margin: 0;
+  font-size: var(--fs-lg, 18px);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.notes-modal__time,
+.notes-modal__state,
+.notes-modal__note {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+
+.notes-modal__section {
+  margin: 0;
+  font-size: var(--fs-cap);
+  color: var(--c-text-3);
+}
+
+.notes-modal__text {
+  margin: 0;
+  font-size: var(--fs-cap);
+  line-height: 1.8;
+  color: var(--c-text-2);
+  white-space: pre-wrap;
+}
+
+.notes-modal__tags {
+  display: flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+.notes-modal__link {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  overflow-wrap: anywhere;
+}
+
+.notes-modal__foot {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+
+/* 窄窗口：目录与阅读区上下排列，不把整页缩成小字。 */
+@media (max-width: 900px) {
+  .notes-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .notes-toc {
+    position: static;
+  }
+  .notes-toc__list {
+    max-height: 32vh;
+  }
+}
