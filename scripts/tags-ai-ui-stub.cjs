@@ -11,6 +11,18 @@ const bridge = {
     switch (name) {
       case 'core.status': return {state: 'ready'};
       case 'getSession': return session;
+      // M21：识别设置面板要读设置快照才能渲染，给出最小可用的假设置。
+      case 'getSettings': return {
+        tagging: {enabled: true, mode: 'jev', enabledSince: '2026-10-20T00:00:00+00:00'},
+        ai: {providers: {
+          jev: {endpoint: 'https://api.typesafe.ai/v1/systemone', model: 'jev-latest', missing: []},
+          llm: {endpoint: '', model: '', missing: ['接口地址', '模型标识', 'API Key']},
+        }},
+      };
+      case 'saveSettings': return {
+        tagging: {enabled: true, mode: 'jev', enabledSince: '2026-10-20T00:00:00+00:00'},
+        ai: {providers: {jev: {endpoint: '', model: '', missing: []}, llm: {endpoint: '', model: '', missing: []}}},
+      };
       case 'getCounts': return {total: 0, unread: 0};
       case 'listPlatforms': case 'listPriorities': case 'getRuns': return [];
       case 'listContents': case 'listTags': case 'listTagContents': return {items: [], total: 0};

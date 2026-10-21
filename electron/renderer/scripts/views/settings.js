@@ -38,7 +38,7 @@
       label: "AI API 配置",
       icon: "zap",
       title: "AI API 配置",
-      desc: "配置两类 AI 接口的连接参数。这里只管「怎么连」；是否启用、用哪种识别方式在「标签 → AI 自动识别」里决定。",
+      desc: "配置 AI 接口的地址、模型与访问密钥。自动打标方式在「标签 → AI 自动识别」中设置。",
     },
     {
       id: "reminder",
@@ -775,24 +775,8 @@
 
   function buildAi(app) {
     // M21：这一页只管连接参数。开关与识别方式在标签管理页，两边互不覆盖。
+    // 不在这里限定接口数量，也不强调「各自独立」：填好一个就能先存一个。
     return [
-      h(
-        "section.setting-block",
-        null,
-        h(
-          "div.setting-block__head",
-          null,
-          h(
-            "div",
-            null,
-            h("h3.setting-block__title", { text: "两类接口各自独立" }),
-            h("p.setting-block__desc", {
-              text: "分别填写、分别保存，允许先保存没填齐的参数，缺项会在状态里如实标出。是否启用自动打标、使用哪一种识别方式，在「标签 → AI 自动识别」里设置。",
-            })
-          )
-        )
-      ),
-      // 两种接口并排：各自独立，填好一类就能先存一类。
       h("div.setting-grid", null, buildProvider(app, "jev"), buildProvider(app, "llm")),
     ];
   }

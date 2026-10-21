@@ -1496,8 +1496,7 @@
       h("section.ai-status", {"data-ai-slot": "recognition", "data-refresh-key": "tags-recognition", "data-refresh-preserve": "always"}, buildRecognition(app)),
       h("div.tags-ai__status", {"data-ai-slot": "status"}, aiStatus(app)),
       h("div.tags-ai__actions", null,
-        ui.btn("刷新状态", {icon: "refresh", onClick: function () { aiState.stale = true; aiState.revision++; loadAiPanel(app); }}),
-        ui.btn("去设置 AI API 配置", {variant: "primary", icon: "sliders", onClick: function () { SF.app.openSettings("ai"); }})),
+        ui.btn("刷新状态", {icon: "refresh", onClick: function () { aiState.stale = true; aiState.revision++; loadAiPanel(app); }})),
       h("section.ai-status", {"data-ai-slot": "backfill", "data-refresh-key": "tags-backfill", "data-refresh-preserve": "always"}, backfillBody(app)),
       h("div.tags-ai__section", {"data-ai-slot": "tasks"}, aiTasks(app))
     );

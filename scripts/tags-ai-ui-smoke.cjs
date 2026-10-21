@@ -127,8 +127,9 @@ async function run() {
   await click('重试');
   await until(`TaggingStub.calls().some(call => call.name === 'tagging.retry' && call.args.task_id === 'task-0')`);
   await evaluate(`window.openedSettings = null; SF.app.openSettings = section => { window.openedSettings = section; }; void 0`);
-  // M21 起入口文案是「去设置 AI API 配置」（AI API 与识别策略分家了）。
-  await click('去设置 AI API 配置');
+  // 识别设置面板是这一页唯一的 API 配置入口。
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('[data-view="tags"] button')).filter(b => b.textContent.includes('AI API 配置')).length`), 1, '去 API 配置的入口只能有一个');
+  await click('前往 AI API 配置');
   // M21 起 AI API 配置在独立的 'ai' 分区，识别策略搬到了标签页。
   assert.equal(await evaluate('window.openedSettings'), 'ai');
   await click('刷新状态');
