@@ -85,6 +85,17 @@
     );
   }
 
+  /** 草稿是不是在这次请求之后又改过。 */
+  function changedSince(draft, payload) {
+    if (!draft) return false;
+    return (
+      draft.template !== payload.template ||
+      draft.summary !== payload.summary ||
+      draft.takeaway !== payload.takeaway ||
+      (draft.verdict || "") !== (payload.verdict || "")
+    );
+  }
+
   /** 和 Core 同一把尺子：总结与心得都空、也没有结论，就是没有笔记。 */
   function hasContent(draft) {
     return !!(String(draft.summary || "").trim() || String(draft.takeaway || "").trim() || draft.verdict);
@@ -101,6 +112,15 @@
 
   /* ---------------------------------------------------------------- 读取 */
 
+  /**
+   * 读取一条笔记。
+   *
+   * keepDraft=false：一定以读到的内容为准（「刷新（放弃我的文字）」）。
+   * keepDraft=true：只有用户还没动过这条内容时才以读到的内容为准；
+   * 用户写过就留着草稿——刷新、慢回包与重开都不能把输入冲掉。
+   * 这两条的差别就是 BUG-109 的边界：初次打开要能看到已保存的笔记，
+   * 真正在编辑的草稿却不能被覆盖。
+   */
   function refreshNote(itemId, client, keepDraft, done) {
     var st = stateOf(itemId);
     var seq = ++st.seq;
@@ -112,7 +132,7 @@
         st.loading = false;
         st.loaded = true;
         st.note = note || null;
-        if (!keepDraft) {
+        if (!keepDraft || !st.touched) {
           st.touched = false;
           st.draft = draftOf(note);
         }
@@ -153,13 +173,24 @@
         if (st.seq !== seq) return;
         st.saving = false;
         st.loaded = true;
-        st.touched = false;
+        // 已保存的基线与版本先更新：下一次保存用新的令牌。
         st.note = note || null;
-        st.draft = draftOf(note);
-        st.notice = {
-          tone: "success",
-          text: note ? "笔记已保存。" : "这条内容现在没有笔记。",
-        };
+        if (changedSince(st.draft, payload)) {
+          // 请求期间用户又写了：回执只确认提交时的那份，
+          // 新的输入留着，也仍然是「未保存」。
+          st.touched = true;
+          st.notice = {
+            tone: "success",
+            text: "已保存提交时的内容；你之后又写的还没保存。",
+          };
+        } else {
+          st.touched = false;
+          st.draft = draftOf(note);
+          st.notice = {
+            tone: "success",
+            text: note ? "笔记已保存。" : "这条内容现在没有笔记。",
+          };
+        }
         if (done) done(true, note);
       },
       function (err) {

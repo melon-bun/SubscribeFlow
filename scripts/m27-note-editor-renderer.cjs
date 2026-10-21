@@ -43,6 +43,10 @@ async function verify({window, core, root}) {
   };
   const pause = ms => new Promise((resolve) => setTimeout(resolve, ms));
 
+  // 组件源码：重新载入它＝模拟页面重载（模块里的草稿状态归零，
+  // 只剩库里那份已保存的笔记）。
+  const noteEditorSource = fs.readFileSync(path.join(root, 'electron/renderer/scripts/ui/note-editor.js'), 'utf8');
+
   await until(`SF.app.state.coreStatus && SF.app.state.coreStatus.state === 'ready'`);
   await until(`!!SF.app.state.client && typeof SF.app.state.client.saveNote === 'function'`);
 
@@ -109,6 +113,25 @@ async function verify({window, core, root}) {
   const project = await evaluate(`SF.app.state.client.getNote(${JSON.stringify(itemId)})`);
   assert.equal(project.template, 'project');
   assert.equal(project.summary, '让本地文档能被检索。');
+
+  /* 4b. 重新载入（模拟页面重载）：模板、总结、心得、结论都要正确回显。 */
+  await evaluate(noteEditorSource);
+  await evaluate(`document.querySelector('button[aria-label="关闭详情"]').click()`);
+  await until(`!document.querySelector('[data-note-editor]')`);
+  await until(`!!document.querySelector('.content-card[data-content-id=' + ${JSON.stringify(JSON.stringify(itemId))} + ']')`);
+  await evaluate(`document.querySelector('.content-card[data-content-id=' + ${JSON.stringify(JSON.stringify(itemId))} + ']').click()`);
+  await until(`!!document.querySelector('[data-note-editor]')`);
+  await until(`document.querySelector('select[aria-label="笔记类型"]').value === 'project'`);
+  const reloaded = await evaluate(`(() => ({
+    type: document.querySelector('select[aria-label="笔记类型"]').value,
+    summary: document.querySelector('textarea[aria-label="这个项目解决什么问题"]').value,
+    takeaway: document.querySelector('textarea[aria-label="我的判断／使用心得"]').value,
+    verdict: document.querySelector('select[aria-label="项目结论"]').value,
+  }))()`);
+  assert.equal(reloaded.type, 'project', '重载后模板要回显');
+  assert.equal(reloaded.summary, '让本地文档能被检索。', '重载后总结要回显');
+  assert.equal(reloaded.takeaway, '', '重载后心得要回显');
+  assert.equal(reloaded.verdict, 'using', '重载后结论要回显');
 
   /* 5. 项目切回通用：结论要确认后清除，总结与心得保留；未保存前不改库。 */
   await evaluate(`(() => {
@@ -266,6 +289,72 @@ async function verify({window, core, root}) {
   assert.equal(stayed, 'inbox', '选择继续编辑就留在原地');
   const keptText = await evaluate(`(document.querySelector('textarea[aria-label="总结"]') || {}).value`);
   assert.equal(keptText, '离开前写的字', '留在原地时草稿不能丢');
+
+  /* 13. 延迟保存：请求在途时继续输入，输入不能消失；
+         回执只确认提交快照，下一次保存要用更新后的版本。 */
+  const thirdId = await evaluate(`SF.app.state.client.listContents({limit: 10}).then(r => r.items[2].id)`);
+  assert.ok(thirdId, '需要第三条内容');
+  await until(`!!document.querySelector('.content-card[data-content-id=' + ${JSON.stringify(JSON.stringify(thirdId))} + ']')`);
+  await evaluate(`document.querySelector('.content-card[data-content-id=' + ${JSON.stringify(JSON.stringify(thirdId))} + ']').click()`);
+  await until(`!!document.querySelector('[data-note-editor]')`);
+  await evaluate(`(() => {
+    const select = document.querySelector('select[aria-label="笔记类型"]');
+    select.value = 'general';
+    select.dispatchEvent(new Event('change', {bubbles: true}));
+  })()`);
+  await until(`document.querySelectorAll('[data-note-editor] textarea').length === 2`);
+  await evaluate(`(() => {
+    const area = document.querySelector('textarea[aria-label="总结"]');
+    area.value = '提交时的文字';
+    area.dispatchEvent(new Event('input', {bubbles: true}));
+  })()`);
+  // 假客户端：保存请求挂起，由测试决定什么时候回。
+  await evaluate(`(() => {
+    const client = SF.app.state.client;
+    window.__sent = [];
+    window.__pending = null;
+    client.saveNote = function (id, payload) {
+      window.__sent.push(payload);
+      return new Promise((resolve, reject) => { window.__pending = {resolve: resolve, reject: reject}; });
+    };
+  })()`);
+  await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === '保存笔记').click()`);
+  await until(`!!window.__pending`);
+  // 请求还在路上，继续写。
+  await evaluate(`(() => {
+    const area = document.querySelector('textarea[aria-label="总结"]');
+    window.__inputEnabled = !area.disabled;
+    area.value = '等待期间继续写的字';
+    area.dispatchEvent(new Event('input', {bubbles: true}));
+  })()`);
+  const during = await evaluate(`({enabled: window.__inputEnabled, value: document.querySelector('textarea[aria-label="总结"]').value})`);
+  assert.equal(during.enabled, true, '保存期间允许继续写');
+  assert.equal(during.value, '等待期间继续写的字', '请求在途时输入不能消失');
+  // 回执到了：只确认提交快照，新输入留着。
+  await evaluate(`window.__pending.resolve({
+    content_id: ${JSON.stringify(thirdId)}, template: 'general', summary: '提交时的文字',
+    takeaway: '', verdict: null, summary_origin: 'manual', version: 'v-next',
+    created_at: '2026-10-22', updated_at: '2026-10-22'})`);
+  await until(`(document.querySelector('.note-editor__status') || {}).textContent && document.querySelector('.note-editor__status').textContent.includes('还没保存')`);
+  const afterAck = await evaluate(`({
+    value: document.querySelector('textarea[aria-label="总结"]').value,
+    dirty: SF.noteUi.hasDirty(${JSON.stringify(thirdId)}),
+  })`);
+  assert.equal(afterAck.value, '等待期间继续写的字', '回执不能把请求之后的输入冲掉');
+  assert.equal(afterAck.dirty, true, '请求之后的输入仍然是未保存的');
+  // 下一次保存要用更新后的版本令牌。
+  await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === '保存笔记').click()`);
+  await until(`window.__sent.length === 2`);
+  const sent = await evaluate(`JSON.stringify(window.__sent)`);
+  const payloads = JSON.parse(sent);
+  assert.equal(payloads[0].expectedVersion, null, '第一次是新建');
+  assert.equal(payloads[1].expectedVersion, 'v-next', '下一次保存要用回执带来的新版本');
+  assert.equal(payloads[1].summary, '等待期间继续写的字', '下一次保存提交的是最新的输入');
+  // 延迟失败：输入同样不能消失。
+  await evaluate(`window.__pending.reject(new Error('模拟的延迟失败'))`);
+  await until(`(document.querySelector('.note-editor__status') || {}).textContent && document.querySelector('.note-editor__status').textContent.includes('模拟的延迟失败')`);
+  const afterFail = await evaluate(`document.querySelector('textarea[aria-label="总结"]').value`);
+  assert.equal(afterFail, '等待期间继续写的字', '延迟失败也不能清空输入');
 
   console.log('[m27] 留下点什么实机验收通过');
 }
