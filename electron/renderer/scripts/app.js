@@ -92,7 +92,8 @@
       // 分区始终带回路由参数：直接改哈希进来时左栏与正文必须对得上。
       // M21：分区是 ai／reminder／priority，未知值回落到 ai。
       var section = params.section === "reminder" ? "reminder"
-        : params.section === "priority" ? "priority" : "ai";
+        : params.section === "priority" ? "priority"
+        : params.section === "summarization" ? "summarization" : "ai";
       return { name: name, params: { section: section } };
     }
     if (!NAV.some(function (n) { return n.id === name; })) name = "inbox";

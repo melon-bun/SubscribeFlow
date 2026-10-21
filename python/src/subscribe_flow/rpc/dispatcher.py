@@ -112,6 +112,12 @@ class Dispatcher:
             "note.facets": (c.notes.facets, {},
                             {"query": str, "channel": str, "source_id": str, "tags": list,
                              "tag_mode": str, "verdict": str, "timezone": str}),
+            # M29 总结草稿：受限接口——只给内容 ID 与请求 ID，
+            # 不接受任意 prompt，不接受自定义模型，也不返回密钥。
+            # 只生成草稿，绝不写 content_notes。
+            "note.draft": (c.summary.draft, {"item_id": str},
+                           {"request_id": (str, type(None))},
+                           {"nullable": ("request_id",)}),
             # M15 设置：只读非敏感配置；写入由主进程先落好受保护密钥再提交引用。
             # M17：统计与列表同源，通知里说的两个数和页面看到的是同一批内容。
             "reminder.summary": (c.queries.reminder_summary, {}, {"timezone": str}),

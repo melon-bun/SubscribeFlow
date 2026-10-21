@@ -53,6 +53,24 @@
       title: "优先级名称",
       desc: "为固定的三个优先级分别起名。等级与顺序不变，只改显示名称。",
     },
+    {
+      id: "summarization",
+      label: "AI 总结",
+      icon: "zap",
+      title: "AI 总结",
+      desc: "为「留下点什么」准备一段总结草稿。总结由你决定要不要用，与自动打标互不影响。",
+    },
+  ];
+
+  // M29：总结的详细程度与语言。长度是「简略 · 一句话」与「复杂 · 300 字」，
+  // 不是 token 数；语言是输出语言，与材料语言无关。
+  var SUMMARY_LENGTHS = [
+    { value: "brief", label: "简略 · 一句话" },
+    { value: "detailed", label: "复杂 · 300 字" },
+  ];
+  var SUMMARY_LANGUAGES = [
+    { value: "zh-CN", label: "中文" },
+    { value: "original", label: "原文语言" },
   ];
 
   /* M20：三个等级固定，只有显示名可改。顺序与 Core 一致，不可增删调换。 */
@@ -109,6 +127,8 @@
       ai: { providers: {}, removed: [] },
       reminder: { enabled: false, preset: "60", interval: 60 },
       priority: { names: { high: "", medium: "", low: "" } },
+      // M29：总结策略。默认开着但不选连接——没有连接就只是不生成，不打扰用户。
+      summarization: { enabled: true, providerId: null, length: "brief", language: "zh-CN" },
     };
   }
 
@@ -140,6 +160,12 @@
       var value = typeof names[level] === "string" ? names[level] : "";
       draft.priority.names[level] = value || SF.catalog.PRIORITY_DEFAULT_NAMES[level];
     });
+    // M29：总结策略。解除引用是明确的 null，不会被默认连接复活。
+    var summary = settings.summarization || {};
+    draft.summarization.enabled = summary.enabled !== false;
+    draft.summarization.providerId = summary.providerId || null;
+    draft.summarization.length = summary.length || "brief";
+    draft.summarization.language = summary.language || "zh-CN";
     return draft;
   }
 
@@ -200,6 +226,7 @@
   function currentSection() {
     if (cache.section === "reminder") return "reminder";
     if (cache.section === "priority") return "priority";
+    if (cache.section === "summarization") return "summarization";
     return "ai";
   }
 
@@ -218,6 +245,14 @@
         var saved = typeof savedNames[level] === "string" ? savedNames[level] : SF.catalog.PRIORITY_DEFAULT_NAMES[level];
         return (names[level] || "").trim() !== saved.trim();
       });
+    }
+    if (target === "summarization") {
+      var sum = cache.draft.summarization;
+      var savedSum = cache.saved.summarization || {};
+      return sum.enabled !== (savedSum.enabled !== false) ||
+        (sum.providerId || null) !== (savedSum.providerId || null) ||
+        sum.length !== (savedSum.length || "brief") ||
+        sum.language !== (savedSum.language || "zh-CN");
     }
     if (target === "reminder") {
       var r = cache.draft.reminder;
@@ -264,6 +299,15 @@
       var names = {};
       PRIORITY_LEVELS.forEach(function (level) { names[level] = cache.draft.priority.names[level]; });
       return { section: "priority", patch: { names: names } };
+    }
+    if (section === "summarization") {
+      var sum = cache.draft.summarization;
+      return { section: "summarization", patch: {
+        enabled: !!sum.enabled,
+        providerId: sum.providerId || null,
+        length: sum.length,
+        language: sum.language,
+      } };
     }
     if (section === "ai") {
       // M25：按连接 ID 提交。只带改动的连接；删除用 null 表示。
@@ -341,6 +385,10 @@
         if (section === "priority") {
           // 立即生效：公共目录换名后，看板／卡片／筛选／提醒文案一起变。
           SF.app.applyPriorityNames(settings.priority && settings.priority.names);
+        }
+        if (section === "summarization" && SF.noteUi && SF.noteUi.invalidateConfig) {
+          // 总结策略变了：编辑区下次打开时重新读，不再拿旧的判断来决定要不要显示入口。
+          SF.noteUi.invalidateConfig();
         }
         cache.notice = settings.warnings && settings.warnings.length
           ? { tone: "warn", text: settings.warnings.join(" ") }
@@ -1225,6 +1273,93 @@
     );
   }
 
+  /* ---------------- AI 总结 ---------------- */
+
+  /**
+   * 能用来做总结的连接：协议支持文本生成。
+   * 已经选中的那条即使停用或没配完也列出来，并写清真实原因——
+   * 不偷偷换成别的连接，也不让用户以为换个名字就好了。
+   */
+  function summaryProviderOptions() {
+    var providers = (cache.saved.ai && cache.saved.ai.providers) || {};
+    var selected = cache.draft.summarization.providerId;
+    var options = [];
+    Object.keys(providers).forEach(function (providerId) {
+      var provider = providers[providerId] || {};
+      var textCapable = (provider.capabilities || []).indexOf("text_generation") >= 0;
+      var isSelected = selected === providerId;
+      if (!textCapable && !isSelected) return;
+      var notes = [];
+      if (!textCapable) notes.push("不支持文本生成");
+      if (provider.enabled === false) notes.push("已停用");
+      if (provider.missing && provider.missing.length) notes.push("未配置完整");
+      options.push({
+        value: providerId,
+        label: (provider.name || providerId) + (notes.length ? "（" + notes.join("、") + "）" : ""),
+      });
+    });
+    return options;
+  }
+
+  function buildSummarization(app) {
+    var draft = cache.draft.summarization;
+    var options = [{ value: "", label: "不选择连接" }].concat(summaryProviderOptions());
+    var picked = draft.providerId
+      ? (cache.saved.ai && cache.saved.ai.providers || {})[draft.providerId]
+      : null;
+    var note = null;
+    if (draft.providerId && picked) {
+      var reasons = [];
+      if (picked.enabled === false) reasons.push("这条连接已停用");
+      if (picked.missing && picked.missing.length) reasons.push("还缺" + picked.missing.join("、"));
+      if ((picked.capabilities || []).indexOf("text_generation") < 0) reasons.push("它不支持文本生成");
+      if (reasons.length) note = reasons.join("；") + "。生成时会把原因说清楚，不会换成别的连接。";
+    }
+    return h(
+      "section.setting-block",
+      null,
+      h(
+        "div.setting-block__head",
+        null,
+        h(
+          "div",
+          null,
+          h("h3.setting-block__title", { text: "总结策略" }),
+          h("p.setting-block__desc", { text: "总结只在你点「AI 总结」时生成，生成的是草稿：写不写、怎么改都归你。它与自动打标互不影响。" })
+        )
+      ),
+      h(
+        "div.setting-fields",
+        null,
+        field(
+          "启用 AI 总结",
+          ui.toggle(draft.enabled, function (on) { draft.enabled = on; paint(app); }),
+          { hint: "关掉后界面不再出现生成入口；已经写好的笔记不受影响。" }
+        ),
+        field(
+          "用哪条连接",
+          ui.select(options, draft.providerId || "", function (value) {
+            draft.providerId = value || null;
+            paint(app);
+          }, { ariaLabel: "总结使用的连接" }),
+          { hint: "只有支持文本生成的连接能用。", error: note }
+        ),
+        field(
+          "详细程度",
+          ui.select(SUMMARY_LENGTHS, draft.length, function (value) { draft.length = value; paint(app); },
+            { ariaLabel: "总结详细程度" }),
+          { hint: "简略是一句话；复杂会展开到 300 字左右。" }
+        ),
+        field(
+          "输出语言",
+          ui.select(SUMMARY_LANGUAGES, draft.language, function (value) { draft.language = value; paint(app); },
+            { ariaLabel: "总结输出语言" }),
+          { hint: "中文固定用中文回答；原文语言保持材料原本的语言。" }
+        )
+      )
+    );
+  }
+
   function buildBody(app) {
     if (!cache.draft) {
       if (cache.error) {
@@ -1259,6 +1394,8 @@
       ? buildReminder(app)
       : currentSection() === "priority"
       ? buildPriority(app)
+      : currentSection() === "summarization"
+      ? buildSummarization(app)
       : buildAi(app);
     return [buildNotice(), content];
   }
@@ -1282,7 +1419,8 @@
 
   /** 路由带 ?section= 时同步左栏选中项：直接改哈希进来也要落到对应分区。 */
   function setSection(section) {
-    cache.section = section === "reminder" ? "reminder" : section === "priority" ? "priority" : "ai";
+    cache.section = section === "reminder" ? "reminder" : section === "priority" ? "priority"
+      : section === "summarization" ? "summarization" : "ai";
   }
 
   SF.views = SF.views || {};

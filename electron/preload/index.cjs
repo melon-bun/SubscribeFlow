@@ -19,6 +19,8 @@ const allowed = new Set([
   // M26 笔记：读写与查询都在 Core 侧完成，渲染层只提交内容 ID 与笔记内容。
   'note.get', 'note.save', 'note.delete', 'note.list', 'note.facets',
   'getNote', 'saveNote', 'deleteNote', 'listNotes', 'noteFacets',
+  // M29 总结草稿：受限调用，只给内容 ID 与请求 ID。
+  'note.draft', 'draftNote',
   'getSession', 'getCounts', 'listPlatforms', 'listPriorities', 'getCalendar', 'listContents', 'getContent',
   'updateContent', 'bulkUpdate', 'listChannels', 'createChannel', 'updateChannel',
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',

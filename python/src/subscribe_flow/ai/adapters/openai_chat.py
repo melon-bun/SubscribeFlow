@@ -17,13 +17,23 @@ class OpenAiChatAdapter:
     protocol = PROTOCOL_OPENAI_CHAT
 
     def __init__(self, *, endpoint: str, model: str, api_key: str, transport=None,
-                 timeout: float | None = None, max_tokens: int = 512):
+                 timeout: float | None = None, max_tokens: int = 512,
+                 gate=None, provider_id: str | None = None):
         self.endpoint = (endpoint or '').rstrip('/')
         self.model = model or ''
         self.api_key = api_key or ''
         self.timeout = timeout
         self.max_tokens = max_tokens
         self._transport = transport
+        # 并发闸门：按连接限流，后台打标与用户主动触发的请求共用同一个。
+        self.gate = gate
+        self.provider_id = provider_id or ''
+
+    def _slot(self):
+        if self.gate is None:
+            from contextlib import nullcontext
+            return nullcontext()
+        return self.gate.slot(self.provider_id, self.timeout)
 
     def transport(self):
         if self._transport is None:
@@ -38,8 +48,9 @@ class OpenAiChatAdapter:
             'max_tokens': max_tokens or self.max_tokens,
             'messages': [{'role': role, 'content': content} for role, content in messages],
         }
-        _, body = self.transport().post_json(f'{self.endpoint}/chat/completions', payload,
-                                            {'Authorization': f'Bearer {self.api_key}'}, self.timeout)
+        with self._slot():
+            _, body = self.transport().post_json(f'{self.endpoint}/chat/completions', payload,
+                                                 {'Authorization': f'Bearer {self.api_key}'}, self.timeout)
         return ChatResult(text=self._content(body), model=self._model(body), usage=self._usage(body),
                           provider=self.protocol)
 

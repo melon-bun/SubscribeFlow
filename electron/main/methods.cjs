@@ -17,6 +17,9 @@ const CORE_METHODS = new Set([
   // M26 笔记：一条内容一条笔记。写入是全量替换，冲突由版本令牌挡；
   // 笔记不涉及凭据，直接走 RPC 通道。
   'note.get', 'note.save', 'note.delete', 'note.list', 'note.facets',
+  // M29 总结草稿：受限接口——只给内容 ID 与请求 ID，不接受任意 prompt，
+  // 不接受自定义模型，也不返回密钥；只生成草稿，不写笔记。
+  'note.draft',
 ]);
 // settings.* 与 notification.* 刻意不在这里：它们必须经过 Main 的 UI 方法，
 // 先加密保存密钥再向 Core 提交引用。放进白名单等于让 Renderer 绕过凭据编排。

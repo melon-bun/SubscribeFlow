@@ -17,6 +17,7 @@ from subscribe_flow.application.priorities import PriorityService
 from subscribe_flow.application.tags import TagService
 from subscribe_flow.application.tagging import TaggingService
 from subscribe_flow.application.notes import NoteService
+from subscribe_flow.application.summary import SummaryService
 from subscribe_flow.application.settings import SettingsService
 from subscribe_flow.application.credentials import CredentialBroker
 from subscribe_flow.ai.gateway import AiGateway
@@ -62,7 +63,7 @@ def resource_key(descriptor) -> str:
 
 
 class Core:
-    def __init__(self, database_path, *, opencli_path="opencli", gateway=None, browser_bridge=None, schedule_policy=None, clock=None, recognition_provider=None):
+    def __init__(self, database_path, *, opencli_path="opencli", gateway=None, browser_bridge=None, schedule_policy=None, clock=None, recognition_provider=None, ai_transport=None):
         self.lease = CoreLease(database_path)
         try:
             self.database = Database(database_path)
@@ -90,7 +91,9 @@ class Core:
         self.credentials = CredentialBroker()
         # M25：公共 AI 层。连接解析、凭据组装与协议探针都在这里，
         # 打标、总结与将来的服务都从它出入，不各自造连接。
-        self.ai = AiGateway(settings=self.settings, credentials=self.credentials)
+        # ai_transport 只给隔离验收用：把网络换成假传输，业务代码不感知。
+        self.ai = AiGateway(settings=self.settings, credentials=self.credentials,
+                            transport=ai_transport)
         # M16：自动打标后台任务。事件与任务仓储挂在 repository 上（事件写入复用
         # 内容入库事务），Provider 按当前设置与内存凭据现组，不缓存快照。
         # 必须排在 settings/credentials 之后：它们在这里是构造参数。
@@ -101,6 +104,9 @@ class Core:
                                       **({'clock': clock} if clock else {}))
         # M26：笔记服务。只碰 content_notes，不参与采集与自动打标。
         self.notes = NoteService(repository=self.repository, emit=self.emit)
+        # M29：总结服务。只调用公共 AI 层生成草稿，不写库、不进打标队列。
+        self.summary = SummaryService(repository=self.repository, settings=self.settings,
+                                      gateway=self.ai)
         for descriptor in self.gateway.describe():
             resource = resource_key(descriptor)
             self.repository.add_connection(Connection(f"{descriptor.channel}:default", descriptor.channel, descriptor.backend, resource))

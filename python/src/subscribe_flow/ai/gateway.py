@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from .adapters.jev_systemone import JevSystemOneAdapter
 from .adapters.openai_chat import OpenAiChatAdapter
+from .gate import ProviderGate
 from .contracts import (
     CAPABILITY_CANDIDATE_CLASSIFICATION, CAPABILITY_TEXT_GENERATION, ERROR_INVALID_INPUT,
     ERROR_NOT_CONFIGURED, AiError, ChatResult, ClassificationResult, ProviderConfig,
@@ -31,11 +32,14 @@ PROBE_QUESTION = '这是一次连接测试，请只回答是否可用。'
 
 
 class AiGateway:
-    def __init__(self, *, settings, credentials, transport=None, clock=None):
+    def __init__(self, *, settings, credentials, transport=None, clock=None, gate=None):
         self.settings = settings
         self.credentials = credentials
         self.transport = transport
         self.clock = clock or (lambda: 0)
+        # 并发闸门：按连接限流。网关是 Core 里唯一的实例，
+        # 因此后台打标与用户主动触发的总结共用同一个闸门。
+        self.gate = gate or ProviderGate()
 
     # ------------------------------------------------------------ 读取
 
@@ -115,7 +119,8 @@ class AiGateway:
         if missing:
             raise AiError(ERROR_NOT_CONFIGURED, '连接尚未配置完整：' + '、'.join(missing))
         return factory(endpoint=provider.endpoint, model=provider.model, api_key=secret,
-                       transport=self.transport, timeout=None)
+                       transport=self.transport, timeout=None,
+                       gate=self.gate, provider_id=provider.id)
 
     # ------------------------------------------------------------ 调用
 

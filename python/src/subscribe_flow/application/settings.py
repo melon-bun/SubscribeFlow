@@ -18,7 +18,9 @@ import json
 import re
 from urllib.parse import urlparse
 
-from subscribe_flow.ai.contracts import PROTOCOLS, PROTOCOL_LABELS, ProviderConfig
+from subscribe_flow.ai.contracts import (
+    CAPABILITY_TEXT_GENERATION, PROTOCOLS, PROTOCOL_LABELS, ProviderConfig,
+)
 from subscribe_flow.ai.registry import (
     CALL_FIELDS, LEGACY_PROTOCOLS, LEGACY_SLOT_IDS, call_changed, capabilities_of,
     migrate_providers, normalize_providers, provider_id_pattern_ok, references,
@@ -30,6 +32,10 @@ from subscribe_flow.storage.repositories import now
 # 同一个连接可以被多种方式之外的业务引用，连接数量不受这里限制。
 MODES = ("jev", "llm")
 SECTIONS = ("ai", "tagging", "reminder", "priority", "summarization")
+
+# M29 总结策略的取值范围。
+SUMMARY_LENGTHS = ("brief", "detailed")
+SUMMARY_LANGUAGES = ("zh-CN", "original")
 
 # M25：AI 配置格式版本。1 是 0.4.9 的固定 llm／jev 两槽结构。
 AI_FORMAT_VERSION = 2
@@ -184,6 +190,16 @@ def _validate_provider_name(value, scope_key):
     if len(name) > 60:
         _fail("连接名称不能超过 60 个字符", "field", scope_key)
     return name
+
+
+def _summary_fingerprint(section: dict) -> str:
+    """总结策略的指纹：开关、用哪条连接、详细程度与语言。
+
+    它与打标的指纹互不相干：改总结不动打标，改打标不动总结。
+    """
+    return json.dumps({key: section.get(key)
+                       for key in ("enabled", "providerId", "length", "language")},
+                      ensure_ascii=False, sort_keys=True)
 
 
 def _recognition_fingerprint(payload):
@@ -341,6 +357,14 @@ class SettingsService:
             if credential_refs:
                 _fail("识别策略不接受凭据引用")
             merged = self._merge_tagging(payload["tagging"], patch, payload["ai"]["providers"])
+        elif section == "summarization":
+            if credential_refs:
+                _fail("AI 总结设置不接受凭据引用")
+            merged = self._merge_summarization(payload["summarization"], patch,
+                                               payload["ai"]["providers"])
+            # 总结自己的有效版本：只有总结策略真的变了才前进。
+            if _summary_fingerprint(merged) != _summary_fingerprint(payload["summarization"]):
+                merged["revision"] = int(merged.get("revision") or 1) + 1
         elif section == "priority":
             if credential_refs:
                 _fail("优先级名称不接受凭据引用")
@@ -509,6 +533,41 @@ class SettingsService:
                 if current["enabled"]:
                     _fail("自动打标已开启，「%s」用的连接已停用：请先在「AI API 配置」里启用它。" % name)
                 _fail("开启自动打标前，请先在「AI API 配置」里启用「%s」用的连接（该连接已停用）。" % name)
+        return merged
+
+    def _merge_summarization(self, current, patch, providers):
+        """只合并总结策略：开关、用哪条连接、详细程度与语言。
+
+        连接必须协议支持文本生成；已停用或没配完的连接也允许选中
+        （与 AI API 配置一样，填一半也要存得住），生成时如实说明不可用的原因。
+        解除引用是明确的 null，不会被默认复活。
+        """
+        if set(patch) - {"enabled", "providerId", "length", "language"}:
+            _fail("包含不支持的 AI 总结字段")
+        merged = copy.deepcopy(current)
+        if "enabled" in patch:
+            if not isinstance(patch["enabled"], bool):
+                _fail("AI 总结开关无效", "field", "enabled")
+            merged["enabled"] = patch["enabled"]
+        if "providerId" in patch:
+            provider_id = patch["providerId"]
+            if provider_id is None:
+                merged["providerId"] = None
+            else:
+                if not isinstance(provider_id, str) or provider_id not in providers:
+                    _fail("所选连接不存在", "field", "providerId")
+                protocol = providers[provider_id].get("protocol")
+                if CAPABILITY_TEXT_GENERATION not in capabilities_of(protocol):
+                    _fail("这条连接不支持文本生成，不能用来做总结", "field", "providerId")
+                merged["providerId"] = provider_id
+        if "length" in patch:
+            if patch["length"] not in SUMMARY_LENGTHS:
+                _fail("总结长度无效", "field", "length")
+            merged["length"] = patch["length"]
+        if "language" in patch:
+            if patch["language"] not in SUMMARY_LANGUAGES:
+                _fail("总结语言无效", "field", "language")
+            merged["language"] = patch["language"]
         return merged
 
     def _merge_reminder(self, current, patch):

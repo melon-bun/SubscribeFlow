@@ -50,6 +50,7 @@
      deleteNote(id, version) → { ok }                      删除笔记（不删内容）
      listNotes(query)        → { items, total, next_offset } 笔记目录
      noteFacets(query)       → { channels, sources, tags }  笔记范围内的筛选项
+     draftNote(id, requestId) → SummaryDraft               生成总结草稿（不落库）
      on(event, handler)      → unsubscribe                 进度等事件
    ========================================================================== */
 (function (global) {
@@ -100,6 +101,8 @@
     "listAiProviders", "testAiProvider",
     // M26 笔记：一条内容一条笔记，写入是全量替换。
     "getNote", "saveNote", "deleteNote", "listNotes", "noteFacets",
+    // M29 总结草稿：受限调用，只给内容 ID 与请求 ID。
+    "draftNote",
     "on",
   ];
 
@@ -202,6 +205,10 @@
     };
     client.listNotes = function (params) { return invoke('listNotes', [params || {}]); };
     client.noteFacets = function (params) { return invoke('noteFacets', [params || {}]); };
+    // M29：生成总结草稿。requestId 由调用方给，用来认领这一次请求的返回。
+    client.draftNote = function (itemId, requestId) {
+      return invoke('note.draft', { item_id: itemId, request_id: requestId || null });
+    };
     // M21：可以指定要测哪一类 API。只测这一类，不改打标方式、不触发打标。
     client.testTaggingConnection = function (mode) {
       return mode ? invoke('tagging.test', { mode: mode }) : invoke('tagging.test', {});

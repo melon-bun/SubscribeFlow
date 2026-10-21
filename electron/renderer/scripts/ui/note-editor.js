@@ -54,6 +54,9 @@
         notice: null,
         conflict: false,
         seq: 0,
+        // M29：AI 总结。只生成草稿，不落库。
+        summary: { status: "idle", requestId: null, result: null, error: null, applied: false, stale: false },
+        summarySeq: 0,
       };
     }
     return states[itemId];
@@ -101,13 +104,55 @@
     return !!(String(draft.summary || "").trim() || String(draft.takeaway || "").trim() || draft.verdict);
   }
 
-  /** 总结的来路：手写是 manual，改过 AI 草稿是 ai_edited，总结清空就没有来路。 */
+  /**
+   * 总结的来路：手写是 manual，AI 草稿未改是 ai，用户改过是 ai_edited，总结清空就没有来路。
+   *
+   * 来路跟着草稿走，而不是每次保存时拿文本去比：AI 生成的草稿被手改后，
+   * 哪怕又改回原样，也仍然算「用户改过」（ai_edited）。
+   */
   function originFor(st) {
     var draft = st.draft;
     if (!String(draft.summary || "").trim()) return null;
-    var base = draftOf(st.note);
-    if (draft.summary === base.summary) return base.origin || null;
-    return base.origin === "ai" || base.origin === "ai_edited" ? "ai_edited" : "manual";
+    if (draft.origin === "ai" || draft.origin === "ai_edited") return draft.origin;
+    return "manual";
+  }
+
+  /** 用户手改了总结：AI 来的变成 ai_edited，手写的仍是 manual。 */
+  function markEdited(st) {
+    st.touched = true;
+    if (st.draft.origin === "ai") st.draft.origin = "ai_edited";
+    else if (st.draft.origin !== "ai_edited") st.draft.origin = "manual";
+  }
+
+  /* ---------------------------------------------------------------- 总结策略 */
+
+  // 总结策略：是否启用、用哪条连接。只用于界面判断，不参与保存。
+  var summaryConfig = { loaded: false, value: null };
+
+  function loadSummaryConfig(client, done) {
+    if (summaryConfig.loaded) {
+      // 已经读过了：不要再回调。回调会触发一次重画，
+      // 而重画又会新建编辑区——那就成了一圈自己叫自己的死循环。
+      return;
+    }
+    client.getSettings().then(
+      function (settings) {
+        summaryConfig.value = (settings && settings.summarization) || null;
+        summaryConfig.loaded = true;
+        if (done) done(summaryConfig.value);
+      },
+      function () {
+        summaryConfig.value = null;
+        summaryConfig.loaded = true;
+        if (done) done(null);
+      }
+    );
+  }
+
+  /** 设置里改过总结策略后调用：下次打开编辑区时重新读一次。 */
+  function invalidateSummaryConfig() {
+    summaryConfig.loaded = false;
+    summaryConfig.value = null;
   }
 
   /* ---------------------------------------------------------------- 读取 */
@@ -240,6 +285,90 @@
     );
   }
 
+  /* ---------------------------------------------------------------- 生成总结 */
+
+  /**
+   * 点「AI 总结」。已有非空总结时先确认：取消就不要发请求。
+   */
+  function startSummary(state, options, repaint) {
+    if (state.summary.status === "running") return;
+    if (String(state.draft.summary || "").trim()) {
+      ui.confirm({
+        title: "用生成的总结替换现在的总结？",
+        message: "现在已有的总结会被替换，个人收获与项目结论保留。",
+        confirmText: "生成并替换",
+        danger: true,
+      }).then(function (ok) {
+        if (ok) requestSummary(state, options, repaint);
+      });
+      return;
+    }
+    requestSummary(state, options, repaint);
+  }
+
+  /**
+   * 真的发一次请求。只在用户点击时发：配置保存、采集、切页、重启都不会自动生成。
+   *
+   * 返回时按请求身份、模板、原稿与内容版本核对：不该覆盖的一律不覆盖，
+   * 结果留成「可采用」的草稿，由用户自己决定。
+   */
+  function requestSummary(state, options, repaint) {
+    var client = options.client;
+    var seq = ++state.summarySeq;
+    var requestId = "sum-" + state.itemId + "-" + seq;
+    state.summary = {
+      status: "running",
+      requestId: requestId,
+      result: null,
+      error: null,
+      applied: false,
+      stale: false,
+      template: state.draft.template,
+      snapshot: state.draft.summary || "",
+    };
+    repaint();
+    client.draftNote(state.itemId, requestId).then(
+      function (result) {
+        if (seq !== state.summarySeq) return; // 不是最新的一次：丢掉
+        if (!result || result.ok !== true) {
+          state.summary.status = "error";
+          state.summary.error = {
+            code: (result && result.code) || "unknown",
+            message: (result && result.message) || "生成失败，可以再试一次。",
+          };
+          repaint();
+          return;
+        }
+        var stale = false;
+        if (state.draft.template !== state.summary.template) stale = true;
+        if (state.draft.summary !== state.summary.snapshot) stale = true;
+        var currentVersion = options.item && options.item.updated_at;
+        if (currentVersion && result.content_version && currentVersion !== result.content_version) {
+          stale = true; // 原文已经变了
+        }
+        state.summary.status = "done";
+        state.summary.result = result;
+        state.summary.stale = stale;
+        if (!stale) {
+          state.draft.summary = result.summary;
+          state.draft.origin = "ai";
+          state.touched = true;
+          state.summary.applied = true;
+        }
+        repaint();
+      },
+      function (err) {
+        if (seq !== state.summarySeq) return;
+        state.summary.status = "error";
+        state.summary.error = {
+          code: (err && err.code) || "unknown",
+          message: (err && err.message) || "生成失败，可以再试一次。",
+        };
+        repaint();
+      }
+    );
+  }
+
   /* ---------------------------------------------------------------- 组件 */
 
   /**
@@ -320,9 +449,89 @@
       }
       children.push(hintBox(draft, opts));
       children.push(fields(draft, st));
+      children.push(summaryEntry(st, opts));
       children.push(actions(draft, st));
       children.push(status(draft, st));
       return children;
+    }
+
+    /**
+     * AI 总结入口。只有选了笔记模板、且总结开着时才出现。
+     * 没配置或连接不可用时，说清原因并给一条去设置的路——不给点不动的死按钮。
+     */
+    function summaryEntry(state, options) {
+      if (!state.draft || state.draft.template === "none") return null;
+      var policy = summaryConfig.value;
+      if (!policy) {
+        return h("div.note-editor__ai", null, h("p.field__hint", { text: "正在读取总结设置…" }));
+      }
+      if (!policy.enabled) return null;
+      var children = [];
+      var running = state.summary.status === "running";
+      if (!policy.providerId) {
+        children.push(
+          h("p.field__hint", { text: "还没有选择总结用的连接，现在不能生成总结。" })
+        );
+        children.push(
+          ui.btn("前往设置", {
+            size: "sm",
+            onClick: function () {
+              SF.app.navigate("settings", { section: "summarization" });
+            },
+          })
+        );
+        return h("div.note-editor__ai", null, children);
+      }
+      children.push(
+        h("div.note-editor__ai-row", null,
+          ui.btn(running ? "正在生成…" : "AI 总结", {
+            variant: "ghost",
+            size: "sm",
+            disabled: running,
+            onClick: function () {
+              startSummary(state, options, repaint);
+            },
+          }),
+          h("span.field__hint", { text: "生成的是草稿：写不写、怎么改都归你。" }))
+      );
+      if (state.summary.status === "error" && state.summary.error) {
+        children.push(
+          h("p.field__error", { role: "status", text: state.summary.error.message })
+        );
+        children.push(
+          ui.btn("重试", {
+            size: "sm",
+            onClick: function () {
+              requestSummary(state, options, repaint);
+            },
+          })
+        );
+      }
+      if (state.summary.status === "done" && state.summary.result && !state.summary.applied) {
+        // 结果没有自动覆盖：可能是生成期间你改了总结，或原文已经变了。
+        children.push(
+          h("p.field__hint", {
+            text: state.summary.stale
+              ? "生成完成，但你已经改过总结或原文变了，没有自动覆盖。可以采用这段，也可以继续改自己的。"
+              : "生成完成。",
+          })
+        );
+        children.push(
+          h("div.note-editor__ai-result", null,
+            h("p.note-editor__ai-text", { text: state.summary.result.summary }),
+            ui.btn("采用这段总结", {
+              size: "sm",
+              onClick: function () {
+                state.draft.summary = state.summary.result.summary;
+                state.draft.origin = "ai";
+                state.touched = true;
+                state.summary.applied = true;
+                repaint();
+              },
+            }))
+        );
+      }
+      return h("div.note-editor__ai", null, children);
     }
 
     function hintBox(draft, options) {
@@ -364,7 +573,13 @@
             value: draft.summary,
             oninput: function (e) {
               state.draft.summary = e.target.value;
-              state.touched = true;
+              if (!e.target.value.trim()) {
+                // 清空了：AI 的来路也就没了，之后重新写就是手写。
+                state.draft.origin = null;
+                state.touched = true;
+              } else {
+                markEdited(state);
+              }
               refreshStatus();
             },
           })
@@ -504,6 +719,8 @@
 
     paint();
     if (!st.loaded && !st.loading) refreshNote(itemId, client, true, repaint);
+    // 总结策略：决定要不要显示生成入口。读一次就够，设置改了会主动失效。
+    loadSummaryConfig(client, repaint);
     return box;
   }
 
@@ -667,5 +884,7 @@
     dirtyIds: dirtyIds,
     forget: forget,
     refreshNote: refreshNote,
+    // 设置里改过总结策略后调用：下次打开编辑区重新读一次。
+    invalidateConfig: invalidateSummaryConfig,
   };
 })(window);

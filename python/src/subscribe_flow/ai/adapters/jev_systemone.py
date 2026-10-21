@@ -19,12 +19,21 @@ class JevSystemOneAdapter:
     protocol = PROTOCOL_JEV_SYSTEMONE
 
     def __init__(self, *, endpoint: str, model: str, api_key: str, transport=None,
-                 timeout: float | None = None):
+                 timeout: float | None = None, gate=None, provider_id: str | None = None):
         self.endpoint = endpoint or ''
         self.model = model or ''
         self.api_key = api_key or ''
         self.timeout = timeout
         self._transport = transport
+        # 并发闸门：按连接限流，后台打标与用户主动触发的请求共用同一个。
+        self.gate = gate
+        self.provider_id = provider_id or ''
+
+    def _slot(self):
+        if self.gate is None:
+            from contextlib import nullcontext
+            return nullcontext()
+        return self.gate.slot(self.provider_id, self.timeout)
 
     def transport(self):
         if self._transport is None:
@@ -43,8 +52,9 @@ class JevSystemOneAdapter:
             'state': state,
             'questions': {qid: {'type': 'noul', 'instructions': text} for qid, text in questions.items()},
         }
-        _, body = self.transport().post_json(self.endpoint, payload,
-                                            {'Authorization': f'Bearer {self.api_key}'}, self.timeout)
+        with self._slot():
+            _, body = self.transport().post_json(self.endpoint, payload,
+                                                 {'Authorization': f'Bearer {self.api_key}'}, self.timeout)
         return ClassificationResult(probabilities=self._probabilities(body, questions),
                                    model=self._model(body), usage=self._usage(body),
                                    provider=self.protocol)

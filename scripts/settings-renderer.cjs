@@ -82,7 +82,8 @@ async function verify({window, core, root}) {
   assert.equal(await evaluate(`location.hash.includes('object')`), false, '入口不能把点击事件写入路由');
   assert.equal(await evaluate(`!!document.querySelector('.sidebar')`), false, '设置是整页大面板，不套侧栏');
   const navLabels = await evaluate(`Array.from(document.querySelectorAll('.settings-nav__label')).map(n => n.textContent)`);
-  assert.deepEqual(navLabels, ['AI API 配置', '提醒设置', '优先级名称']);
+  // M29 增加了独立的「AI 总结」分区：总结策略不与 AI API 配置混在一起。
+  assert.deepEqual(navLabels, ['AI API 配置', '提醒设置', '优先级名称', 'AI 总结']);
   assert.equal(await evaluate(`!!document.querySelector('.settings__foot')`), true, '底部操作区必须存在');
   assert.ok(await evaluate(`document.querySelector('[aria-label="关闭设置"]')`), '必须有可聚焦的关闭入口');
   await screenshot('m15-settings-tagging.png');

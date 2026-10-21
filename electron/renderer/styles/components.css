@@ -2130,3 +2130,42 @@ textarea.input {
   flex-direction: column;
   gap: var(--s-2);
 }
+
+/* ---------------- M29 AI 总结入口 ---------------- */
+
+.note-editor__ai {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+}
+
+.note-editor__ai-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+
+.note-editor__ai-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  align-items: flex-start;
+}
+
+.note-editor__ai-text {
+  margin: 0;
+  padding: var(--s-3);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font-size: var(--fs-cap);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
