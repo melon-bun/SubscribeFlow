@@ -239,15 +239,21 @@ class SettingsService:
         # tagging.providers）在这里转换，地址、模型与同一个凭据引用都保留。
         payload["ai"]["providers"] = self._read_providers(stored)
         payload["ai"]["formatVersion"] = AI_FORMAT_VERSION
-        # 打标策略引用哪条连接：旧配置没有这个字段时按迁移结果补上。
+        # 打标策略引用哪条连接。
+        # 存档里显式写了的值优先——哪怕是 null：那是用户解除引用，不能被默认复活。
+        # 存档里没写的那一项才用默认补上；默认指向的连接不存在时留空，不留悬空引用。
         provider_ids = dict(payload["tagging"]["providerIds"])
         stored_tagging = stored.get("tagging")
         if isinstance(stored_tagging, dict) and isinstance(stored_tagging.get("providerIds"), dict):
+            stored_ids = stored_tagging["providerIds"]
             for mode in MODES:
-                value = stored_tagging["providerIds"].get(mode)
-                if value:
-                    provider_ids[mode] = value
-        payload["tagging"]["providerIds"] = {mode: provider_ids.get(mode) for mode in MODES}
+                if mode in stored_ids:
+                    provider_ids[mode] = stored_ids[mode] or None
+        providers = payload["ai"]["providers"]
+        payload["tagging"]["providerIds"] = {
+            mode: (provider_ids.get(mode) if provider_ids.get(mode) in providers else None)
+            for mode in MODES
+        }
         # 打标的有效配置版本：旧配置没有这一项时用当前保存版本起头，
         # 升级前就在跑的任务因此不会被结构迁移白白作废。
         stored_revision = (stored.get("tagging") or {}).get("revision")
@@ -467,6 +473,8 @@ class SettingsService:
                 _fail("包含不支持的识别方式", "field", "providerIds")
             for mode, provider_id in provider_ids.items():
                 if provider_id is None:
+                    # 明确的「不选这条连接」：解除引用。引用解除后连接才能被删除。
+                    merged["providerIds"][mode] = None
                     continue
                 if not isinstance(provider_id, str) or provider_id not in providers:
                     _fail("所选连接不存在", "field", "providerIds." + mode)
@@ -480,15 +488,27 @@ class SettingsService:
             mode = merged["mode"]
             provider_id = (merged.get("providerIds") or {}).get(mode)
             provider = providers.get(provider_id) if provider_id else None
-            missing = _missing_provider_items(provider) if provider else ["可用连接"]
+            names = {"jev": "Jev 已有标签分类", "llm": "LLM 自由生成标签"}
+            name = names[mode]
+            if provider_id is None:
+                # 当前方式没有连接：开着识别时这是坏状态，不能存。
+                # 解除引用要么先选一条，要么先关闭识别。
+                if current["enabled"]:
+                    _fail("自动打标已开启，「%s」还没有选连接：请先选一条可用连接，"
+                          "或关闭自动打标后再解除引用。" % name)
+                _fail("开启自动打标前，请先为「%s」选择一条连接。" % name)
+            missing = _missing_provider_items(provider)
             if missing:
-                names = {"jev": "Jev 已有标签分类", "llm": "LLM 自由生成标签"}
-                name = names[mode]
                 if current["enabled"]:
                     # 已经开启时切到另一种方式：不是「打不开」，而是「切过去就会坏」，
                     # 错误要说清是切换，否则用户会以为是开关本身坏了。
                     _fail("自动打标已开启，切换到「%s」前请先补齐该方式的%s" % (name, "、".join(missing)))
                 _fail("开启自动打标前，请先完成「%s」的%s" % (name, "、".join(missing)))
+            if not provider.get("enabled", True):
+                # 停用的连接跑不起来：开着识别时不能存下这种配置。
+                if current["enabled"]:
+                    _fail("自动打标已开启，「%s」用的连接已停用：请先在「AI API 配置」里启用它。" % name)
+                _fail("开启自动打标前，请先在「AI API 配置」里启用「%s」用的连接（该连接已停用）。" % name)
         return merged
 
     def _merge_reminder(self, current, patch):

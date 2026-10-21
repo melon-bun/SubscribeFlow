@@ -112,6 +112,46 @@ class MigrationTests(unittest.TestCase):
                                          'bad': {'id': 'bad', 'protocol': 'nope'}})
         self.assertEqual(list(providers), ['ok'])
 
+    def test_legacy_slot_only_fills_the_missing_fields(self):
+        """混合旧结构：现代显式写的优先，现代没写的才用旧值补。"""
+        stored = {
+            'ai': {'providers': {'llm': {'endpoint': 'https://new/v1'}}},
+            'tagging': {'providers': {'llm': {'endpoint': 'https://old/v1', 'model': 'old-model',
+                                             'credentialRef': 'old-ref'}}},
+        }
+        migrated = migrate_providers(stored)
+        self.assertEqual(migrated['provider-llm']['endpoint'], 'https://new/v1', '现代显式的地址优先')
+        self.assertEqual(migrated['provider-llm']['model'], 'old-model', '现代没写的模型要用旧值补上')
+        self.assertEqual(migrated['provider-llm']['credentialRef'], 'old-ref', '凭据引用要补回来')
+
+    def test_explicit_clear_is_not_revived_by_the_legacy_value(self):
+        """用户显式清空的字段不能被旧值复活。"""
+        stored = {
+            'ai': {'providers': {'llm': {'endpoint': 'https://new/v1', 'model': '',
+                                         'credentialRef': None}}},
+            'tagging': {'providers': {'llm': {'model': 'old-model', 'credentialRef': 'old-ref'}}},
+        }
+        migrated = migrate_providers(stored)
+        self.assertEqual(migrated['provider-llm']['model'], '', '显式清空的模型不能被旧值复活')
+        self.assertIsNone(migrated['provider-llm']['credentialRef'], '显式清空的凭据引用不能被旧值复活')
+
+    def test_mixed_structures_stay_idempotent(self):
+        stored = {
+            'ai': {'providers': {'llm': {'endpoint': 'https://new/v1'}}},
+            'tagging': {'providers': {'llm': {'model': 'old-model', 'credentialRef': 'old-ref'}}},
+        }
+        once = migrate_providers(stored)
+        twice = migrate_providers({'ai': {'formatVersion': 2, 'providers': once}})
+        self.assertEqual(twice, once)
+
+    def test_modern_structure_does_not_resurrect_deleted_connections(self):
+        """新结构是权威的：删光连接后，旧槽位不能把它们补回来。"""
+        stored = {
+            'ai': {'formatVersion': 2, 'providers': {}},
+            'tagging': {'providers': {'llm': {'endpoint': 'https://old/v1', 'model': 'old-model'}}},
+        }
+        self.assertEqual(migrate_providers(stored), {})
+
 
 class ReferenceTests(unittest.TestCase):
     def test_users_of_a_provider_are_named(self):
@@ -258,6 +298,70 @@ class GatewayTests(unittest.TestCase):
         outcome = gateway.test_connection('provider-text')
         self.assertFalse(outcome['ok'])
         self.assertEqual(outcome['code'], 'invalid_response')
+
+
+class DisabledProviderTests(unittest.TestCase):
+    """BUG-106：停用的连接在调用边界就要被拒绝，不发出请求。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / 'ai.sqlite3'
+        self.db = Database(self.path)
+        self.settings = SettingsService(SettingsStore(self.db))
+        self.credentials = CredentialBroker()
+        self.credentials.provide('key', 'secret')
+        self.transport = FakeTransport({'/chat/completions': {
+            'model': 'demo', 'choices': [{'message': {'content': 'ok'}}]}})
+        self.settings.update('ai', {'providers': {
+            'provider-text': {'protocol': PROTOCOL_OPENAI_CHAT, 'endpoint': 'https://api/v1',
+                              'model': 'm', 'enabled': False}}},
+            {'provider-text': 'key'})
+
+    def tearDown(self):
+        self.db.close()
+        self.temp.cleanup()
+
+    def gateway(self, settings=None):
+        return AiGateway(settings=settings or self.settings, credentials=self.credentials,
+                         transport=self.transport)
+
+    def test_disabled_provider_is_refused_before_any_request(self):
+        gateway = self.gateway()
+        with self.assertRaises(AiError) as caught:
+            gateway.chat('provider-text', [('user', 'x')])
+        self.assertEqual(caught.exception.code, 'not_configured')
+        self.assertIn('停用', caught.exception.message)
+        self.assertEqual(self.transport.calls, [], '停用的连接不能发出请求')
+        # 适配器与探针是同一条边界：同样拒绝，同样不请求。
+        with self.assertRaises(AiError):
+            gateway.adapter('provider-text')
+        outcome = gateway.test_connection('provider-text')
+        self.assertFalse(outcome['ok'])
+        self.assertIn('停用', outcome['message'])
+        self.assertEqual(self.transport.calls, [], '探针也不能发出请求')
+
+    def test_classify_is_refused_for_a_disabled_provider(self):
+        self.settings.update('ai', {'providers': {
+            'provider-classify': {'protocol': PROTOCOL_JEV_SYSTEMONE, 'endpoint': 'https://api',
+                                  'model': 'm', 'enabled': False}}},
+            {'provider-classify': 'key'})
+        gateway = self.gateway()
+        with self.assertRaises(AiError) as caught:
+            gateway.classify('provider-classify', '内容', {'q': '是不是甲'})
+        self.assertEqual(caught.exception.code, 'not_configured')
+        self.assertEqual(self.transport.calls, [], '停用的连接不能发出请求')
+
+    def test_disabled_state_survives_a_restart_and_enabling_restores_the_call(self):
+        # 换一个设置服务（相当于重启）：读的是存档，停用状态还在。
+        restarted = SettingsService(SettingsStore(self.db))
+        gateway = self.gateway(restarted)
+        with self.assertRaises(AiError):
+            gateway.chat('provider-text', [('user', 'x')])
+        self.assertEqual(self.transport.calls, [], '重启后停用的连接依然不能调用')
+        # 重新启用：立刻可用，不需要重配地址、模型或密钥。
+        self.settings.update('ai', {'providers': {'provider-text': {'enabled': True}}})
+        gateway.chat('provider-text', [('user', 'x')])
+        self.assertEqual(len(self.transport.calls), 1)
 
 
 if __name__ == '__main__':

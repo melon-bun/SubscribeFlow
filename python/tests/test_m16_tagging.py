@@ -328,6 +328,21 @@ class M16TaggingTests(_M16Fixture, unittest.TestCase):
         self.assertEqual(self.tasks.list_tasks(limit=5)['total'], before)
         self.assertEqual(self.tags_of(saved['item_id']), ['编程'])
 
+    def test_disabled_provider_is_not_called_by_tagging(self):
+        """停用的连接：打标不得调用它，任务如实说「已停用」。"""
+        self.add_tag('Python')
+        self.enable(picks={'fixture:feed:python-1': ['Python']})
+        item = make_item('fixture', 'python-1', 'Python 异步编程实践',
+                         '这篇讲 asyncio 与类型标注的实践总结，包含代码示例与性能对比。')
+        self.repo.save_manual(item)
+        # 停用当前方式所用的连接。
+        self.core.settings.update('ai', {'providers': {PROVIDER_IDS['llm']: {'enabled': False}}})
+        self.drain()
+        task = self.tasks.list_tasks(limit=1)['items'][0]
+        self.assertEqual(task['state'], 'blocked')
+        self.assertIn('停用', task['error_message'] or '')
+        self.assertEqual(self.stub.calls, 0, '停用的连接不能被打标调用')
+
     def test_config_change_requeues_with_current_version(self):
         """配置版本变化后旧任务按新版本重排，不写旧快照结果。"""
         self.add_tag('科技')

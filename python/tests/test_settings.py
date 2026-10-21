@@ -375,6 +375,24 @@ class AiStrategySeparationTests(unittest.TestCase):
         self.assertEqual(providers[PROVIDER_IDS['jev']]['credentialRef'], 'jev-old')
         self.assertEqual(providers[PROVIDER_IDS['llm']]['model'], 'llm-old')
 
+    def test_mixed_legacy_sources_fill_missing_fields_only(self):
+        """两处旧来源同时存在：按字段补缺，不是按整条取舍。"""
+        self.write_raw(json.dumps({
+            'ai': {'providers': {'llm': {'endpoint': 'https://new.example.com/v1'}}},
+            'tagging': {'providers': {'llm': {'endpoint': 'https://old.example.com/v1',
+                                              'model': 'old-model', 'credentialRef': 'old-ref'}}},
+        }))
+        providers = self.service.snapshot()['ai']['providers']
+        provider = providers[PROVIDER_IDS['llm']]
+        self.assertEqual(provider['endpoint'], 'https://new.example.com/v1', '现代显式的地址优先')
+        self.assertEqual(provider['model'], 'old-model', '现代没写的模型用旧值补上')
+        self.assertEqual(provider['credentialRef'], 'old-ref', '凭据引用要补回来')
+        # 补齐之后保存一次，值不能再变（幂等）。
+        self.service.update('ai', {'providers': {'provider-llm': {'name': 'LLM'}}})
+        again = self.service.snapshot()['ai']['providers'][PROVIDER_IDS['llm']]
+        self.assertEqual(again['model'], 'old-model')
+        self.assertEqual(again['credentialRef'], 'old-ref')
+
     def test_conversion_is_idempotent_and_keeps_the_key(self):
         self.write_raw(json.dumps({
             'tagging': {'enabled': True, 'mode': 'jev', 'enabledSince': '2026-10-01T00:00:00+00:00',
@@ -475,6 +493,48 @@ class AiStrategySeparationTests(unittest.TestCase):
                                                                'model': 'x-model'}}})
         self.service.update('ai', {'providers': {'provider-x': None}})
         self.assertNotIn('provider-x', self.service.snapshot()['ai']['providers'])
+
+    # ------------------------------------------------------------ 引用与解除引用
+
+    def test_provider_reference_can_be_cleared_when_the_business_is_off(self):
+        self.service.update('ai', {'providers': {'provider-a': {'protocol': 'openai_chat',
+                                                               'endpoint': 'https://a.example.com/v1',
+                                                               'model': 'a-model'}}},
+                            {'provider-a': 'a-key'})
+        self.service.update('tagging', {'mode': 'llm', 'providerIds': {'llm': 'provider-a'},
+                                        'enabled': False})
+        # 明确解除引用：这一类识别不再用这条连接。
+        self.service.update('tagging', {'providerIds': {'llm': None}})
+        self.assertIsNone(self.service.snapshot()['tagging']['providerIds']['llm'])
+        # 无关保存不能把它复活。
+        self.service.update('priority', {'names': {'high': '今天看'}})
+        self.assertIsNone(self.service.snapshot()['tagging']['providerIds']['llm'])
+        # 解除引用之后，这条连接才能删掉。
+        self.service.update('ai', {'providers': {'provider-a': None}})
+        self.assertNotIn('provider-a', self.service.snapshot()['ai']['providers'])
+
+    def test_clearing_the_reference_while_recognition_is_on_is_refused(self):
+        self.service.update('ai', {'providers': {'provider-a': {'protocol': 'openai_chat',
+                                                               'endpoint': 'https://a.example.com/v1',
+                                                               'model': 'a-model'}}},
+                            {'provider-a': 'a-key'})
+        self.service.update('tagging', {'mode': 'llm', 'providerIds': {'llm': 'provider-a'},
+                                        'enabled': True})
+        with self.assertRaises(ChannelError) as caught:
+            self.service.update('tagging', {'providerIds': {'llm': None}})
+        self.assertIn('连接', caught.exception.message)
+        self.assertEqual(self.service.snapshot()['tagging']['providerIds']['llm'], 'provider-a',
+                         '被拒绝的保存不能改变已保存的引用')
+
+    def test_enabling_recognition_with_a_disabled_provider_is_refused(self):
+        self.service.update('ai', {'providers': {'provider-a': {'protocol': 'openai_chat',
+                                                               'endpoint': 'https://a.example.com/v1',
+                                                               'model': 'a-model', 'enabled': False}}},
+                            {'provider-a': 'a-key'})
+        with self.assertRaises(ChannelError) as caught:
+            self.service.update('tagging', {'mode': 'llm', 'providerIds': {'llm': 'provider-a'},
+                                            'enabled': True})
+        self.assertIn('停用', caught.exception.message)
 
     # ------------------------------------------------------------ 版本与 revision
 

@@ -100,6 +100,10 @@ class AiGateway:
         factory = ADAPTERS.get(provider.protocol)
         if factory is None:
             raise AiError(ERROR_NOT_CONFIGURED, f'暂不支持的协议：{provider.protocol}')
+        # 停用是用户在「AI API 配置」里明确关掉的：调用前就拒绝，不发请求，
+        # 也不悄悄换成另一条连接。引用保持原样，重新启用后立刻可用。
+        if not provider.enabled:
+            raise AiError(ERROR_NOT_CONFIGURED, '这条连接已停用，请先在「AI API 配置」里启用。')
         secret = self._secret(provider)
         missing = []
         if not provider.endpoint:

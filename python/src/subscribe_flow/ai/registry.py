@@ -58,45 +58,63 @@ def migrate_providers(stored) -> dict:
     两处旧来源：新结构 ``ai.providers``（0.4.9）与更旧的 ``tagging.providers``。
     现代优先、旧字段补缺；地址、模型与**同一个** credentialRef 都保留，
     不复制也不新建密钥。
+
+    补缺是**按字段**做的，不是按整条：现代显式写了的值优先（哪怕是空串或
+    null，那表示用户自己清过，不能被旧值复活），现代没写的那一项才用旧值补上。
     """
     ai = stored.get('ai') if isinstance(stored, dict) else None
     ai = ai if isinstance(ai, dict) else {}
     version = ai.get('formatVersion')
     modern_raw = ai.get('providers') if isinstance(ai.get('providers'), dict) else {}
+    legacy_raw: dict = {}
+    tagging = stored.get('tagging') if isinstance(stored, dict) else None
+    if isinstance(tagging, dict) and isinstance(tagging.get('providers'), dict):
+        legacy_raw = tagging['providers']
     looks_modern = (isinstance(version, int) and version >= 2) or any(
         isinstance(value, dict) and ('protocol' in value or 'id' in value)
         for value in modern_raw.values())
+
+    merged_raw: dict[str, dict] = {}
+    # 资源 ID → 旧槽位名。槽位名决定协议与名称的兜底（llm／jev 的旧约定）。
+    slots: dict[str, str | None] = {}
     if looks_modern:
         # 已经是新结构：键就是稳定 ID，原样保留。
-        return {key: _as_resource(key, value, None)
-                for key, value in modern_raw.items() if isinstance(value, dict)}
-    modern: dict[str, dict] = {}
-    legacy: dict[str, dict] = {}
-    for source, target in ((ai, modern),
-                           (stored.get('tagging') or {} if isinstance(stored, dict) else {}, legacy)):
-        if not isinstance(source, dict):
-            continue
-        providers = source.get('providers')
-        if not isinstance(providers, dict):
-            continue
-        for slot, value in providers.items():
+        # 用户删光连接也是事实：这里不凭空补回旧连接。
+        for key, value in modern_raw.items():
             if isinstance(value, dict):
-                target.setdefault(slot, value)
-    result: dict[str, dict] = {}
-    for slot, value in modern.items():
+                merged_raw[key] = dict(value)
+                slots[key] = None
+    else:
+        for slot, value in modern_raw.items():
+            if not isinstance(value, dict):
+                continue
+            provider_id = LEGACY_SLOT_IDS.get(slot)
+            if not provider_id:
+                merged_raw[slot] = dict(value)
+                slots[slot] = None
+                continue
+            merged_raw[provider_id] = dict(value)
+            slots[provider_id] = slot
+    # 更旧的 tagging.providers：按字段补缺。
+    for slot, value in legacy_raw.items():
+        if not isinstance(value, dict):
+            continue
         provider_id = LEGACY_SLOT_IDS.get(slot)
         if not provider_id:
-            result[slot] = _as_resource(slot, value, None)
             continue
-        result[provider_id] = _as_resource(provider_id, value, slot)
-    for slot, value in legacy.items():
-        if slot in modern:
+        if provider_id not in merged_raw:
+            # 旧结构里多出来的一条：补进来（用户当年只填过一半槽位）。
+            # 新结构已经是权威的，不在这里凭空添加——否则删掉的连接会复活。
+            if not looks_modern:
+                merged_raw[provider_id] = dict(value)
+                slots[provider_id] = slot
             continue
-        provider_id = LEGACY_SLOT_IDS.get(slot)
-        if not provider_id or provider_id in result:
-            continue
-        result[provider_id] = _as_resource(provider_id, value, slot)
-    return result
+        # 现代显式写的值优先；现代没写的那一项用旧值补上。
+        merged_raw[provider_id] = {**value, **merged_raw[provider_id]}
+        if slots.get(provider_id) is None:
+            slots[provider_id] = slot
+    return {provider_id: _as_resource(provider_id, value, slots.get(provider_id))
+            for provider_id, value in merged_raw.items()}
 
 
 def _as_resource(provider_id: str, value: dict, slot: str | None) -> dict:

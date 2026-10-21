@@ -1244,8 +1244,12 @@
 
   /** 当前这一种识别方式选中的那条连接。 */
   function recognitionProvider(mode) {
-    var providerId = (recognition.draft && recognition.draft.providerIds && recognition.draft.providerIds[mode]) ||
-      (recognition.saved && recognition.saved.providerIds && recognition.saved.providerIds[mode]);
+    var draftIds = recognition.draft && recognition.draft.providerIds;
+    var savedIds = recognition.saved && recognition.saved.providerIds;
+    var providerId = null;
+    // 草稿里显式选了「不选」就是没有连接，不再回退到已保存的那一条。
+    if (draftIds && mode in draftIds) providerId = draftIds[mode] || null;
+    else if (savedIds) providerId = savedIds[mode] || null;
     return providerId ? (recognition.providers[providerId] || {}) : {};
   }
 
@@ -1253,6 +1257,19 @@
   function recognitionMissing(mode) {
     var provider = recognitionProvider(mode);
     return provider.missing || [];
+  }
+
+  /**
+   * providerIds 的独立副本。
+   * 草稿与已保存值不能共用同一个映射：共用的话，改了连接就看不出草稿，
+   * 「保存识别设置」会一直灰着。
+   */
+  function copyProviderIds(map) {
+    var copy = {};
+    Object.keys(map || {}).forEach(function (mode) {
+      copy[mode] = map[mode] || null;
+    });
+    return copy;
   }
 
   function loadRecognition(app) {
@@ -1265,10 +1282,10 @@
       owner.stale = false;
       var tagging = settings.tagging || {};
       var providerIds = tagging.providerIds || {};
-      owner.saved = { enabled: !!tagging.enabled, mode: tagging.mode || "llm", providerIds: providerIds };
+      owner.saved = { enabled: !!tagging.enabled, mode: tagging.mode || "llm", providerIds: copyProviderIds(providerIds) };
       // 已经有草稿时不覆盖：用户正在改的东西不能被后台刷新冲掉。
       if (!owner.draft) {
-        owner.draft = { enabled: owner.saved.enabled, mode: owner.saved.mode, providerIds: providerIds };
+        owner.draft = { enabled: owner.saved.enabled, mode: owner.saved.mode, providerIds: copyProviderIds(providerIds) };
       }
       var providers = (settings.ai && settings.ai.providers) || {};
       owner.providers = providers;
@@ -1289,22 +1306,43 @@
 
   function recognitionDirty() {
     if (!recognition.saved || !recognition.draft) return false;
-    return recognition.draft.enabled !== recognition.saved.enabled ||
-      recognition.draft.mode !== recognition.saved.mode;
+    if (recognition.draft.enabled !== recognition.saved.enabled) return true;
+    if (recognition.draft.mode !== recognition.saved.mode) return true;
+    // 只换连接也是修改：换了就得能保存，不能让保存按钮一直灰着。
+    var savedIds = recognition.saved.providerIds || {};
+    var draftIds = recognition.draft.providerIds || {};
+    var modes = Object.keys(savedIds).concat(Object.keys(draftIds));
+    for (var i = 0; i < modes.length; i++) {
+      var mode = modes[i];
+      if ((draftIds[mode] || null) !== (savedIds[mode] || null)) return true;
+    }
+    return false;
   }
 
   /**
-   * 保存识别策略。这里只提交 enabled 与 mode：不携带任何 API 字段，
-   * 因此不会覆盖用户刚在设置页改好的连接参数。
+   * 保存识别策略。这里只提交 enabled、mode 与每种方式用哪条连接：
+   * 不携带任何 API 字段，因此不会覆盖用户刚在设置页改好的连接参数。
    */
   function saveRecognition(app, done) {
     if (recognition.saving || !recognition.draft) { if (done) done(false); return; }
     var draft = recognition.draft;
+    var modeLabel = (RECOGNITION_MODES.filter(function (m) { return m.id === draft.mode; })[0] || {}).label;
+    var picked = (draft.providerIds || {})[draft.mode] || "";
+    if (draft.enabled && !picked) {
+      // 开着识别却没有连接：这是跑不起来的配置，不能存。
+      recognition.notice = {
+        tone: "danger",
+        text: "「" + modeLabel + "」还没有选连接，先在下面选一条，或到「AI API 配置」新增一条。",
+      };
+      paintRecognition(app);
+      if (done) done(false);
+      return;
+    }
     var missing = recognitionMissing(draft.mode);
     if (draft.enabled && missing.length) {
       recognition.notice = {
         tone: "danger",
-        text: "「" + (RECOGNITION_MODES.filter(function (m) { return m.id === draft.mode; })[0] || {}).label +
+        text: "「" + modeLabel +
           "」还缺" + missing.join("、") + "，先去「AI API 配置」补齐再启用。",
       };
       paintRecognition(app);
@@ -1321,9 +1359,12 @@
       .then(function (settings) {
         recognition.saving = false;
         var providerIds = (settings.tagging && settings.tagging.providerIds) || draft.providerIds;
-        recognition.saved = { enabled: !!settings.tagging.enabled, mode: settings.tagging.mode, providerIds: providerIds };
+        // 草稿与已保存值各存一份：共用同一个映射会让「有没有未保存修改」永远算不出来。
+        recognition.saved = { enabled: !!settings.tagging.enabled, mode: settings.tagging.mode,
+                              providerIds: copyProviderIds(providerIds) };
         // 保存成功后以服务端返回的值为准，方式可能与草稿不同。
-        recognition.draft = { enabled: recognition.saved.enabled, mode: recognition.saved.mode, providerIds: providerIds };
+        recognition.draft = { enabled: recognition.saved.enabled, mode: recognition.saved.mode,
+                              providerIds: copyProviderIds(providerIds) };
         recognition.notice = { tone: "success", text: "识别设置已保存。" };
         // 策略变了，后台任务状态要跟着重新读一次。
         aiState.stale = true; aiState.revision++; loadAiPanel(app);
@@ -1361,7 +1402,11 @@
             variant: "danger",
             onClick: function () {
               if (recognition.saving) return;
-              if (recognition.saved) recognition.draft = { enabled: recognition.saved.enabled, mode: recognition.saved.mode };
+              if (recognition.saved) {
+                // 连连接引用一起还原：漏掉这一项会让页面凭空多出一个「未保存修改」。
+                recognition.draft = { enabled: recognition.saved.enabled, mode: recognition.saved.mode,
+                                      providerIds: copyProviderIds(recognition.saved.providerIds) };
+              }
               done(true); layer.close();
             },
           }),
@@ -1487,7 +1532,9 @@
             var provider = recognition.providers[providerId] || {};
             return {
               value: providerId,
-              label: (provider.name || providerId) + (provider.configured ? "" : "（未配置完整）"),
+              label: (provider.name || providerId) +
+                (provider.enabled === false ? "（已停用）" : "") +
+                (provider.configured ? "" : "（未配置完整）"),
             };
           }),
           currentProviderId,
@@ -1498,7 +1545,19 @@
             paintRecognition(app);
           },
           { ariaLabel: "选择连接" }
-        )
+        ),
+        // 明确的「不选择」：解除这一类识别与连接的引用。解除后才能删除那条连接。
+        ui.btn("不选择这条连接", {
+          variant: "ghost",
+          disabled: !currentProviderId,
+          title: currentProviderId ? "解除这一类识别与连接的引用" : "当前没有选中的连接",
+          onClick: function () {
+            draft.providerIds = draft.providerIds || {};
+            draft.providerIds[draft.mode] = null;
+            recognition.notice = null;
+            paintRecognition(app);
+          },
+        })
       )
     );
     // 当前方式用的 API 摘要与可用状态：缺什么直接写出来。
@@ -1508,12 +1567,14 @@
         null,
         h("span.ai-status__name", { text: "当前方式的 API" }),
         h("span.ai-status__note", {
-          text: missing.length
-            ? modeLabel + " 尚未配置完整，缺：" + missing.join("、") + "。"
-            : modeLabel + " 使用 " + (provider.endpoint || "") + " · " + (provider.model || "") + "，配置完整。",
+          text: !currentProviderId
+            ? modeLabel + " 还没有选连接：选一条，或点「不选择这条连接」解除引用。"
+            : missing.length
+              ? modeLabel + " 尚未配置完整，缺：" + missing.join("、") + "。"
+              : modeLabel + " 使用 " + (provider.endpoint || "") + " · " + (provider.model || "") + "，配置完整。",
         }),
-        h("span.badge.badge--" + (missing.length ? "danger" : "success"), {
-          text: missing.length ? "未配置完整" : "可用",
+        h("span.badge.badge--" + (!currentProviderId ? "neutral" : missing.length ? "danger" : "success"), {
+          text: !currentProviderId ? "未选择连接" : missing.length ? "未配置完整" : "可用",
         })
       )
     );
