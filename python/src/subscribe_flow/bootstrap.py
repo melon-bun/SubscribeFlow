@@ -16,6 +16,7 @@ from subscribe_flow.application.queries import QueryService
 from subscribe_flow.application.priorities import PriorityService
 from subscribe_flow.application.tags import TagService
 from subscribe_flow.application.tagging import TaggingService
+from subscribe_flow.application.notes import NoteService
 from subscribe_flow.application.settings import SettingsService
 from subscribe_flow.application.credentials import CredentialBroker
 from subscribe_flow.ai.gateway import AiGateway
@@ -98,6 +99,8 @@ class Core:
                                       credentials=self.credentials, emit=self.emit,
                                       gateway=self.ai,
                                       **({'clock': clock} if clock else {}))
+        # M26：笔记服务。只碰 content_notes，不参与采集与自动打标。
+        self.notes = NoteService(repository=self.repository, emit=self.emit)
         for descriptor in self.gateway.describe():
             resource = resource_key(descriptor)
             self.repository.add_connection(Connection(f"{descriptor.channel}:default", descriptor.channel, descriptor.backend, resource))

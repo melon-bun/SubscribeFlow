@@ -45,6 +45,11 @@
      saveSettings(request)      → Settings                    按页保存 {section,patch,credentials}
      getNotificationStatus() → NotificationStatus          通知支持情况（M15）
      sendTestNotification()  → NotificationStatus          测试通知（M15）
+     getNote(id)             → Note | null                 内容笔记（M26）
+     saveNote(id, note)      → Note | null                 全量替换，冲突时抛错
+     deleteNote(id, version) → { ok }                      删除笔记（不删内容）
+     listNotes(query)        → { items, total, next_offset } 笔记目录
+     noteFacets(query)       → { channels, sources, tags }  笔记范围内的筛选项
      on(event, handler)      → unsubscribe                 进度等事件
    ========================================================================== */
 (function (global) {
@@ -93,6 +98,8 @@
     "getSettings", "saveSettings", "getNotificationStatus", "sendTestNotification",
     // M25 公共 AI 层：连接列表与协议最小探针。
     "listAiProviders", "testAiProvider",
+    // M26 笔记：一条内容一条笔记，写入是全量替换。
+    "getNote", "saveNote", "deleteNote", "listNotes", "noteFacets",
     "on",
   ];
 
@@ -186,6 +193,15 @@
     // M25：连接列表与按连接的最小协议探针。探针不打标签、不生成笔记。
     client.listAiProviders = function () { return invoke('ai.provider.list', {}); };
     client.testAiProvider = function (providerId) { return invoke('ai.provider.test', { provider_id: providerId }); };
+    // M26 笔记。写入是全量替换：各编辑字段都要明确提交，
+    // expectedVersion 传 null 表示新建；冲突时 Core 拒绝写入并带回当前这份。
+    client.getNote = function (itemId) { return invoke('getNote', [itemId]); };
+    client.saveNote = function (itemId, note) { return invoke('saveNote', [itemId, note || {}]); };
+    client.deleteNote = function (itemId, expectedVersion) {
+      return invoke('deleteNote', [itemId, expectedVersion ?? null]);
+    };
+    client.listNotes = function (params) { return invoke('listNotes', [params || {}]); };
+    client.noteFacets = function (params) { return invoke('noteFacets', [params || {}]); };
     // M21：可以指定要测哪一类 API。只测这一类，不改打标方式、不触发打标。
     client.testTaggingConnection = function (mode) {
       return mode ? invoke('tagging.test', { mode: mode }) : invoke('tagging.test', {});

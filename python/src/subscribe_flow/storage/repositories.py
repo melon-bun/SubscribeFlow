@@ -43,6 +43,9 @@ class Repository:
         # 延迟导入：tagging 依赖本模块的 now/encode，模块层互相 import 会成环。
         from .tagging import TaggingRepository
         self.tagging = TaggingRepository(database)
+        # M26：笔记仓储。它借用本仓储的内容筛选谓词，所以延迟导入避免成环。
+        from .notes import NoteRepository
+        self.notes = NoteRepository(database, self)
 
     def add_connection(self, connection: Connection):
         with self.database.transaction() as db:
@@ -391,7 +394,10 @@ class Repository:
                 "updated_at": row["updated_at"],
                 "state": {field: bool(row[field]) for field in ("read", "archived", "deferred")},
                 "priority": row["effective_priority"], "priority_override": row["priority_override"],
-                "source_priority": row["source_priority"]}
+                "source_priority": row["source_priority"],
+                # 这条内容有没有笔记（M26）：内容列表与详情都带着它，
+                # 界面据此显示「已留下点什么」，不必为每条内容再查一次。
+                "has_note": bool(row["has_note"]) if "has_note" in row.keys() else False}
 
     # Content may link to several sources: inherit the highest non-null source
     # default. Aggregation keeps list counts unique and never multiplies rows.
@@ -400,7 +406,9 @@ class Repository:
         WHERE cs.content_id=c.id AND sub.default_priority IS NOT NULL
         ORDER BY CASE sub.default_priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,sub.id LIMIT 1)"""
     EFFECTIVE_PRIORITY = f"COALESCE(s.priority_override,{SOURCE_PRIORITY})"
-    CONTENT_COLUMNS = f"c.*,s.read,s.archived,s.deferred,s.priority_override,{SOURCE_PRIORITY} AS source_priority,{EFFECTIVE_PRIORITY} AS effective_priority"
+    CONTENT_COLUMNS = (f"c.*,s.read,s.archived,s.deferred,s.priority_override,{SOURCE_PRIORITY} AS source_priority,"
+                       f"{EFFECTIVE_PRIORITY} AS effective_priority,"
+                       "EXISTS(SELECT 1 FROM content_notes n WHERE n.content_id=c.id) AS has_note")
 
     def get_content(self, key, timezone='UTC'):
         display_zone(timezone)
@@ -426,9 +434,16 @@ class Repository:
     PENDING_CLAUSE = "((s.read=0 AND s.archived=0 AND s.deferred=0) OR s.deferred=1)"
     HIGH_UNARCHIVED_CLAUSE = f"({EFFECTIVE_PRIORITY}='high' AND s.archived=0)"
 
-    def _content_filter(self, *, channel=None, source_id=None, query=None, start=None, end=None,
-                        read=None, archived=None, deferred=None, priority=None, tags=None, tag_mode=None,
-                        intake_method=None, timezone='UTC', state=None, view=None):
+    def content_filter(self, *, channel=None, source_id=None, query=None, start=None, end=None,
+                       read=None, archived=None, deferred=None, priority=None, tags=None, tag_mode=None,
+                       intake_method=None, timezone='UTC', state=None, view=None,
+                       joins='', query_columns=("c.title",)):
+        """内容筛选谓词。内容列表、标签页与笔记查询共用这一段。
+
+        joins 是额外的 JOIN（笔记查询要挂 content_notes），query_columns 是
+        关键词要搜的列（笔记还要搜总结与收获）。两者都由调用方给，
+        谓词本身只有一份，不另造第二套长期分叉的条件。
+        """
         clauses, args = ["1=1"], []
         date_expr = self._calendar_expr(timezone)
         if state is not None:
@@ -470,19 +485,22 @@ class Repository:
             clauses.append("EXISTS(SELECT 1 FROM content_sources cs WHERE cs.content_id=c.id AND cs.source_id=?)")
             args.append(source_id)
         if query:
-            clauses.append("instr(lower(c.title),lower(?))>0")
-            args.append(query)
+            columns = query_columns or ("c.title",)
+            marks = ",".join("?" * len(columns))
+            clauses.append("(" + " OR ".join(f"instr(lower({column}),lower(?))>0" for column in columns) + ")")
+            args += [query] * len(columns)
         for operator, value in ((">=", start), ("<=", end)):
             if value:
                 clauses.append(f"{date_expr} {operator} ?")
                 args.append(date_boundary(value, end=operator == '<=', zone=timezone))
-        base = "FROM contents c JOIN content_states s ON s.content_id=c.id WHERE " + " AND ".join(clauses)
+        base = ("FROM contents c JOIN content_states s ON s.content_id=c.id" + joins +
+                " WHERE " + " AND ".join(clauses))
         return base, args
 
     def query_contents(self, *, limit=50, offset=0, **filters):
         if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 1000000:
             raise ChannelError("INVALID_INPUT", "content.list", "分页参数无效")
-        base, args = self._content_filter(**filters)
+        base, args = self.content_filter(**filters)
         timezone = filters.get('timezone', 'UTC')
         total = self.db.execute("SELECT count(*) " + base, args).fetchone()[0]
         records = self.db.execute(f"SELECT {self.CONTENT_COLUMNS} " + base + f" ORDER BY {self._calendar_expr(timezone, order=True)} DESC,c.id DESC LIMIT ? OFFSET ?", (*args, limit, offset))
@@ -554,7 +572,7 @@ class Repository:
         if not 1 <= year <= 9999 or not 1 <= number <= 12:
             raise ChannelError('INVALID_INPUT', 'content.calendar', '月份无效')
         end = f"{month}-{calendar.monthrange(year, number)[1]:02d}"
-        base, args = self._content_filter(start=month+'-01', end=end, **filters)
+        base, args = self.content_filter(start=month+'-01', end=end, **filters)
         date_expr = self._calendar_expr(filters.get('timezone', 'UTC'))
         order_expr = self._calendar_expr(filters.get('timezone', 'UTC'), order=True)
         levels = ('high', 'medium', 'low', 'none')
@@ -750,7 +768,7 @@ class Repository:
         self.get_tag(tag_id)
         if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 1000000:
             raise ChannelError("INVALID_INPUT", "tag.contents", "分页参数无效")
-        base, args = self._content_filter(**filters)
+        base, args = self.content_filter(**filters)
         timezone = filters.get('timezone', 'UTC')
         clause = base.replace("WHERE 1=1", f"WHERE 1=1 AND EXISTS(SELECT 1 FROM content_tags ct "
                                             f"WHERE ct.content_id=c.id AND ct.tag_id=?)", 1)

@@ -11,7 +11,12 @@ class RPCFault(Exception):
         self.code, self.message, self.data = code, message, data
 
 
-def validate(params, required=None, optional=None, allow_empty=(), nullable=()):
+def validate(params, required=None, optional=None, allow_empty=(), nullable=(), limits=None):
+    """按接口定义校验参数。
+
+    limits 是**按字段**的长度上限：默认 2000 不变（其他接口不放宽），
+    只有笔记这种明确需要的字段才在自己的路由上放宽。
+    """
     required, optional = required or {}, optional or {}
     if not isinstance(params, dict) or set(params) - (required.keys() | optional.keys()) or required.keys() - params.keys():
         raise RPCFault(-32602, "参数字段不符合接口定义")
@@ -23,8 +28,10 @@ def validate(params, required=None, optional=None, allow_empty=(), nullable=()):
         expected = (required | optional)[key]
         if not (type(value) in expected if isinstance(expected, tuple) else type(value) is expected):
             raise RPCFault(-32602, f"参数 {key} 类型不正确")
-        if isinstance(value, str) and ((not value and key not in allow_empty) or len(value) > 2000):
-            raise RPCFault(-32602, f"参数 {key} 长度无效")
+        if isinstance(value, str):
+            limit = (limits or {}).get(key, 2000)
+            if (not value and key not in allow_empty) or len(value) > limit:
+                raise RPCFault(-32602, f"参数 {key} 长度无效")
     return params
 
 
@@ -86,6 +93,25 @@ class Dispatcher:
                              "tags": list, "tag_mode": str, "intake_method": str, "timezone": str}),
             "content.set_tags": (c.tags.set_content, {"item_id": str, "tag_ids": list}, {}),
             "content.bulk_set_tags": (c.tags.bulk_set, {"item_ids": list, "tag_ids": list}, {}),
+            # M26 笔记：一条内容一条笔记。写入是全量替换，冲突由版本令牌挡；
+            # 摘要与心得可以清空，结论与来路可空，长度上限只在这条路由上放宽。
+            "note.get": (c.notes.get, {"item_id": str}, {}),
+            "note.save": (c.notes.save, {"item_id": str},
+                          {"expected_version": (str, type(None)), "template": str, "summary": str,
+                           "summary_origin": (str, type(None)), "takeaway": str,
+                           "verdict": (str, type(None))},
+                          {"nullable": ("expected_version", "summary_origin", "verdict"),
+                           "allow_empty": ("summary", "takeaway"),
+                           "limits": {"summary": 2000, "takeaway": 20000}}),
+            "note.delete": (c.notes.delete, {"item_id": str},
+                            {"expected_version": (str, type(None))},
+                            {"nullable": ("expected_version",)}),
+            "note.list": (c.notes.list_notes, {},
+                          {"limit": int, "offset": int, "query": str, "channel": str, "source_id": str,
+                           "tags": list, "tag_mode": str, "verdict": str, "sort": str, "timezone": str}),
+            "note.facets": (c.notes.facets, {},
+                            {"query": str, "channel": str, "source_id": str, "tags": list,
+                             "tag_mode": str, "verdict": str, "timezone": str}),
             # M15 设置：只读非敏感配置；写入由主进程先落好受保护密钥再提交引用。
             # M17：统计与列表同源，通知里说的两个数和页面看到的是同一批内容。
             "reminder.summary": (c.queries.reminder_summary, {}, {"timezone": str}),
@@ -138,9 +164,13 @@ class Dispatcher:
                 if method not in self.routes:
                     raise RPCFault(-32601, "Method not found")
                 function, required, optional, *rest = self.routes[method]
-                validate(params, required, optional,
-                         allow_empty=("description",) if method in ("tag.create", "tag.update") else (),
-                         nullable=rest[0] if rest else ())
+                # 路由可以带一个选项字典（可空字段、可清空字段、专属长度上限）。
+                options = rest[0] if rest and isinstance(rest[0], dict) else {}
+                nullable = options.get("nullable", ()) if options else (rest[0] if rest else ())
+                allow_empty = options.get("allow_empty") or (
+                    ("description",) if method in ("tag.create", "tag.update") else ())
+                validate(params, required, optional, allow_empty=allow_empty, nullable=nullable,
+                         limits=options.get("limits"))
                 if "item_ids" in params and (len(params["item_ids"]) > 100 or any(type(item) is not str or not item or len(item) > 2000 for item in params["item_ids"])):
                     raise RPCFault(-32602, "内容 ID 列表无效")
                 if "tag_ids" in params and (len(params["tag_ids"]) > 100 or any(type(t) is not str or not t or len(t) > 2000 for t in params["tag_ids"])):

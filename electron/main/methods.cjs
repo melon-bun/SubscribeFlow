@@ -14,6 +14,9 @@ const CORE_METHODS = new Set([
   // M25 公共 AI 层：连接列表与协议最小探针。只读配置与探针，
   // 不接受也不返回任何密钥；连接的新增／修改／删除走设置桥接的受控方法。
   'ai.provider.list', 'ai.provider.test',
+  // M26 笔记：一条内容一条笔记。写入是全量替换，冲突由版本令牌挡；
+  // 笔记不涉及凭据，直接走 RPC 通道。
+  'note.get', 'note.save', 'note.delete', 'note.list', 'note.facets',
 ]);
 // settings.* 与 notification.* 刻意不在这里：它们必须经过 Main 的 UI 方法，
 // 先加密保存密钥再向 Core 提交引用。放进白名单等于让 Renderer 绕过凭据编排。

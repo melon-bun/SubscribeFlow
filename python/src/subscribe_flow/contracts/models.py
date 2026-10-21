@@ -23,16 +23,22 @@ def jsonable(value: Any) -> Any:
 class ChannelError(Exception):
     def __init__(self, code: str, operation: str, message: str, *,
                  scope: str = "operation", scope_key: str | None = None,
-                 retryable: bool = False, retry_after: float | None = None):
+                 retryable: bool = False, retry_after: float | None = None,
+                 details: dict | None = None):
         super().__init__(message)
         self.code, self.operation, self.message = code, operation, message
         self.scope, self.scope_key = scope, scope_key
         self.retryable, self.retry_after = retryable, retry_after
+        # 附加信息：冲突时把当前状态一并带回去，界面不用再猜。
+        self.details = details or None
 
     def to_dict(self) -> dict:
-        return dict(code=self.code, operation=self.operation, message=self.message,
+        data = dict(code=self.code, operation=self.operation, message=self.message,
                     scope=self.scope, scope_key=self.scope_key,
                     retryable=self.retryable, retry_after=self.retry_after)
+        if self.details:
+            data["details"] = self.details
+        return data
 
 
 @dataclass(frozen=True)

@@ -16,6 +16,9 @@ const allowed = new Set([
   // M16 自动打标：状态、连接测试、重试与补打。渲染层拿不到密钥，只能看到结果。
   'tagging.status', 'tagging.test', 'tagging.tasks', 'tagging.retry',
   'tagging.backfill_preview', 'tagging.backfill',
+  // M26 笔记：读写与查询都在 Core 侧完成，渲染层只提交内容 ID 与笔记内容。
+  'note.get', 'note.save', 'note.delete', 'note.list', 'note.facets',
+  'getNote', 'saveNote', 'deleteNote', 'listNotes', 'noteFacets',
   'getSession', 'getCounts', 'listPlatforms', 'listPriorities', 'getCalendar', 'listContents', 'getContent',
   'updateContent', 'bulkUpdate', 'listChannels', 'createChannel', 'updateChannel',
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',

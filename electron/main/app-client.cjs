@@ -10,6 +10,8 @@ const UI_METHODS = new Set([
   'updateRule', 'removeRule', 'getSyncCoverage', 'resolveSource', 'searchSources', 'listConnections', 'checkConnection', 'retryRun', 'fetchDetail',
   'startIntake', 'getIntake', 'cancelIntake', 'saveIntake', 'listContentSources',
   'getSettings', 'saveSettings', 'getNotificationStatus', 'sendTestNotification',
+  // M26 笔记：读取、保存、删除与范围查询。
+  'getNote', 'saveNote', 'deleteNote', 'listNotes', 'noteFacets',
 ]);
 // F1's “未处理” / inbox means no processing state has been set.
 const INBOX_FILTER = Object.freeze({read: false, archived: false, deferred: false});
@@ -56,6 +58,9 @@ function contentDTO(item, subscriptions) {
     firstSeenAt: item.first_seen_at ?? null, manualAddedAt: item.manual_added_at ?? null,
     calendarAt: item.calendar_at ?? null, calendarDate: item.calendar_date ?? null,
     calendarTimezone: item.calendar_timezone ?? null, calendarBasis: item.calendar_basis ?? null,
+    // M26：这条内容有没有留下笔记。内容列表与详情都带着它，
+    // 界面据此显示「已留下点什么」，不必为每条内容再查一次。
+    hasNote: !!item.has_note,
   };
 }
 function channelDTO(sub, descriptors = [], schedule = null) {
@@ -172,6 +177,56 @@ async function callUI(core, name, args, context) {
     }
     case 'bulkUpdate': {
       return call('content.bulk_update', {item_ids: first, patch: contentPatch(second)});
+    }
+    // M26 笔记。渲染层用驼峰参数，主进程转成 Core 的 RPC 字段名。
+    // 笔记 DTO 沿用 Core 的表字段名（summary_origin／created_at／updated_at）。
+    case 'getNote':
+      return call('note.get', {item_id: first});
+    case 'saveNote': {
+      const note = object(second);
+      keys(note, ['expectedVersion', 'template', 'summary', 'summaryOrigin', 'takeaway', 'verdict']);
+      // 全量替换：没提交的编辑字段按空值处理，不留旧值。
+      const params = {item_id: first, template: 'general', summary: '', takeaway: '',
+                      expected_version: null, summary_origin: null, verdict: null};
+      if (note.expectedVersion !== undefined) params.expected_version = note.expectedVersion ?? null;
+      if (note.template != null && note.template !== '') params.template = note.template;
+      if (note.summary != null) params.summary = note.summary;
+      if (note.summaryOrigin !== undefined) params.summary_origin = note.summaryOrigin ?? null;
+      if (note.takeaway != null) params.takeaway = note.takeaway;
+      if (note.verdict !== undefined) params.verdict = note.verdict ?? null;
+      return call('note.save', params);
+    }
+    case 'deleteNote':
+      return call('note.delete', {item_id: first, expected_version: second ?? null});
+    case 'listNotes': {
+      const query = object(first);
+      keys(query, ['keyword', 'platform', 'sourceId', 'tags', 'tagMode', 'verdict', 'limit', 'offset', 'sort', 'timezone']);
+      const params = {timezone: displayTimezone(query.timezone)};
+      for (const [front, back] of [['keyword', 'query'], ['platform', 'channel'], ['sourceId', 'source_id'],
+                                   ['verdict', 'verdict'], ['limit', 'limit'], ['offset', 'offset'], ['sort', 'sort']]) {
+        if (query[front] != null && query[front] !== '') params[back] = query[front];
+      }
+      if (query.tags != null && query.tags.length) params.tags = tagIds(query.tags);
+      if (query.tagMode != null && query.tagMode !== '' && !['any', 'all'].includes(query.tagMode)) {
+        throw new Error('标签筛选方式需为任一符合或全部符合');
+      }
+      if (query.tagMode === 'all') params.tag_mode = 'all';
+      return call('note.list', params);
+    }
+    case 'noteFacets': {
+      const query = object(first);
+      keys(query, ['keyword', 'platform', 'sourceId', 'tags', 'tagMode', 'verdict', 'timezone']);
+      const params = {timezone: displayTimezone(query.timezone)};
+      for (const [front, back] of [['keyword', 'query'], ['platform', 'channel'], ['sourceId', 'source_id'],
+                                   ['verdict', 'verdict']]) {
+        if (query[front] != null && query[front] !== '') params[back] = query[front];
+      }
+      if (query.tags != null && query.tags.length) params.tags = tagIds(query.tags);
+      if (query.tagMode != null && query.tagMode !== '' && !['any', 'all'].includes(query.tagMode)) {
+        throw new Error('标签筛选方式需为任一符合或全部符合');
+      }
+      if (query.tagMode === 'all') params.tag_mode = 'all';
+      return call('note.facets', params);
     }
     case 'listTags': {
       // M23：sort 是可选的显示层参数，不传就是按名称排（旧调用照常工作）。
