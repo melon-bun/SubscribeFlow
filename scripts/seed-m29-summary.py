@@ -36,6 +36,11 @@ async def seed(folder):
             'name': '总结用连接', 'protocol': 'openai_chat',
             'endpoint': 'https://api.test.invalid/v1', 'model': 'demo-model',
             'enabled': True}}}, {PROVIDER_ID: 'sk-seed-m29'})
+        # 另一条连接：用来验证「改无关的连接不该作废一次总结」。
+        core.settings.update('ai', {'providers': {'provider-other': {
+            'name': '另一条连接', 'protocol': 'openai_chat',
+            'endpoint': 'https://other.test.invalid/v1', 'model': 'other-model',
+            'enabled': True}}})
         core.settings.update('summarization', {'enabled': True, 'providerId': PROVIDER_ID,
                                                'length': 'brief', 'language': 'zh-CN'})
     finally:

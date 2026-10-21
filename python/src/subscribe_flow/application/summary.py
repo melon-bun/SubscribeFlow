@@ -19,6 +19,7 @@ import asyncio
 from subscribe_flow.ai.contracts import (
     CAPABILITY_TEXT_GENERATION, ERROR_INVALID_RESPONSE, ERROR_TIMEOUT, AiError,
 )
+from subscribe_flow.contracts import ChannelError
 from subscribe_flow.storage.repositories import now
 
 # 一次生成的业务预算（秒）。这不是任务时限，是这一次请求自己的等待上限。
@@ -32,6 +33,25 @@ DETAILED_MAX_TOKENS = 1024
 # 采集到的是正文的内容类型：公众号文章、知乎想法、小红书笔记。
 # 其余（仓库说明、视频简介等）只有简介——不假装读过 README 或字幕。
 BODY_KINDS = ("article", "note", "pin")
+
+# 总结提示词的版本：提示词一改就 +1。
+# 它进有效配置版本，是为了让「在途的请求用的是哪一版提示词」这件事可核对。
+PROMPT_VERSION = 1
+
+
+def effective_version(policy, provider_revision) -> str:
+    """有效总结配置版本：策略版本 . 所选连接的调用版本 . 提示词版本。
+
+    三样合起来才是「这次总结是在什么配置下生成的」：
+    - 策略版本：开关、用哪条连接、详细程度、语言变了就前进；
+    - 连接的调用版本：那条连接的地址、模型、密钥或启停变了就前进（改名字不算）；
+    - 提示词版本：提示词本身改了才前进。
+
+    与它无关的东西——别的连接改了、连接改了展示名、打标或提醒或笔记的设置变了、
+    优先级别名改了——都不该作废一次总结。
+    """
+    policy_revision = int((policy or {}).get("revision") or 1)
+    return f"{policy_revision}.{int(provider_revision or 0)}.{PROMPT_VERSION}"
 
 SCOPE_BODY = "正文"
 SCOPE_SUMMARY = "简介"
@@ -80,6 +100,16 @@ class SummaryService:
         messages = self._messages(content, text=text, scope=scope, length=length,
                                   language=language)
         max_tokens = DETAILED_MAX_TOKENS if length == 'detailed' else BRIEF_MAX_TOKENS
+        # 请求时的快照：等 AI 回来后要拿它和「现在的样子」逐项核对。
+        snapshot = {
+            'config': dict(policy),
+            'provider_revision': provider.revision,
+            'content_version': content.get('updated_at'),
+            'scope': scope,
+            'input_chars': len(text),
+            'input_total_chars': total,
+            'input_truncated': truncated,
+        }
         try:
             # 适配器在事件循环线程里组装：读设置、查凭据都在这一侧完成。
             adapter = self.gateway.adapter(provider_id)
@@ -99,22 +129,57 @@ class SummaryService:
         if not summary:
             return self._failed(item_id, request_id, 'empty_response',
                                  '模型没有返回可用文字，可以再试一次。')
-        return {
-            'ok': True,
-            'item_id': item_id,
-            'request_id': request_id,
+        draft = {
             'summary': summary,
             'scope': scope,
             'input_chars': len(text),
             'input_total_chars': total,
             'input_truncated': truncated,
-            'content_version': content.get('updated_at'),
-            'config_version': int(policy.get('revision') or 1),
-            'provider': {'id': provider.id, 'name': provider.name, 'model': provider.model},
+            'content_version': snapshot['content_version'],
+            'config_version': effective_version(policy, provider.revision),
+            'config': snapshot['config'],
+            'provider': {'id': provider.id, 'name': provider.name, 'model': provider.model,
+                         'revision': provider.revision},
             'length': length,
             'language': language,
             'model': result.model,
         }
+        # 复核：等 AI 回来的这段时间里，策略、那条连接或原文可能都变了。
+        # 变了就不能把这段旧结果当成「现在这配置下生成的新结果」交出去。
+        reason = self._stale_reason(item_id, provider_id, snapshot)
+        if reason:
+            return self._stale(item_id, request_id, reason, draft)
+        return {
+            'ok': True,
+            'item_id': item_id,
+            'request_id': request_id,
+            **draft,
+        }
+
+    def _stale_reason(self, item_id, provider_id, snapshot):
+        """生成期间变了什么：返回一句话原因，没变就返回 None。"""
+        current = self.settings.snapshot().get('summarization') or {}
+        if not current.get('enabled'):
+            return 'AI 总结已经被关掉了'
+        if (current.get('providerId') or None) != (snapshot['config'].get('providerId') or None):
+            return '总结用的连接换了'
+        if current.get('length') != snapshot['config'].get('length'):
+            return '总结的详细程度改了'
+        if current.get('language') != snapshot['config'].get('language'):
+            return '总结的输出语言改了'
+        try:
+            provider = self.gateway.provider(provider_id)
+        except AiError:
+            return '那条连接已经不在了'
+        if provider.revision != snapshot['provider_revision']:
+            return '那条连接的地址、模型或密钥改了'
+        try:
+            content = self.repository.get_content(item_id)
+        except ChannelError:
+            return '这条内容已经被删掉了'
+        if content.get('updated_at') != snapshot['content_version']:
+            return '原文已经变了'
+        return None
 
     # ---------------------------------------------------------------- 内部
 
@@ -159,3 +224,9 @@ class SummaryService:
     def _failed(self, item_id, request_id, code, message):
         return {'ok': False, 'item_id': item_id, 'request_id': request_id,
                 'code': code, 'message': message, 'at': now()}
+
+    def _stale(self, item_id, request_id, reason, draft):
+        """生成期间状态变了：明确标记失效，但把草稿留着让用户决定要不要采用。"""
+        return {'ok': False, 'item_id': item_id, 'request_id': request_id,
+                'code': 'stale', 'message': f'生成期间{reason}，这段总结可能已经过时。',
+                'draft': draft, 'at': now()}

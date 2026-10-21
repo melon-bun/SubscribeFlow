@@ -12,6 +12,7 @@ from pathlib import Path
 from subscribe_flow.ai.contracts import AiError
 from subscribe_flow.ai.gate import ProviderGate
 from subscribe_flow.application.settings import SettingsService
+from subscribe_flow.application.summary import effective_version
 from subscribe_flow.bootstrap import Core
 from subscribe_flow.contracts import ChannelError, ContentItem, Source
 from subscribe_flow.contracts.models import PublishedTime
@@ -165,7 +166,8 @@ class SummaryDraftTests(_SummaryFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['item_id'], self.item_id)
         self.assertTrue(result['content_version'])
         self.assertEqual(result['config_version'],
-                         self.settings.snapshot()['summarization']['revision'])
+                         effective_version(self.settings.snapshot()['summarization'],
+                                           self.core.ai.provider('provider-llm').revision))
         self.assertFalse(result['input_truncated'])
         self.assertEqual(result['provider']['id'], 'provider-llm')
 
@@ -283,6 +285,73 @@ class SummaryDraftTests(_SummaryFixture, unittest.IsolatedAsyncioTestCase):
         self.transport.responses = {'/chat/completions': {'model': 'demo', 'choices': []}}
         result = await self.core.summary.draft(self.item_id, 'req-1')
         self.assertEqual(result['code'], 'empty_response')
+
+    async def test_a_disabled_policy_during_the_request_makes_the_result_stale(self):
+        """生成期间把总结关掉：结果明确失效，不能当成新的自动填入。"""
+        result = await self._draft_while_changing(
+            lambda: self.settings.update('summarization', {'enabled': False}))
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['code'], 'stale')
+        self.assertIn('关掉', result['message'])
+        self.assertTrue(result['draft']['summary'], '草稿仍留着，用户可以自己决定要不要')
+
+    async def test_a_changed_provider_during_the_request_makes_the_result_stale(self):
+        result = await self._draft_while_changing(
+            lambda: self.settings.update('ai', {'providers': {'provider-llm': {'model': 'other-model'}}}))
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['code'], 'stale')
+        self.assertIn('模型', result['message'])
+
+    async def test_a_renamed_provider_during_the_request_keeps_the_result_valid(self):
+        """改展示名不算调用配置变了：结果仍然可用。"""
+        result = await self._draft_while_changing(
+            lambda: self.settings.update('ai', {'providers': {'provider-llm': {'name': '换个名字'}}}))
+        self.assertTrue(result['ok'], '改展示名不该作废一次总结')
+        self.assertEqual(result['summary'], '这是一段总结。')
+
+    async def test_an_unrelated_provider_change_keeps_the_result_valid(self):
+        self.settings.update('ai', {'providers': {'provider-other': {
+            'protocol': 'openai_chat', 'endpoint': 'https://other.test.invalid/v1',
+            'model': 'other-model', 'enabled': True}}})
+        result = await self._draft_while_changing(
+            lambda: self.settings.update('ai', {'providers': {'provider-other': {'model': 'changed'}}}))
+        self.assertTrue(result['ok'], '别的连接改了不该作废这次总结')
+
+    async def test_a_changed_source_text_during_the_request_makes_the_result_stale(self):
+        result = await self._draft_while_changing(
+            lambda: self.repo.db.execute(
+                'UPDATE contents SET payload=json_set(payload,\'$.summary\',?), updated_at=? WHERE id=?',
+                ('新的材料。', '2099-01-01T00:00:00Z', self.item_id)))
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['code'], 'stale')
+        self.assertIn('原文', result['message'])
+
+    async def _draft_while_changing(self, change):
+        """在请求在途时改点东西，再放回响应。"""
+        import threading
+        entered = threading.Event()
+        release = threading.Event()
+        original = self.transport.post_json
+
+        def post_json(url, payload, headers=None, timeout=None):
+            entered.set()
+            if not release.wait(5):
+                raise AssertionError('没有放回响应')
+            return original(url, payload, headers, timeout)
+
+        self.transport.post_json = post_json
+        try:
+            task = asyncio.ensure_future(self.core.summary.draft(self.item_id, 'req-stale'))
+            for _ in range(200):
+                if entered.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            self.assertTrue(entered.is_set(), '请求应当已经发出')
+            change()
+            release.set()
+            return await task
+        finally:
+            self.transport.post_json = original
 
     async def test_the_provider_gate_is_shared_with_the_tagging(self):
         self.assertIsInstance(self.core.ai.gate, ProviderGate)

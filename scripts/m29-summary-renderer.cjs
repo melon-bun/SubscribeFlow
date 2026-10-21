@@ -70,6 +70,16 @@ async function verify({window, core, root}) {
   })()`);
   const setDraft = (value) => evaluate(`window.__nextDraft = ${JSON.stringify(value)}`);
   await setDraft(nextDraft);
+  // 总结非空时点生成会先问「要不要替换」：答「生成并替换」才真的发请求。
+  const confirmGenerate = async () => {
+    for (let i = 0; i < 40; i++) {
+      if (await evaluate(`!!document.querySelector('.dialog')`)) break;
+      await pause(25);
+    }
+    if (await evaluate(`!!document.querySelector('.dialog')`)) {
+      await evaluate(`Array.from(document.querySelectorAll('.dialog button')).find(b => b.textContent.trim() === '生成并替换').click()`);
+    }
+  };
 
   /* 1. 设置里的「AI 总结」分区：能打开，字段都在。 */
   await evaluate(`SF.app.navigate('settings', {section: 'summarization'})`);
@@ -232,6 +242,97 @@ async function verify({window, core, root}) {
   assert.equal(lateText, '我在生成期间写的。', '迟到的结果不能静默覆盖用户输入');
   const adoptable = await evaluate(`!!Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === '采用这段总结')`);
   assert.equal(adoptable, true, '结果要保留成可采用的草稿');
+  await evaluate(`(() => { SF.app.state.client.draftNote = window.__originalDraft; delete window.__originalDraft; })()`);
+  await setDraft(nextDraft);
+
+  /* 12b. 生成期间关掉总结：旧结果不得自动填入，但留着可采用。 */
+  await evaluate(`(() => {
+    const client = SF.app.state.client;
+    client.draftNote = function (itemId, requestId) {
+      // 回执带上请求那一刻的连接版本，和 Core 的做法一样。
+      return client.getSettings().then(function (settings) {
+        const provider = settings.ai.providers['provider-llm'];
+        return new Promise((resolve) => { window.__finishDraft = () => resolve({
+          ok: true, item_id: itemId, request_id: requestId, summary: '快照期的总结。',
+          scope: '正文', input_chars: 20, input_total_chars: 20, input_truncated: false,
+          content_version: null, config_version: '1.1.1',
+          config: {enabled: true, providerId: 'provider-llm', length: 'detailed', language: 'zh-CN', revision: 1},
+          provider: {id: 'provider-llm', name: provider.name, model: provider.model, revision: provider.revision},
+          length: 'detailed', language: 'zh-CN', model: 'demo-model' }); });
+      });
+    };
+  })()`);
+  await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === 'AI 总结').click()`);
+  await confirmGenerate();
+  await until(`!!window.__finishDraft`);
+  // 生成在途：把总结开关关掉（真实设置保存）。
+  await evaluate(`SF.app.state.client.saveSettings({section: 'summarization', patch: {enabled: false}})`);
+  await until(`SF.app.state.client.getSettings().then(s => s.summarization.enabled === false)`);
+  await evaluate(`window.__finishDraft()`);
+  await until(`Array.from(document.querySelectorAll('[data-note-editor] button')).some(b => b.textContent.trim() === '采用这段总结')`);
+  const afterDisable = await evaluate(`({
+    value: document.querySelector('[data-note-editor] textarea[aria-label="总结"]').value,
+    adopt: Array.from(document.querySelectorAll('[data-note-editor] button')).some(b => b.textContent.trim() === '采用这段总结'),
+  })`);
+  assert.notEqual(afterDisable.value, '快照期的总结。', '关掉总结后旧结果不能自动填入');
+  assert.equal(afterDisable.adopt, true, '旧结果要留着让用户显式采用');
+  // 把总结重新打开。
+  await evaluate(`SF.app.state.client.saveSettings({section: 'summarization', patch: {enabled: true}})`);
+  await until(`SF.app.state.client.getSettings().then(s => s.summarization.enabled === true)`);
+  await evaluate(`(() => { SF.app.state.client.draftNote = window.__originalDraft; delete window.__originalDraft; })()`);
+  await setDraft(nextDraft);
+
+  /* 12c. 生成期间改所用连接的模型：旧结果不得自动填入。 */
+  await evaluate(`(() => {
+    const client = SF.app.state.client;
+    client.draftNote = function (itemId, requestId) {
+      return client.getSettings().then(function (settings) {
+        const provider = settings.ai.providers['provider-llm'];
+        return new Promise((resolve) => { window.__finishDraft = () => resolve({
+          ok: true, item_id: itemId, request_id: requestId, summary: '改模型前的总结。',
+          scope: '正文', input_chars: 20, input_total_chars: 20, input_truncated: false,
+          content_version: null, config_version: '1.1.1',
+          config: {enabled: true, providerId: 'provider-llm', length: 'detailed', language: 'zh-CN', revision: 1},
+          provider: {id: 'provider-llm', name: provider.name, model: provider.model, revision: provider.revision},
+          length: 'detailed', language: 'zh-CN', model: 'demo-model' }); });
+      });
+    };
+  })()`);
+  await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === 'AI 总结').click()`);
+  await confirmGenerate();
+  await until(`!!window.__finishDraft`);
+  await evaluate(`SF.app.state.client.saveSettings({section: 'ai', patch: {providers: {'provider-llm': {model: 'other-model'}}}})`);
+  await until(`SF.app.state.client.getSettings().then(s => s.ai.providers['provider-llm'].model === 'other-model')`);
+  await evaluate(`window.__finishDraft()`);
+  await until(`Array.from(document.querySelectorAll('[data-note-editor] button')).some(b => b.textContent.trim() === '采用这段总结')`);
+  const afterModel = await evaluate(`document.querySelector('[data-note-editor] textarea[aria-label="总结"]').value`);
+  assert.notEqual(afterModel, '改模型前的总结。', '改所用连接的模型后旧结果不能自动填入');
+  await evaluate(`(() => { SF.app.state.client.draftNote = window.__originalDraft; delete window.__originalDraft; })()`);
+  await setDraft(nextDraft);
+
+  /* 12d. 改无关的连接：结果仍然可以用（不该误判过期）。 */
+  await evaluate(`(() => {
+    const client = SF.app.state.client;
+    client.draftNote = function (itemId, requestId) {
+      return client.getSettings().then(function (settings) {
+        const provider = settings.ai.providers['provider-llm'];
+        return new Promise((resolve) => { window.__finishDraft = () => resolve({
+          ok: true, item_id: itemId, request_id: requestId, summary: '不受影响的总结。',
+          scope: '正文', input_chars: 20, input_total_chars: 20, input_truncated: false,
+          content_version: null, config_version: '1.1.1',
+          config: {enabled: true, providerId: 'provider-llm', length: 'detailed', language: 'zh-CN', revision: 1},
+          provider: {id: 'provider-llm', name: provider.name, model: provider.model, revision: provider.revision},
+          length: 'detailed', language: 'zh-CN', model: 'demo-model' }); });
+      });
+    };
+  })()`);
+  await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === 'AI 总结').click()`);
+  await confirmGenerate();
+  await until(`!!window.__finishDraft`);
+  await evaluate(`SF.app.state.client.saveSettings({section: 'ai', patch: {providers: {'provider-other': {model: 'changed-model'}}}})`);
+  await until(`SF.app.state.client.getSettings().then(s => s.ai.providers['provider-other'].model === 'changed-model')`);
+  await evaluate(`window.__finishDraft()`);
+  await until(`(document.querySelector('[data-note-editor] textarea[aria-label="总结"]') || {}).value === '不受影响的总结。'`);
   await evaluate(`(() => { SF.app.state.client.draftNote = window.__originalDraft; delete window.__originalDraft; })()`);
   await setDraft(nextDraft);
 

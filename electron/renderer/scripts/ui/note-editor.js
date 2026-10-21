@@ -127,7 +127,7 @@
   /* ---------------------------------------------------------------- 总结策略 */
 
   // 总结策略：是否启用、用哪条连接。只用于界面判断，不参与保存。
-  var summaryConfig = { loaded: false, value: null };
+  var summaryConfig = { loaded: false, value: null, settings: null };
 
   function loadSummaryConfig(client, done) {
     if (summaryConfig.loaded) {
@@ -137,11 +137,13 @@
     }
     client.getSettings().then(
       function (settings) {
+        summaryConfig.settings = settings || null;
         summaryConfig.value = (settings && settings.summarization) || null;
         summaryConfig.loaded = true;
         if (done) done(summaryConfig.value);
       },
       function () {
+        summaryConfig.settings = null;
         summaryConfig.value = null;
         summaryConfig.loaded = true;
         if (done) done(null);
@@ -153,6 +155,7 @@
   function invalidateSummaryConfig() {
     summaryConfig.loaded = false;
     summaryConfig.value = null;
+    summaryConfig.settings = null;
   }
 
   /* ---------------------------------------------------------------- 读取 */
@@ -325,37 +328,50 @@
       stale: false,
       template: state.draft.template,
       snapshot: state.draft.summary || "",
+      // 请求时的配置快照：回来时拿它和「现在的样子」比。
+      config: requestTimeConfig(),
     };
     repaint();
     client.draftNote(state.itemId, requestId).then(
       function (result) {
         if (seq !== state.summarySeq) return; // 不是最新的一次：丢掉
-        if (!result || result.ok !== true) {
+        if (!result) {
           state.summary.status = "error";
-          state.summary.error = {
-            code: (result && result.code) || "unknown",
-            message: (result && result.message) || "生成失败，可以再试一次。",
-          };
+          state.summary.error = { code: "unknown", message: "生成失败，可以再试一次。" };
           repaint();
           return;
         }
-        var stale = false;
-        if (state.draft.template !== state.summary.template) stale = true;
-        if (state.draft.summary !== state.summary.snapshot) stale = true;
-        var currentVersion = options.item && options.item.updated_at;
-        if (currentVersion && result.content_version && currentVersion !== result.content_version) {
-          stale = true; // 原文已经变了
+        if (result.ok !== true) {
+          // 失败或已失效：失效的仍带着草稿，用户可以自己决定要不要采用。
+          state.summary.status = result.code === "stale" ? "stale" : "error";
+          state.summary.error = {
+            code: result.code || "unknown",
+            message: result.message || "生成失败，可以再试一次。",
+          };
+          state.summary.result = result.draft || null;
+          state.summary.stale = result.code === "stale";
+          state.summary.reasons = result.code === "stale" ? [result.message] : [];
+          repaint();
+          return;
         }
-        state.summary.status = "done";
-        state.summary.result = result;
-        state.summary.stale = stale;
-        if (!stale) {
-          state.draft.summary = result.summary;
-          state.draft.origin = "ai";
-          state.touched = true;
-          state.summary.applied = true;
-        }
-        repaint();
+        // 回包本身是新的：再核对一次「现在的样子」——
+        // 设置、那条连接、原文与编辑身份都可能在这期间变了。
+        var local = localStaleReasons(state, result);
+        currentStateChecks(state, result, options).then(function (reasons) {
+          if (seq !== state.summarySeq) return;
+          var all = local.concat(reasons || []);
+          state.summary.status = "done";
+          state.summary.result = result;
+          state.summary.stale = all.length > 0;
+          state.summary.reasons = all;
+          if (!all.length) {
+            state.draft.summary = result.summary;
+            state.draft.origin = "ai";
+            state.touched = true;
+            state.summary.applied = true;
+          }
+          repaint();
+        });
       },
       function (err) {
         if (seq !== state.summarySeq) return;
@@ -367,6 +383,84 @@
         repaint();
       }
     );
+  }
+
+  /** 发起请求时的总结配置：策略与那条连接的调用版本。 */
+  function requestTimeConfig() {
+    var policy = summaryConfig.value || {};
+    var providers = (summaryConfig.settings && summaryConfig.settings.ai &&
+                     summaryConfig.settings.ai.providers) || {};
+    var provider = policy.providerId ? providers[policy.providerId] : null;
+    return {
+      policy: {
+        enabled: policy.enabled !== false,
+        providerId: policy.providerId || null,
+        length: policy.length || "brief",
+        language: policy.language || "zh-CN",
+        revision: policy.revision || null,
+      },
+      providerRevision: provider && provider.revision != null ? provider.revision : null,
+    };
+  }
+
+  /** 编辑身份变了：换了类型、或总结已经被用户改过。心得变了不算。 */
+  function localStaleReasons(state, result) {
+    var reasons = [];
+    if (state.draft.template !== state.summary.template) reasons.push("笔记类型改了");
+    if (state.draft.summary !== state.summary.snapshot) reasons.push("总结已经被你改过");
+    return reasons;
+  }
+
+  /**
+   * 真正应用之前，核对当前状态：总结设置、那条连接的调用版本、原文的文本版本。
+   *
+   * 读的是**当下**的设置与内容，不拿发起请求时闭包里的旧快照充数。
+   * 正式 DTO 里的字段是 updatedAt。
+   */
+  function currentStateChecks(state, result, options) {
+    var client = options.client;
+    var requested = state.summary.config || {};
+    var resultConfig = result.config || {};
+    // 结果里带的是 Core 在请求那一刻记下的配置，比界面上的缓存更准；
+    // 没有时再用本地快照。
+    var was = resultConfig && resultConfig.providerId !== undefined
+      ? resultConfig
+      : (requested.policy || {});
+    return Promise.all([
+      client.getSettings().catch(function () { return null; }),
+      client.getContent(state.itemId).catch(function () { return null; }),
+    ]).then(function (parts) {
+      var settings = parts[0];
+      var content = parts[1];
+      var reasons = [];
+      var policy = (settings && settings.summarization) || null;
+      if (!policy) {
+        reasons.push("总结设置读不到了");
+      } else {
+        if (!policy.enabled) reasons.push("AI 总结已经被关掉了");
+        if ((policy.providerId || null) !== ((was && was.providerId) || null)) {
+          reasons.push("总结用的连接换了");
+        }
+        if (policy.length !== (was && was.length)) reasons.push("总结的详细程度改了");
+        if (policy.language !== (was && was.language)) reasons.push("总结的输出语言改了");
+      }
+      // 那条连接的调用版本：请求时记的那一版，结果里带了也用它。
+      var providerId = (was && was.providerId) || resultConfig.providerId;
+      var providers = (settings && settings.ai && settings.ai.providers) || {};
+      var provider = providerId ? providers[providerId] : null;
+      var wasRevision = result.provider && result.provider.revision != null
+        ? result.provider.revision
+        : requested.providerRevision;
+      if (provider && wasRevision != null && provider.revision !== wasRevision) {
+        reasons.push("那条连接的地址、模型或密钥改了");
+      }
+      // 正式 DTO 里的字段是 updatedAt。
+      var version = content && (content.updatedAt || content.updated_at);
+      if (version && result.content_version && version !== result.content_version) {
+        reasons.push("原文已经变了");
+      }
+      return reasons;
+    });
   }
 
   /* ---------------------------------------------------------------- 组件 */
@@ -465,7 +559,11 @@
       if (!policy) {
         return h("div.note-editor__ai", null, h("p.field__hint", { text: "正在读取总结设置…" }));
       }
-      if (!policy.enabled) return null;
+      // 已经生成但没被采用的结果（过期或被改过）：即使总结被关掉了也要留着，
+      // 用户仍然可以自己决定要不要这一段。
+      var pending = state.summary.result && !state.summary.applied &&
+        (state.summary.status === "done" || state.summary.status === "stale");
+      if (!policy.enabled && !pending) return null;
       var children = [];
       var running = state.summary.status === "running";
       if (!policy.providerId) {
@@ -507,31 +605,42 @@
           })
         );
       }
+      if (state.summary.status === "stale" && state.summary.result) {
+        // Core 说这段已经过时（生成期间设置、连接或原文变了）：草稿留着，由用户决定。
+        children.push(
+          h("p.field__hint", { text: (state.summary.error && state.summary.error.message) || "这段总结可能已经过时。" })
+        );
+        children.push(adoptBlock(state));
+      }
       if (state.summary.status === "done" && state.summary.result && !state.summary.applied) {
-        // 结果没有自动覆盖：可能是生成期间你改了总结，或原文已经变了。
+        // 结果没有自动覆盖：可能是生成期间你改了总结、换了类型，或原文变了。
         children.push(
           h("p.field__hint", {
-            text: state.summary.stale
-              ? "生成完成，但你已经改过总结或原文变了，没有自动覆盖。可以采用这段，也可以继续改自己的。"
-              : "生成完成。",
+            text: (state.summary.reasons && state.summary.reasons.length
+              ? state.summary.reasons.join("；") + "，没有自动覆盖。"
+              : "生成完成。") + "可以采用这段，也可以继续改自己的。",
           })
         );
-        children.push(
-          h("div.note-editor__ai-result", null,
-            h("p.note-editor__ai-text", { text: state.summary.result.summary }),
-            ui.btn("采用这段总结", {
-              size: "sm",
-              onClick: function () {
-                state.draft.summary = state.summary.result.summary;
-                state.draft.origin = "ai";
-                state.touched = true;
-                state.summary.applied = true;
-                repaint();
-              },
-            }))
-        );
+        children.push(adoptBlock(state));
       }
       return h("div.note-editor__ai", null, children);
+    }
+
+    /** 把一段结果交给用户：要点「采用」才真的填进总结。 */
+    function adoptBlock(state) {
+      var result = state.summary.result;
+      return h("div.note-editor__ai-result", null,
+        h("p.note-editor__ai-text", { text: result.summary }),
+        ui.btn("采用这段总结", {
+          size: "sm",
+          onClick: function () {
+            state.draft.summary = result.summary;
+            state.draft.origin = "ai";
+            state.touched = true;
+            state.summary.applied = true;
+            repaint();
+          },
+        }));
     }
 
     function hintBox(draft, options) {
