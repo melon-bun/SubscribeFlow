@@ -89,8 +89,10 @@ DEFAULTS = {
     "reminder": {"enabled": False, "intervalMinutes": DEFAULT_INTERVAL},
     "priority": {"names": dict(DEFAULT_PRIORITY_NAMES)},
     # M29 接入总结时用的策略位。本批只留边界：它不是连接字段，也不影响打标。
+    # revision 的确切语义（总结策略、Provider revision 与 prompt 版本的合成）
+    # 留给 M29 定义；此处只占位，保证结构与计划 §4.3 的形状一致。
     "summarization": {"enabled": True, "providerId": None,
-                      "length": DEFAULT_SUMMARY_LENGTH, "language": "zh-CN"},
+                      "length": DEFAULT_SUMMARY_LENGTH, "language": "zh-CN", "revision": 1},
 }
 
 
