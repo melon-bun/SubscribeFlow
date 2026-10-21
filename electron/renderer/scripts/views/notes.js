@@ -16,9 +16,14 @@
   var PAGE = 20;
 
   // 列表状态。每次请求带序号：迟到的回包丢掉，不串到当前筛选上。
-  var list = {loaded:false, loading:false, error:null, items:[], total:0, next_offset:null, seq:0};
+  // key 是当前查询的身份（条件＋排序＋分页）；needLoad 表示这个身份还没真正发出去。
+  var list = {loaded:false, loading:false, error:null, items:[], total:0, next_offset:null,
+              seq:0, key:null, needLoad:false};
   // 范围（facets）：只统计有笔记的内容，不是笔记的标签不当作笔记标签。
-  var scope = {loaded:false, loading:false, error:null, channels:[], sources:[], tags:[]};
+  var scope = {loaded:false, loading:false, error:null, channels:[], sources:[], tags:[],
+               seq:0, needLoad:false};
+  // 全局笔记数：不含任何筛选的总数，给侧栏那一枚徽标用。
+  var count = {value:null, loading:false, seq:0, needLoad:true};
   var filters = {keyword:'', platform:'', sourceId:'', tags:[], tagMode:'any', verdict:''};
   var sort = 'updated';
   var offset = 0;
@@ -59,22 +64,29 @@
   /* ---------------------------------------------------------------- 取数 */
 
   function loadList(app) {
-    if (list.loading) return;
+    if (list.loading) {
+      // 有请求在途，而条件已经变了：记下来，等这次的回包落地后按新条件重发。
+      // 直接 return 会把最新条件吞掉，目录就停在旧结果上。
+      list.needLoad = true;
+      return;
+    }
+    var key = queryKey();
     var seq = ++list.seq;
     list.loading = true;
     list.error = null;
     app.client.listNotes(query()).then(function (r) {
-      if (seq !== list.seq) return;      // 迟到的回包：丢掉
       list.loading = false;
+      // 回包只对得上当前查询身份才算数：期间条件变了就丢掉，并按新条件重发，
+      // 不能让旧结果冒充当前条件已经加载。
+      if (seq !== list.seq || key !== queryKey()) {
+        list.needLoad = true;
+        renderView(app);
+        return;
+      }
       list.loaded = true;
       list.items = r.items || [];
       list.total = r.total || 0;
       list.next_offset = r.next_offset == null ? null : r.next_offset;
-      // 侧栏上的笔记数：有笔记才算数。变了就更新侧栏那一枚。
-      if (app.noteCount !== list.total) {
-        app.noteCount = list.total;
-        if (SF.app && SF.app.refreshSidebarCounts) SF.app.refreshSidebarCounts();
-      }
       // 选中的那条不在当前范围里了：选相邻的一条，没有就空态。
       if (selectedId && !list.items.some(function (i) { return i.id === selectedId; })) {
         selectNeighbour(app);
@@ -82,8 +94,12 @@
       if (!selectedId && list.items.length) select(app, list.items[0].id);
       renderView(app);
     }, function (err) {
-      if (seq !== list.seq) return;
       list.loading = false;
+      if (seq !== list.seq || key !== queryKey()) {
+        list.needLoad = true;
+        renderView(app);
+        return;
+      }
       list.loaded = true;
       list.error = err;
       renderView(app);
@@ -91,11 +107,22 @@
   }
 
   function loadScope(app) {
-    if (scope.loading) return;
+    if (scope.loading) {
+      scope.needLoad = true;
+      return;
+    }
+    var key = queryKey();
+    var seq = ++scope.seq;
     scope.loading = true;
     scope.error = null;
     app.client.noteFacets(scopeQuery()).then(function (r) {
       scope.loading = false;
+      // 范围也跟当前查询身份走：旧条件的 facets 不能冒充最新范围。
+      if (seq !== scope.seq || key !== queryKey()) {
+        scope.needLoad = true;
+        renderView(app);
+        return;
+      }
       scope.loaded = true;
       scope.channels = r.channels || [];
       scope.sources = r.sources || [];
@@ -103,9 +130,44 @@
       renderView(app);
     }, function (err) {
       scope.loading = false;
+      if (seq !== scope.seq || key !== queryKey()) {
+        scope.needLoad = true;
+        renderView(app);
+        return;
+      }
       scope.loaded = true;
       scope.error = err;
       renderView(app);
+    });
+  }
+
+  /**
+   * 全局笔记数：不含任何筛选。侧栏那枚徽标用它，不能用筛选后的总数——
+   * 筛出 1 条不代表库里只剩 1 条笔记。
+   */
+  function loadCount(client) {
+    if (!client) return;
+    if (count.loading) {
+      count.needLoad = true;
+      return;
+    }
+    var seq = ++count.seq;
+    count.loading = true;
+    client.listNotes({limit: 1}).then(function (r) {
+      count.loading = false;
+      if (seq !== count.seq) return;
+      count.value = r.total || 0;
+      var state = SF.app && SF.app.state;
+      if (state && state.noteCount !== count.value) {
+        state.noteCount = count.value;
+        if (SF.app.refreshSidebarCounts) SF.app.refreshSidebarCounts();
+      }
+      if (count.needLoad) {
+        count.needLoad = false;
+        loadCount(client);
+      }
+    }, function () {
+      count.loading = false;
     });
   }
 
@@ -158,8 +220,19 @@
 
   function render(app) {
     var key = queryKey();
-    if (key !== list.key) { list.key = key; list.loaded = false; list.items = []; }
-    if (!list.loaded || list.stale) { list.stale = false; loadList(app); loadScope(app); }
+    if (key !== list.key) {
+      // 查询身份变了：旧结果作废，新条件一定要真的发出去。
+      list.key = key;
+      list.loaded = false;
+      list.items = [];
+      list.needLoad = true;
+      scope.needLoad = true;
+    }
+    // needLoad 表示这个身份还没发过请求：在途的请求回来之前也记着，
+    // 回来之后按新条件重发（BUG-111）。
+    if (list.needLoad && !list.loading) { list.needLoad = false; loadList(app); }
+    if (scope.needLoad && !scope.loading) { scope.needLoad = false; loadScope(app); }
+    if (count.needLoad && !count.loading) { count.needLoad = false; loadCount(app.client); }
     if (selectedId) loadDetail(app, selectedId);
     return h('div.view', {'data-view':'notes', 'data-refresh-key':'notes:' + queryKey()},
       head(app),
@@ -182,7 +255,7 @@
     if (list.error) {
       body = h('div.notes-toc__empty', null,
         h('p.field__error', {role:'status', text:'笔记读取失败：' + (list.error.message || '')}),
-        ui.btn('重试', {onClick:function () { list.loaded = false; list.stale = true; renderView(app); }}));
+        ui.btn('重试', {onClick:function () { list.loaded = false; list.needLoad = true; renderView(app); }}));
     } else if (!list.loaded) {
       body = h('p.field__hint', {text:'正在读取笔记…'});
     } else if (!list.total) {
@@ -207,7 +280,7 @@
         ui.searchInput('搜索标题或笔记…', filters.keyword, function (value) {
           filters.keyword = value;
           offset = 0;
-          list.loaded = false;
+          list.loaded = false; list.needLoad = true;
           renderView(app);
         }, {ariaLabel:'搜索笔记'}),
         h('div.notes-toc__filters', null,
@@ -216,7 +289,7 @@
           })), filters.platform, function (value) {
             filters.platform = value || '';
             offset = 0;
-            list.loaded = false;
+            list.loaded = false; list.needLoad = true;
             renderView(app);
           }, {ariaLabel:'按平台筛选'}),
           ui.select([{value:'',label:'全部来源'}].concat(scope.sources.map(function (row) {
@@ -224,7 +297,7 @@
           })), filters.sourceId, function (value) {
             filters.sourceId = value || '';
             offset = 0;
-            list.loaded = false;
+            list.loaded = false; list.needLoad = true;
             renderView(app);
           }, {ariaLabel:'按来源筛选'}),
           ui.select([{value:'',label:'不限结论'},
@@ -234,13 +307,13 @@
             filters.verdict, function (value) {
               filters.verdict = value || '';
               offset = 0;
-              list.loaded = false;
+              list.loaded = false; list.needLoad = true;
               renderView(app);
             }, {ariaLabel:'按项目结论筛选'}),
           ui.select(SORTS, sort, function (value) {
             sort = value || 'updated';
             offset = 0;
-            list.loaded = false;
+            list.loaded = false; list.needLoad = true;
             renderView(app);
           }, {ariaLabel:'笔记排序'})),
         tagFilter(app)),
@@ -249,12 +322,12 @@
       (list.next_offset != null || offset > 0) ? h('div.notes-toc__pager', null,
         offset > 0 ? ui.btn('上一页', {onClick:function () {
           offset = Math.max(0, offset - PAGE);
-          list.loaded = false;
+          list.loaded = false; list.needLoad = true;
           renderView(app);
         }}) : null,
         list.next_offset != null ? ui.btn('更多', {onClick:function () {
           offset = list.next_offset;
-          list.loaded = false;
+          list.loaded = false; list.needLoad = true;
           renderView(app);
         }}) : null) : null);
   }
@@ -273,7 +346,7 @@
             if (index >= 0) filters.tags.splice(index, 1);
             else filters.tags.push(tag.id);
             offset = 0;
-            list.loaded = false;
+            list.loaded = false; list.needLoad = true;
             renderView(app);
           },
         }, h('span', {text: tag.name}), h('span.notes-toc__tag-count', {text: String(tag.count)}));
@@ -282,7 +355,7 @@
         filters.tagMode, function (value) {
           filters.tagMode = value === 'all' ? 'all' : 'any';
           offset = 0;
-          list.loaded = false;
+          list.loaded = false; list.needLoad = true;
           renderView(app);
         }, {ariaLabel:'标签筛选方式'}) : null);
   }
@@ -310,8 +383,10 @@
         onChanged: function (info) {
           // 存好或删掉：目录位置、数量与范围都要跟上。
           info = info || {};
-          list.loaded = false;
-          scope.loaded = false;
+          list.loaded = false; list.needLoad = true;
+          scope.loaded = false; scope.needLoad = true;
+          // 侧栏那枚全局笔记数也跟着变：写完／删掉一条，总数就少一条。
+          count.needLoad = true;
           if (info.deleted) {
             // 被删掉的那条不在了：选相邻的一条。
             selectNeighbour(app);
@@ -442,14 +517,24 @@
 
   function invalidate(reasons) {
     if (!reasons || reasons.has('all') || reasons.has('content') || reasons.has('poll')) {
-      list.stale = true;
-      scope.stale = true;
+      list.needLoad = true;
+      scope.needLoad = true;
+    }
+    if (!reasons || reasons.has('all') || reasons.has('content')) {
+      // 侧栏那枚全局笔记数也要跟上：写完／删掉笔记后不必等用户回到笔记页才更新。
+      count.needLoad = true;
+      var client = SF.app && SF.app.state && SF.app.state.client;
+      // 徽标还没出现过时不急着查：等用户打开笔记页时一起算，省一次无用往返。
+      if (client && count.value !== null) { count.needLoad = false; loadCount(client); }
     }
   }
 
   function reset() {
-    list = {loaded:false, loading:false, error:null, items:[], total:0, next_offset:null, seq:list.seq};
-    scope = {loaded:false, loading:false, error:null, channels:[], sources:[], tags:[]};
+    list = {loaded:false, loading:false, error:null, items:[], total:0, next_offset:null,
+            seq:list.seq, key:null, needLoad:false};
+    scope = {loaded:false, loading:false, error:null, channels:[], sources:[], tags:[],
+             seq:scope.seq, needLoad:false};
+    count = {value:null, loading:false, seq:count.seq, needLoad:true};
     filters = {keyword:'', platform:'', sourceId:'', tags:[], tagMode:'any', verdict:''};
     sort = 'updated';
     offset = 0;

@@ -140,6 +140,13 @@ async function verify({window, core, root}) {
   await until(`document.querySelectorAll('.notes-toc__item').length === 1`);
   const searched = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__item')).map(b => b.textContent.trim())`);
   assert.deepEqual(searched, ['一篇讲检索设计的文章'], '搜索要搜得到笔记正文');
+  /* 全局数与范围数分开：页内是当前范围，侧栏是全体笔记数（BUG-112）。 */
+  const counts = await evaluate(`({
+    badge: (document.querySelector('[data-nav="notes"] .count-pill') || {}).textContent,
+    page: (document.querySelector('.notes-toc__foot') || {}).textContent,
+  })`);
+  assert.equal(counts.badge, '23', '侧栏那枚是全体笔记数，不随筛选变');
+  assert.ok(counts.page.includes('共 1 篇'), '页内是当前范围的总数：' + counts.page);
   await evaluate(`(() => {
     const input = document.querySelector('input[aria-label="搜索笔记"]');
     input.value = '';
@@ -189,6 +196,28 @@ async function verify({window, core, root}) {
   // 回到第一页，后面的场景都在第一页上做。
   await evaluate(`Array.from(document.querySelectorAll('.notes-toc__pager button')).find(b => b.textContent.trim() === '上一页').click()`);
   await until(`document.querySelectorAll('.notes-toc__item').length === ${firstPage}`);
+
+  /* 5c. 快速连改条件：最后一次的条件一定要真的下发，旧结果不冒充当前。 */
+  await evaluate(`(() => {
+    const select = document.querySelector('select[aria-label="按平台筛选"]');
+    const options = Array.from(select.options);
+    select.value = options[1].value;
+    select.dispatchEvent(new Event('change', {bubbles: true}));
+    select.value = options[2].value;
+    select.dispatchEvent(new Event('change', {bubbles: true}));
+  })()`);
+  await until(`document.querySelectorAll('.notes-toc__item').length === 1`);
+  const lastCall = JSON.parse(await evaluate(`JSON.stringify(window.__listCalls)`)).pop();
+  assert.ok(lastCall.platform, '最后下发的请求要带最后的平台条件');
+  const quickTitles = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__item')).map(b => b.textContent.trim())`);
+  assert.deepEqual(quickTitles, ['local-rag / desktop-kit'], '结果要对得上最后的条件');
+  // 换回全部平台。
+  await evaluate(`(() => {
+    const select = document.querySelector('select[aria-label="按平台筛选"]');
+    select.value = '';
+    select.dispatchEvent(new Event('change', {bubbles: true}));
+  })()`);
+  await until(`document.querySelectorAll('.notes-toc__item').length > 1`);
 
   /* 6. 标签筛选：选项来自笔记范围内的标签。 */
   const tagNames = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__tag span:first-child')).map(s => s.textContent)`);
@@ -299,6 +328,8 @@ async function verify({window, core, root}) {
   })`);
   assert.ok(!afterDelete.items.includes('一篇讲检索设计的文章'), '目录里不能再有删掉的那条');
   assert.ok(afterDelete.total.includes('共 22 篇'), '总数要跟着少一条：' + afterDelete.total);
+  const badgeAfterDelete = await evaluate(`(document.querySelector('[data-nav="notes"] .count-pill') || {}).textContent`);
+  assert.equal(badgeAfterDelete, '22', '全局笔记数也要跟着少一条');
   assert.ok(afterDelete.selected && afterDelete.selected !== '一篇讲检索设计的文章', '删除后要选相邻的一条');
 
   /* 13b. 筛选与分页确实下发到 Core，不是界面里自己滤的。 */
@@ -306,7 +337,10 @@ async function verify({window, core, root}) {
   assert.ok(calls.some(c => c.keyword === '倒排索引'), '关键词要下发到 Core');
   assert.ok(calls.some(c => c.platform === 'zhihu'), '平台筛选要下发到 Core');
   assert.ok(calls.some(c => c.offset === 20), '翻页要下发 offset');
-  assert.ok(calls.every(c => c.limit === 20), '每页条数固定');
+  const listCalls = calls.filter(c => c.offset !== undefined);
+  assert.ok(listCalls.length && listCalls.every(c => c.limit === 20), '列表每页条数固定');
+  assert.ok(calls.some(c => c.limit === 1 && c.offset === undefined),
+    '全局笔记数要走不带筛选的单独一次查询');
 
   /* 14. 离开页面前有草稿要问一句；继续编辑就留在原地。 */
   await evaluate(`(() => {
