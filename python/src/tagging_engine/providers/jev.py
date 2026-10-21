@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import math
 
+from subscribe_flow.ai.adapters.jev_systemone import JevSystemOneAdapter
+
 from ..contracts import (
     STATUS_INSUFFICIENT_TEXT, STATUS_MATCHED, STATUS_NO_MATCH,
     Candidate, RecognitionError, RecognitionRequest, RecognitionResult,
@@ -47,10 +49,10 @@ def validate_batch(value) -> int:
 class JevProvider:
     name = 'jev'
 
-    def __init__(self, *, endpoint: str, model: str, api_key: str,
+    def __init__(self, *, endpoint: str = '', model: str = '', api_key: str = '',
                  threshold: float = DEFAULT_THRESHOLD, batch: int = DEFAULT_BATCH,
-                 transport=None, timeout: float | None = None):
-        if not (endpoint and model and api_key):
+                 transport=None, timeout: float | None = None, adapter=None):
+        if adapter is None and not (endpoint and model and api_key):
             raise RecognitionError('not_configured', 'Jev 识别尚未配置完整')
         self.endpoint, self.model, self.api_key = endpoint, model, api_key
         # 配置错误必须在发请求之前失败：负 batch 会让 range 为空，
@@ -59,12 +61,13 @@ class JevProvider:
         self.batch = validate_batch(batch)
         self.timeout = validate_timeout(timeout, 'timeout') if timeout is not None else None
         self._transport = transport
+        # 协议往返交给公共 AI 层：这里只保留打标签需要的门槛与取二规则。
+        # 适配器可以由公共 AI 层注入（那边已经组装好凭据）；不给就自己造一个。
+        self._adapter = adapter or JevSystemOneAdapter(endpoint=endpoint, model=model, api_key=api_key,
+                                                      transport=transport, timeout=self.timeout)
 
     def transport(self):
-        if self._transport is None:
-            from ..transport import HttpTransport
-            self._transport = HttpTransport(self.timeout or 30.0)
-        return self._transport
+        return self._adapter.transport()
 
     def recognize(self, request: RecognitionRequest) -> RecognitionResult:
         if not request.has_enough_text():
@@ -79,14 +82,13 @@ class JevProvider:
         served_models, usages = set(), []
         for start in range(0, len(request.candidates), self.batch):
             batch = request.candidates[start:start + self.batch]
-            body = self._ask(state, batch)
-            served = body.get('model')
+            answer = self._ask(state, batch)
+            served = answer.model
             if isinstance(served, str) and served:
                 served_models.add(served)
-            usages.append(body.get('usage') if isinstance(body.get('usage'), dict) else None)
-            answers = self._answers(body, batch)
+            usages.append(answer.usage)
             for tag in batch:
-                probability = self._probability(answers, tag.id)
+                probability = answer.probabilities[tag.id]
                 candidates.append(Candidate(tag.id, None, probability, 'noul',
                                             f'与「{tag.name}」的成立概率 {probability}'))
         resolved = self._resolved_model(served_models)
@@ -105,15 +107,9 @@ class JevProvider:
                                  candidates=tuple(kept), model=resolved,
                                  requested_model=self.model, usage=self._merge_usage(usages), detail=detail)
 
-    def _ask(self, state: str, batch) -> dict:
-        payload = {
-            'model': self.model,
-            'state': state,
-            'questions': {tag.id: {'type': 'noul', 'instructions': self._instruction(tag)} for tag in batch},
-        }
-        _, body = self.transport().post_json(self.endpoint, payload,
-                                             {'Authorization': f'Bearer {self.api_key}'}, self.timeout)
-        return body
+    def _ask(self, state: str, batch):
+        questions = {tag.id: self._instruction(tag) for tag in batch}
+        return self._adapter.classify(state, questions)
 
     @staticmethod
     def _resolved_model(served_models: set) -> str | None:
@@ -136,42 +132,6 @@ class JevProvider:
             parts.append('常见的其他说法：' + '、'.join(tag.synonyms))
         parts.append('只依据内容本身判断，不依据是否提到了这个词。')
         return ''.join(parts)
-
-    @staticmethod
-    def _answers(body: dict, batch) -> dict:
-        answers = body.get('answers')
-        if not isinstance(answers, dict):
-            raise RecognitionError('invalid_response', '模型服务没有返回 answers 对象')
-        expected = {tag.id for tag in batch}
-        missing = expected - set(answers)
-        if missing:
-            raise RecognitionError('invalid_response',
-                                   f'缺少 {len(missing)} 个问题的答案（问题 ID 与请求不一致）')
-        unexpected = set(answers) - expected
-        if unexpected:
-            raise RecognitionError('invalid_response',
-                                   f'返回了 {len(unexpected)} 个本次未提问的答案')
-        return answers
-
-    @staticmethod
-    def _probability(answers: dict, question_id: str) -> float:
-        """取一个合法概率；任何不合法的答案都让整次识别失败。
-
-        之前这里返回 None 并跳过，等于把「服务给了坏数据」记成「没有匹配」。
-        """
-        answer = answers.get(question_id)
-        if not isinstance(answer, dict):
-            raise RecognitionError('invalid_response', f'问题 {question_id} 的答案不是对象')
-        kind = answer.get('type')
-        if kind != 'noul':
-            raise RecognitionError('invalid_response', f'问题 {question_id} 的答案类型是 {kind!r}，应为 noul')
-        value = answer.get('noul')
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise RecognitionError('invalid_response', f'问题 {question_id} 的 noul 值缺失或不是数值')
-        value = float(value)
-        if not math.isfinite(value) or not 0.0 <= value <= 1.0:
-            raise RecognitionError('invalid_response', f'问题 {question_id} 的 noul 值超出 0 到 1')
-        return value
 
     @staticmethod
     def _merge_usage(batches) -> dict | None:

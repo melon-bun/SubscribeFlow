@@ -22,6 +22,9 @@ from subscribe_flow.contracts.models import PublishedTime
 from tagging_engine.contracts import (
     Candidate, RecognitionError, RecognitionResult, STATUS_MATCHED, STATUS_NO_MATCH,
 )
+# M25：连接按稳定资源 ID 组织。
+PROVIDER_IDS = {'jev': 'provider-jev', 'llm': 'provider-llm'}
+
 from tagging_engine.providers.jev import JevProvider
 from tagging_engine.providers.llm import LlmProvider
 
@@ -114,11 +117,11 @@ class _M16Fixture:
         """用固定配置开启自动打标，并把 Provider 替换成同契约的替身。"""
         for m in ('jev', 'llm'):
             self.core.credentials.provide(f'ref-{m}', f'sk-test-{m}')
-        # M21：连接参数与识别策略分开保存，两次保存互不覆盖。
+        # M25：连接按稳定 ID 组织；连接参数与识别策略分开保存，互不覆盖。
         self.core.settings.update('ai', {
-            'providers': {m: {'endpoint': f'https://api.test.invalid/{m}', 'model': 'test-model'}
+            'providers': {PROVIDER_IDS[m]: {'endpoint': f'https://api.test.invalid/{m}', 'model': 'test-model'}
                           for m in ('jev', 'llm')}},
-            credential_refs={'jev': 'ref-jev', 'llm': 'ref-llm'})
+            credential_refs={PROVIDER_IDS[m]: f'ref-{m}' for m in ('jev', 'llm')})
         self.core.settings.update('tagging', {'enabled': True, 'mode': mode})
         provider = StubProvider(picks) if picks is not None else self.stub
         self._patch_provider(provider)
@@ -175,34 +178,36 @@ class M16TaggingTests(_M16Fixture, unittest.TestCase):
         不改当前打标方式、不启停识别，也不产生任何标签。
         """
         self.enable()
-        import subscribe_flow.application.tagging as module
         seen = []
-        original = module.build_provider
+        gateway = self.tagging.gateway
+        original = gateway.test_connection
 
-        def spy(mode, **kwargs):
-            seen.append(mode)
-            return original(mode, **kwargs)
+        def spy(provider_id):
+            seen.append(provider_id)
+            return {'ok': True, 'provider': 'probe', 'model': 'probe-model', 'message': 'ok'}
 
-        module.build_provider = spy
-        self.addCleanup(lambda: setattr(module, 'build_provider', original))
+        gateway.test_connection = spy
+        self.addCleanup(lambda: setattr(gateway, 'test_connection', original))
 
-        # 当前方式是 llm，指定测 jev 时组装的必须是 jev 那一类。
+        # M25：连接测试属于独立 AI 层——只做协议最小探针，不走打标 Provider。
+        # 当前方式是 llm，指定测 jev 时探的必须是 jev 那一类连接。
         outcome = self.loop.run_until_complete(self.tagging.test_connection('jev'))
         self.assertTrue(outcome['ok'], outcome)
-        self.assertEqual(seen, ['jev'])
+        self.assertEqual(seen, ['provider-jev'])
         # 测完不能动当前方式与开关。
         snapshot = self.core.settings.snapshot()
         self.assertEqual(snapshot['tagging']['mode'], 'llm')
         self.assertTrue(snapshot['tagging']['enabled'])
-        # 连接测试只发一次探测请求，不登记任何打标任务。
-        self.assertEqual(self.stub.calls, 1)
+        # 连接测试不产生任何打标调用，也不登记打标任务。
+        self.assertEqual(self.stub.calls, 0)
         self.assertEqual(self.tasks.list_tasks(limit=5)['total'], 0, '连接测试不产生打标任务')
 
     def test_connection_test_reports_missing_items_without_changing_the_strategy(self):
         """M21：被测的那一类没配齐时如实报缺项，不改配置也不改方式。"""
         self.enable()
         # 把 llm 的连接参数清空：它就没有 API Key 了。
-        self.core.settings.update('ai', {'providers': {'llm': {'endpoint': '', 'model': ''}}}, {'llm': None})
+        self.core.settings.update('ai', {'providers': {'provider-llm': {'endpoint': '', 'model': ''}}},
+                                  {'provider-llm': None})
         outcome = self.loop.run_until_complete(self.tagging.test_connection('llm'))
         self.assertFalse(outcome['ok'])
         self.assertIn('API Key', outcome['message'])
@@ -333,9 +338,9 @@ class M16TaggingTests(_M16Fixture, unittest.TestCase):
         task = self.tasks.next_task()
         self.assertIsNotNone(task)
         stale_version = task['config_version']
-        # 任务已认领但还没执行，此时配置被改了一次：版本前进。
+        # 任务已认领但还没执行，此时配置被改了一次：打标的有效配置版本前进。
         self.core.settings.update('tagging', {'mode': 'jev'})
-        current_version = self.core.settings.snapshot()['version']
+        current_version = self.core.settings.snapshot()['tagging']['revision']
         self.assertGreater(current_version, stale_version)
         # 把任务放回队列，让 worker 用新版本重排它。
         with self.tasks.database.transaction() as db:
@@ -636,7 +641,7 @@ class M16Round2RegressionTests(_M16Fixture, unittest.TestCase):
 
         # 用户在设置页保存修正后的凭据与配置：设置版本前进，worker 必须发现。
         self.core.credentials.provide('ref-llm', 'sk-corrected')
-        self.core.settings.update('ai', {'providers': {'llm': {'model': 'fixed-model'}}})
+        self.core.settings.update('ai', {'providers': {'provider-llm': {'model': 'fixed-model'}}})
         self._patch_provider(StubProvider({'fixture:feed:fix-1': ['安全']}))
 
         self.drain()

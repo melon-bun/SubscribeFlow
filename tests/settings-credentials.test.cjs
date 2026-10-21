@@ -82,18 +82,22 @@ function fakeCore(initial) {
       if (method === 'settings.get') return settings;
       if (method === 'settings.update') {
         if (params.section === 'ai') {
-          // M21：连接参数独立成区；识别策略在另一个分区，互不覆盖。
+          // M25：连接按稳定 ID 组织，提交里带哪几条就改哪几条。
+          const patch = (params.patch || {}).providers || {};
+          const providers = { ...settings.ai.providers };
+          for (const [providerId, fields] of Object.entries(patch)) {
+            if (fields === null) { delete providers[providerId]; continue; }
+            providers[providerId] = { ...(providers[providerId] || {}), ...fields };
+          }
+          // 凭据引用按连接 ID 落到对应连接上（与 Core 的真实行为一致）：
+          // 换密钥不需要同时改地址或模型。
+          for (const [providerId, reference] of Object.entries(params.credential_refs || {})) {
+            providers[providerId] = { ...(providers[providerId] || {}), credentialRef: reference };
+          }
           settings = {
             ...settings,
             savedVersion: settings.version + 1,
-            ai: {
-              providers: {
-                jev: { ...settings.ai.providers.jev, ...((params.patch || {}).providers || {}).jev,
-                  ...(params.credential_refs && 'jev' in params.credential_refs ? { credentialRef: params.credential_refs.jev } : {}) },
-                llm: { ...settings.ai.providers.llm, ...((params.patch || {}).providers || {}).llm,
-                  ...(params.credential_refs && 'llm' in params.credential_refs ? { credentialRef: params.credential_refs.llm } : {}) },
-              },
-            },
+            ai: { ...settings.ai, providers },
           };
         } else if (params.section === 'tagging') {
           // 识别策略：只带开关与方式，绝不覆盖连接参数。
@@ -121,14 +125,17 @@ function fakeCore(initial) {
 const BASE_SETTINGS = {
   version: 0,
   updatedAt: null,
-  // M21：连接参数在 ai，识别策略在 tagging。
+  // M25：连接按稳定 ID 组织在 ai，识别策略在 tagging。
   ai: {
+    formatVersion: 2,
     providers: {
-      jev: { endpoint: '', model: '', credentialRef: null, configured: false, missing: [], officialDefaults: null },
-      llm: { endpoint: '', model: '', credentialRef: null, configured: false, missing: [], officialDefaults: null },
+      'provider-jev': { id: 'provider-jev', name: 'Jev', protocol: 'jev_systemone', endpoint: '', model: '',
+        credentialRef: null, enabled: true, revision: 1, configured: false, missing: [], capabilities: [] },
+      'provider-llm': { id: 'provider-llm', name: 'LLM', protocol: 'openai_chat', endpoint: '', model: '',
+        credentialRef: null, enabled: true, revision: 1, configured: false, missing: [], capabilities: [] },
     },
   },
-  tagging: { enabled: false, mode: 'llm', enabledSince: null },
+  tagging: { enabled: false, mode: 'llm', enabledSince: null, providerIds: { jev: 'provider-jev', llm: 'provider-llm' } },
   reminder: { enabled: false, intervalMinutes: 60, preset: '60' },
   priority: { names: { high: '高优先级', medium: '中优先级', low: '低优先级' } },
 };
@@ -141,21 +148,21 @@ test('保存密钥：先落密文再提交引用，并把密钥推进 Core', asy
   // M21：密钥与连接参数一起提交，走 ai 分区。
   const saved = await bridge.write({
     section: 'ai',
-    patch: { providers: { jev: { endpoint: 'https://api.typesafe.ai/v1/systemone', model: 'jev-latest' } } },
-    credentials: { jev: 'apikey_topsecret' },
+    patch: { providers: { 'provider-jev': { endpoint: 'https://api.typesafe.ai/v1/systemone', model: 'jev-latest' } } },
+    credentials: { 'provider-jev': 'apikey_topsecret' },
   });
   const provide = core.calls.find((call) => call.method === 'credential.provide');
   assert.ok(provide, '保存后应向 Core 推送密钥');
   assert.equal(provide.params.secret, 'apikey_topsecret');
   const update = core.calls.find((call) => call.method === 'settings.update');
-  assert.match(update.params.credential_refs.jev, /^jev-[0-9a-f]{24}$/);
+  assert.match(update.params.credential_refs['provider-jev'], /^provider-[0-9a-f]{24}$/);
   const raw = await fs.readFile(path.join(dir, 'credentials.json'), 'utf8');
   assert.ok(!raw.includes('apikey_topsecret'));
   // 界面只拿得到「配没配」，拿不到引用与密钥
-  assert.equal(saved.credentials.providers.jev.configured, true);
-  assert.equal(saved.credentials.providers.jev.usable, true);
+  assert.equal(saved.credentials.providers['provider-jev'].configured, true);
+  assert.equal(saved.credentials.providers['provider-jev'].usable, true);
   assert.ok(!JSON.stringify(saved).includes('apikey_topsecret'));
-  assert.ok(!JSON.stringify(saved).includes(update.params.credential_refs.jev), '凭据引用不应进入界面');
+  assert.ok(!JSON.stringify(saved).includes(update.params.credential_refs['provider-jev']), '凭据引用不应进入界面');
 });
 
 test('提交失败：保留旧引用，只清理这次刚写入的版本', async () => {
@@ -163,8 +170,8 @@ test('提交失败：保留旧引用，只清理这次刚写入的版本', async
   const credentials = new CredentialService({ dir, storage: fakeStorage() });
   const core = fakeCore(BASE_SETTINGS);
   const bridge = new SettingsBridge({ core, credentials });
-  await bridge.write({ section: 'ai', patch: { mode: 'jev' }, credentials: { jev: 'first_secret' } });
-  const oldReference = core.settings.ai.providers.jev.credentialRef;
+  await bridge.write({ section: 'ai', patch: { mode: 'jev' }, credentials: { 'provider-jev': 'first_secret' } });
+  const oldReference = core.settings.ai.providers['provider-jev'].credentialRef;
   assert.ok(oldReference);
 
   core.call = async (method, params) => {
@@ -172,7 +179,7 @@ test('提交失败：保留旧引用，只清理这次刚写入的版本', async
     if (method === 'settings.get') return core.settings;
     return null;
   };
-  await assert.rejects(() => bridge.write({ section: 'ai', patch: { mode: 'llm' }, credentials: { jev: 'second_secret' } }));
+  await assert.rejects(() => bridge.write({ section: 'ai', patch: { mode: 'llm' }, credentials: { 'provider-jev': 'second_secret' } }));
   assert.deepEqual(await credentials.references(), [oldReference], '未引用的新版本必须被清理');
   assert.equal(await credentials.get(oldReference), 'first_secret', '旧密钥必须还能取用');
 });
@@ -182,10 +189,10 @@ test('Core 重启后按当前设置重新推送密钥，并撤销不再引用的
   const credentials = new CredentialService({ dir, storage: fakeStorage() });
   const core = fakeCore(BASE_SETTINGS);
   const bridge = new SettingsBridge({ core, credentials });
-  await bridge.write({ section: 'ai', patch: { mode: 'jev' }, credentials: { jev: 'key_a' } });
-  const referenceA = core.settings.ai.providers.jev.credentialRef;
-  await bridge.write({ section: 'ai', patch: { mode: 'jev' }, credentials: { jev: 'key_b' } });
-  const referenceB = core.settings.ai.providers.jev.credentialRef;
+  await bridge.write({ section: 'ai', patch: { mode: 'jev' }, credentials: { 'provider-jev': 'key_a' } });
+  const referenceA = core.settings.ai.providers['provider-jev'].credentialRef;
+  await bridge.write({ section: 'ai', patch: { mode: 'jev' }, credentials: { 'provider-jev': 'key_b' } });
+  const referenceB = core.settings.ai.providers['provider-jev'].credentialRef;
   assert.notEqual(referenceA, referenceB);
   assert.deepEqual(await credentials.references(), [referenceB], '换密钥后旧版本应被裁剪');
 
@@ -199,11 +206,11 @@ test('Core 重启后按当前设置重新推送密钥，并撤销不再引用的
   assert.equal(provide.params.secret, 'key_b');
 
   // 清除 API Key 才是撤销推送的真实路径：切换模式不会丢掉另一种方式的密钥
-  await revived.write({ section: 'ai', patch: {}, credentials: { jev: null } });
+  await revived.write({ section: 'ai', patch: {}, credentials: { 'provider-jev': null } });
   assert.ok(restarted.calls.some((call) => call.method === 'credential.revoke' && call.params.reference === referenceB));
   assert.deepEqual(await credentials.references(), [], '清除后磁盘上不应留下旧版本');
   const status = await revived.read();
-  assert.equal(status.credentials.providers.jev.configured, false);
+  assert.equal(status.credentials.providers['provider-jev'].configured, false);
 });
 
 test('损坏的凭据文件不静默清空，报告为读不出来', async () => {
@@ -233,8 +240,8 @@ test('Core 已提交后同步失败仍保留新密钥，并报告可恢复的同
     if (method === 'credential.provide') throw new Error('Core 暂时断开');
     return call(method, params);
   };
-  const result = await bridge.write({ section: 'ai', patch: {mode: 'jev'}, credentials: {jev: 'new-key'} });
-  const ref = core.settings.ai.providers.jev.credentialRef;
+  const result = await bridge.write({ section: 'ai', patch: {mode: 'jev'}, credentials: {'provider-jev': 'new-key'} });
+  const ref = core.settings.ai.providers['provider-jev'].credentialRef;
   assert.equal(await new CredentialService({dir, storage: fakeStorage()}).get(ref), 'new-key');
   assert.ok(result.warnings.length, '保存成功但同步失败必须可见');
   core.call = call;
@@ -252,8 +259,8 @@ test('Core 提交成功但响应丢失时不得删除正在被引用的密钥', 
     if (method === 'settings.update') throw new Error('回复丢失');
     return result;
   };
-  await assert.rejects(bridge.write({section: 'ai', patch: {mode: 'jev'}, credentials: {jev: 'persisted-key'}}));
-  assert.equal(await new CredentialService({dir, storage: fakeStorage()}).get(core.settings.ai.providers.jev.credentialRef), 'persisted-key');
+  await assert.rejects(bridge.write({section: 'ai', patch: {mode: 'jev'}, credentials: {'provider-jev': 'persisted-key'}}));
+  assert.equal(await new CredentialService({dir, storage: fakeStorage()}).get(core.settings.ai.providers['provider-jev'].credentialRef), 'persisted-key');
 });
 
 test('旧密钥清理失败不能撤销已经提交的新密钥', async () => {
@@ -262,9 +269,9 @@ test('旧密钥清理失败不能撤销已经提交的新密钥', async () => {
   const core = fakeCore(BASE_SETTINGS);
   const bridge = new SettingsBridge({core, credentials});
   credentials.prune = async () => {throw new Error('磁盘暂时不可写');};
-  const result = await bridge.write({section: 'ai', patch: {mode: 'jev'}, credentials: {jev: 'kept-key'}});
+  const result = await bridge.write({section: 'ai', patch: {mode: 'jev'}, credentials: {'provider-jev': 'kept-key'}});
   assert.ok(result.warnings.length);
-  assert.equal(await credentials.get(core.settings.ai.providers.jev.credentialRef), 'kept-key');
+  assert.equal(await credentials.get(core.settings.ai.providers['provider-jev'].credentialRef), 'kept-key');
 });
 
 test('并发保存两种密钥不会相互裁剪，重启后都能取回', async () => {
@@ -273,13 +280,13 @@ test('并发保存两种密钥不会相互裁剪，重启后都能取回', async
   const core = fakeCore(BASE_SETTINGS);
   const bridge = new SettingsBridge({core, credentials});
   await Promise.all([
-    bridge.write({section: 'ai', patch: {mode: 'jev'}, credentials: {jev: 'jev-key'}}),
-    bridge.write({section: 'ai', patch: {mode: 'llm'}, credentials: {llm: 'llm-key'}}),
+    bridge.write({section: 'ai', patch: {mode: 'jev'}, credentials: {'provider-jev': 'jev-key'}}),
+    bridge.write({section: 'ai', patch: {mode: 'llm'}, credentials: {'provider-llm': 'llm-key'}}),
     bridge.sync(),
   ]);
   const reader = new CredentialService({dir, storage: fakeStorage()});
-  assert.equal(await reader.get(core.settings.ai.providers.jev.credentialRef), 'jev-key');
-  assert.equal(await reader.get(core.settings.ai.providers.llm.credentialRef), 'llm-key');
+  assert.equal(await reader.get(core.settings.ai.providers['provider-jev'].credentialRef), 'jev-key');
+  assert.equal(await reader.get(core.settings.ai.providers['provider-llm'].credentialRef), 'llm-key');
 });
 
 test('凭据写盘失败不改变已成功保存的内存快照', async () => {
@@ -319,7 +326,7 @@ test('M20：优先级名称原样透传给界面，改名不动配置版本', as
   assert.equal(read.priority.names.high, '今天看');
   // 优先级分区不接受凭据参数。
   await assert.rejects(
-    () => bridge.write({section: 'priority', patch: {names: {high: '今天看'}}, credentials: {jev: 'x'}}),
+    () => bridge.write({section: 'priority', patch: {names: {high: '今天看'}}, credentials: {'provider-jev': 'x'}}),
     /当前分区不接受这些密钥参数/,
   );
 });

@@ -48,6 +48,18 @@ async function verify({window, core, root}) {
     b.click();
   })()`);
 
+  /** 连接卡片按名称与字段标签定位：卡片有几条、字段顺序如何都会变。 */
+  const setCardField = (cardTitle, label, value) => evaluate(`(() => {
+    const card = Array.from(document.querySelectorAll('.setting-stack .setting-block')).find(c => { const t = c.querySelector('.setting-block__title'); return t && t.textContent.trim() === ${JSON.stringify(cardTitle)}; });
+    if (!card) return false;
+    const field = Array.from(card.querySelectorAll('.field')).find(f => { const l = f.querySelector('.field__label'); return l && l.textContent.trim() === ${JSON.stringify(label)}; });
+    const input = field && field.querySelector('input');
+    if (!input) return false;
+    input.value = ${JSON.stringify(value)};
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    return true;
+  })()`);
+
   await until(`!!window.SF?.app.state.session`);
   await until(`SF.app.state.coreStatus && SF.app.state.coreStatus.state === 'ready'`);
 
@@ -55,13 +67,15 @@ async function verify({window, core, root}) {
 
   const upgraded = await core.call('settings.get');
   assert.equal(upgraded.version, 3, '旧配置的版本号应当保留');
-  assert.equal(upgraded.ai.providers.jev.endpoint, 'https://api.example.invalid/v1',
+  assert.equal(upgraded.ai.providers['provider-jev'].endpoint, 'https://api.example.invalid/v1',
     '旧结构里的接口地址必须搬到新的 ai.providers');
-  assert.equal(upgraded.ai.providers.jev.model, 'jev-legacy', '旧结构里的模型标识必须保留');
+  assert.equal(upgraded.ai.providers['provider-jev'].model, 'jev-legacy', '旧结构里的模型标识必须保留');
   assert.equal(upgraded.tagging.enabled, true, '升级不能重置自动打标开关');
   assert.equal(upgraded.tagging.mode, 'jev', '升级不能重置识别方式');
   assert.equal(upgraded.tagging.enabledSince, '2026-10-01T00:00:00+00:00', '升级不能重置原启用时间');
-  assert.equal(upgraded.ai.providers.llm.endpoint, '', '另一种方式不能被旧数据污染');
+  assert.equal(upgraded.ai.providers['provider-llm'].endpoint, '', '另一种方式不能被旧数据污染');
+  // 旧配置没有打标版本：以当前保存版本起头，升级前在跑的任务因此不会被作废。
+  assert.equal(upgraded.tagging.revision, 3, '旧配置的打标版本应当从保存版本起头');
 
   /* ================= 设置页：只有连接参数 ================= */
 
@@ -72,42 +86,39 @@ async function verify({window, core, root}) {
   assert.equal(await evaluate(`!!document.querySelector('.switch[aria-label="启用自动打标"]')`), false,
     '自动打标开关不在设置页');
   assert.equal(await evaluate(`!!document.querySelector('.mode-picker')`), false, '识别方式不在设置页');
-  const apiTitles = await evaluate(`Array.from(document.querySelectorAll('.setting-grid .setting-block__title')).map(n => n.textContent)`);
-  assert.deepEqual(apiTitles, ['Jev', 'LLM'], '设置页只列两类 API');
+  // 连接卡片是异步读回设置后才渲染的：先等卡片出现，再断言内容。
+  await until(`!!document.querySelector('.setting-stack .setting-block__title')`);
+  const apiTitles = await evaluate(`Array.from(document.querySelectorAll('.setting-stack .setting-block__title')).map(n => n.textContent)`);
+  assert.deepEqual(apiTitles, ['Jev', 'LLM'], '设置页按连接 ID 列出已有连接');
   const jevEndpoint = await evaluate(`(() => {
-    const block = Array.from(document.querySelectorAll('.setting-grid .setting-block')).find(b => b.querySelector('.setting-block__title').textContent.trim() === 'Jev');
-    return block.querySelector('input').value;
+    const block = Array.from(document.querySelectorAll('.setting-stack .setting-block')).find(b => b.querySelector('.setting-block__title').textContent.trim() === 'Jev');
+    const field = Array.from(block.querySelectorAll('.field')).find(f => { const l = f.querySelector('.field__label'); return l && l.textContent.trim() === '接口地址'; });
+    return field.querySelector('input').value;
   })()`);
   assert.equal(jevEndpoint, 'https://api.example.invalid/v1', '旧配置读进界面后仍是原值');
-  const testButtons = await evaluate(`Array.from(document.querySelectorAll('.setting-grid button')).filter(b => b.textContent.trim() === '测试连接').length`);
-  assert.equal(testButtons, 2, '两类 API 各自有一个测试连接按钮');
+  const testButtons = await evaluate(`Array.from(document.querySelectorAll('.setting-stack button')).filter(b => b.textContent.trim() === '测试连接').length`);
+  assert.equal(testButtons, 2, '每条连接各自有一个测试连接按钮');
   await screenshot('v049-b02-api-settings.png');
 
   /* ================= 只保存一类 API ================= */
 
   // 给 LLM 填一份假配置并保存：Jev 的参数与识别策略都不能被牵动。
-  await evaluate(`(() => {
-    const block = Array.from(document.querySelectorAll('.setting-grid .setting-block')).find(b => b.querySelector('.setting-block__title').textContent.trim() === 'LLM');
-    const inputs = block.querySelectorAll('input');
-    inputs[0].value = 'https://llm.example.invalid/v1';
-    inputs[0].dispatchEvent(new Event('input', {bubbles: true}));
-    inputs[1].value = 'llm-model';
-    inputs[1].dispatchEvent(new Event('input', {bubbles: true}));
-  })()`);
+  assert.equal(await setCardField('LLM', '接口地址', 'https://llm.example.invalid/v1'), true);
+  assert.equal(await setCardField('LLM', '模型', 'llm-model'), true);
   await clickByText('保存设置');
   await until(`document.querySelector('.settings__foot-hint')?.textContent !== '正在保存…'`);
   await until(`!document.querySelector('.settings__foot-hint.is-dirty')`);
   const afterApiSave = await core.call('settings.get');
-  assert.equal(afterApiSave.ai.providers.llm.endpoint, 'https://llm.example.invalid/v1', 'LLM 的接口地址应当保存成功');
-  assert.equal(afterApiSave.ai.providers.llm.model, 'llm-model', 'LLM 的模型标识应当保存成功');
-  assert.equal(afterApiSave.ai.providers.jev.endpoint, 'https://api.example.invalid/v1', '保存一类 API 不能动另一类');
+  assert.equal(afterApiSave.ai.providers['provider-llm'].endpoint, 'https://llm.example.invalid/v1', 'LLM 的接口地址应当保存成功');
+  assert.equal(afterApiSave.ai.providers['provider-llm'].model, 'llm-model', 'LLM 的模型标识应当保存成功');
+  assert.equal(afterApiSave.ai.providers['provider-jev'].endpoint, 'https://api.example.invalid/v1', '保存一类 API 不能动另一类');
   assert.equal(afterApiSave.tagging.enabled, true, '保存 API 不能动识别策略');
   assert.equal(afterApiSave.tagging.mode, 'jev', '保存 API 不能动识别方式');
   assert.equal(afterApiSave.tagging.enabledSince, '2026-10-01T00:00:00+00:00', '保存 API 不能动启用时间');
 
   // 允许保存不完整的参数：LLM 缺 API Key，状态要如实标出。
   const llmState = await evaluate(`(() => {
-    const block = Array.from(document.querySelectorAll('.setting-grid .setting-block')).find(b => b.querySelector('.setting-block__title').textContent.trim() === 'LLM');
+    const block = Array.from(document.querySelectorAll('.setting-stack .setting-block')).find(b => b.querySelector('.setting-block__title').textContent.trim() === 'LLM');
     return block.textContent;
   })()`);
   assert.ok(llmState.includes('未配置'), '缺 API Key 时要标出未配置，实际：' + llmState.slice(0, 120));
@@ -179,9 +190,9 @@ async function verify({window, core, root}) {
   // 回到设置页给 LLM 补一个假密钥（隔离环境，写的是临时凭据文件）。
   await evaluate(`location.hash = '#/settings?section=ai'`);
   await new Promise((resolve) => setTimeout(resolve, 800));
-  await until(`!!document.querySelector('.setting-grid')`);
+  await until(`!!document.querySelector('.setting-stack')`);
   await evaluate(`(() => {
-    const block = Array.from(document.querySelectorAll('.setting-grid .setting-block')).find(b => b.querySelector('.setting-block__title').textContent.trim() === 'LLM');
+    const block = Array.from(document.querySelectorAll('.setting-stack .setting-block')).find(b => b.querySelector('.setting-block__title').textContent.trim() === 'LLM');
     const key = block.querySelector('input[type="password"]');
     key.value = 'fake-key-for-isolated-verification';
     key.dispatchEvent(new Event('input', {bubbles: true}));
@@ -200,7 +211,7 @@ async function verify({window, core, root}) {
   await until(`document.querySelector('.settings__foot-hint')?.textContent !== '正在保存…'`);
   await until(`!document.querySelector('.settings__foot-hint.is-dirty')`);
   const withKey = await core.call('settings.get');
-  assert.ok(withKey.ai.providers.llm.credentialRef, '保存后 Core 只保存凭据引用');
+  assert.ok(withKey.ai.providers['provider-llm'].credentialRef, '保存后 Core 只保存凭据引用');
   assert.ok(!JSON.stringify(withKey).includes('fake-key-for-isolated-verification'), '密钥明文不得出现在设置快照里');
   assert.equal(withKey.tagging.mode, 'jev', '补密钥不能动识别方式');
 
@@ -217,11 +228,11 @@ async function verify({window, core, root}) {
   await until(`document.querySelector('[data-ai-slot="recognition"]').textContent.includes('识别设置已保存')`);
   const afterStrategySave = await core.call('settings.get');
   assert.equal(afterStrategySave.tagging.mode, 'llm', '识别方式应当保存成功');
-  assert.equal(afterStrategySave.ai.providers.jev.endpoint, 'https://api.example.invalid/v1',
+  assert.equal(afterStrategySave.ai.providers['provider-jev'].endpoint, 'https://api.example.invalid/v1',
     '保存策略不能动连接参数');
-  assert.equal(afterStrategySave.ai.providers.llm.endpoint, 'https://llm.example.invalid/v1',
+  assert.equal(afterStrategySave.ai.providers['provider-llm'].endpoint, 'https://llm.example.invalid/v1',
     '保存策略不能动连接参数');
-  assert.ok(afterStrategySave.ai.providers.llm.credentialRef, '保存策略不能动凭据引用');
+  assert.ok(afterStrategySave.ai.providers['provider-llm'].credentialRef, '保存策略不能动凭据引用');
   await screenshot('v049-b02-recognition-saved.png');
 
   // 识别设置里的 API 摘要要跟着新方式走。
@@ -230,7 +241,10 @@ async function verify({window, core, root}) {
 
   /* ================= 版本语义：无关保存不动识别版本 ================= */
 
-  const versionBefore = (await core.call('settings.get')).version;
+  // 两个版本各管一件事：settings.version 是保存计数（每次保存前进），
+  // tagging.revision 是打标的有效配置版本，只在识别配置真的变了时前进。
+  const before = await core.call('settings.get');
+  const revisionBefore = before.tagging.revision;
   await evaluate(`location.hash = '#/settings?section=reminder'`);
   await until(`document.querySelector('.settings__title').textContent === '提醒设置'`);
   // 设置页可能还在读取中：等表单真的出现再动。
@@ -242,8 +256,9 @@ async function verify({window, core, root}) {
   })()`);
   await clickByText('保存设置');
   await until(`document.querySelector('.settings__foot-hint')?.textContent !== '正在保存…'`);
-  const versionAfterReminder = (await core.call('settings.get')).version;
-  assert.equal(versionAfterReminder, versionBefore, '改提醒参数不该让在途的识别任务失效');
+  const after = await core.call('settings.get');
+  assert.equal(after.tagging.revision, revisionBefore, '改提醒参数不该让在途的识别任务失效');
+  assert.ok(after.version > before.version, '保存计数应当前进');
 
   /* ================= 分区深链 ================= */
 

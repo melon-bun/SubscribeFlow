@@ -11,23 +11,20 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 
+# M25：错误类型与错误码由公共 AI 层统一，识别包不再自己定义一份。
+# 这样公共层与识别层的失败分类永远一致，也不会出现两套错误码。
+from subscribe_flow.ai.contracts import (  # noqa: F401
+    ERROR_AUTH, ERROR_CANCELLED, ERROR_INVALID_INPUT, ERROR_INVALID_RESPONSE,
+    ERROR_NETWORK, ERROR_NOT_CONFIGURED, ERROR_RATE_LIMITED, ERROR_RETRYABLE,
+    ERROR_TIMEOUT, AiError,
+)
+
 MODES = ('jev', 'llm')
 
 # 结果状态。空匹配是正常结果，不是错误：明确的内容不该被硬塞一个标签。
 STATUS_MATCHED = 'matched'
 STATUS_NO_MATCH = 'no_match'
 STATUS_INSUFFICIENT_TEXT = 'insufficient_text'
-
-# 错误分类。每类都带 retryable，调用方据此决定退避重试还是进入阻塞状态。
-ERROR_NOT_CONFIGURED = 'not_configured'
-ERROR_AUTH = 'auth_failed'
-ERROR_RATE_LIMITED = 'rate_limited'
-ERROR_TIMEOUT = 'timeout'
-ERROR_NETWORK = 'network_failed'
-ERROR_INVALID_RESPONSE = 'invalid_response'
-ERROR_CANCELLED = 'cancelled'
-
-ERROR_RETRYABLE = frozenset({ERROR_RATE_LIMITED, ERROR_TIMEOUT, ERROR_NETWORK})
 
 MIN_TEXT = 8
 MAX_TEXT = 4000
@@ -37,17 +34,9 @@ MAX_TAG_NAME = 40
 MAX_TAG_DESCRIPTION = 200
 
 
-class RecognitionError(Exception):
-    """模型调用失败。message 只描述原因，不携带密钥或完整原文。"""
-
-    def __init__(self, code: str, message: str, *, retryable: bool | None = None):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.retryable = ERROR_RETRYABLE.__contains__(code) if retryable is None else bool(retryable)
-
-    def to_dict(self) -> dict:
-        return {'code': self.code, 'message': self.message, 'retryable': self.retryable}
+# 模型调用失败。message 只描述原因，不携带密钥或完整原文。
+# 与公共 AI 层同一个错误类型：识别层与公共层的失败分类永远一致。
+RecognitionError = AiError
 
 
 @dataclass(frozen=True)

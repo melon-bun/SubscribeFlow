@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import re
 
+from subscribe_flow.ai.adapters.openai_chat import OpenAiChatAdapter
+
 from ..contracts import (
     STATUS_INSUFFICIENT_TEXT, STATUS_MATCHED, STATUS_NO_MATCH,
     MAX_LLM_CANDIDATES, MAX_TAG_DESCRIPTION, MAX_TAG_NAME,
@@ -37,70 +39,48 @@ SYSTEM_PROMPT = (
 
 
 class LlmProvider:
+    """标签业务层：构造标签提示词、解析与校验模型输出。
+
+    网络往返交给公共 AI 层的 OpenAI 兼容适配器：这里只保留「打标签」这件事
+    需要的提示词与解析规则，不自己发请求。
+    """
+
     name = 'llm'
 
-    def __init__(self, *, endpoint: str, model: str, api_key: str, transport=None,
-                 timeout: float | None = None, max_tokens: int = 512):
+    def __init__(self, *, endpoint: str = '', model: str = '', api_key: str = '', transport=None,
+                 timeout: float | None = None, max_tokens: int = 512, adapter=None):
         self.endpoint, self.model, self.api_key = endpoint.rstrip('/'), model, api_key
         self.timeout, self.max_tokens = timeout, max_tokens
         self._transport = transport
+        # 适配器可以由公共 AI 层注入（那边已经组装好凭据）；不给就自己造一个。
+        self._adapter = adapter or OpenAiChatAdapter(endpoint=self.endpoint, model=model, api_key=api_key,
+                                                    transport=transport, timeout=timeout, max_tokens=max_tokens)
 
     def transport(self):
-        if self._transport is None:
-            from ..transport import HttpTransport
-            self._transport = HttpTransport()
-        return self._transport
+        return self._adapter.transport()
 
     def recognize(self, request: RecognitionRequest) -> RecognitionResult:
         if not request.has_enough_text():
             return RecognitionResult(self.name, STATUS_INSUFFICIENT_TEXT, detail='可用文本过短，未调用模型',
                                      requested_model=self.model)
-        body = self._ask(request)
-        content = self._content(body)
-        candidates = self._parse(content, request)
-        model, usage = self._model(body), self._usage(body)
+        answer = self._ask(request)
+        candidates = self._parse(answer.text, request)
         if not candidates:
-            return RecognitionResult(self.name, STATUS_NO_MATCH, (), model=model, usage=usage,
+            return RecognitionResult(self.name, STATUS_NO_MATCH, (), model=answer.model, usage=answer.usage,
                                      requested_model=self.model)
-        return RecognitionResult(self.name, STATUS_MATCHED, candidates, model=model, usage=usage,
+        return RecognitionResult(self.name, STATUS_MATCHED, candidates, model=answer.model, usage=answer.usage,
                                  requested_model=self.model)
 
-    def _ask(self, request: RecognitionRequest) -> dict:
+    def _ask(self, request: RecognitionRequest):
         system = SYSTEM_PROMPT % (min(request.limit, MAX_LLM_CANDIDATES), MAX_TAG_NAME, MAX_TAG_DESCRIPTION)
         if request.candidates:
             catalogue = '\n'.join(f'- {tag.label()}' for tag in request.candidates)
             system += f'\n\n已有标签（名称与范围）：\n{catalogue}'
-        payload = {'model': self.model, 'max_tokens': self.max_tokens, 'messages': [
-            {'role': 'system', 'content': system},
-            {'role': 'user', 'content': request.state_text()},
-        ]}
-        _, body = self.transport().post_json(f'{self.endpoint}/chat/completions', payload,
-                                            {'Authorization': f'Bearer {self.api_key}'}, self.timeout)
-        return body
-
-    @staticmethod
-    def _content(body: dict) -> str:
-        choices = body.get('choices')
-        if not isinstance(choices, list) or not choices:
-            raise RecognitionError('invalid_response', '模型服务没有返回 choices')
-        message = choices[0].get('message') if isinstance(choices[0], dict) else None
-        if not isinstance(message, dict):
-            raise RecognitionError('invalid_response', '模型服务返回的 message 结构不符合约定')
-        content = message.get('content')
-        if not isinstance(content, str) or not content.strip():
-            raise RecognitionError('invalid_response', '模型服务返回了空内容')
-        return content
-
-    @staticmethod
-    def _model(body: dict) -> str | None:
-        value = body.get('model')
-        return value if isinstance(value, str) and value else None
-
-    @staticmethod
-    def _usage(body: dict) -> dict | None:
-        usage = body.get('usage')
-        # 服务给了什么就记什么，没给就留空，不编造用量与价格。
-        return usage if isinstance(usage, dict) and usage else None
+        messages = [
+            ('system', system),
+            ('user', request.state_text()),
+        ]
+        return self._adapter.chat(messages, self.max_tokens)
 
     def _parse(self, content: str, request: RecognitionRequest) -> tuple:
         text = THINK_RE.sub('', content)

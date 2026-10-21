@@ -91,6 +91,8 @@
     "resolveSource", "searchSources", "listConnections", "checkConnection", "retryRun", "fetchDetail",
     "startIntake", "getIntake", "cancelIntake", "saveIntake", "listContentSources",
     "getSettings", "saveSettings", "getNotificationStatus", "sendTestNotification",
+    // M25 公共 AI 层：连接列表与协议最小探针。
+    "listAiProviders", "testAiProvider",
     "on",
   ];
 
@@ -181,6 +183,9 @@
     // M16 自动打标。直接走 RPC 通道名：这些方法不接受也不返回密钥，
     // 因此不需要经过主进程的凭据编排。
     client.getTaggingStatus = function () { return invoke('tagging.status', {}); };
+    // M25：连接列表与按连接的最小协议探针。探针不打标签、不生成笔记。
+    client.listAiProviders = function () { return invoke('ai.provider.list', {}); };
+    client.testAiProvider = function (providerId) { return invoke('ai.provider.test', { provider_id: providerId }); };
     // M21：可以指定要测哪一类 API。只测这一类，不改打标方式、不触发打标。
     client.testTaggingConnection = function (mode) {
       return mode ? invoke('tagging.test', { mode: mode }) : invoke('tagging.test', {});

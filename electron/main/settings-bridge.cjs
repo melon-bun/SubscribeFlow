@@ -12,7 +12,9 @@
  */
 const crypto = require('node:crypto');
 
-const PROVIDERS = ['jev', 'llm'];
+// M25：连接按稳定 ID 组织，数量不固定。这里的两个名字只是默认连接，
+// 新增的连接用自己生成的 ID，主进程不再按「两种方式」枚举。
+const DEFAULT_PROVIDER_IDS = ['provider-jev', 'provider-llm'];
 
 class SettingsBridge {
   constructor({ core, credentials }) {
@@ -40,10 +42,12 @@ class SettingsBridge {
     const { protection, entries } = await this.credentials.status();
     const known = new Map(entries.map((entry) => [entry.reference, entry]));
     const providers = {};
-    for (const mode of PROVIDERS) {
-      const reference = settings.ai.providers[mode].credentialRef;
+    const aiProviders = {};
+    // M25：连接有几条就迭代几条，不再按固定的两个方式枚举。
+    for (const [providerId, provider] of Object.entries(settings.ai.providers || {})) {
+      const reference = provider.credentialRef;
       const entry = reference ? known.get(reference) : null;
-      providers[mode] = {
+      providers[providerId] = {
         configured: !!entry,
         // 保存成功但解不开（例如换了系统账户）：必须显示为不可用，不能当成已配置。
         usable: !!(entry && entry.usable),
@@ -51,17 +55,12 @@ class SettingsBridge {
         // 设置指向的版本在磁盘上找不到：配置与密钥对不上，需要用户重新输入。
         unresolved: !!reference && !entry,
       };
+      // 引用不进界面：它只是主进程与凭据文件之间的内部句柄。
+      const { credentialRef, ...visible } = provider;
+      aiProviders[providerId] = visible;
     }
     // M21：连接参数（ai）与识别策略（tagging）分开带给界面，两页各管各的。
-    const ai = {
-      providers: Object.fromEntries(
-        PROVIDERS.map((mode) => {
-          // 引用不进界面：它只是主进程与凭据文件之间的内部句柄。
-          const { credentialRef, ...visible } = settings.ai.providers[mode];
-          return [mode, visible];
-        })
-      ),
-    };
+    const ai = { formatVersion: settings.ai.formatVersion, providers: aiProviders };
     return {
       version: settings.version,
       savedVersion: settings.savedVersion,
@@ -71,10 +70,14 @@ class SettingsBridge {
         enabled: settings.tagging.enabled,
         mode: settings.tagging.mode,
         enabledSince: settings.tagging.enabledSince,
+        // 打标策略引用哪些连接：界面据此按能力挑连接。
+        providerIds: settings.tagging.providerIds || {},
       },
       reminder: settings.reminder,
       // 优先级显示名：Core 已经校验过，这里原样带给界面与提醒文案。
       priority: settings.priority,
+      // M29 接入总结时用的策略位（详细程度属于业务策略，不是连接字段）。
+      summarization: settings.summarization,
       credentials: { protection, providers },
       warnings,
     };
@@ -90,25 +93,25 @@ class SettingsBridge {
     if (secrets !== undefined && (secrets === null || typeof secrets !== 'object' || Array.isArray(secrets))) {
       throw new Error('密钥参数无效');
     }
-    // M21：密钥属于连接参数，因此只跟「AI API 配置」这一页走。
-    if (secrets && (Object.keys(secrets).some((mode) => !PROVIDERS.includes(mode)) || section !== 'ai')) {
+    // M21／M25：密钥属于连接参数，因此只跟「AI API 配置」这一页走，
+    // 并且按连接 ID 提交——不再按固定的两个业务槽位。
+    if (secrets && section !== 'ai') {
       throw new Error('当前分区不接受这些密钥参数');
     }
     const staged = [];
     const refs = {};
     let saved;
     try {
-      for (const mode of PROVIDERS) {
-        const value = secrets ? secrets[mode] : undefined;
+      for (const [providerId, value] of Object.entries(secrets || {})) {
         if (value === undefined) continue; // 没提交新密钥：沿用已有引用
         if (value === null || value === '') {
-          refs[mode] = null; // 明确清除该方式的密钥
+          refs[providerId] = null; // 明确清除这条连接的密钥
           continue;
         }
-        const reference = `${mode}-${crypto.randomBytes(12).toString('hex')}`;
+        const reference = `provider-${crypto.randomBytes(12).toString('hex')}`;
         await this.credentials.put(reference, value);
         staged.push(reference);
-        refs[mode] = reference;
+        refs[providerId] = reference;
       }
       saved = await this.core.call('settings.update', {
         section,
@@ -144,8 +147,11 @@ class SettingsBridge {
     return warnings;
   }
 
+  /** 当前设置引用了哪些密钥：按连接 ID 汇总，数量不固定。 */
   _references(settings) {
-    return PROVIDERS.map((mode) => settings.ai.providers[mode].credentialRef).filter(Boolean);
+    return Object.values(settings.ai.providers || {})
+      .map((provider) => provider.credentialRef)
+      .filter(Boolean);
   }
 
   /**
@@ -161,8 +167,8 @@ class SettingsBridge {
 
   async _sync(current) {
     const wanted = new Set();
-    for (const mode of PROVIDERS) {
-      const reference = current.ai.providers[mode].credentialRef;
+    for (const provider of Object.values(current.ai.providers || {})) {
+      const reference = provider.credentialRef;
       if (!reference) continue;
       const secret = await this.credentials.get(reference);
       if (!secret) continue;
@@ -178,4 +184,4 @@ class SettingsBridge {
   }
 }
 
-module.exports = { SettingsBridge, PROVIDERS };
+module.exports = { SettingsBridge, DEFAULT_PROVIDER_IDS };

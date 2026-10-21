@@ -18,6 +18,7 @@ from subscribe_flow.application.tags import TagService
 from subscribe_flow.application.tagging import TaggingService
 from subscribe_flow.application.settings import SettingsService
 from subscribe_flow.application.credentials import CredentialBroker
+from subscribe_flow.ai.gateway import AiGateway
 from subscribe_flow.application.scheduler import Scheduler
 from subscribe_flow.contracts import Connection
 from subscribe_flow.storage.database import Database
@@ -86,12 +87,16 @@ class Core:
         # M15：配置只存引用；Main 私有桥推送的明文只在 credentials 内存容器中使用。
         self.settings = SettingsService(SettingsStore(self.database))
         self.credentials = CredentialBroker()
+        # M25：公共 AI 层。连接解析、凭据组装与协议探针都在这里，
+        # 打标、总结与将来的服务都从它出入，不各自造连接。
+        self.ai = AiGateway(settings=self.settings, credentials=self.credentials)
         # M16：自动打标后台任务。事件与任务仓储挂在 repository 上（事件写入复用
         # 内容入库事务），Provider 按当前设置与内存凭据现组，不缓存快照。
         # 必须排在 settings/credentials 之后：它们在这里是构造参数。
         self.tagging = TaggingService(repository=self.repository.tagging,
                                       tags_repository=self.repository, settings=self.settings,
                                       credentials=self.credentials, emit=self.emit,
+                                      gateway=self.ai,
                                       **({'clock': clock} if clock else {}))
         for descriptor in self.gateway.describe():
             resource = resource_key(descriptor)

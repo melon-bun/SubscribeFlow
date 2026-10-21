@@ -74,12 +74,16 @@ class TaggingRepository:
 
     # ---------------------------------------------------------- 任务登记
 
-    def register_from_events(self, *, settings_version, tagging_enabled, catalog_version,
+    def register_from_events(self, *, config_version, tagging_enabled, catalog_version,
                              mode, enabled_since=None, limit=50, origin='auto'):
         """消费待处理事件并登记任务。消费位置与登记在同一事务内推进。
 
         自动打标关闭时事件仍推进消费位置并记为「不处理」，这样关闭期间
         收录的内容不会被日后自动补上——它们只能由用户主动补打（§3.5 第 4 条）。
+
+        config_version 是**打标的有效配置版本**（tagging.revision），
+        不是设置的保存计数：保存计数会被无关保存推进，拿它当依据会让
+        在途结果被根本没碰过识别配置的保存作废。
         """
         created = []
         with self.database.transaction() as db:
@@ -93,12 +97,12 @@ class TaggingRepository:
                     # enabledSince 之后首次保存的内容才自动处理；边界之前收录的
                     # 内容需要用户主动补打，不在这里偷偷补。
                     if enabled_since is None or row['created_at'] >= enabled_since:
-                        key = f"{row['content_id']}:{row['content_version']}:{settings_version}:{catalog_version}:{origin}"
+                        key = f"{row['content_id']}:{row['content_version']}:{config_version}:{catalog_version}:{origin}"
                         cursor = db.execute(
                             "INSERT OR IGNORE INTO tagging_tasks(id,content_id,content_version,config_version,"
                             "catalog_version,mode,state,dedupe_key,round_no,origin,next_attempt_at,"
                             "created_at,updated_at) VALUES(?,?,?,?,?,?,'queued',?,1,?,?,?,?)",
-                            (uuid.uuid4().hex, row['content_id'], row['content_version'], settings_version,
+                            (uuid.uuid4().hex, row['content_id'], row['content_version'], config_version,
                              catalog_version, mode, key, origin, stamp, stamp, stamp))
                         if cursor.rowcount:
                             consumed_by = 'task'

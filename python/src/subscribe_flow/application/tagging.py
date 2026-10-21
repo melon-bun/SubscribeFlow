@@ -13,6 +13,7 @@
 import asyncio
 import logging
 
+from subscribe_flow.ai.gateway import AiGateway
 from subscribe_flow.contracts import ChannelError
 from subscribe_flow.contracts.tags import AUTO_TAG_LIMIT
 from subscribe_flow.storage.repositories import now
@@ -33,11 +34,16 @@ POLL_SECONDS = 2.0
 
 
 class TaggingService:
-    def __init__(self, *, repository, tags_repository, settings, credentials, emit, clock=None):
+    def __init__(self, *, repository, tags_repository, settings, credentials, emit, clock=None,
+                 gateway=None):
         self.repo = repository              # TaggingRepository：事件与任务
         self.tags = tags_repository         # Repository：内容、标签与事务
         self.settings = settings            # SettingsService
         self.credentials = credentials      # CredentialBroker（只在内存里有明文）
+        # 公共 AI 层：连接的解析、凭据组装与协议探针都在那边。
+        # 打标只负责「怎么用这条连接打标签」，不自己造连接。
+        # 优先用 Core 注入的同一个网关，避免各处各建一份、各自看到不同的连接。
+        self.gateway = gateway or AiGateway(settings=settings, credentials=credentials)
         self.emit = emit
         self.clock = clock or (lambda: now())
         self.workers: list[asyncio.Task] = []
@@ -52,72 +58,53 @@ class TaggingService:
     def snapshot(self):
         """当前配置版本与生效状态。每次组装前重新读，不缓存快照。
 
-        M21：连接参数在 ``ai.providers``，识别策略在 ``tagging``。这里把两者
-        合成识别服务要的形状，调用方不必知道配置被拆成了两个分区。
+        M25：连接在 ``ai.providers`` 里按稳定 ID 组织，识别策略在 ``tagging``。
+        这里把两者合成识别服务要的形状，调用方不必知道配置被拆成了两个分区。
         """
         config = self.settings.snapshot()
         tagging = dict(config['tagging'])
-        tagging['providers'] = config['ai']['providers']
+        tagging['providers'] = dict(config['ai']['providers'])
         return config, tagging
 
     def _provider_for(self, mode, providers):
-        """按指定方式组装正式 Provider。
+        """按当前方式选中的连接组装标签 Provider。
 
-        密钥只在这一刻从内存凭据容器取用，不落库、不进日志、不返回给界面。
+        连接是哪一条由策略决定（``tagging.providerIds``）；凭据组装与协议往返
+        交给公共 AI 层，这里只把「这条连接怎么用」翻译成标签业务要的形状。
         """
-        provider = providers[mode]
-        reference = provider.get('credentialRef')
-        api_key = self.credentials.secret_for(reference) if reference else None
+        provider_id = (self._provider_ids() or {}).get(mode)
+        provider = (providers or {}).get(provider_id)
+        if not provider:
+            raise RecognitionError(ERROR_NOT_CONFIGURED, f'自动打标没有可用的连接（{mode}）')
         missing = [label for key, label in (('endpoint', '接口地址'), ('model', '模型标识'))
                    if not provider.get(key)]
-        if not api_key:
-            missing.append('API Key')
         if missing:
             raise RecognitionError(ERROR_NOT_CONFIGURED,
                                    '自动打标尚未配置完整：' + '、'.join(missing))
-        return build_provider(mode, endpoint=provider['endpoint'], model=provider['model'],
-                              api_key=api_key)
+        # 密钥只在公共层组装：明文不进这里，也不进日志。
+        adapter = self.gateway.adapter(provider_id)
+        return build_provider(mode, adapter=adapter, model=provider.get('model') or '')
+
+    def _provider_ids(self):
+        """打标策略当前引用哪些连接。"""
+        return self.settings.snapshot()['tagging'].get('providerIds') or {}
 
     async def test_connection(self, mode=None):
-        """设置页「测试连接」：复用正式 Provider 与固定样例，反馈真实结果。
+        """兼容入口：连接测试已经由公共 AI 层承担。
 
-        M21：可以指定要测哪一类 API。只测这一类，不改当前打标方式、
-        不启停自动打标，也不产生任何标签。
-
-        走的是与后台任务完全相同的组装路径，因此这里通过不等于后台也能用，
-        反之亦然——不存在只给界面演示的假通路。
+        M25：测试连接属于独立 AI 层——用协议最小固定探针，不执行真实内容打标，
+        也不产生任何标签。这里保留代理入口，设置页不再依赖它。
         """
         config, tagging = self.snapshot()
         target = mode or tagging['mode']
         if target not in ('jev', 'llm'):
             return {'ok': False, 'code': 'invalid_input',
-                    'message': '要测试的识别方式无效。', 'retryable': False}
-        sample = RecognitionRequest(
-            item_id='connection-test',
-            text='这是一段用于验证接口连通性的固定样例文本，内容涉及编程与开发工具。',
-            title='连接测试', mode=target,
-            candidates=(CandidateTag('sample-probe', '连接测试标签', '仅用于验证接口是否可用'),),
-            limit=1, content_version=self.clock())
-        try:
-            provider = self._provider_for(target, tagging['providers'])
-        except RecognitionError as error:
-            return {'ok': False, 'code': error.code, 'message': error.message, 'retryable': False}
-        try:
-            # 同步 SDK 放执行器：设置页调用不能卡住 Core 事件循环。
-            result = await asyncio.get_running_loop().run_in_executor(None, provider.recognize, sample)
-        except RecognitionError as error:
-            return {'ok': False, 'code': error.code, 'message': error.message, 'retryable': error.retryable}
-        except Exception:
-            LOG.exception('Auto-tagging connection test failed')
-            return {'ok': False, 'code': 'invalid_response', 'message': '接口返回了无法解析的结果',
-                    'retryable': False}
-        return {'ok': True, 'provider': result.provider, 'model': result.model,
-                'requestedModel': result.requested_model, 'status': result.status,
-                'candidates': len(result.candidates),
-                'message': '连接正常，接口返回了可用结果',
-                'configVersion': config['version']}
-
-    # ------------------------------------------------------------ 映射
+                    'message': '不支持的识别方式。', 'retryable': False}
+        provider_id = (tagging.get('providerIds') or {}).get(target)
+        if not provider_id:
+            return {'ok': False, 'code': ERROR_NOT_CONFIGURED,
+                    'message': '自动打标没有可用的连接。', 'retryable': False}
+        return self.gateway.test_connection(provider_id)
 
     def _request_for(self, task, content, candidates):
         """Core 内容 → 识别请求。只用已保存且实际存在的文本，不额外抓取。"""
@@ -187,7 +174,7 @@ class TaggingService:
         catalog = self.repo.catalog_version()
         try:
             created = self.repo.register_from_events(
-                settings_version=config['version'], tagging_enabled=bool(tagging['enabled']),
+                config_version=config['tagging']['revision'], tagging_enabled=bool(tagging['enabled']),
                 catalog_version=catalog, mode=tagging['mode'],
                 enabled_since=tagging.get('enabledSince'))
         except Exception:
@@ -205,7 +192,7 @@ class TaggingService:
         被认证/配置缺失阻塞的任务会永远停在 blocked。
         """
         config, _ = self.snapshot()
-        stamp = (config['version'], self.credentials.generation)
+        stamp = (config['tagging']['revision'], self.credentials.generation)
         if self._seen_config_version is None:
             self._seen_config_version = stamp
             return False
@@ -259,8 +246,8 @@ class TaggingService:
         # 配置或目录已经变化：标记过期并以当前版本重新排队，避免写旧快照结果。
         # force=True：这条任务正由本 worker 持有租约（状态是 running），
         # 不加这个标志会被「已在队列中」的并发保护挡掉，任务将永远卡在 running。
-        if task['config_version'] != config['version'] or task['catalog_version'] != catalog:
-            self.repo.rerun(task['id'], config_version=config['version'],
+        if task['config_version'] != config['tagging']['revision'] or task['catalog_version'] != catalog:
+            self.repo.rerun(task['id'], config_version=config['tagging']['revision'],
                             catalog_version=catalog, mode=tagging['mode'], force=True)
             self.emit('tagging.changed', {'requeued': task['id']})
             return
@@ -321,9 +308,12 @@ class TaggingService:
         if not current_tagging['enabled']:
             self.repo.finish(task['id'], CANCELLED_STATE, skipped_reason='自动打标在识别期间已关闭')
             return
-        if current['version'] != task['config_version']:
+        if current['tagging']['revision'] != task['config_version']:
             # 配置已变（模式或凭据引用不同）：按当前版本重排，不写旧快照结果。
-            self.repo.rerun(task['id'], config_version=current['version'],
+            # 比较与重排都用打标的有效配置版本（tagging.revision），
+            # 不能用设置的保存计数：保存计数会被无关保存推进，
+            # 那会让在途结果被根本没碰过识别配置的保存作废。
+            self.repo.rerun(task['id'], config_version=current['tagging']['revision'],
                             catalog_version=catalog, mode=current_tagging['mode'], force=True)
             self.emit('tagging.changed', {'requeued': task['id']})
             return
@@ -417,7 +407,7 @@ class TaggingService:
         config, tagging = self.snapshot()
         if not tagging['enabled']:
             raise ChannelError('NOT_CONFIGURED', 'tagging.retry', '自动打标已关闭，无法重试')
-        result = self.repo.rerun(task_id, config_version=config['version'],
+        result = self.repo.rerun(task_id, config_version=config['tagging']['revision'],
                                  catalog_version=self.repo.catalog_version(),
                                  mode=tagging['mode'])
         self.emit('tagging.changed', {'retry': task_id})
@@ -428,7 +418,7 @@ class TaggingService:
         # 不传 enabled_since：用户主动补打必须覆盖开关关闭/开启前收录的内容。
         preview = self.repo.backfill_preview(since=since, limit=limit)
         preview['mode'] = tagging['mode']
-        preview['configVersion'] = config['version']
+        preview['configVersion'] = config['tagging']['revision']
         preview['enabled'] = bool(tagging['enabled'])
         return preview
 
@@ -444,7 +434,7 @@ class TaggingService:
         if not item_ids:
             preview = self.repo.backfill_preview(limit=limit)
             item_ids = preview['itemIds']
-        result = self.repo.enqueue_backfill(item_ids, config_version=config['version'],
+        result = self.repo.enqueue_backfill(item_ids, config_version=config['tagging']['revision'],
                                             catalog_version=self.repo.catalog_version(),
                                             mode=tagging['mode'], limit=limit)
         self.emit('tagging.changed', {'backfilled': result['queued']})

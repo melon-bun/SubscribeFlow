@@ -70,6 +70,10 @@ class Dispatcher:
             "content.get": (c.queries.content, {"item_id": str}, {"timezone": str}),
             "content.update": (c.content.update, {"item_id": str, "patch": dict}, {}),
             "content.bulk_update": (c.content.bulk_update, {"item_ids": list, "patch": dict}, {}),
+            # M25 公共 AI 层：连接列表与协议最小探针。连接的新增／修改／停用／删除
+            # 走主进程的受控设置方法，不在这里直接改配置。
+            "ai.provider.list": (c.ai.providers, {}, {}),
+            "ai.provider.test": (c.ai.test_connection, {"provider_id": str}, {}),
             "tag.list": (c.tags.list_tags, {}, {"query": str, "enabled": bool, "sort": str}),
             "tag.get": (c.tags.get, {"tag_id": str}, {}),
             "tag.create": (c.tags.create, {"name": str}, {"description": str, "color": str, "enabled": bool, "synonyms": list}),

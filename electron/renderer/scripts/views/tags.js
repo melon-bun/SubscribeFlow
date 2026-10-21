@@ -1214,9 +1214,9 @@
     loaded: false,
     promise: null,
     error: null,
-    saved: null,   // 已保存的策略 {enabled, mode}
-    draft: null,   // 草稿 {enabled, mode}
-    providers: {}, // 两类 API 的配置摘要（只读，来自设置快照）
+    saved: null,   // 已保存的策略 {enabled, mode, providerIds}
+    draft: null,   // 草稿 {enabled, mode, providerIds}
+    providers: {}, // 连接摘要（只读，来自设置快照）
     missing: {},   // 每一类缺什么
     saving: false,
     notice: null,
@@ -1224,17 +1224,35 @@
   };
 
   var RECOGNITION_MODES = [
-    { id: "jev", label: "Jev 已有标签分类", desc: "从你已经启用的标签里挑选合适的，不新建标签。" },
-    { id: "llm", label: "LLM 自由生成标签", desc: "由模型判断该用哪些标签，必要时可以新建标签并挂载。" },
+    { id: "jev", label: "Jev 已有标签分类", desc: "从你已经启用的标签里挑选合适的，不新建标签。",
+      capability: "candidate_classification" },
+    { id: "llm", label: "LLM 自由生成标签", desc: "由模型判断该用哪些标签，必要时可以新建标签并挂载。",
+      capability: "text_generation" },
   ];
 
+  /**
+   * 这一种识别方式能用哪些连接：按能力筛，不按名字，也不限数量。
+   * 连接在「AI API 配置」里管理，这里只挑用哪一条。
+   */
+  function compatibleProviders(mode) {
+    var meta = RECOGNITION_MODES.filter(function (m) { return m.id === mode; })[0] || {};
+    return Object.keys(recognition.providers).filter(function (providerId) {
+      var provider = recognition.providers[providerId];
+      return provider && (provider.capabilities || []).indexOf(meta.capability) >= 0;
+    });
+  }
+
+  /** 当前这一种识别方式选中的那条连接。 */
   function recognitionProvider(mode) {
-    return recognition.providers[mode] || {};
+    var providerId = (recognition.draft && recognition.draft.providerIds && recognition.draft.providerIds[mode]) ||
+      (recognition.saved && recognition.saved.providerIds && recognition.saved.providerIds[mode]);
+    return providerId ? (recognition.providers[providerId] || {}) : {};
   }
 
   /** 当前草稿选中的方式缺什么：缺项就说不清，别让用户以为能直接开。 */
   function recognitionMissing(mode) {
-    return (recognition.missing && recognition.missing[mode]) || [];
+    var provider = recognitionProvider(mode);
+    return provider.missing || [];
   }
 
   function loadRecognition(app) {
@@ -1246,15 +1264,17 @@
       owner.loaded = true;
       owner.stale = false;
       var tagging = settings.tagging || {};
-      owner.saved = { enabled: !!tagging.enabled, mode: tagging.mode || "llm" };
+      var providerIds = tagging.providerIds || {};
+      owner.saved = { enabled: !!tagging.enabled, mode: tagging.mode || "llm", providerIds: providerIds };
       // 已经有草稿时不覆盖：用户正在改的东西不能被后台刷新冲掉。
-      if (!owner.draft) owner.draft = { enabled: owner.saved.enabled, mode: owner.saved.mode };
+      if (!owner.draft) {
+        owner.draft = { enabled: owner.saved.enabled, mode: owner.saved.mode, providerIds: providerIds };
+      }
       var providers = (settings.ai && settings.ai.providers) || {};
       owner.providers = providers;
       owner.missing = {};
-      RECOGNITION_MODES.forEach(function (item) {
-        var provider = providers[item.id] || {};
-        owner.missing[item.id] = provider.missing || [];
+      Object.keys(providers).forEach(function (providerId) {
+        owner.missing[providerId] = providers[providerId].missing || [];
       });
       paintRecognition(app);
     }, function (err) {
@@ -1294,12 +1314,16 @@
     recognition.saving = true;
     recognition.notice = null;
     paintRecognition(app);
-    app.client.saveSettings({ section: "tagging", patch: { enabled: !!draft.enabled, mode: draft.mode } })
+    app.client.saveSettings({
+      section: "tagging",
+      patch: { enabled: !!draft.enabled, mode: draft.mode, providerIds: draft.providerIds },
+    })
       .then(function (settings) {
         recognition.saving = false;
-        recognition.saved = { enabled: !!settings.tagging.enabled, mode: settings.tagging.mode };
+        var providerIds = (settings.tagging && settings.tagging.providerIds) || draft.providerIds;
+        recognition.saved = { enabled: !!settings.tagging.enabled, mode: settings.tagging.mode, providerIds: providerIds };
         // 保存成功后以服务端返回的值为准，方式可能与草稿不同。
-        recognition.draft = { enabled: recognition.saved.enabled, mode: recognition.saved.mode };
+        recognition.draft = { enabled: recognition.saved.enabled, mode: recognition.saved.mode, providerIds: providerIds };
         recognition.notice = { tone: "success", text: "识别设置已保存。" };
         // 策略变了，后台任务状态要跟着重新读一次。
         aiState.stale = true; aiState.revision++; loadAiPanel(app);
@@ -1437,6 +1461,44 @@
             )
           );
         })
+      )
+    );
+    // 用哪条连接：按能力筛出可用的连接，用户自己挑一条。
+    var usable = compatibleProviders(draft.mode);
+    var currentProviderId = (draft.providerIds || {})[draft.mode] || "";
+    children.push(
+      h(
+        "div.ai-status__row",
+        null,
+        h("span.ai-status__name", { text: "使用哪条连接" }),
+        h("span.ai-status__note", {
+          text: usable.length
+            ? "这一类识别可以用下面这些连接；连接在「AI API 配置」里管理。"
+            : "还没有支持这一类识别的连接，先去「AI API 配置」新增一条。",
+        })
+      )
+    );
+    children.push(
+      h(
+        "div.ai-status__row",
+        null,
+        ui.select(
+          usable.map(function (providerId) {
+            var provider = recognition.providers[providerId] || {};
+            return {
+              value: providerId,
+              label: (provider.name || providerId) + (provider.configured ? "" : "（未配置完整）"),
+            };
+          }),
+          currentProviderId,
+          function (value) {
+            draft.providerIds = draft.providerIds || {};
+            draft.providerIds[draft.mode] = value;
+            recognition.notice = null;
+            paintRecognition(app);
+          },
+          { ariaLabel: "选择连接" }
+        )
       )
     );
     // 当前方式用的 API 摘要与可用状态：缺什么直接写出来。

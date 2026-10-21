@@ -47,6 +47,31 @@ async function verify({window, core, root}) {
   };
   const dataDir = process.env.SUBSCRIBE_FLOW_DATA_DIR;
 
+  /**
+   * M25：连接卡片按名称与字段标签定位，不靠下标——
+   * 卡片有几条、字段顺序如何都会变，定位必须稳。
+   */
+  const findField = (label, cardTitle) => `(() => {
+    const card = ${cardTitle ? `Array.from(document.querySelectorAll('.setting-block')).find(c => { const t = c.querySelector('.setting-block__title'); return t && t.textContent.trim() === ${JSON.stringify(cardTitle)}; })` : 'document'};
+    if (!card) return null;
+    return Array.from(card.querySelectorAll('.field'))
+      .find(f => { const l = f.querySelector('.field__label'); return l && l.textContent.trim() === ${JSON.stringify(label)}; }) || null;
+  })()`;
+  const setField = (label, value, cardTitle) => evaluate(`(() => {
+    const field = ${findField(label, cardTitle)};
+    if (!field) return false;
+    const input = field.querySelector('input');
+    if (!input) return false;
+    input.value = ${JSON.stringify(value)};
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    return true;
+  })()`);
+  const fieldValue = (label, cardTitle) => evaluate(`(() => {
+    const field = ${findField(label, cardTitle)};
+    const input = field && field.querySelector('input');
+    return input ? input.value : null;
+  })()`);
+
   /* ---------- S01 用户图标进入设置 ---------- */
   await until(`!!window.SF?.app.state.session`);
   assert.equal(await evaluate(`document.querySelector('.user-chip').tagName`), 'BUTTON');
@@ -63,11 +88,7 @@ async function verify({window, core, root}) {
   await screenshot('m15-settings-tagging.png');
 
   /* ---------- S02 编辑草稿：先不保存，重启也不该生效 ---------- */
-  await evaluate(`(() => {
-    const input = Array.from(document.querySelectorAll('.setting-block input'))[0];
-    input.value = 'https://example.com/draft-only';
-    input.dispatchEvent(new Event('input', {bubbles: true}));
-  })()`);
+  assert.equal(await setField('接口地址', 'https://example.com/draft-only', 'Jev'), true);
   assert.equal(await evaluate(`document.querySelector('.settings__foot-hint').textContent`), '有未保存的修改');
   assert.equal(await evaluate(`document.querySelector('.settings-nav__dot') !== null`), true, '左栏要标出未保存');
   await evaluate(`(() => {
@@ -93,9 +114,9 @@ async function verify({window, core, root}) {
   assert.equal(await evaluate(`document.querySelector('.settings-nav__dot') !== null`), true, '未保存提示应跟着草稿留在左栏');
   const keptDraft = await evaluate(`(() => {
     Array.from(document.querySelectorAll('.settings-nav__item')).find(b => b.textContent.includes('AI API 配置')).click();
-    return Array.from(document.querySelectorAll('.setting-block input'))[0].value;
+    return true;
   })()`);
-  assert.equal(keptDraft, 'https://example.com/draft-only', '切回原分区草稿还在');
+  assert.equal(await fieldValue('接口地址', 'Jev'), 'https://example.com/draft-only', '切回原分区草稿还在');
   await evaluate(`Array.from(document.querySelectorAll('.settings-nav__item')).find(b => b.textContent.includes('提醒设置')).click()`);
   await until(`document.querySelector('.settings__title').textContent === '提醒设置'`);
 
@@ -151,7 +172,7 @@ async function verify({window, core, root}) {
   assert.equal((await core.call('settings.get')).reminder.enabled, true, '取消不能写入');
   await click('AI API 配置');
   assert.equal(await evaluate(`document.querySelector('input[type=password]').value`), 'unsaved-draft-key', '保存或取消提醒设置都不能清掉 AI 密钥草稿');
-  assert.equal(await evaluate(`document.querySelector('.setting-block input').value`), 'https://example.com/draft-only');
+  assert.equal(await fieldValue('接口地址', 'Jev'), 'https://example.com/draft-only');
   await click('提醒设置');
 
   // 无效间隔：前端允许填，后端拒绝，错误要落到输入框下方且草稿保留
@@ -197,18 +218,14 @@ async function verify({window, core, root}) {
   await click('保存并离开');
   await until(`!!document.querySelector('.sidebar')`);
   assert.equal((await core.call('settings.get')).reminder.intervalMinutes, 90, '保存并离开只保存当前页');
-  assert.equal((await core.call('settings.get')).ai.providers.jev.credentialRef, null, '另一页草稿不能被提交');
+  assert.equal((await core.call('settings.get')).ai.providers['provider-jev'].credentialRef, null, '另一页草稿不能被提交');
 
   // 另一页有草稿、当前页干净：保存按钮必须不可点，并说清保存写不进东西
   await evaluate(`location.hash = '#/settings?section=ai'`);
   await until(`!!document.querySelector('.settings') && document.querySelector('.settings__title').textContent === 'AI API 配置'`);
   await until(`!!document.querySelector('.setting-block input')`);
   assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '保存并离开须放弃其他页草稿');
-  await evaluate(`(() => {
-    const input = Array.from(document.querySelectorAll('.setting-block input'))[0];
-    input.value = 'https://example.com/second-draft';
-    input.dispatchEvent(new Event('input', {bubbles: true}));
-  })()`);
+  assert.equal(await setField('接口地址', 'https://example.com/second-draft'), true);
   await evaluate(`Array.from(document.querySelectorAll('.settings-nav__item')).find(b => b.textContent.includes('提醒设置')).click()`);
   await until(`document.querySelector('.settings__title').textContent === '提醒设置'`);
   await evaluate(`location.hash = '#/inbox'`);
@@ -219,30 +236,30 @@ async function verify({window, core, root}) {
   await until(`!!document.querySelector('.sidebar')`);
   await evaluate(`location.hash = '#/settings?section=ai'`);
   await until(`!!document.querySelector('.setting-block input')`);
-  assert.equal(await evaluate(`Array.from(document.querySelectorAll('.setting-block input'))[0].value`), 'https://api.typesafe.ai/v1/systemone', '放弃后应回到已保存的值');
+  assert.equal(await fieldValue('接口地址', 'Jev'), 'https://api.typesafe.ai/v1/systemone', '放弃后应回到已保存的值');
 
   /* ---------- S03 凭据 ---------- */
   await evaluate(`Array.from(document.querySelectorAll('.settings-nav__item')).find(b => b.textContent.includes('AI API 配置')).click()`);
   await until(`document.querySelector('.settings__title').textContent === 'AI API 配置'`);
   const secret = 'apikey_smoke_value_do_not_leak';
-  await evaluate(`(() => {
-    const fill = (index, value) => {
-      const input = Array.from(document.querySelectorAll('.setting-block input'))[index];
-      input.value = value;
-      input.dispatchEvent(new Event('input', {bubbles: true}));
-    };
-    fill(0, 'https://api.typesafe.ai/v1/systemone');
-    fill(1, 'jev-latest');
-    const key = Array.from(document.querySelectorAll('input[type="password"]'))[0];
+  // M25：连接卡片按标签定位字段，不靠下标（卡片里名称、地址、模型的顺序会变）。
+  assert.equal(await setField('接口地址', 'https://api.typesafe.ai/v1/systemone', 'Jev'), true);
+  assert.equal(await setField('模型', 'jev-latest', 'Jev'), true);
+  // 密钥也按卡片定位：连接有多条时，第几个密码框属于哪条连接不能靠猜。
+  assert.equal(await evaluate(`(() => {
+    const card = Array.from(document.querySelectorAll('.setting-block')).find(c => { const t = c.querySelector('.setting-block__title'); return t && t.textContent.trim() === 'Jev'; });
+    const key = card && card.querySelector('input[type="password"]');
+    if (!key) return false;
     key.value = ${JSON.stringify(secret)};
     key.dispatchEvent(new Event('input', {bubbles: true}));
-  })()`);
+    return true;
+  })()`), true);
   await click('保存设置');
   await until(`document.querySelector('.settings__foot-hint')?.textContent !== '正在保存…'`);
   await until(`document.body.innerText.includes('已保存（不回显）')`);
   settings = await core.call('settings.get');
-  assert.equal(settings.ai.providers.jev.endpoint, 'https://api.typesafe.ai/v1/systemone');
-  assert.ok(settings.ai.providers.jev.credentialRef, 'Core 只保存引用');
+  assert.equal(settings.ai.providers['provider-jev'].endpoint, 'https://api.typesafe.ai/v1/systemone');
+  assert.ok(settings.ai.providers['provider-jev'].credentialRef, 'Core 只保存引用');
 
   // 磁盘上是密文，不是明文
   const file = path.join(dataDir, 'credentials.json');
@@ -272,7 +289,7 @@ async function verify({window, core, root}) {
   await screenshot('m15-settings-credentials.png');
 
   // 放弃“清除密钥”后不能遗留清除标记，下一次保存必须保留原引用。
-  const savedReference = settings.ai.providers.jev.credentialRef;
+  const savedReference = settings.ai.providers['provider-jev'].credentialRef;
   await click('清除');
   await evaluate(`location.hash = '#/inbox'`);
   await until(`!!document.querySelector('.dialog')`);
@@ -281,15 +298,11 @@ async function verify({window, core, root}) {
   await evaluate(`location.hash = '#/settings'`);
   await until(`document.body.innerText.includes('已保存（不回显）')`);
   assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '放弃密钥清除后应没有残留修改');
-  await evaluate(`(() => {
-    const input = document.querySelector('.setting-block input');
-    input.value = '  https://api.typesafe.ai/v1/systemone  ';
-    input.dispatchEvent(new Event('input', {bubbles: true}));
-  })()`);
+  assert.equal(await setField('接口地址', '  https://api.typesafe.ai/v1/systemone  ', 'Jev'), true);
   await click('保存设置');
   await until(`document.querySelector('.settings__foot-hint')?.textContent !== '正在保存…'`);
   assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '规范化后的地址应成为新基线');
-  assert.equal((await core.call('settings.get')).ai.providers.jev.credentialRef, savedReference);
+  assert.equal((await core.call('settings.get')).ai.providers['provider-jev'].credentialRef, savedReference);
 
   // 用脱敏状态替身模拟系统账户变化：真实保护系统不应被验收脚本修改。
   await evaluate(`location.hash = '#/inbox'`);
@@ -298,14 +311,18 @@ async function verify({window, core, root}) {
     window.__originalGet = SF.app.state.client.getSettings.bind(SF.app.state.client);
     SF.app.state.client.getSettings = async () => {
       const settings = await window.__originalGet();
-      settings.credentials.providers.jev.usable = false;
+      settings.credentials.providers['provider-jev'].usable = false;
       return settings;
     };
     location.hash = '#/settings';
   })()`);
   await until(`document.body.innerText.includes('已保存的密钥无法解密')`);
   await click('重新输入');
-  assert.equal(await evaluate(`document.querySelectorAll('.setting-grid .setting-block')[0].querySelector('input[type=password]') !== null`), true, '不可用密钥必须能重新输入');
+  // M25：连接卡片在 .setting-stack 里；按卡片名找它的密钥输入框。
+  assert.equal(await evaluate(`(() => {
+    const card = Array.from(document.querySelectorAll('.setting-stack .setting-block')).find(c => { const t = c.querySelector('.setting-block__title'); return t && t.textContent.trim() === 'Jev'; });
+    return !!(card && card.querySelector('input[type=password]'));
+  })()`), true, '不可用密钥必须能重新输入');
   await evaluate(`SF.app.state.client.getSettings = window.__originalGet; location.hash = '#/inbox'`);
   await until(`!!document.querySelector('.sidebar')`);
 

@@ -21,7 +21,6 @@
   var icon = SF.icon;
   var fmt = SF.fmt;
 
-  var MODES = ["jev", "llm"];
   var INTERVAL_MIN = 5;
   var INTERVAL_MAX = 1440;
   var INTERVAL_PRESETS = [
@@ -62,22 +61,25 @@
   var PRIORITY_NONE_NAME = SF.catalog.PRIORITY_NONE_NAME;
   var PRIORITY_NAME_MAX = SF.catalog.PRIORITY_NAME_MAX;
 
-  var MODE_META = {
-    jev: {
-      label: "Jev 已有标签分类",
-      desc: "从你已经创建并启用的标签里挑选合适的，不新建标签。",
-      apiLabel: "Jev",
-      apiDesc: "Jev 已有标签分类服务的接口：接口地址、模型标识与 API Key。",
-      defaults: { endpoint: "https://api.typesafe.ai/v1/systemone", model: "jev-latest" },
-    },
-    llm: {
-      label: "LLM 自由生成标签",
-      desc: "由模型判断该用哪些标签，必要时可以新建标签并挂载。",
-      apiLabel: "LLM",
-      apiDesc: "自由生成标签所用的模型接口：接口地址、模型标识与 API Key。",
-      defaults: null,
-    },
-  };
+  // M25：协议是连接的属性，能力由协议决定。同一个协议可以配多条连接。
+  var PROTOCOLS = [
+    { value: "openai_chat", label: "OpenAI 兼容聊天", capabilities: ["文本生成"] },
+    { value: "jev_systemone", label: "Jev 候选分类", capabilities: ["候选分类"] },
+  ];
+
+  function protocolLabel(protocol) {
+    var found = PROTOCOLS.filter(function (p) { return p.value === protocol; })[0];
+    return found ? found.label : protocol;
+  }
+
+  function protocolCapabilities(protocol) {
+    var found = PROTOCOLS.filter(function (p) { return p.value === protocol; })[0];
+    return found ? found.capabilities : [];
+  }
+
+  function newProviderId() {
+    return 'provider-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  }
 
   /* ---------------- 状态 ---------------- */
 
@@ -103,13 +105,8 @@
 
   function emptyDraft() {
     return {
-      // M21：设置页只管连接参数。识别策略在标签管理页，不在这里。
-      ai: {
-        providers: {
-          jev: { endpoint: "", model: "", secret: "" },
-          llm: { endpoint: "", model: "", secret: "" },
-        },
-      },
+      // M25：连接按稳定 ID 组织，页面按 ID 遍历。识别策略在标签管理页，不在这里。
+      ai: { providers: {}, removed: [] },
       reminder: { enabled: false, preset: "60", interval: 60 },
       priority: { names: { high: "", medium: "", low: "" } },
     };
@@ -119,10 +116,17 @@
   function draftFrom(settings) {
     var draft = emptyDraft();
     var providers = (settings.ai && settings.ai.providers) || {};
-    MODES.forEach(function (mode) {
-      var saved = providers[mode] || {};
-      draft.ai.providers[mode].endpoint = saved.endpoint || "";
-      draft.ai.providers[mode].model = saved.model || "";
+    Object.keys(providers).forEach(function (providerId) {
+      var saved = providers[providerId] || {};
+      draft.ai.providers[providerId] = {
+        name: saved.name || "",
+        protocol: saved.protocol || "openai_chat",
+        endpoint: saved.endpoint || "",
+        model: saved.model || "",
+        secret: "",
+        enabled: saved.enabled !== false,
+        isNew: false,
+      };
     });
     var interval = settings.reminder.intervalMinutes;
     draft.reminder.enabled = !!settings.reminder.enabled;
@@ -149,8 +153,9 @@
     cache.errors = {};
     cache.notice = null;
     cache.saving = null;
-    cache.editing = { jev: false, llm: false };
-    cache.cleared = { jev: false, llm: false };
+    // M25：编辑态与清除标记按连接 ID 记，连接有多条时互不干扰。
+    cache.editing = {};
+    cache.cleared = {};
     cache.testing = false;
     cache.notification = null;
     cache.notificationLoading = false;
@@ -219,31 +224,26 @@
       var saved = cache.saved.reminder;
       return r.enabled !== !!saved.enabled || Number(r.interval) !== Number(saved.intervalMinutes);
     }
-    // M21：只比较连接参数。两类 API 各自独立，保存一类不牵动另一类。
-    var a = cache.draft.ai;
-    var savedProviders = (cache.saved.ai && cache.saved.ai.providers) || {};
-    return MODES.some(function (mode) {
-      var savedProvider = savedProviders[mode] || {};
-      return (
-        a.providers[mode].endpoint !== (savedProvider.endpoint || "") ||
-        a.providers[mode].model !== (savedProvider.model || "") ||
-        !!a.providers[mode].secret ||
-        cache.cleared[mode]
-      );
-    });
+    // M25：按连接 ID 比较。有几条就比几条：新增、改名、停用、删除都算改动。
+    return dirtyProviderIds().length > 0 || (cache.draft.ai.removed || []).length > 0;
   }
 
-  /** 哪些 API 改动了：只把这些提交，其它类的配置不参与这次保存。 */
-  function dirtyApiModes() {
+  /** 哪些连接改动了：只把这些提交，其它连接的配置不参与这次保存。 */
+  function dirtyProviderIds() {
     var a = cache.draft.ai;
     var savedProviders = (cache.saved.ai && cache.saved.ai.providers) || {};
-    return MODES.filter(function (mode) {
-      var savedProvider = savedProviders[mode] || {};
+    return Object.keys(a.providers).filter(function (providerId) {
+      var draft = a.providers[providerId];
+      var saved = savedProviders[providerId] || {};
       return (
-        a.providers[mode].endpoint !== (savedProvider.endpoint || "") ||
-        a.providers[mode].model !== (savedProvider.model || "") ||
-        !!a.providers[mode].secret ||
-        cache.cleared[mode]
+        draft.name !== (saved.name || "") ||
+        draft.protocol !== (saved.protocol || "openai_chat") ||
+        draft.endpoint !== (saved.endpoint || "") ||
+        draft.model !== (saved.model || "") ||
+        draft.enabled !== (saved.enabled !== false) ||
+        !!draft.secret ||
+        !!cache.cleared[providerId] ||
+        !!draft.isNew
       );
     });
   }
@@ -265,17 +265,28 @@
       PRIORITY_LEVELS.forEach(function (level) { names[level] = cache.draft.priority.names[level]; });
       return { section: "priority", patch: { names: names } };
     }
-    // M21：只提交改动过的那类 API 的连接参数，不携带任何识别策略字段。
-    var a = cache.draft.ai;
-    var modes = dirtyApiModes();
-    var providers = {};
-    var credentials = {};
-    modes.forEach(function (mode) {
-      providers[mode] = { endpoint: a.providers[mode].endpoint, model: a.providers[mode].model };
-      if (cache.cleared[mode]) credentials[mode] = null;
-      else if (a.providers[mode].secret) credentials[mode] = a.providers[mode].secret;
-    });
-    return { section: "ai", patch: { providers: providers }, credentials: credentials };
+    if (section === "ai") {
+      // M25：按连接 ID 提交。只带改动的连接；删除用 null 表示。
+      var providers = {};
+      var credentials = {};
+      dirtyProviderIds().forEach(function (providerId) {
+        var draft = cache.draft.ai.providers[providerId];
+        var saved = (cache.saved.ai && cache.saved.ai.providers[providerId]) || {};
+        var fields = {};
+        if (draft.name !== (saved.name || "")) fields.name = draft.name;
+        if (draft.protocol !== (saved.protocol || "openai_chat")) fields.protocol = draft.protocol;
+        if (draft.endpoint !== (saved.endpoint || "")) fields.endpoint = draft.endpoint;
+        if (draft.model !== (saved.model || "")) fields.model = draft.model;
+        if (draft.enabled !== (saved.enabled !== false)) fields.enabled = draft.enabled;
+        providers[providerId] = fields;
+        if (draft.secret) credentials[providerId] = draft.secret;
+        else if (cache.cleared[providerId]) credentials[providerId] = null;
+      });
+      (cache.draft.ai.removed || []).forEach(function (providerId) {
+        providers[providerId] = null;
+      });
+      return { section: "ai", patch: { providers: providers }, credentials: credentials };
+    }
   }
 
   /* M20 名称规则，与 Core 的校验一致：去首尾空格后 1–12 字符、三级不重名、
@@ -358,9 +369,10 @@
   function discardSection(section) {
     cache.draft[section] = draftFrom(cache.saved)[section];
     if (section === "ai") {
-      MODES.forEach(function (mode) {
-        cache.editing[mode] = false;
-        cache.cleared[mode] = false;
+      // 丢弃的是整页草稿：编辑态与清除标记都要复位。
+      Object.keys(cache.draft.ai.providers).forEach(function (providerId) {
+        cache.editing[providerId] = false;
+        cache.cleared[providerId] = false;
       });
     }
   }
@@ -516,15 +528,23 @@
 
   /* ---------------- AI API 配置 ---------------- */
 
-  function buildProvider(app, mode) {
-    var meta = MODE_META[mode];
-    var draft = cache.draft.ai.providers[mode];
-    var state = (cache.saved && cache.saved.credentials.providers[mode]) || { configured: false, usable: false, unresolved: false };
-    var protection = (cache.saved && cache.saved.credentials.protection) || { available: false, reason: "正在读取保护能力" };
-    var savedProvider = (cache.saved && cache.saved.ai && cache.saved.ai.providers[mode]) || {};
-    var status = providerStatus(state, protection, savedProvider);
-
-    var keyRow = buildKeyField(app, mode, state, protection, draft);
+  /**
+   * 一条连接一张卡片，按稳定 ID 遍历。
+   *
+   * M25：连接不再按「两种固定方式」排布，名称、协议、地址、模型、密钥与
+   * 启用状态各自独立；业务功能（打标、总结）各自选择使用哪一条。
+   */
+  function buildProvider(app, providerId) {
+    var draft = cache.draft.ai.providers[providerId];
+    if (!draft) return null;
+    var saved = (cache.saved && cache.saved.ai && cache.saved.ai.providers[providerId]) || {};
+    var state = (cache.saved && cache.saved.credentials.providers[providerId]) ||
+      { configured: false, usable: false, unresolved: false };
+    var protection = (cache.saved && cache.saved.credentials.protection) ||
+      { available: false, reason: "正在读取保护能力" };
+    var status = providerStatus(state, protection, saved);
+    var removed = (cache.draft.ai.removed || []).indexOf(providerId) >= 0;
+    var capabilities = protocolCapabilities(draft.protocol);
     var children = [
       h(
         "div.setting-block__head",
@@ -532,10 +552,19 @@
         h(
           "div",
           null,
-          h("h3.setting-block__title", { text: meta.apiLabel }),
-          h("p.setting-block__desc", { text: meta.apiDesc })
+          h("h3.setting-block__title", { text: draft.name || providerId }),
+          h("p.setting-block__desc", {
+            text: protocolLabel(draft.protocol) + " · " +
+              (draft.isNew ? "新增连接" : removed ? "标记删除，保存后生效" : "已保存的连接"),
+          })
         ),
-        badge(state.configured ? "已配置" : "未配置完整", state.configured ? "success" : "neutral")
+        h("div.spacer"),
+        badge(state.configured ? "已配置" : "未配置完整", state.configured ? "success" : "neutral"),
+        h("div.spacer"),
+        ui.toggle(draft.enabled, function (on) {
+          draft.enabled = on;
+          refreshFoot(app);
+        }, { label: "启用这条连接" })
       ),
       h(
         "div.setting-block__status",
@@ -543,64 +572,163 @@
         badge(status.text, status.tone),
         h("span.setting-block__status-note", { text: status.note })
       ),
+      h(
+        "div.setting-grid",
+        null,
+        field(
+          "名称",
+          textInput(draft.name, function (value) {
+            draft.name = value;
+            clearFieldError(providerId + ".name");
+            refreshFoot(app);
+          }, { placeholder: "给这条连接起个名字" }),
+          {
+            hint: "只是显示名。改名不影响已经打好的标签，也不会作废在途结果。",
+            error: cache.errors[providerId + ".name"],
+            errorKey: providerId + ".name",
+          }
+        ),
+        field(
+          "协议",
+          ui.select(
+            PROTOCOLS.map(function (item) { return { value: item.value, label: item.label }; }),
+            draft.protocol,
+            function (value) {
+              draft.protocol = value;
+              clearFieldError(providerId + ".protocol");
+              refreshFoot(app);
+            },
+            { ariaLabel: "协议" }
+          ),
+          {
+            hint: "协议决定这条连接能做什么。",
+            error: cache.errors[providerId + ".protocol"],
+            errorKey: providerId + ".protocol",
+          }
+        )
+      ),
       field(
         "接口地址",
         textInput(draft.endpoint, function (value) {
           draft.endpoint = value;
-          clearFieldError(mode + ".endpoint");
+          clearFieldError(providerId + ".endpoint");
           refreshFoot(app);
-        }, {
-          placeholder: meta.defaults ? meta.defaults.endpoint : "https://api.example.com/v1",
-        }),
+        }, { placeholder: "https://api.example.com/v1" }),
         {
-          hint: meta.defaults
-            ? "可以使用官方默认值，也可以改成你自己的地址。"
-            : "填写与本期适配器兼容的聊天接口地址；具体协议在自动打标接入时确定。",
-          error: cache.errors[mode + ".endpoint"],
-          errorKey: mode + ".endpoint",
+          hint: "服务侧的接口地址。",
+          error: cache.errors[providerId + ".endpoint"],
+          errorKey: providerId + ".endpoint",
         }
       ),
-      field(
-        "模型标识",
-        textInput(draft.model, function (value) {
-          draft.model = value;
-          clearFieldError(mode + ".model");
-          refreshFoot(app);
-        }, { placeholder: meta.defaults ? meta.defaults.model : "模型名称" }),
-        { hint: "服务侧的模型标识，不是显示别名。", error: cache.errors[mode + ".model"], errorKey: mode + ".model" }
+      h(
+        "div.setting-grid",
+        null,
+        field(
+          "模型",
+          textInput(draft.model, function (value) {
+            draft.model = value;
+            clearFieldError(providerId + ".model");
+            refreshFoot(app);
+          }, { placeholder: "模型名称" }),
+          { hint: "服务侧的模型标识，不是显示别名。", error: cache.errors[providerId + ".model"], errorKey: providerId + ".model" }
+        ),
+        buildKeyField(app, providerId, state, protection, draft)
       ),
-      keyRow,
-      buildProviderTest(app, mode),
+      buildProviderTest(app, providerId),
+      h(
+        "div.setting-block__foot",
+        null,
+        h("span.field__hint", { text: "能力：" + (capabilities.join("、") || "未指定") })
+      ),
     ];
-    if (meta.defaults) {
+    if (!draft.isNew) {
       children.push(
         h(
           "div.setting-block__foot",
           null,
-          ui.btn("填入官方默认值", {
+          ui.btn(removed ? "取消删除" : "删除这条连接", {
             size: "sm",
-            onClick: function () {
-              draft.endpoint = meta.defaults.endpoint;
-              draft.model = meta.defaults.model;
-              clearFieldError(mode + ".endpoint");
-              clearFieldError(mode + ".model");
-              paint(app);
-            },
+            danger: !removed,
+            onClick: function () { toggleProviderRemoval(app, providerId); },
           })
         )
       );
     }
-    return h("section.setting-block", null, children);
+    return h("section.setting-block", { "data-provider-id": providerId }, children);
+  }
+
+  function buildAi(app) {
+    var providerIds = Object.keys(cache.draft.ai.providers);
+    var children = providerIds.map(function (providerId) { return buildProvider(app, providerId); });
+    children.push(
+      h(
+        "div.setting-block__foot",
+        null,
+        ui.btn("新增连接", {
+          icon: "plus",
+          onClick: function () { addProvider(app); },
+        })
+      )
+    );
+    return [
+      h(
+        "section.setting-block",
+        null,
+        h(
+          "div.setting-block__head",
+          null,
+          h(
+            "div",
+            null,
+            h("h3.setting-block__title", { text: "集中管理连接与模型" }),
+            h("p.setting-block__desc", {
+              text: "已配置的连接可供打标与其他功能调用。连接独立保存，业务功能各自选择使用哪一条。",
+            })
+          )
+        )
+      ),
+      h("div.setting-stack", null, children),
+    ];
+  }
+
+  /** 新增一条连接：先落在草稿里，保存后才真正存在。 */
+  function addProvider(app) {
+    var providerId = newProviderId();
+    cache.draft.ai.providers[providerId] = {
+      name: "",
+      protocol: PROTOCOLS[0].value,
+      endpoint: "",
+      model: "",
+      secret: "",
+      enabled: true,
+      isNew: true,
+    };
+    cache.editing[providerId] = true;
+    paint(app);
   }
 
   /**
-   * 连接测试只测这一类 API：不改当前打标方式、不启停自动打标，也不产生任何标签。
-   * 走的是与后台打标完全相同的组装路径，因此这里通过不等于后台也能用，
-   * 反之亦然——不存在只给界面演示的假通路。
+   * 删除连接：先标记，保存时才真正删。
+   * 被业务引用的连接由 Core 拦下并说明使用方，界面不替它做决定。
    */
-  function buildProviderTest(app, mode) {
-    var running = !!cache.testingApi[mode];
-    var result = cache.testResultApi[mode];
+  function toggleProviderRemoval(app, providerId) {
+    var removed = cache.draft.ai.removed || [];
+    var index = removed.indexOf(providerId);
+    if (index >= 0) {
+      removed.splice(index, 1);
+    } else {
+      removed.push(providerId);
+    }
+    paint(app);
+  }
+
+  /**
+   * 连接测试只验证这条连接能不能通：走公共 AI 层的协议最小探针，
+   * 不打标签、不生成笔记，也不建立任何后台任务。
+   */
+  function buildProviderTest(app, providerId) {
+    var running = !!cache.testingApi[providerId];
+    var result = cache.testResultApi[providerId];
     return h(
       "div.setting-block__foot",
       null,
@@ -608,18 +736,18 @@
         disabled: running,
         icon: "refresh",
         onClick: function () {
-          cache.testingApi[mode] = true;
-          cache.testResultApi[mode] = null;
+          cache.testingApi[providerId] = true;
+          cache.testResultApi[providerId] = null;
           SF.app.renderContent();
-          app.client.testTaggingConnection(mode).then(
+          app.client.testAiProvider(providerId).then(
             function (value) {
-              cache.testingApi[mode] = false;
-              cache.testResultApi[mode] = value;
+              cache.testingApi[providerId] = false;
+              cache.testResultApi[providerId] = value;
               SF.app.renderContent();
             },
             function (err) {
-              cache.testingApi[mode] = false;
-              cache.testResultApi[mode] = {
+              cache.testingApi[providerId] = false;
+              cache.testResultApi[providerId] = {
                 ok: false,
                 message: (err && err.message) || "连接测试失败，请检查接口地址、模型标识与 API Key。",
               };
@@ -631,12 +759,10 @@
       result
         ? h("span.field__hint", {
             text: result.ok
-              ? "连接正常：" + (result.provider || "") + " " +
-                (result.model || result.requestedModel || "") +
-                "，返回 " + result.candidates + " 个候选标签"
+              ? "连接正常：" + (result.model || providerId) + "。" + (result.message || "")
               : "测试失败：" + result.message,
           })
-        : h("span.field__hint", { text: "测试会发出一次真实的模型请求，但不会保存任何标签。" })
+        : h("span.field__hint", { text: "测试针对已保存的配置：先保存再测试。只验证协议通不通，不打标签、不建立后台任务。" })
     );
   }
 
@@ -656,7 +782,7 @@
     return { tone: "neutral", text: "未配置", note: "填齐接口地址、模型标识和 API Key 后才能保存完整配置。" };
   }
 
-  function buildKeyField(app, mode, state, protection, draft) {
+  function buildKeyField(app, providerId, state, protection, draft) {
     var label = "API Key";
     var hint = "保存时用系统保护能力加密，写入应用数据目录；保存后不再回显，界面只显示是否已配置。";
     if (!protection.available) {
@@ -669,7 +795,7 @@
         { hint: hint }
       );
     }
-    if ((state.unresolved || (state.configured && !state.usable)) && !cache.editing[mode]) {
+    if ((state.unresolved || (state.configured && !state.usable)) && !cache.editing[providerId]) {
       return field(
         label,
         h("div.setting-key", null,
@@ -678,7 +804,7 @@
             size: "sm",
             variant: "primary",
             onClick: function () {
-              cache.editing[mode] = true;
+              cache.editing[providerId] = true;
               paint(app);
             },
           })
@@ -686,7 +812,7 @@
         { hint: hint }
       );
     }
-    if (state.configured && !cache.cleared[mode] && !draft.secret && !cache.editing[mode]) {
+    if (state.configured && !cache.cleared[providerId] && !draft.secret && !cache.editing[providerId]) {
       return field(
         label,
         h("div.setting-key", null,
@@ -694,7 +820,7 @@
           ui.btn("替换", {
             size: "sm",
             onClick: function () {
-              cache.editing[mode] = true;
+              cache.editing[providerId] = true;
               paint(app);
             },
           }),
@@ -702,8 +828,8 @@
             size: "sm",
             danger: true,
             onClick: function () {
-              cache.cleared[mode] = true;
-              cache.editing[mode] = false;
+              cache.cleared[providerId] = true;
+              cache.editing[providerId] = false;
               draft.secret = "";
               paint(app);
             },
@@ -714,23 +840,23 @@
     }
     var control = textInput(draft.secret, function (value) {
       draft.secret = value;
-      if (value) cache.cleared[mode] = false;
+      if (value) cache.cleared[providerId] = false;
       refreshFoot(app);
     }, { type: "password", placeholder: "粘贴 API Key" });
     var children = [control];
-    if (cache.cleared[mode]) {
+    if (cache.cleared[providerId]) {
       children.push(
         h("p.field__hint.field__hint--danger", {
           text: "保存后将清除已保存的密钥，该方式会变成未配置。",
         })
       );
     }
-    if (cache.editing[mode] && state.configured && !cache.cleared[mode]) {
+    if (cache.editing[providerId] && state.configured && !cache.cleared[providerId]) {
       children.push(
         ui.btn("取消替换", {
           size: "sm",
           onClick: function () {
-            cache.editing[mode] = false;
+            cache.editing[providerId] = false;
             draft.secret = "";
             paint(app);
           },
@@ -773,13 +899,6 @@
     if (node.parentNode) node.parentNode.removeChild(node);
   }
 
-  function buildAi(app) {
-    // M21：这一页只管连接参数。开关与识别方式在标签管理页，两边互不覆盖。
-    // 不在这里限定接口数量，也不强调「各自独立」：填好一个就能先存一个。
-    return [
-      h("div.setting-grid", null, buildProvider(app, "jev"), buildProvider(app, "llm")),
-    ];
-  }
 
   /* ---------------- 提醒设置 ---------------- */
 

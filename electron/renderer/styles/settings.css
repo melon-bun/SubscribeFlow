@@ -209,6 +209,13 @@
   gap: var(--s-5);
 }
 
+/* M25：AI 连接按张纵向排列：连接有几条就排几条，不占两栏。 */
+.setting-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
 /* ---------------- 开关行 ---------------- */
 
 .setting-row {
