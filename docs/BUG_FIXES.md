@@ -1660,3 +1660,260 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 ### 2026-10-21 Codex 验收 BUG-105（2ecdde0）
 
 只审查0609dcf以来的产品差异；独立复跑正式Main／Renderer导航回归通过：Esc／关闭按钮／遮罩取消保留草稿并恢复路由，下次导航重新正常询问，放弃到达channels，保存后到达overview。原探针仅以未到达channels判冻结的条件过粗，已按完整交互判定，不要求绕过草稿保护。BUG-105关闭，M21验收通过，继续M22–M23。证据 verification/v0.4.9-review/batch-02-r01/REPORT.md。无真实Key、模型或日常数据操作。
+
+## BUG-106：M25 停用的 AI Provider 仍然被实际调用
+
+- 日期：2026-10-22；状态：**已修复并由 Codex 验收**（提交 `3cbfc99`，基线 `0ded211`）。
+- 现象与复现：隔离库创建已配置且 enabled=false 的连接，FakeTransport 调用 AiGateway.chat，返回成功并实际调用传输 1 次。
+- 预期：停用后任何业务调用在发送请求前拒绝，保留引用、如实反馈，不默换服务。
+- 原因：AiGateway._adapter 未校验 enabled；打标 adapter 路径也未拦截。
+- 修复范围：公共调用边界与必要打标联动；验证要求为停用不请求、重新启用可用。
+- 修复：`AiGateway._adapter` 在取密钥、组装适配器之前先看 `enabled`：停用直接抛
+  `not_configured`，消息为「这条连接已停用，请先在「AI API 配置」里启用。」。
+  `chat`／`classify`／`adapter`／`test_connection` 共用这一条边界——探针因此返回
+  `ok=false` 并说明已停用，同样不发请求。打标走同一个网关：任务被 `blocked`，
+  错误消息含「已停用」，替身 Provider 调用次数为 0。引用保持原样，不默换服务；
+  重新启用后立即可调用，无需重配地址、模型或密钥。另补一条 Core 校验：
+  开启识别时若所选连接已停用，保存被拒绝，不留下跑不起来的配置。
+- 自验（`python/tests/test_ai_layer.py`、`python/tests/test_m16_tagging.py`，假传输，无真实 Key 与网络）：
+  - 停用后 `chat` 抛 `not_configured` 且传输调用数为 0；
+  - `adapter` 与 `test_connection` 同样拒绝，传输调用数仍为 0；
+  - `classify` 对停用连接同样拒绝；
+  - 换一个新的设置服务（相当于重启）读同一存档，停用状态仍在；
+  - 重新启用后一次调用成功（传输计数 1）；
+  - 打标任务遇到停用连接：`state=blocked`，错误消息含「已停用」，替身 Provider 调用 0 次。
+- 证据：verification/phase5-review/batch-01/REPORT.md。
+
+## BUG-107：M25 混合旧 AI 配置升级未逐字段补缺，模型与凭据引用丢失
+
+- 日期：2026-10-22；状态：**已修复并由 Codex 验收**（提交 `3cbfc99`，基线 `0ded211`）。
+- 现象与复现：ai.providers.llm 只含新 endpoint，tagging.providers.llm 含旧 model/credentialRef；迁移后模型为空、凭据引用为 null。
+- 预期：现代显式字段优先，旧字段仅补现代缺失字段；保留显式清空与迁移幂等。
+- 原因：migrate_providers 以 slot 是否存在排除旧来源，没有按字段合并。
+- 修复范围：旧配置迁移与聚焦兼容验证，不扩展其他迁移。
+- 修复：`migrate_providers` 改为**按字段**合并旧来源——现代显式写了的值优先
+  （空串与 null 也算数：那表示用户自己清过，不能被旧值复活），现代没写的那一项
+  才用旧值补上。新结构仍然权威：`formatVersion>=2` 的存档里不会凭空补回旧连接，
+  用户删光的连接不会复活。其它已验收的迁移语义未变（旧槽位映射、协议与名称兜底、
+  写坏条目跳过、幂等）。
+- 自验（`python/tests/test_ai_layer.py`、`python/tests/test_settings.py`）：
+  - `ai.providers.llm={endpoint:new}` + `tagging.providers.llm={endpoint:old,model:old-model,credentialRef:old-ref}`
+    → 迁移后 endpoint=new、model=old-model、credentialRef=old-ref；
+  - 现代显式 `model=''`、`credentialRef=null` 时，旧值不被复活；
+  - 混合结构迁移后再迁移一次结果相同（幂等）；
+  - 存档里只有旧来源时该连接仍然补得进来；
+  - 新结构存档里连接被删光时，旧槽位不会把它补回来；
+  - 走完整设置服务读同一份混合存档，模型与凭据引用都在，保存一次后值不变。
+- 证据：verification/phase5-review/batch-01/REPORT.md。
+
+## BUG-108：M25 只切换打标连接无法保存，连接引用无法解除
+
+- 日期：2026-10-22；状态：**已修复并由 Codex 验收**（提交 `3cbfc99`，基线 `0ded211`）。
+- 现象与复现：两条兼容 Provider 中切换一条，保存按钮仍禁用且不识别草稿；关闭打标并显式提交 providerIds 为 null，读回仍恢复默认引用，无法解除后删除连接。
+- 预期：仅改连接也能保存、重启保留，草稿保护生效；业务关闭时可清除引用，被真实引用的删除仍拦截。
+- 原因：recognitionDirty 不比较 providerIds、草稿／保存映射共享；_merge_tagging 跳过 null，_current 用 truthy 判断恢复默认。
+- 修复范围：识别设置草稿／保存与 Core 引用语义；不借机重构页面。
+- 修复：
+  - 视图：草稿与已保存值各存一份 `providerIds` 映射（此前共用同一个对象，改了也
+    看不出草稿），`recognitionDirty` 比较 `providerIds`——只换连接也能保存；
+    「放弃修改」也把连接引用一起还原，不再凭空多出草稿。
+  - Core：`_merge_tagging` 接受显式 `null` 作为「不选这条连接」（解除引用，
+    解除后该连接才能删除）；`_current` 以「存档里显式写了就用它」为准，
+    显式的 null 不被默认引用复活，无关保存也不会复活它；默认指向的连接
+    不存在时留空，不留悬空引用。
+  - 保留已开启业务的可用性校验：开着识别时解除当前方式的引用会被拒绝并说明
+    先选一条或先关闭识别；被真实引用的连接仍然禁止删除并说明使用方。
+  - 界面：识别页新增「不选择这条连接」入口与「未选择连接」状态说明；
+    停用的连接在下拉里标为「（已停用）」。
+- 自验：
+  - Codex 原探针 `phase5-review/batch-01/provider-picker-probe.cjs` 现在输出
+    `{"selected":"text-b","saveDisabled":false,"hasDraft":true}`（此前 saveDisabled=true、hasDraft=false）；
+  - 追加验证 `verification/phase5-minimax/batch-01/provider-picker-fix-probe.cjs`（正式视图 + 隔离假设置）：
+    切换后保存按钮可用且识别出草稿 → 点击保存，提交的补丁为
+    `{section:"tagging", patch:{enabled:false, mode:"llm", providerIds:{llm:"text-b", jev:null}}}` →
+    重新载入视图后仍选中 text-b、无草稿、保存按钮回到不可用 → 点「不选择这条连接」
+    → 补丁为 `providerIds.llm=null` → 重新载入后没有任何选中；
+  - Core（`python/tests/test_settings.py`）：关闭识别时提交 `providerIds:{llm:null}`
+    后读回为 null，无关保存不复活，解除引用后该连接可以删除；开着识别时解除
+    当前方式的引用被拒绝且已保存引用不变。
+- 证据：verification/phase5-review/batch-01/REPORT.md、provider-picker-probe.cjs、
+  verification/phase5-minimax/batch-01/provider-picker-fix-probe.cjs。
+
+### 2026-10-22 Codex 复验 BUG-106／107／108
+
+3cbfc99 已通过原失败场景独立复验：停用零请求／启用后可用、旧字段补缺与显式清空、解除引用重开数据库保留，以及正式视图切换／保存／重载／解除引用。118项Python +64 subtests与两项正式视图探针通过；三条关闭，M25验收通过，继续M26。真实模型与系统授权按用户外出安排待验。证据 verification/phase5-review/batch-01-r01/REPORT.md。
+
+
+## BUG-109：M27 首次打开已保存的笔记未回填编辑区
+
+- 日期：2026-10-22；状态：**已修复并由 Codex 验收**；发现提交 `e0da295`，修复提交 `98cb3b3`。
+- 现象与复现：正式 SF.noteUi 初次载入隔离的 project 笔记（总结、心得、using结论、版本均非空），getNote成功返回后，类型仍为none、textarea未显示；正常新建后同进程内保存的自验未覆盖此路径。
+- 预期：初次载入已有笔记按记录初始化模板／文字／结论／版本；真正正在编辑的草稿受保护，读取失败重试不静默清空。
+- 原因：noteEditor初载固定 refreshNote(..., true)，refreshNote只更新st.note，无条件保留初始blankDraft，既有记录未进入draft。
+- 修复范围：初次加载／重开已有记录与草稿保护边界，不能改为所有刷新都覆盖输入。
+- 修复：`refreshNote` 的 `keepDraft` 语义改成「只有用户还没动过这条内容时才以读到的内容为准」——
+  用户写过就留着草稿（`st.touched` 为真时），刷新、慢回包与重开都不覆盖输入；
+  用户没动过才把读到的笔记写进 draft（模板、总结、心得、结论、版本一并回填）。
+  初次载入与读取失败后的重试因此都能正确显示已保存的笔记，又不是无条件覆盖草稿。
+- 自验：
+  - Codex 原探针 `phase5-review/batch-03/editor-boundary-probe.cjs` 现在输出
+    `existing{type:"project", textareas:["已保存的总结","已保存的心得"], savedSummary:"已保存的总结"}`
+    （修复前为 `type:"none"`、`textareas:[]`）；
+  - 正式视图实机验收（`scripts/m27-note-editor-renderer.cjs`）：保存一条 project 笔记后重新载入组件脚本
+    （＝模拟页面重载，模块内草稿状态归零）再打开该内容，模板／总结／心得／结论分别回显为
+    `project`／`让本地文档能被检索。`／空／`using`；
+  - 用户写过草稿时刷新与慢回包不覆盖输入（原边界保留），失败后重试能正确显示既有笔记。
+- 证据：verification/phase5-review/batch-03/REPORT.md、editor-boundary-result.json、
+  verification/phase5-minimax/batch-03-r01/REPORT.md。
+
+## BUG-110：M27 保存回执覆盖请求期间继续输入的笔记文字
+
+- 日期：2026-10-22；状态：**已修复并由 Codex 验收**；发现提交 `e0da295`，修复提交 `98cb3b3`。
+- 现象与复现：输入「提交时的文字」点击保存，延迟saveNote响应；输入框仍可编辑，再输入「保存等待时继续写的新文字」；响应成功后文本被还原为提交时内容，dirty=false。
+- 预期：响应只能确认提交快照，不得静默丢弃之后的输入；若允许继续写应保留最新草稿并使用新版本令牌。若选择忙时禁止编辑，必须即时生效、不能留下可输入但丢字的窗口。失败也保留文字。
+- 原因：save成功时无条件 st.draft=draftOf(note)、touched=false，未区分请求快照与后续编辑，输入也未即时冻结。
+- 修复范围：笔记保存/回执与必要忙时状态，只修实际数据丢失，不扩展完整草稿持久化系统。
+- 修复：采用「允许继续写」的方式——保存时记下提交快照；回执只确认提交的那份：
+  - 草稿在请求期间没变 → 照旧收敛为「已保存」，draft 与基线一致；
+  - 草稿在请求期间又改过 → **保留新输入、保持 dirty**，并把已保存基线与版本更新为回执带来的那份，
+    下一次保存因此用新的版本令牌（不会拿旧令牌覆盖新内容）。
+  失败路径照旧保留输入。按内容 ID 隔离与迟到回包丢弃的既有行为不变。
+- 自验：
+  - Codex 原探针现在输出 `saving{inputEnabled:true, after:"保存等待时继续写的新文字", dirty:true}`
+    （修复前为 `after:"提交时的文字"`、`dirty:false`）；
+  - 正式视图实机验收（`scripts/m27-note-editor-renderer.cjs`）：延迟保存回执后输入框仍是
+    「等待期间继续写的字」且 dirty=true；下一次保存提交的 `expectedVersion` 是回执带来的新版本
+    （`v-next`）而不是旧令牌，提交内容是最新输入；延迟失败后输入同样没被清空。
+- 证据：verification/phase5-review/batch-03/REPORT.md、editor-boundary-result.json、
+  verification/phase5-minimax/batch-03-r01/REPORT.md。
+
+
+### 2026-10-22 Codex 复验 BUG-109／110
+
+98cb3b3 经原失败组件探针与正式Renderer/Main/Core主流程独立复验通过：已有记录正确回填、保存回执保留后续输入及dirty、下一保存使用新版本、失败保留草稿。原12组与新增两组场景通过；延迟回执场景使用假客户端，真实读回使用隔离库IPC。两项关闭，M27验收通过。证据 verification/phase5-review/batch-03-r01/REPORT.md。
+
+
+## BUG-111：M28 连续修改查询时旧回包冒充当前结果，最后条件未执行
+
+- 日期：2026-10-22；状态：**已修复并由 Codex 验收**；发现提交 `60e5af6`，修复提交 `754a595`。
+- 复现：正式notes视图、隔离假客户端初始3条；Alpha查询在途，输入改Beta，再返回Alpha结果。实际输入Beta、目录Alpha、调用记录只有初始和Alpha，没有Beta。
+- 预期：最后的查询/筛选/分页条件必须真正下发并显示，旧条件回包不得标记为新条件已加载；列表/facets对应当前查询。
+- 原因：render改变list.key/loaded，但loadList因loading返回；seq只有真正开请求时才递增，旧回包仍通过seq检查并设loaded=true，最新查询被吞。
+- 修复范围：notes查询身份/在途完成调度与必要facets一致性，保留草稿/选中保护，不重构其他页面。
+- 修复：查询身份（条件＋排序＋分页）单独记在 `list.key` 与 `list.needLoad` 上——
+  身份一变就作废旧结果，并标记「这个身份还没发过请求」；`loadList` 不再因在途而直接 return，
+  而是记下 needLoad。回包落地时先核对身份：对不上就丢掉，并按当前身份重发；
+  在途期间再改条件也不会丢（needLoad 记着）。范围（facets）走同一套身份核对。
+  选中、草稿与滚动保护不变：回包对不上时不动选中，也不重建已输入的文字。
+- 自验：
+  - Codex 原探针 `phase5-review/batch-04/query-boundary-probe.cjs` 现在输出
+    `after{input:"Beta", titles:["Beta"], count:3, badge:"3"}`，调用记录里能看到
+    Alpha 与 Beta 两次请求——Beta 真的下发了（修复前只有初始与 Alpha 两次，目录停在 Alpha）；
+  - 正式视图实机验收（`scripts/m28-notes-view-renderer.cjs`）：连续快速切两次平台后，
+    最后下发的请求带最后那个平台条件，目录结果与最后条件一致；
+  - 探针的原始产物 `query-boundary-result.json` 未被覆盖（返修验证时复制到临时目录运行）。
+- 证据：verification/phase5-review/batch-04/REPORT.md、query-boundary-result.json、
+  verification/phase5-minimax/batch-04-r01/REPORT.md。
+
+## BUG-112：M28 当前筛选总数覆盖侧栏全局笔记数
+
+- 日期：2026-10-22；状态：**已修复并由 Codex 验收**；发现提交 `60e5af6`，修复提交 `754a595`。
+- 复现：隔离视图中有3条笔记，无筛选侧栏3；搜索只命中1条后侧栏变1，持久笔记没有减少。
+- 预期：页面/目录显示当前范围total，侧栏如显示笔记总数应使用无筛选全体笔记数，不随关键字/平台/标签/来源/结论筛选变化；保存/删除后保持正确。
+- 原因：loadList无条件 app.noteCount=list.total，把范围total写入全局badge。
+- 修复范围：笔记全局计数与必要失效接线，不能用清除筛选恢复或假0绕过；可不扩大产品承诺。
+- 修复：侧栏那枚徽标改用**不带任何筛选**的全体笔记数（单独一次 `listNotes({limit:1})`），
+  页面与目录里的 total 仍然表示当前范围——两者不再是同一个数。
+  徽标第一次出现后，写笔记、删笔记与相关的 `content.changed` 都会让它失效并重查；
+  徽标还没出现时不去多查一次，等用户打开笔记页时一起算。
+- 自验：
+  - Codex 原探针现在输出 `before{count:3, badge:"3"}` 与
+    `after{count:3, badge:"3"}`（筛选命中 1 条时侧栏仍是全体的 3；修复前 after 是 1）；
+  - 正式视图实机验收：搜索命中 1 条时页内显示「共 1 篇」而侧栏显示 23；
+    删除一条后页内总数与侧栏总数分别变成 22；
+  - 列表请求与全局计数请求在调用记录里可区分：列表带 `offset` 且每页 20 条，
+    计数是不带筛选的单独一次。
+- 证据：verification/phase5-review/batch-04/REPORT.md、query-boundary-result.json、
+  verification/phase5-minimax/batch-04-r01/REPORT.md。
+
+## BUG-113：M28 原内容卡片整体点击未接弹窗，查看内容按钮可用
+
+- 日期：2026-10-22；状态：**非致命，仅记录，不派修／不阻塞本期**；发现提交 `60e5af6`。
+- 复现：点击.notes-card空白区域，dialog=false、route=notes；点击「查看内容」按钮则正式检查可打开modal。
+- 预期：设计允许整张原内容卡片打开本地modal；当前独立按钮已提供该主功能。
+- 原因：contentCard只给viewContentButton绑定动作，卡片容器无click/键盘触发。
+- 修复范围：本轮不安排；后续若用户提出再调整卡片交互。
+- 验证：正式视图+隔离假数据探针确认卡片无反应；正式Renderer/Main/Core常规检查确认按钮modal与三种关闭路径可用。证据verification/phase5-review/batch-04/REPORT.md、query-boundary-result.json。
+- 2026-10-22：按 Codex 标注保持非致命，本轮（batch-04-r01）**未修**，只在 M28_NOTES_VIEW.md 记为已知限制；用户提出时再调整卡片交互。
+
+
+### 2026-10-22 Codex 复验 BUG-111／112
+
+754a595已通过原查询边界探针与正式Renderer/Main/Core独立复验：Alpha慢回后最终Beta真正下发且显示Beta，范围1时全局仍3；正式隔离数据页内1／侧栏23，删除后22。原17组与新增三组检查通过，两项关闭，M28验收。BUG-113仍为非致命仅记录不派修。证据verification/phase5-review/batch-04-r01/REPORT.md。
+
+
+## BUG-114：M29 在途总结忽略策略／Provider／原文变化，旧结果仍自动填入草稿
+
+- 日期：2026-10-22；状态：**已修复并由 Codex 验收**；发现提交 `8696991`，修复提交 `d2acc9b`／`3bd4c5b`。
+- 复现：正式Core配延迟假AI，发起总结后关闭总结、修改所用Provider模型或更新原文，分别再放回旧响应；三种均返回ok=true。正式NoteUI在相同隔离假设置/DTO场景中也把旧结果自动写入summary，没有失效/显式采用；policy已disabled仍填，原文updatedAt=v2仍应用v1结果。
+- 预期：完整快照身份含内容文本版本、总结策略、当前所选Provider调用revision与prompt版本；请求结束/应用时变化的旧结果不得静默填入，可明确标记失效或保留为需确认采用的结果。用户主动改summary/换模板/换内容同样受保护，改心得不丢summary。
+- 原因：SummaryService只返回policy.revision、不合成Provider/prompt版本，await后不再读策略/原文；NoteUI不比config_version，读取updated_at但实际DTO是updatedAt，闭包的旧item也不能表示当前内容，未检查当前激活编辑器。
+- 修复范围：M29服务/返回元数据/两处共用NoteUI的必要快照闭环；不扩展任务系统，不重构其他业务，保留已有草稿/冲突/版本行为。
+- 修复：
+  - **有效总结配置版本**＝「策略版本 . 所选连接的调用版本 . 提示词版本」。改无关连接、
+    改连接展示名、改打标／提醒／笔记设置都不再作废一次总结；改那条连接的地址、模型、
+    密钥或启停才会（连接的调用版本会前进，展示名不算）。
+  - **Core 等 AI 回来后复核**当前策略、那条连接的调用版本与原文的文本版本；
+    变了就返回 `ok=false`、`code=stale`，草稿仍留在 `draft` 里——
+    不再把旧结果当成「现在这配置下生成的新结果」交出去。
+  - **界面真正应用前核对**：请求 ID／内容 ID、当前激活内容、笔记类型、总结的编辑身份、
+    最新设置与那条连接的调用版本、原文的文本版本。正式 DTO 的字段是 `updatedAt`——
+    不再读不存在的 `updated_at`，也不再拿发起请求时闭包里的旧内容当当前快照。
+  - 用户改过总结、换类型、关掉总结、相关配置或原文变了：都不无提示覆盖；
+    结果留成「采用这段总结」，由用户显式决定；**改个人心得不影响总结**。
+- 自验（Codex 的两个探针均以副本在临时目录运行，**原始失败产物未覆盖**）：
+  - Core 探针 `snapshot-core-probe.py`：三种场景现在都是 `ok=false`、`code=stale`，
+    消息分别是「生成期间 AI 总结已经被关掉了」「那条连接的地址、模型或密钥改了」
+    「原文已经变了」，且 `draft` 仍在（修复前三种都是 `ok=true`）。
+  - 组件探针 `snapshot-ui-probe.cjs`：三种场景的 summary 都不再被自动填入
+    （修复前都是「基于旧快照的AI总结」），并且都出现「采用这段总结」。
+  - 正式视图补充场景：生成期间关掉总结／改所用连接的模型 → 旧结果不自动填入但可显式采用；
+    改无关的连接 → 结果照常可用（不误判过期）。
+  - Python 437 passed + 143 subtests（新增 5 项快照用例），Node 142/142，
+    M26／M27／M28／设置页等回归全部通过。
+- 证据：verification/phase5-review/batch-05/REPORT.md、snapshot-core-result.json、
+  snapshot-ui-result.json、verification/phase5-minimax/batch-05-r01/REPORT.md。
+
+### BUG-114 续修：复核期间写的总结被 AI 旧结果吞掉（提交 `3bd4c5b`）
+
+- 日期：2026-10-22；状态：**已修复并由 Codex 验收**；同号续修提交 `3bd4c5b`，基线 `d2acc9b`。
+- 复现：正式 NoteUI 独立探针——AI 成功返回后，getSettings/getContent 的复核读取被延迟；
+  延迟期间输入「复核期间我新写的文字」；读取完成后，实际结果 `after=AI旧结果`、
+  `adoptable=false`、`dirty=true`（用户新写的文字被吞掉）。
+- 原因：`requestSummary` 在**异步复核之前**就算好了本地编辑检查（`localStaleReasons`），
+  回调仍拿着 await 之前那份「没变化」的旧结论，于是把 AI 结果直接写进 summary。
+- 修复：本地编辑检查（总结文本、笔记类型）移到**真正写入那一刻**再算——也就是复核读取
+  完成之后。请求身份本来就到回调才判，保持不变。不加持久草稿系统、不改架构。
+- 自验（探针以副本运行，**原失败产物未覆盖**）：
+  - Codex 的 `edit-during-check-probe.cjs` 现在输出
+    `after=「复核期间我新写的文字」、adoptable=true、dirty=true`（修复前 `after=AI旧结果`、
+    `adoptable=false`）；
+  - 正式视图补了两组场景：只改个人心得 → 总结照常应用；复核期间改总结 → 新文字留下、
+    AI 结果留成「采用这段总结」；
+  - 三条失效场景（策略关掉／连接改模型／原文变）与 Core 探针仍全部通过；
+  - M27／M28 验收与笔记／总结聚焦用例全部通过。
+- 证据：verification/phase5-review/batch-05-r01/REPORT.md、edit-during-check-result.json、
+  verification/phase5-minimax/batch-05-r02/REPORT.md。
+
+
+### 2026-10-22 BUG-114 首轮返修复验：保留打开，剩余最终应用时序
+
+- d2acc9b原3条过期路径由Codex复验通过：Core返回stale、UI保留显式采用；193项Python+64subtests与正式总结视图通过。
+- 但Codex额外实际复现同号残留：AI已返回，等待currentStateChecks的getSettings/getContent时输入新文字；放回状态读取后，新文字被AI旧结果覆盖且无采用确认。原因是localStaleReasons在异步读取前计算，真正写草稿时没有重新核对当前summary/template。
+- 状态：**BUG-114仍打开，d2acc9b未整体验收**，仅这个实际数据丢失点交原session做batch-05-r02最小续修，不派修其他非致命细节。
+- 验证产物：verification/phase5-review/batch-05-r01/edit-during-check-probe.cjs与edit-during-check-result.json；报告同目录REPORT.md。
+
+
+### 2026-10-22 Codex 最终复验 BUG-114（3bd4c5b）
+
+原3条策略/Provider/原文失效路径已在d2acc9b独立通过；3bd4c5b将编辑检查移至异步复核结束的实际写入前。原失败输入探针副本现after=用户新文字、adoptable=true、dirty=true，最新正式总结视图及M27/M28联合流程、Node142项均由Codex实际执行通过。BUG-114所有本轮实质门槛关闭，M29验收，Phase5五模块源码验收完成。Python193项+64subtests来自相同Python源码的前轮复验，不称本轮重跑。真实模型/系统人工范围仍待验；BUG-113只记录不派修。证据verification/phase5-review/batch-05-r02/REPORT.md及verification/phase5-review/REPORT.md。
