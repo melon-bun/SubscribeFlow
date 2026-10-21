@@ -266,8 +266,25 @@
     return {main:h('div.view', {'data-view':'inbox','data-refresh-key':'inbox:' + key + ':' + offset}, head, h('div.view__body.inbox', {'data-refresh-key':'inbox-body'}, chips, tagPanel, bulk,
       cache.refreshError ? h('p.field__error', {role:'status','data-refresh-key':'inbox-refresh-error',text:'更新失败，正在显示已加载内容：' + cache.refreshError.message}) : null, body, pager)),
       aside:item && !cache.error ? h('aside.detail', {'aria-label':'内容详情','data-refresh-key':'detail:' + item.id},
-        h('div.detail__head', null, h('span', {text:'内容详情'}), h('div.spacer'), ui.iconBtn('close', '关闭详情', function () { app.selectedId = null; SF.app.renderContent(); })),
+        h('div.detail__head', null, h('span', {text:'内容详情'}), h('div.spacer'), ui.iconBtn('close', '关闭详情', function () { closeDetail(app); })),
         h('div.detail__body.scroll-y', {'data-scroll-key':'detail:' + item.id}, detailBody(app, item, function (fresh, settled) { repaintContent(app, fresh, settled); }))) : null};
+  }
+  /**
+   * 关闭内容详情。笔记里还有没保存的文字时，先问保存还是放弃：
+   * 不让用户以为关掉详情就等于丢掉了刚写的东西。
+   */
+  function closeDetail(app) {
+    var itemId = app.selectedId;
+    if (SF.noteUi && SF.noteUi.hasDirty(itemId)) {
+      SF.noteUi.confirmLeave(app, itemId).then(function (proceed) {
+        if (!proceed) return;
+        app.selectedId = null;
+        SF.app.renderContent();
+      });
+      return;
+    }
+    app.selectedId = null;
+    SF.app.renderContent();
   }
   function repaintContent(app, fresh, settled) {
     // 写入等待期间列表可能失效或离开此页，迟到回执不能访问已清空的缓存。
@@ -549,6 +566,15 @@
             saveContent(app, item, {state:state}, repaint);
           }}, icon(entry[2],18), h('span',{text:entry[1]}));
         }))),
+      // M27：留下点什么。写在处理状态之后、内容动作之前——
+      // 它是用户自己的东西，和「打开原文」这类内容动作不是一回事。
+      SF.noteUi ? SF.noteUi.noteEditor({
+        itemId: item.id, item: item, client: app.client,
+        // 结构变了要重画详情：重画整个视图，草稿在模块状态里，不会丢。
+        repaint: function () { renderView(); },
+        // 存好或删掉之后，内容列表的「有笔记」记号要跟着更新。
+        onChanged: function () { SF.app.refreshData(true); },
+      }) : null,
       h('div.detail__section.col', {style:{gap:'12px'}},
         canDetail ? ui.btn('补充详情', {icon:'refresh', onClick:function () { SF.app.act('detail:' + item.id, async function () { await app.client.fetchDetail(item.id); ui.toast('详情任务已创建'); await SF.app.refreshData(true); }); }}) : null,
         ui.btn('打开原文', {variant:'primary', block:true, icon:'external', onClick:function () { SF.app.act('open:' + item.id, function () { return app.client.openContent(item.id); }); }})));
@@ -557,6 +583,23 @@
      每次刷新都重取只会多出一轮异步往返和一次多余重绘。真正该重取的是
      tags.changed 事件，以及本视图自己写入标签之后。 */
   SF.views = SF.views || {};
+  /**
+   * 离开页面前的确认：当前内容里的笔记还有未保存的文字时问一句。
+   * 与设置页、识别设置同一套原则。
+   */
+  function confirmLeave(app) {
+    var itemId = app.selectedId;
+    if (!SF.noteUi || !SF.noteUi.hasDirty(itemId)) return Promise.resolve(true);
+    return SF.noteUi.confirmLeave(app, itemId);
+  }
+
+  /** 当前详情里的笔记有没有未保存的文字（导航前先问一句）。 */
+  function hasNoteDraft() {
+    // 模块作用域里没有 app：状态对象在 SF.app.state 上。
+    return !!(SF.noteUi && SF.noteUi.hasDirty(SF.app.state.selectedId));
+  }
+
   SF.views.inbox = {render:render, reset:function () { cache = {}; }, invalidate:invalidate,
-    whenIdle:whenIdle, detailBody:detailBody, invalidateTags:invalidateTags};
+    whenIdle:whenIdle, detailBody:detailBody, invalidateTags:invalidateTags, confirmLeave:confirmLeave,
+    hasNoteDraft:hasNoteDraft};
 })(window);

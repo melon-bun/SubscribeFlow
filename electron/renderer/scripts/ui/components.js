@@ -254,6 +254,8 @@
               })
             )
           : null,
+        // M27：写过的笔记在卡片上留个记号。没有笔记不显示否定徽标。
+        item.hasNote ? h("span.content-card__note", { text: "有笔记" }) : null,
         h(
           "span.content-card__foot",
           null,

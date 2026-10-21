@@ -650,9 +650,14 @@
       else showStartup("核心服务" + (status.state === "starting" ? "正在启动…" : "不可用"), status.message || "请重新查询或重启服务。");
     }));
     var leavingSettings = false;
+    // 记住上一个哈希：M27 的离开确认要把用户带回原来的页面，
+    // 重建哈希会丢掉筛选参数。
+    var previousHash = global.location.hash;
     global.addEventListener("hashchange", function () {
       if (leavingSettings) return;
       var was = app.route.name;
+      var wasHash = previousHash;
+      previousHash = global.location.hash;
       // 带着未保存的草稿离开设置页（包括浏览器后退）先问保存还是放弃。
       // 确认期间仍保留 settings 路由，后台刷新不能提前把表单替换成目标页面。
       if (was === "settings" && parseHash().name !== "settings") {
@@ -699,6 +704,36 @@
           })
           .finally(function () { leavingSettings = false; });
         return;
+      }
+      // M27：内容详情里的笔记有未保存的文字时，离开当前页先问一句。
+      // 与设置页、识别设置同一套机制；确认流程无论成功、失败还是被关掉，
+      // 都必须释放导航锁，否则之后所有 hashchange 都会被忽略（BUG-105）。
+      if (SF.views.inbox && SF.views.inbox.hasNoteDraft && SF.views.inbox.hasNoteDraft()) {
+        var leaving = SF.views.inbox.confirmLeave(app);
+        if (leaving && typeof leaving.then === "function") {
+          leavingSettings = true;
+          var stayHere = function () {
+            history.replaceState(null, "", wasHash || "#/inbox");
+            // 哈希被拉回来了：记住它，下一次离开才有正确的出发点。
+            previousHash = global.location.hash;
+            refreshRoute();
+            if (app.session) render();
+          };
+          Promise.resolve(leaving).then(function (proceed) {
+            leavingSettings = false;
+            if (proceed) {
+              refreshRoute();
+              app.selectedId = null;
+              if (app.session) render();
+            } else {
+              stayHere();
+            }
+          }, function () {
+            leavingSettings = false;
+            stayHere();
+          });
+          return;
+        }
       }
       refreshRoute();
       app.selectedId = null;

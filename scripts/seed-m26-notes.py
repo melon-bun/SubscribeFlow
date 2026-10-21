@@ -47,6 +47,6 @@ async def seed(folder):
 
 if __name__ == '__main__':
     folder = Path(sys.argv[1]).resolve()
-    if not folder.name.startswith('subscribe-flow-m26-'):
-        raise SystemExit('Fixture requires an m26 directory')
+    if not folder.name.startswith(('subscribe-flow-m26-', 'subscribe-flow-m27-')):
+        raise SystemExit('Fixture requires an m26/m27 directory')
     asyncio.run(seed(folder))
