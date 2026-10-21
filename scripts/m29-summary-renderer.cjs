@@ -262,6 +262,7 @@ async function verify({window, core, root}) {
       });
     };
   })()`);
+  await evaluate(`window.__finishDraft = null`);
   await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === 'AI 总结').click()`);
   await confirmGenerate();
   await until(`!!window.__finishDraft`);
@@ -298,6 +299,7 @@ async function verify({window, core, root}) {
       });
     };
   })()`);
+  await evaluate(`window.__finishDraft = null`);
   await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === 'AI 总结').click()`);
   await confirmGenerate();
   await until(`!!window.__finishDraft`);
@@ -326,6 +328,7 @@ async function verify({window, core, root}) {
       });
     };
   })()`);
+  await evaluate(`window.__finishDraft = null`);
   await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === 'AI 总结').click()`);
   await confirmGenerate();
   await until(`!!window.__finishDraft`);
@@ -334,6 +337,97 @@ async function verify({window, core, root}) {
   await evaluate(`window.__finishDraft()`);
   await until(`(document.querySelector('[data-note-editor] textarea[aria-label="总结"]') || {}).value === '不受影响的总结。'`);
   await evaluate(`(() => { SF.app.state.client.draftNote = window.__originalDraft; delete window.__originalDraft; })()`);
+  await setDraft(nextDraft);
+
+  /* 12e. 复核期间只改个人心得：总结照常应用（心得不该让总结丢失）。 */
+  await evaluate(`(() => {
+    const client = SF.app.state.client;
+    const original = client.getSettings.bind(client);
+    window.__originalSettings = client.getSettings;
+    client.getSettings = function () { return original().then(function (s) { return s; }); };
+    client.draftNote = function (itemId, requestId) {
+      // 回执带上请求那一刻的连接版本（和 Core 一样）。
+      return client.getSettings().then(function (settings) {
+        const provider = settings.ai.providers['provider-llm'];
+        return new Promise((resolve) => { window.__finishDraft = () => resolve({
+          ok: true, item_id: itemId, request_id: requestId, summary: '心得期间的总结。',
+          scope: '正文', input_chars: 20, input_total_chars: 20, input_truncated: false,
+          content_version: null, config_version: '1.1.1',
+          config: {enabled: true, providerId: 'provider-llm', length: 'detailed', language: 'zh-CN', revision: 1},
+          provider: {id: 'provider-llm', name: provider.name, model: provider.model, revision: provider.revision},
+          length: 'detailed', language: 'zh-CN', model: 'demo-model' }); });
+      });
+    };
+  })()`);
+  await evaluate(`window.__finishDraft = null`);
+  await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === 'AI 总结').click()`);
+  await confirmGenerate();
+  await until(`!!window.__finishDraft`);
+  // 只改个人心得，总结不动。
+  await evaluate(`(() => {
+    const area = document.querySelector('[data-note-editor] textarea[aria-label="我的收获／打算用在哪"]');
+    area.value = '只改了心得。';
+    area.dispatchEvent(new Event('input', {bubbles: true}));
+  })()`);
+  await evaluate(`window.__finishDraft()`);
+  await until(`(document.querySelector('[data-note-editor] textarea[aria-label="总结"]') || {}).value === '心得期间的总结。'`);
+  const takeawayKept = await evaluate(`document.querySelector('[data-note-editor] textarea[aria-label="我的收获／打算用在哪"]').value`);
+  assert.equal(takeawayKept, '只改了心得。', '改心得不能把总结弄丢');
+  await evaluate(`(() => { SF.app.state.client.draftNote = window.__originalDraft; delete window.__originalDraft; })()`);
+  await setDraft(nextDraft);
+
+  /* 12f. 复核读取期间用户改了总结：新文字要留下，AI 结果只作为可采用的草稿。 */
+  await evaluate(`(() => {
+    const client = SF.app.state.client;
+    const settings = client.getSettings.bind(client);
+    const content = client.getContent.bind(client);
+    window.__originalSettings = settings;
+    window.__originalContent = content;
+    window.__pendingSettings = null;
+    window.__pendingContent = null;
+    client.getSettings = function () { return new Promise((resolve) => { window.__pendingSettings = () => resolve(settings()); }); };
+    client.getContent = function () { return new Promise((resolve) => { window.__pendingContent = () => resolve(content()); }); };
+    client.draftNote = function (itemId, requestId) {
+      // 回执带上请求那一刻的连接版本（和 Core 一样）。
+      // 用的是被延迟之前的那个读取：复核的延迟只针对应用前的那次核对。
+      return settings().then(function (current) {
+        const provider = current.ai.providers['provider-llm'];
+        return new Promise((resolve) => { window.__finishDraft = () => resolve({
+          ok: true, item_id: itemId, request_id: requestId, summary: '复核期间的旧结果。',
+          scope: '正文', input_chars: 20, input_total_chars: 20, input_truncated: false,
+          content_version: null, config_version: '1.1.1',
+          config: {enabled: true, providerId: 'provider-llm', length: 'detailed', language: 'zh-CN', revision: 1},
+          provider: {id: 'provider-llm', name: provider.name, model: provider.model, revision: provider.revision},
+          length: 'detailed', language: 'zh-CN', model: 'demo-model' }); });
+      });
+    };
+  })()`);
+  await evaluate(`window.__finishDraft = null`);
+  await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === 'AI 总结').click()`);
+  await confirmGenerate();
+  await until(`!!window.__finishDraft`);
+  await evaluate(`window.__finishDraft()`);
+  await until(`!!window.__pendingSettings && !!window.__pendingContent`);
+  // 复核读取在途：用户继续写总结。
+  await evaluate(`(() => {
+    const area = document.querySelector('[data-note-editor] textarea[aria-label="总结"]');
+    area.value = '复核期间我新写的文字';
+    area.dispatchEvent(new Event('input', {bubbles: true}));
+  })()`);
+  await evaluate(`window.__pendingSettings(); window.__pendingContent();`);
+  await until(`Array.from(document.querySelectorAll('[data-note-editor] button')).some(b => b.textContent.trim() === '采用这段总结')`);
+  const duringCheck = await evaluate(`({
+    value: document.querySelector('[data-note-editor] textarea[aria-label="总结"]').value,
+    adopt: Array.from(document.querySelectorAll('[data-note-editor] button')).some(b => b.textContent.trim() === '采用这段总结'),
+  })`);
+  assert.equal(duringCheck.value, '复核期间我新写的文字', '复核期间写下的文字不能被 AI 旧结果吞掉');
+  assert.equal(duringCheck.adopt, true, 'AI 结果要留着让用户显式采用');
+  await evaluate(`(() => {
+    SF.app.state.client.getSettings = window.__originalSettings;
+    SF.app.state.client.getContent = window.__originalContent;
+    SF.app.state.client.draftNote = window.__originalDraft;
+    delete window.__originalSettings; delete window.__originalContent; delete window.__originalDraft;
+  })()`);
   await setDraft(nextDraft);
 
   /* 13. 笔记页用同一套编辑区：入口与行为一致。

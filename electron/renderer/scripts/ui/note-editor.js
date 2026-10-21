@@ -356,10 +356,11 @@
         }
         // 回包本身是新的：再核对一次「现在的样子」——
         // 设置、那条连接、原文与编辑身份都可能在这期间变了。
-        var local = localStaleReasons(state, result);
         currentStateChecks(state, result, options).then(function (reasons) {
           if (seq !== state.summarySeq) return;
-          var all = local.concat(reasons || []);
+          // 编辑身份也要在**这一刻**才算：复核读取期间用户可能又写了总结，
+          // 拿 await 之前算好的旧结论会把新文字吞掉。
+          var all = localStaleReasons(state, result).concat(reasons || []);
           state.summary.status = "done";
           state.summary.result = result;
           state.summary.stale = all.length > 0;
