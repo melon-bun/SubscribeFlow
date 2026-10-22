@@ -186,7 +186,9 @@ async function verify({window, core, root}) {
   assert.ok(paging.total.includes('共'), '目录底部要显示总数');
   const firstPage = paging.items;
   await evaluate(`document.querySelector('.notes-toc__pager button').click()`);
-  await until(`document.querySelectorAll('.notes-toc__item').length !== ${firstPage}`);
+  // 翻页时列表会先短暂清空再填新页：等「新的一页有内容且条数不同」，
+  // 别把那个中间的空状态当成翻好了。
+  await until(`document.querySelectorAll('.notes-toc__item').length > 0 && document.querySelectorAll('.notes-toc__item').length !== ${firstPage}`);
   const secondPage = await evaluate(`({
     total: (document.querySelector('.notes-toc__foot') || {}).textContent,
     items: document.querySelectorAll('.notes-toc__item').length,
@@ -195,7 +197,7 @@ async function verify({window, core, root}) {
   assert.ok(secondPage.items > 0, '下一页要有内容');
   // 回到第一页，后面的场景都在第一页上做。
   await evaluate(`Array.from(document.querySelectorAll('.notes-toc__pager button')).find(b => b.textContent.trim() === '上一页').click()`);
-  await until(`document.querySelectorAll('.notes-toc__item').length === ${firstPage}`);
+  await until(`document.querySelectorAll('.notes-toc__item').length === ${firstPage} && document.querySelectorAll('.notes-toc__item').length > 0`);
 
   /* 5c. 快速连改条件：最后一次的条件一定要真的下发，旧结果不冒充当前。 */
   await evaluate(`(() => {
