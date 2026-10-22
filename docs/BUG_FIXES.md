@@ -2022,8 +2022,14 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
     边框吃掉 1.5px，内边距同步 `calc(var(--s-card) - 1.5px)`，卡片内容不位移。
 - 验证：
   - 新增 `scripts/m35-zhiliu-renderer.cjs`：**用几何量断言，不靠肉眼**——
-    选中卡片的四条边到网格裁切线的距离必须 ≥ 角标外扩量（8 + 1.5 = 9.5px），
+    选中卡片的四条边到网格裁切线的距离必须 ≥ 角标外扩量
+    （角标 ::after 的 inset:-8px 相对**内边距框**，卡片有 1.5px 边框 ⇒ 越出边框 6.5px），
     否则判失败；实机通过。
+  - 另建「样式对拍」工具链（`scripts/m35-style-probe.cjs` + `scripts/m35-style-parity.cjs`）：
+    参考页与产品实机逐选择器、逐属性取计算样式并比数值，
+    报告落在 `docs/verification/phase51/m35/parity-report.txt`。
+    这一条 Bug 正是它先报出来的——肉眼比版式漏掉了「上边和左边被裁」，
+    因为右、下两边落在网格间隙里、看上去是好的。
   - 截图证据：`verification/phase51/m35/01-inbox.png`（浅色）、`11-inbox-dark.png`（深色）。
   - 回归：Node 142/142；`renderer-smoke` 全段通过；`v049-batch01/02/03` 与 `m26`～`m29` 实机脚本通过。
 - 说明：本条与 M35 的组件替换同批提交；组件说明见 [M35_ZHILIU_REPLICA.md](M35_ZHILIU_REPLICA.md)。

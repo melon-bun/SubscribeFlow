@@ -212,7 +212,26 @@
       /* 「静流」§主界面：动作按「信息 → 次级操作 → 主操作」排，
          橙色主操作每屏只出现一次，放在最右。 */
       h('div.view__actions', null,
-        h('span.muted', {text:'按日历时间排列'}),
+        /* 「静流」§主界面：排列方式是一个 ghost 按钮 + 下箭头。
+           内容列表目前只有「按日历时间排列」一种口径（Core 的 content.list
+           固定按日历表达式倒序），所以菜单里只有这一项并标为当前项；
+           将来 Core 支持更多口径时，往这个菜单里加条目即可。 */
+        (function () {
+          var current = 'calendar';
+          var btn = h('button.btn.btn--ghost', {
+            type: 'button',
+            title: '排列方式',
+            'aria-haspopup': 'menu',
+            onclick: function (e) {
+              e.stopPropagation();
+              ui.menu([
+                {label: '按日历时间排列', value: 'calendar', active: true,
+                 onClick: function () {}},
+              ], btn);
+            },
+          }, h('span', {text: '按日历时间排列'}), icon('chevron-down', 14));
+          return btn;
+        })(),
         ui.btn('重新查询', {icon:'refresh', onClick:function () { invalidate(['content']); SF.app.refreshData(true); }}),
         ui.btn('添加内容', {variant:'primary', icon:'plus', disabled:!app.session.capabilities.canIntake,
           title: app.session.capabilities.canIntake ? '粘贴链接收录单条内容' : '当前渠道尚未支持单条链接收录',
@@ -419,7 +438,7 @@
         /* 提示里用完整显示名：用户改过名（「开箱即用的项目_教程」）时，
            这里能看出当前到底是哪一档；太长由 CSS 省略。 */
         h('span.detail__section-hint', {text:(item.priorityOverride ? '已单独设置' : '跟随来源') + ' · 当前为' + current.name})),
-      h('div.priority-grid',{'aria-label':'内容优先级'}, options.map(function(opt) {
+      h('div.seg.priority-grid',{'aria-label':'内容优先级'}, options.map(function(opt) {
         var active = opt.id==='inherit' ? !item.priorityOverride : item.priorityOverride===opt.id;
         var disabled = contentPending(item.id) || (opt.id==='inherit' && !item.priorityOverride);
         return h('button.priority-opt.priority-opt--'+(opt.id==='inherit'?'inherit':opt.id)+(active?'.is-active':''),
@@ -693,8 +712,8 @@
       detailHero(item),
       h('h2.detail__title', {text:item.title}),
       h('div.detail__byline', null, ui.avatar(item.channelName, null, 'md'), h('div.detail__byline-text', null,
-        h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform)),
-        h('div.detail__byline-time', {text:publicationLine(item)+' · '+(item.intakeMethod==='manual'?'手动收录':'自动采集')}),
+        h('b.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform)),
+        h('small.detail__byline-time.num', {text:publicationLine(item)+' · '+(item.intakeMethod==='manual'?'手动收录':'自动采集')}),
         item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
       readoutBar(),
       bodySection(item, whole),

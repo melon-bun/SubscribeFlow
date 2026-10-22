@@ -33,9 +33,10 @@
 .sidebar {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   min-height: 0;
-  /* 「静流」：侧栏不加边框，直接落在底色上，靠留白分区 */
-  background: var(--c-bg);
+  /* 「静流」：侧栏不加边框也不加底色，直接落在应用底色上，靠留白分区 */
+  background: transparent;
 }
 
 .sidebar__brand {
@@ -50,13 +51,12 @@
 /* 品牌标记直接用应用图标 assets/brand.png，与 Dock 图标同源同构：白底方块 + 彩色流动标记。
    旧版是蓝色渐变底 + 白色内联 glyph（icons.js 的 brand），两者视觉上不是同一个标识。
    5.1 期：logo 图形本身保持原样，只把外框阴影换成「静流」的半透明描边令牌。 */
+/* 「静流」§.logo：34px、圆角 11px。图形本身是 brand.png，裁切交给图片自己。 */
 .brand__mark {
   display: block;
-  width: 32px;
-  height: 32px;
-  flex: none;
-  border-radius: var(--r-md);
-  overflow: hidden;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
   box-shadow: var(--sh-card);
 }
 
@@ -64,6 +64,7 @@
   display: block;
   width: 100%;
   height: 100%;
+  border-radius: inherit;
 }
 
 .brand__text {
@@ -72,15 +73,13 @@
 
 .brand__name {
   font-size: var(--fs-lg);
-  font-weight: 600;
-  line-height: 1.2;
   letter-spacing: 0.01em;
 }
 
 .brand__slogan {
+  display: inline;
   font-size: var(--fs-xs);
   color: var(--c-text-3);
-  line-height: 1.3;
 }
 
 .sidebar__body {
@@ -101,7 +100,6 @@
   width: 100%;
   height: 34px;
   padding: 0 var(--s-4);
-  margin-bottom: 2px;
   border-radius: var(--r-md);
   color: var(--c-text-2);
   font-size: var(--fs-nav);
@@ -215,9 +213,11 @@
 
 /* ---------------- 顶栏 ---------------- */
 
+/* 「静流」§.app：顶栏一行、内容一行，用网格而不是弹性列——
+   网格项不会像弹性项那样被压缩，度量与参考页一致。 */
 .shell {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   background: var(--c-bg);
@@ -228,38 +228,58 @@
   align-items: center;
   gap: var(--s-5);
   height: var(--topbar-h);
-  flex: none;
   padding: 0 var(--s-7);
-  /* 「静流」：顶栏不加下边线，直接落在底色上 */
-  background: var(--c-bg);
+  /* 「静流」：顶栏不加下边线也不加底色，直接落在应用底色上 */
+  background: transparent;
 }
 
+/* 「静流」§.search：一条凹槽，左边放大镜、中间是输入、右边是快捷键提示。
+   参考页是一个静态 div，产品是真输入框——结构照做，输入框自身不画边框。 */
 .topbar__search {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
   flex: 1;
   max-width: 640px;
+  height: 36px;
+  padding: 0 var(--s-3) 0 var(--s-5);
+  border-radius: var(--r-md);
+  background: var(--c-surface-3);
+  color: var(--c-text-3);
+  font-size: 13.5px;
+  box-shadow: var(--sh-inset);
+  transition: box-shadow var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+
+.topbar__search:hover {
+  background: var(--c-surface);
+  box-shadow: var(--sh-card);
+}
+
+.topbar__search:focus-within {
+  background: var(--c-surface);
+  box-shadow: inset 0 0 0 1px var(--c-brand), 0 0 0 4px var(--c-brand-ring);
 }
 
 .topbar__search svg {
-  position: absolute;
-  left: var(--s-4);
-  top: 50%;
-  transform: translateY(-50%);
   width: 16px;
   height: 16px;
+  flex: none;
   color: var(--c-text-3);
   pointer-events: none;
 }
 
 .topbar__search input {
-  width: 100%;
-  height: 36px;
-  padding: 0 var(--s-8) 0 var(--s-9);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
   border: 0;
-  border-radius: var(--r-md);
-  background: var(--c-surface-3);
-  box-shadow: var(--sh-inset);
-  font-size: var(--fs-base);
+  border-radius: 0;
+  background: transparent;
+  font-size: 13.5px;
+  color: var(--c-text);
   transition: box-shadow var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
 
@@ -267,31 +287,23 @@
   color: var(--c-text-3);
 }
 
-.topbar__search input:hover {
-  background: var(--c-surface);
-  box-shadow: var(--sh-card);
-}
-
 .topbar__search input:focus {
-  background: var(--c-surface);
-  box-shadow: inset 0 0 0 1px var(--c-brand), 0 0 0 4px var(--c-brand-ring);
   outline: none;
+  background: transparent;
+  box-shadow: none;
 }
 
+/* 「静流」§.kbd：一枚等宽小牌，靠 0 0 0 1px 细线 + 1px 底边做出「压在槽上」的感觉。 */
 .kbd {
-  position: absolute;
-  right: var(--s-3);
-  top: 50%;
-  transform: translateY(-50%);
-  display: inline-flex;
   align-items: center;
-  height: 22px;
+  height: 20px;
   padding: 0 var(--s-2);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-xs);
+  border-radius: 5px;
   background: var(--c-surface);
-  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
   color: var(--c-text-3);
+  box-shadow: 0 0 0 1px var(--c-border), 0 1px 0 var(--c-border-strong);
   pointer-events: none;
 }
 
@@ -348,6 +360,9 @@
   width: 32px;
   height: 32px;
   flex: none;
+  /* 参考页没有复位 button 的 UA 内边距（1px 6px）。元素有固定尺寸且内容居中，
+     视觉上不变，但计算值要与参考页一致。 */
+  padding: 1px 6px;
   border-radius: var(--r-md);
   color: var(--c-text-2);
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
@@ -410,9 +425,7 @@
   place-items: center;
   width: 28px;
   height: 28px;
-  flex: none;
   border-radius: 50%;
-  overflow: hidden;
   font-size: var(--fs-sm);
   font-weight: 600;
   color: #fff;
@@ -442,6 +455,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: inherit;
 }
 
 /* ---------------- 采集状态条 ---------------- */
@@ -451,13 +465,17 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  flex: 1;
+  min-height: 0;
 }
 
+/* 「静流」§其他页面：任务条是**纸面的一部分**（方案里 .task 就在 .sheet 内，
+   margin:12px 14px 0），横跨主区与详情两列，压在纸面顶边下面。
+   不是浮在纸面上方的灰底横条——那样它和纸面是两块不相干的东西。 */
 .status-bar {
-  flex: none;
-  padding: var(--s-3) var(--s-5) 0;
-  background: var(--c-bg);
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-width: 0;
+  margin: 12px 14px 0;
 }
 
 .status-bar .task {
@@ -468,16 +486,21 @@
 .status-bar .task .icon-btn {
   width: 28px;
   height: 28px;
-  margin-left: var(--s-1);
   color: var(--c-text-3);
 }
 
 /* ---------------- 主区域 ---------------- */
 
 /* 「静流」：主区域与详情面板合成一张圆角纸面，浮在底色上。
-   纸面同时承载 --c-sheet 底色与 --sh-sheet 阴影，右下各留 10px 外边距。 */
+   纸面同时承载 --c-sheet 底色与 --sh-sheet 阴影，右下各留 10px 外边距。
+
+   「静流」§其他页面：任务条是**纸面的一部分**（方案里 .task 就在 .sheet 内），
+   横跨主区与详情两列，压在纸面顶边下面。所以纸面是两行网格：
+   第一行放任务条（没有时该行高度为 0），第二行才是主区 + 详情。 */
 .workspace {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--detail-w);
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   flex: 1;
@@ -488,12 +511,15 @@
   overflow: hidden;
 }
 
+/* 「静流」§.main：主区自带内边距 26px 26px 0，内容贴着纸面顶边排。 */
 .main {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  flex: 1;
+  grid-column: 1;
+  grid-row: 2;
+  padding: 26px 26px 0;
   background: var(--c-sheet);
 }
 
@@ -503,7 +529,6 @@
   min-width: 0;
   min-height: 0;
   flex: 1;
-  padding: var(--s-7) var(--s-8) var(--s-6);
   gap: var(--s-6);
 }
 
@@ -557,7 +582,8 @@
   display: flex;
   flex-direction: column;
   width: var(--detail-w);
-  flex: none;
+  grid-column: 2;
+  grid-row: 2;
   background: var(--c-sheet);
   border-left: 1px solid var(--c-divider);
 }
@@ -574,10 +600,6 @@
 }
 
 .detail__head b {
-  margin-right: auto;
-  font-size: var(--fs-cap);
-  font-weight: 600;
-  color: var(--c-text);
 }
 
 .detail__counter {
@@ -596,7 +618,6 @@
 .detail__body {
   flex: 1;
   min-height: 0;
-  padding: var(--s-6) var(--s-7) var(--s-8);
 }
 
 /* ---------------- 弹层 ---------------- */

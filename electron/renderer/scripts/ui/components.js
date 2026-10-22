@@ -127,7 +127,8 @@
         onclick: opts.onClick || null,
       },
       opts.icon ? icon(opts.icon, 14) : null,
-      label ? h("span", { text: label }) : null
+      label ? h("span", { text: label }) : null,
+      opts.arrow === false ? null : icon("chevron-down", 14)
     );
   };
 
@@ -167,7 +168,9 @@
         },
       },
       opts.icon ? icon(opts.icon, 14) : null,
-      h("span", { text: current.label })
+      h("span", { text: current.label }),
+      /* 「静流」§.select：箭头是按钮里的一个内联图标，不是 ::after 伪元素。 */
+      icon("chevron-down", 14)
     );
     return btn;
   };
@@ -356,7 +359,8 @@
             h("span.t-ellipsis", { text: item.channelName })
           ),
           h("span.content-card__dot"),
-          h("span.content-card__time", { text: fmt.intakeTime(item, true) }),
+          /* 「静流」§样张：日期是 <span class="date num">，等宽数字来自 num 类。 */
+          h("span.content-card__time.num", { text: fmt.intakeTime(item, true) }),
           // 「静流」§3：优先级用信号条表达，贴在元信息行最右。
           ui.priorityTag(item.priority)
         ),
@@ -374,8 +378,10 @@
             icon(item.intakeMethod === "manual" ? "hand" : "refresh", 12),
             h("span", { text: item.intakeMethod === "manual" ? "手动" : "自动" })
           ),
+          /* 「静流」§样张：URL 行是 <span class="link mono">——
+             等宽字体来自 mono 类，不是这条规则自己写的。 */
           h(
-            "span.content-card__link",
+            "span.content-card__link.mono",
             null,
             icon("link", 13),
             h("span", { text: item.url })

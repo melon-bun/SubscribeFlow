@@ -218,9 +218,25 @@ M31/M32 完成后，界面与方案样张仍有两类差距：一是**组件没�
 - 详情读数条仍是假数据并带「示例数据」标记，真实取数归 5.2 期；
 - 卡片脚注只放得下一个标签，其余收成「首标签 +N」（方案 `.tag.more` 的做法），完整标签在详情里看。
 
+### 方法：不再是「按感觉改样式」
+
+M31/M32 只做到七成像，根因是**没有可比对的基准**。本期换成可核对的三步：
+
+1. 把参考页的 CSS **整条**移植进产品（`styles/zhiliu.css` 由 `scripts/m35-build-zhiliu-css.cjs`
+   从 `zhiliu-visual-style.html` 生成，只把演示类名换成产品真实类名，规则与取值不动）；
+2. `scripts/m35-strip-conflicts.cjs` 按参考页**实际声明了哪些属性**，
+   清掉产品旧规则里多出来的视觉声明，让它们重新继承；
+3. `scripts/m35-style-probe.cjs` + `scripts/m35-style-parity.cjs`：
+   参考页与产品实机逐选择器逐属性对拍，差多少报多少。
+
+当前对拍结果：**13334 个属性，1032 处差异**；收件箱 108，其余五页 147～195。
+剩余差异集中在**产品 DOM 与参考页组件骨架不同**（笔记／总览／渠道／标签四个页面的
+面板、看板列、统计卡、表格单元格还是产品自己的结构），
+已逐条列在 [M35_ZHILIU_REPLICA.md](M35_ZHILIU_REPLICA.md) §5.5，是可逐条消除的清单。
+
 ### 验证
 
-Node 142/142；`renderer-smoke` 全段通过；`m35-zhiliu-renderer` 专项断言全通过；
+Node 142/142；Python 439/439；`renderer-smoke` 全段通过；`m35-zhiliu-renderer` 专项断言全通过；
 `m26`～`m29`、`m32-fx`、`settings-renderer`、`v049-batch01/02/03` 实机脚本通过。
 截图证据：[verification/phase51/m35/](verification/phase51/m35/)。
 

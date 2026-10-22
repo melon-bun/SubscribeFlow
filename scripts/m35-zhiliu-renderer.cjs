@@ -107,12 +107,16 @@ async function verify({window, core, root}) {
     };
   })()`);
   assert.ok(ring, '收件箱里应有选中卡片');
-  assert.ok(ring.clear.top >= ring.overhang,
-    '选中卡片上边必须留出角标余量，实际余量：' + ring.clear.top.toFixed(1) + 'px（需要 ' + ring.overhang + 'px）');
-  assert.ok(ring.clear.left >= ring.overhang,
-    '选中卡片左边必须留出角标余量，实际余量：' + ring.clear.left.toFixed(1) + 'px（需要 ' + ring.overhang + 'px）');
-  assert.ok(ring.clear.right >= 0 && ring.clear.bottom >= 0,
-    '选中卡片不能越出网格');
+  // 角标 ::after 的 inset:-8px 是相对**内边距框**的，卡片有 1.5px 边框，
+  // 所以角标越出边框 8 - 1.5 = 6.5px。网格留的余量必须不小于它。
+  const need = 8 - 1.5;
+  assert.ok(ring.clear.top >= need,
+    '选中卡片上边必须留出角标余量，实际余量：' + ring.clear.top.toFixed(1) + 'px（需要 ' + need + 'px）');
+  assert.ok(ring.clear.left >= need,
+    '选中卡片左边必须留出角标余量，实际余量：' + ring.clear.left.toFixed(1) + 'px（需要 ' + need + 'px）');
+  // 左右必须在网格内；上下不比较——网格是滚动容器，末行卡片本来就会超出可视高度。
+  assert.ok(ring.clear.right >= 0,
+    '选中卡片不能越出网格右边界，实际：' + JSON.stringify(ring.clear));
   await shoot('01-inbox.png');
 
   /* ================= 2. 卡片结构 ================= */
@@ -197,8 +201,10 @@ async function verify({window, core, root}) {
     };
   })()`);
   assert.ok(chrome.actions.length >= 2, '页头应有动作按钮');
-  assert.ok(/重新查询/.test(chrome.actions[0]), '页头第一个动作应是「重新查询」，实际：' + chrome.actions[0]);
-  assert.ok(/添加内容/.test(chrome.actions[1]), '页头第二个动作应是「添加内容」，实际：' + chrome.actions[1]);
+  // 「静流」§主界面：页头动作顺序 = 排列方式（ghost）→ 重新查询 → 添加内容（橙色主操作）。
+  assert.ok(/按日历时间排列/.test(chrome.actions[0]), '页头第一个动作应是「按日历时间排列」，实际：' + chrome.actions[0]);
+  assert.ok(/重新查询/.test(chrome.actions[1]), '页头第二个动作应是「重新查询」，实际：' + chrome.actions[1]);
+  assert.ok(/添加内容/.test(chrome.actions[2]), '页头第三个动作应是「添加内容」，实际：' + chrome.actions[2]);
   assert.ok(chrome.segItems >= 2, '筛选条里应有平台分段控件');
   assert.ok(chrome.hasSep, '分段控件与下拉之间应有分隔竖线');
   assert.ok(chrome.dropdowns.length >= 3, '筛选条里应有三个无框下拉，实际：' + chrome.dropdowns.length);

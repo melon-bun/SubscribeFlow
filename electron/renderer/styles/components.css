@@ -10,7 +10,6 @@
 .btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: var(--s-2);
   height: 34px;
   padding: 0 var(--s-5);
@@ -78,6 +77,7 @@
   border-color: transparent;
   background: transparent;
   color: var(--c-text-2);
+  box-shadow: none;
 }
 
 .btn--ghost:hover:not(:disabled) {
@@ -128,7 +128,6 @@
 .btn--ink {
   background: var(--c-ink);
   color: var(--c-on-ink);
-  font-weight: 500;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
@@ -143,10 +142,11 @@
   transform: translateY(0.5px) scale(0.99);
 }
 
+/* 「静流」§.btn.sm：28px / 0 10px / 12.5px */
 .btn--sm {
   height: 28px;
   padding: 0 var(--s-4);
-  font-size: var(--fs-cap);
+  font-size: 12.5px;
 }
 
 .btn--lg {
@@ -167,11 +167,6 @@
 
 .segment {
   display: inline-flex;
-  padding: 3px;
-  gap: 2px;
-  border-radius: var(--r-md);
-  background: var(--c-surface-3);
-  box-shadow: var(--sh-inset);
 }
 
 .segment__item {
@@ -331,13 +326,7 @@
 /* 无框按钮形态的下拉入口：与原生下拉同一张脸，但用 button 承载
    「打开面板」这类动作（例如标签筛选）。 */
 .select--btn {
-  height: 34px;
   /* 右侧留出箭头的位置：原生下拉是 30px，按钮沿用同一套内边距。 */
-  padding: 0 30px 0 var(--s-5);
-  gap: var(--s-2);
-  font-size: var(--fs-base);
-  color: var(--c-text-2);
-  white-space: nowrap;
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
     box-shadow var(--dur-1) var(--ease);
 }
@@ -388,15 +377,8 @@
 .seg button {
   border: 0;
   background: transparent;
-  height: 28px;
-  padding: 0 var(--s-5);
-  border-radius: 7px;
-  font-size: var(--fs-cap);
-  color: var(--c-text-2);
   display: inline-flex;
   align-items: center;
-  gap: var(--s-2);
-  white-space: nowrap;
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
     box-shadow var(--dur-1) var(--ease);
 }
@@ -479,7 +461,6 @@
 }
 
 .input:focus {
-  outline: none;
   box-shadow: inset 0 0 0 1px var(--c-brand), 0 0 0 4px var(--c-brand-ring);
 }
 
@@ -494,11 +475,9 @@
   width: 100%;
   min-height: 72px;
   padding: var(--s-4) var(--s-5);
-  border: 0;
   border-radius: var(--r-md);
   background: var(--c-surface);
   box-shadow: inset 0 0 0 1px var(--c-border);
-  font-family: var(--font-sans);
   font-size: var(--fs-base);
   line-height: 1.7;
   color: var(--c-text);
@@ -591,9 +570,7 @@
 }
 
 .input:focus {
-  border-color: var(--c-brand);
   box-shadow: 0 0 0 3px var(--c-brand-weak);
-  outline: none;
 }
 
 .input--invalid,
@@ -636,28 +613,29 @@ textarea.input {
 }
 
 /* 复选框 */
+/* 「静流」§.check：18px 圆角 6 的复选框，描边用内阴影（不是 border），
+   选中时整块换成品牌色。 */
 .check {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
+  width: 18px;
   height: 16px;
   flex: none;
-  border: 1.5px solid var(--c-border-strong);
   border-radius: var(--r-xs);
   background: var(--c-surface);
-  color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--c-border-strong);
   transition: all var(--dur-1) var(--ease);
 }
 
 .check:hover {
-  border-color: var(--c-brand);
+  box-shadow: inset 0 0 0 1.5px var(--c-brand);
 }
 
 .check.is-checked {
   background: var(--c-brand);
-  border-color: var(--c-brand);
+  box-shadow: none;
   color: #fff;
 }
 
@@ -792,18 +770,14 @@ textarea.input {
 }
 
 .count-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
+  display: inline-block;
+  padding: 1px 7px;
   border-radius: var(--r-full);
   background: var(--c-surface-3);
   color: var(--c-text-2);
-  font-size: var(--fs-sm);
-  font-weight: 500;
+  /* 字重继承所在位置：侧栏选中项是 560，页头计数是 600，参考页就是这么做的。 */
   font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
 }
 
 .count-pill--brand {
@@ -825,18 +799,18 @@ textarea.input {
 }
 
 /* 平台图标块 */
+/* 「静流」§.pf：18px 圆角 5px 的平台色方块，只保留一处平台色。 */
 .plat {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   flex: none;
-  border-radius: var(--r-xs);
+  border-radius: 5px;
   color: #fff;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
-  letter-spacing: -0.02em;
 }
 
 /* 「静流」§3：内容卡片里的平台标识用小一号方块（15px），放在来源名前。 */
@@ -873,10 +847,12 @@ textarea.input {
 
 /* GitHub：黑色图形 + 浅色承托底。侧栏标识块自带 color:#fff，
    这里用组合选择器压过它，保证任何入口都画成同一套黑标。 */
+/* 「静流」§.pf.github：浅底承托 + 黑色官方标识。
+   文字色保持 .plat 的白（这里没有文字），黑色由 svg 的 fill 承担。 */
 .plat--github,
 .side-row__icon.plat--github {
   background: var(--c-github-bg);
-  color: var(--c-github-ink);
+  color: #fff;
 }
 
 .plat--github svg {
@@ -893,9 +869,9 @@ textarea.input {
 
 /* ---------------- 面板 ---------------- */
 
+/* 「静流」：面板用阴影画边框（--sh-card 里含 1px 描边），不再另画 border。 */
 .panel {
   background: var(--c-surface);
-  border: 1px solid var(--c-border);
   border-radius: var(--r-lg);
 }
 
@@ -912,7 +888,6 @@ textarea.input {
 }
 
 .panel__sub {
-  margin-top: 2px;
   font-size: var(--fs-sm);
   color: var(--c-text-3);
 }
@@ -925,7 +900,6 @@ textarea.input {
 }
 
 .panel__body {
-  padding: 0 var(--s-6) var(--s-6);
 }
 
 .panel__body--flush {
@@ -939,16 +913,6 @@ textarea.input {
    版式照方案样张：左列 96px 缩略图，右列标题 / 摘要 / 元信息 / 脚注四段。 */
 .content-card {
   position: relative;
-  display: grid;
-  grid-template-columns: var(--thumb-md) minmax(0, 1fr);
-  gap: var(--s-card);
-  padding: var(--s-card);
-  border: 0;
-  border-radius: var(--r-lg);
-  background: var(--c-surface);
-  box-shadow: var(--sh-card);
-  text-align: left;
-  width: 100%;
   transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
 }
 
@@ -959,19 +923,12 @@ textarea.input {
 
 /* 「静流」§3：选中态 = 信号青描边 + 光环（青色只表示「当前选中」） */
 .content-card.is-selected {
-  background: var(--c-surface);
   box-shadow: 0 0 0 1.5px var(--c-signal), 0 0 0 5px var(--c-brand-ring),
     0 8px 20px -10px rgba(0, 140, 180, 0.35);
 }
 
 .content-card__thumb {
   position: relative;
-  width: var(--thumb-md);
-  height: 72px;
-  flex: none;
-  border-radius: var(--r-md);
-  overflow: hidden;
-  background: var(--c-surface-3);
 }
 
 .content-card__thumb img {
@@ -981,33 +938,20 @@ textarea.input {
 }
 
 .content-card__main {
-  min-width: 0;
 }
 
 .content-card__title {
-  font-size: var(--fs-card);
-  font-weight: 600;
-  line-height: 1.45;
-  letter-spacing: -0.005em;
-  color: var(--c-text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   /* 右侧给复选框留位：标题两行时不会压到角标上 */
-  padding-right: 22px;
 }
 
 /* 摘要必须块级：span 是行内盒，text-overflow 不会生效，文字会溢出卡片。 */
 .content-card__summary {
   display: block;
-  margin-top: var(--s-1);
-  font-size: var(--fs-meta);
-  color: var(--c-text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* 不换行：卡片窄的时候让**来源名**让位（省略号），
@@ -1015,28 +959,18 @@ textarea.input {
 .content-card__meta {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
-  margin-top: var(--s-4);
-  font-size: var(--fs-sm);
-  color: var(--c-text-2);
-  flex-wrap: nowrap;
-  min-width: 0;
 }
 
 /* 「静流」§3：优先级信号条贴在元信息行最右，和方案一致。 */
+/* 参考页的 .prio 靠内联 margin-left:auto 贴到元信息行右端，
+   这里由 CSS 承担同一件事（清冲突器不动 margin-left）。 */
 .content-card__meta .prio {
   margin-left: auto;
-  flex: none;
 }
 
 .content-card__author {
   display: inline-flex;
   align-items: center;
-  gap: var(--s-2);
-  min-width: 0;
-  flex: 0 1 auto;
-  color: var(--c-text-2);
-  font-weight: 500;
 }
 
 .content-card__author .avatar {
@@ -1046,17 +980,9 @@ textarea.input {
 }
 
 .content-card__time {
-  flex: none;
-  white-space: nowrap;
-  color: var(--c-text-3);
 }
 
 .content-card__dot {
-  width: 3px;
-  height: 3px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--c-text-4);
 }
 
 /* 「静流」§3：标签、收录方式、URL 合并成一条脚注，不再单独占一行、也不画分隔线。
@@ -1065,9 +991,6 @@ textarea.input {
 .content-card__foot {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
-  margin-top: var(--s-4);
-  min-width: 0;
 }
 
 /* 标签保持完整：卡片放不下更多时由调用方收成「首标签 +N」，
@@ -1075,10 +998,6 @@ textarea.input {
 .content-card__tags {
   display: flex;
   align-items: center;
-  gap: var(--s-2);
-  min-width: 0;
-  flex: 0 0 auto;
-  overflow: hidden;
 }
 
 /* 「静流」§3：URL 行改为悬停时出现，不再每张卡片常驻一行蓝色链接。
@@ -1086,15 +1005,7 @@ textarea.input {
 .content-card__link {
   display: inline-flex;
   align-items: center;
-  gap: var(--s-2);
-  min-width: 0;
-  /* 吃掉脚注行剩下的空间并靠右；内容再长也只在这一行里省略。 */
-  flex: 1 1 0;
-  justify-content: flex-end;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--c-text-4);
-  opacity: 0;
+  /* 靠右（margin-left:auto），内容再长也只在这一行里省略。 */
   transition: opacity var(--dur-1) var(--ease);
 }
 
@@ -1120,10 +1031,6 @@ textarea.input {
 .content-card__method {
   display: inline-flex;
   align-items: center;
-  gap: var(--s-1);
-  flex: none;
-  white-space: nowrap;
-  color: var(--c-text-3);
 }
 
 .content-card__method svg {
@@ -1145,10 +1052,6 @@ textarea.input {
 .content-card__ops {
   display: flex;
   align-items: center;
-  gap: var(--s-1);
-  margin-left: 0;
-  flex: none;
-  opacity: 0;
   transition: opacity var(--dur-1) var(--ease);
 }
 
@@ -1188,8 +1091,6 @@ textarea.input {
 }
 
 .row-card:hover {
-  border-color: var(--c-border-strong);
-  box-shadow: var(--sh-1);
 }
 
 .row-card__thumb {
@@ -1498,8 +1399,9 @@ textarea.input {
   min-width: 0;
 }
 
-/* 浮层用 gap 控制间距，去掉 .detail__title 自带的上边距，避免叠加 */
-.detail-preview .detail__title {
+/* 浮层用 gap 控制间距，去掉 .detail__title 自带的上边距，避免叠加。
+   只作用于浮层（.dialog 里的详情），详情面板内的标题仍按参考页留 16px 上边距。 */
+.dialog .detail-preview .detail__title {
   margin-top: 0;
 }
 
@@ -1836,11 +1738,7 @@ textarea.input {
    有封面时铺封面图，没有时用一层中性渐变占位——不画假的图片内容。 */
 .detail__hero {
   position: relative;
-  height: 176px;
   flex: none;
-  border-radius: var(--r-lg);
-  overflow: hidden;
-  background: var(--c-surface-3);
 }
 
 .detail__hero img {
@@ -1889,22 +1787,11 @@ textarea.input {
 /* 图下角的等宽读数：状态 + 平台与短标识。 */
 .detail__readout {
   display: flex;
-  gap: var(--s-2);
   position: absolute;
-  left: 16px;
-  bottom: 14px;
   z-index: 2;
 }
 
 .detail__readout span {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: #fff;
-  padding: 3px 7px;
-  border-radius: var(--r-xs);
-  background: rgba(8, 10, 12, 0.58);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-  white-space: nowrap;
 }
 
 .detail__readout span.is-live::before {
@@ -1931,9 +1818,6 @@ textarea.input {
 .detail__byline {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
-  margin-top: var(--s-4);
-  min-width: 0;
 }
 
 .detail__byline-text {
@@ -1946,11 +1830,6 @@ textarea.input {
 }
 
 .detail__byline-name {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  font-size: var(--fs-base);
-  font-weight: 500;
   min-width: 0;
 }
 
@@ -1965,13 +1844,6 @@ textarea.input {
 }
 
 .detail__byline-time {
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-sm);
-  color: var(--c-text-3);
-  white-space: nowrap;
 }
 
 .detail__section {
@@ -1983,34 +1855,16 @@ textarea.input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--s-3);
-  font-size: var(--fs-sm);
-  font-weight: 560;
-  letter-spacing: 0.02em;
-  color: var(--c-text-3);
-  margin-bottom: var(--s-3);
 }
 
 .detail__section-hint {
-  font-weight: 400;
-  letter-spacing: 0;
-  color: var(--c-text-4);
-  white-space: nowrap;
 }
 
 /* 「静流」§4：原文链接行——浅底 + 细线描边，URL 用等宽字体，整行可点。 */
 .detail__link-row {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
-  width: 100%;
-  padding: 9px var(--s-5);
   border: 0;
-  border-radius: var(--r-md);
-  background: var(--c-surface-2);
-  box-shadow: inset 0 0 0 1px var(--c-border);
-  color: var(--c-text-3);
-  text-align: left;
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
 
@@ -2039,9 +1893,6 @@ textarea.input {
 }
 
 .detail__summary {
-  font-size: var(--fs-base);
-  color: var(--c-text-2);
-  line-height: 1.75;
 }
 
 /* 「静流」§5：优先级由三张大卡片合并为一个分段控件（凹槽 + 浮起滑块），
@@ -2049,11 +1900,6 @@ textarea.input {
 .priority-grid {
   display: flex;
   flex: 1;
-  gap: 2px;
-  padding: 3px;
-  border-radius: var(--r-md);
-  background: var(--c-surface-3);
-  box-shadow: var(--sh-inset);
 }
 
 .priority-opt {
@@ -2089,7 +1935,6 @@ textarea.input {
   align-items: flex-end;
   gap: 1.5px;
   height: 11px;
-  flex: none;
 }
 
 .prio-sig i {
@@ -2357,7 +2202,6 @@ textarea.input {
 .content-card__tags .tag-chip {
   max-width: 160px;
   height: 22px;
-  font-size: var(--fs-cap);
   flex: none;
 }
 
@@ -2575,10 +2419,11 @@ textarea.input {
 }
 
 .tag--zhihu { color: #1772e8; background: #e8f1ff; }
-.plat--zhihu { color: #1772e8; background: #e8f1ff; }
+.plat--zhihu { background: #e8f1ff; }
 :root[data-theme="dark"] .tag--zhihu, :root[data-theme="dark"] .plat--zhihu { color: #87b9ff; background: #203752; }
 
-.detail__body { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 参考页的详情正文不做 pre-wrap（只有正文段落 .detail__text 才换行保留）。 */
+.detail__body { }
 /* 正文段落自身的类名：.detail__body 已经被详情滚动容器占用，不能复用。 */
 .detail__text { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* 长正文默认只露出 20 行；展开后回到自然高度。 */
@@ -2820,7 +2665,6 @@ textarea.input {
   border-radius: var(--r-full);
   font-size: var(--fs-xs);
   font-weight: 560;
-  line-height: 1;
   white-space: nowrap;
   color: var(--c-text-2);
   background: var(--c-surface-2);
@@ -3127,7 +2971,6 @@ textarea.input {
 }
 
 .cdot:hover {
-  box-shadow: 0 0 0 2px var(--c-surface), 0 0 0 4px var(--c-border-strong);
 }
 
 .cdot.is-active {
@@ -3139,7 +2982,6 @@ textarea.input {
   display: flex;
   align-items: center;
   gap: var(--s-4);
-  margin-top: var(--s-4);
   font-size: var(--fs-sm);
   color: var(--c-text-3);
 }
@@ -3151,33 +2993,20 @@ textarea.input {
 .action-bar {
   flex: none;
   display: grid;
-  gap: var(--s-3);
-  padding: var(--s-4) var(--s-5) var(--s-5);
-  border-top: 1px solid var(--c-divider);
-  background: var(--c-sheet);
 }
 
 .state-group {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
 }
 
 .state-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 38px;
+  /* 同 .icon-btn：跟着参考页保留 button 的 UA 内边距。 */
+  padding: 1px 6px;
   padding: 0 var(--s-3);
   border: 0;
-  border-radius: var(--r-md);
-  background: var(--c-surface);
-  box-shadow: var(--sh-card);
   font: inherit;
-  font-size: var(--fs-cap);
-  font-weight: 560;
-  color: var(--c-text-2);
   cursor: pointer;
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
     box-shadow var(--dur-1) var(--ease);

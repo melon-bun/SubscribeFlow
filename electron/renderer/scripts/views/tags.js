@@ -361,7 +361,7 @@
     if (app.tagTab === "ai") return buildAiPage(app);
     if (cache.error && !cache.loaded) {
       return h(
-        "div.panel.tags-fill",
+        "div.panel__body.tags-fill",
         null,
         ui.state({
           icon: "alert",
@@ -395,9 +395,13 @@
     return h(
       "div.tags-layout",
       null,
-      h("div.tags-list", null, buildToolbar(app),
-        cache.error ? h("p.field__error", {role: "alert", text: "标签刷新失败：" + cache.error.message}) : null,
-        buildTable(app)),
+      /* 「静流」§标签页：左列是一张面板——面板头放标题与工具，
+         面板体放表格（参考页 .panel > .panel-head + .panel-body）。 */
+      h("div.tags-list", null,
+        h("div.panel.tags-panel", null,
+          buildToolbar(app),
+          cache.error ? h("p.field__error", {role: "alert", text: "标签刷新失败：" + cache.error.message}) : null,
+          buildTable(app))),
       buildEditor(app)
     );
   }
@@ -419,7 +423,7 @@
     );
     search.setAttribute("data-tag-search", "");
     return h(
-      "div.panel.tags-toolbar",
+      "div.panel__head.tags-toolbar",
       {"data-refresh-key": "tags-toolbar"},
       h("h2.toolbar__title.t-h2", { text: "全部标签（" + cache.total + "）" }),
       h(
@@ -498,7 +502,7 @@
     }, 0);
 
     return h(
-      "div.panel.tags-table-wrap.scroll-y",
+      "div.panel__body.tags-table-wrap.scroll-y",
       /* M22：给滚动容器一个稳定身份。全局重绘会换掉整棵子树，
          靠这个键才能把滚动位置还回来——否则点一行标签就跳回列表顶部。 */
       { "data-scroll-key": "tags-table" },
@@ -654,9 +658,9 @@
     var t = activeTag();
     if (!t) {
       return h(
-        "aside.tags-editor",
+        "aside.tags-editor.panel",
         null,
-        h("div.tags-editor__head", null, h("div.tags-editor__title", { text: "标签详情" })),
+        h("div.panel__head.tags-editor__head", null, h("div.tags-editor__title", { text: "标签详情" })),
         ui.state({
           icon: "tag",
           title: "选择一个标签",
@@ -704,10 +708,10 @@
     setFieldError(aliasError, "");
 
     return h(
-      "aside.tags-editor",
+      "aside.tags-editor.panel",
       { "data-tag-editor": t.id, "data-refresh-key": "tag-editor:" + t.id },
       h(
-        "div.tags-editor__head",
+        "div.panel__head.tags-editor__head",
         null,
         h("div.tags-editor__title", { text: "标签详情" }),
         h("div.spacer"),
@@ -742,7 +746,7 @@
         })
       ),
       h(
-        "div.tags-editor__body.scroll-y",
+        "div.panel__body.tags-editor__body.scroll-y",
         {"data-scroll-key": "tag-editor:" + t.id},
         h(
           "div.tags-editor__section",
@@ -851,7 +855,7 @@
         )
       ),
       h(
-        "div.tags-editor__foot",
+        "div.panel__foot.tags-editor__foot",
         {"data-refresh-key": "tag-footer:" + t.id, "data-refresh-boundary": "true"},
         ui.btn("删除标签", {
           variant: "danger",

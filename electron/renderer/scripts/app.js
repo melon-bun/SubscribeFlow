@@ -199,8 +199,10 @@
       h(
         "div.brand__text",
         null,
-        h("div.brand__name", { text: "知流" }),
-        h("div.brand__slogan", { text: "聚合你关注的创作者更新" })
+        /* 「静流」§.brand b / .brand small：用 b 与 small 承担字重与字号，
+           不用 div + CSS 硬凑（display 与语义都会和参考页对不上）。 */
+        h("b.brand__name", { text: "知流" }),
+        h("small.brand__slogan", { text: "聚合你关注的创作者更新" })
       )
     );
 
@@ -210,6 +212,9 @@
       NAV.map(function (n) {
         var badge =
           n.id === "inbox"
+            /* 同时带 count-pill 与 count-pill--brand：移植过来的
+               「.nav-item .count」规则管排版（贴右、等宽 12px），
+               「.nav-item.on .count.pill」管颜色（品牌底、白字）。 */
             ? h("span.count-pill.count-pill--brand", { text: String(app.counts.unread || 0) })
             : n.id === "tags" && app.tagCount != null
             ? h("span.count-pill", { text: String(app.tagCount) })
@@ -336,7 +341,7 @@
         null,
         icon("search", 16),
         input,
-        h("kbd.kbd", { text: "⌘ K" })
+        h("kbd.kbd", { text: "⌘K" })
       ),
       h(
         "div.topbar__right",
@@ -457,23 +462,23 @@
       lamp = "error";
       key = "core:" + app.coreStatus.state;
       closable = false; // 阻塞态且带重启入口，藏起来会丢掉唯一的恢复操作
-      actions.push(ui.btn("重启核心服务", { onClick: restart }));
+      actions.push(ui.btn("重启核心服务", { size: "sm", onClick: restart }));
     } else if (app.notice) {
       state = "读取失败"; name = "核心服务"; read = app.notice; lamp = "error";
       key = "notice:" + app.notice;
-      actions.push(ui.btn("重新查询", { onClick: function () { refreshData(true); } }));
+      actions.push(ui.btn("重新查询", { size: "sm", onClick: function () { refreshData(true); } }));
     } else if (active) {
       state = "正在同步"; name = active.channelName || "采集任务"; read = active.message; lamp = "live";
       key = "active:" + active.id + ":" + active.state;
       closable = false; // 实时进度，关掉就看不到采集在推进
-      actions.push(ui.btn("取消任务", { onClick: function () { act("cancel:" + active.id, async function () { await app.client.cancelRun(active.id); await refreshData(true); }); } }));
+      actions.push(ui.btn("取消任务", { size: "sm", onClick: function () { act("cancel:" + active.id, async function () { await app.client.cancelRun(active.id); await refreshData(true); }); } }));
     } else if (conn && conn.state !== "ready" && (conn.state !== "unknown" || !app.runs.length)) {
       state = conn.state === "unknown" ? "尚未检查"
         : conn.dependency === "unavailable" ? "依赖不可用" : "需要处理";
       name = "采集连接"; read = conn.detail; lamp = "warn";
       key = "conn:" + JSON.stringify([conn.state, conn.dependency, conn.authentication, conn.detail,
         app.runs[0] && app.runs[0].id, app.runs[0] && app.runs[0].state]);
-      actions.push(ui.btn("查看连接与任务", { onClick: function () { navigate("channels"); } }));
+      actions.push(ui.btn("查看连接与任务", { size: "sm", onClick: function () { navigate("channels"); } }));
     } else {
       var latest = app.runs[0];
       if (!latest) return null;
@@ -483,7 +488,7 @@
       lamp = runLamp(latest.state);
       // 带上 run id 和状态：新任务或状态推进后签名自然变化，关闭过的旧提示会重新出现
       key = "run:" + latest.id + ":" + latest.state;
-      actions.push(ui.btn("查看任务", { onClick: function () { navigate("channels"); } }));
+      actions.push(ui.btn("查看任务", { size: "sm", onClick: function () { navigate("channels"); } }));
     }
     // 只压住同一条提示；签名一变就重新出现，不会把后续新结果一起藏掉
     if (app.dismissedStatus === key) return null;
@@ -507,7 +512,8 @@
   function currentView() { return SF.views[app.route.name]; }
 
   function patchStatusBar() {
-    var host = document.querySelector('.shell__body');
+    /* 任务条现在住在纸面里，宿主是 .workspace 而不是 .shell__body。 */
+    var host = document.querySelector('.workspace');
     if (!host || app.route.name === 'settings') return;
     var old = host.querySelector(':scope > .status-bar'), fresh = buildStatusBar();
     if (!fresh) { if (old) old.remove(); return; }
@@ -621,7 +627,10 @@
       app.overviewMode, app.calendarMonth, app.channelTab, app.tagTab]);
     if (result && result.main) {
       app.contentEl = result.main;
-      return result;
+      /* 「静流」：纸面里是「主区 + 详情」两列，主区自带内边距。
+         产品原来直接把这个视图当主区，纸面里就没有 .main 这一层，
+         内边距只好挂在视图自己身上——与参考页的结构对不上。 */
+      return { main: h('div.main', null, result.main), aside: result.aside || null };
     }
     app.contentEl = result;
     return { main: result, aside: null };
@@ -636,7 +645,7 @@
     if (!host) return;
     if (options && options.background) {
       SF.dom.reconcileWithScroll(host, buildShellBody(), scrollPositions);
-      app.contentEl = host.querySelector('.workspace > :first-child');
+      app.contentEl = host.querySelector('.workspace > .main');
     } else {
       SF.tooltip.hide();
       SF.dom.renderWithScroll(host, buildShellBody(), scrollPositions);
@@ -652,9 +661,12 @@
     var result = buildMain();
     /* M32：扫描光的载体。关闭轻科幻时它没有样式也不参与布局（fx.css 里
        [data-fx="on"] 才给它 display:block）。 */
+    /* 「静流」：任务条是**纸面的一部分**（方案里 .task 在 .sheet 内，
+       margin:12px 14px 0），不是浮在纸面上方的灰底横条。
+       所以它排在 .workspace 的第一个子位，横跨主区与详情两列。 */
     return [
-      buildStatusBar(),
       h("main.workspace", { id: "main", tabindex: "-1" }, [
+        buildStatusBar(),
         result.main,
         result.aside || null,
         h("span.fx-sweep", { "aria-hidden": "true" }),

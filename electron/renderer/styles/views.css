@@ -7,23 +7,13 @@
 /* 「静流」§筛选条：分段控件与下拉之间一条细竖线，
    把「切换维度」和「筛选条件」分开，不再是一排药丸按钮。 */
 .filters__sep {
-  width: 1px;
-  height: 18px;
-  flex: none;
-  margin: 0 var(--s-1);
-  background: var(--c-border-strong);
 }
 
 /* 「静流」§分页器：一条细线把列表和翻页分开，页码用等宽数字。 */
 .pager {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
   flex: none;
-  padding: var(--s-5) 0 var(--s-6);
-  border-top: 1px solid var(--c-divider);
-  color: var(--c-text-3);
-  font-size: var(--fs-sm);
 }
 
 .pager__count {
@@ -188,11 +178,9 @@
 
 .calendar-week__cell {
   padding: var(--s-3);
-  text-align: center;
   font-size: var(--fs-cap);
   color: var(--c-text-2);
   background: var(--c-surface-2);
-  border-right: 1px solid var(--c-border);
   border-bottom: 1px solid var(--c-border);
 }
 
@@ -213,13 +201,9 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--s-2);
   padding: var(--s-3) var(--s-3) var(--s-2);
   /* 「静流」§日历：网格线减淡，条目用优先级圆点 + 标题 */
   border-right: 1px solid var(--c-divider);
-  border-bottom: 1px solid var(--c-divider);
-  background: var(--c-surface);
-  text-align: left;
   overflow: hidden;
   transition: background var(--dur-1) var(--ease);
 }
@@ -239,7 +223,6 @@
 /* 今天：青色圆环 */
 .cal-day.is-today {
   background: var(--c-surface);
-  box-shadow: 0 0 0 1.5px var(--c-brand) inset;
 }
 
 /* 当前选中日：青色描边 + 散光 */
@@ -279,7 +262,6 @@
 
 .cal-day__num {
   font-size: var(--fs-cap);
-  font-weight: 500;
   color: var(--c-text-2);
   font-family: var(--font-num);
   flex: none;
@@ -311,7 +293,6 @@
   align-items: center;
   gap: 5px;
   height: 17px;
-  font-size: var(--fs-sm);
   color: var(--c-text-2);
   overflow: hidden;
 }
@@ -349,7 +330,6 @@
 .cal-day__more {
   font-size: var(--fs-sm);
   color: var(--c-brand);
-  padding-left: var(--s-1);
 }
 
 .cal-day__today-tag {
@@ -473,10 +453,6 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 0;
-  border-radius: var(--r-lg);
-  background: var(--c-surface-2);
-  box-shadow: var(--sh-card);
   overflow: hidden;
 }
 
@@ -595,10 +571,8 @@
 
 .kanban__item {
   padding: var(--s-4);
-  border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   background: var(--c-surface);
-  text-align: left;
   width: 100%;
   transition: box-shadow var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
@@ -819,7 +793,6 @@
 .channel-cell__name {
   display: flex;
   align-items: center;
-  gap: var(--s-2);
   font-size: var(--fs-base);
   font-weight: 500;
   min-width: 0;
@@ -1116,19 +1089,21 @@
    底部一条 2px 进度轨道。颜色语义按方案：正常=绿、注意=琥珀、故障=红、
    进行中=信号青。卡片本身保持中性，不整块染色。
    外层 .status-bar 的留白与底色由 layout.css 负责，这里只管卡片本身。 */
+/* 「静流」§其他页面 .task：长任务的状态读数条。
+   逐项照方案取数：gap 10、padding 8px 8px 8px 14px、字号 12.5px。 */
 .task {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--s-3);
+  gap: 10px;
   min-width: 0;
-  flex: 1;
-  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  padding: 8px 8px 8px 14px;
   border-radius: var(--r-md);
   background: var(--c-surface);
   box-shadow: var(--sh-card);
-  font-size: var(--fs-cap);
+  font-size: 12.5px;
   overflow: hidden;
+  flex: none;
 }
 
 .task-lamp {
@@ -1172,7 +1147,7 @@
 .task--error .task-state { color: var(--c-high); }
 
 .task-name {
-  font-weight: 500;
+  font-weight: 560;
   color: var(--c-text);
   white-space: nowrap;
 }
@@ -1490,8 +1465,6 @@
   transform: translateX(-50%);
   width: 52px;
   height: 40px;
-  color: var(--c-text-4);
-  opacity: 0.5;
   stroke-width: 1.4;
 }
 
@@ -1554,17 +1527,18 @@
 /* 优先级三档图标形状一致，只能靠颜色区分；侧栏原本统一染成灰/品牌蓝，
    这里补回档位语义色，选中态同样保持该档位色，否则高/中/低在侧栏完全无法分辨。
    与上一行同特异性，靠后出现以覆盖选中态的品牌蓝。 */
-.side-row[data-quick="high"] .side-row__icon:not(.plat) { color: var(--c-high); }
-.side-row[data-quick="medium"] .side-row__icon:not(.plat) { color: var(--c-mid); }
-.side-row[data-quick="low"] .side-row__icon:not(.plat) { color: var(--c-low); }
+/* 信号条自己带档位色，图标容器不再染色（参考页的 .sig 只给格子染色）。 */
+.side-row[data-quick="high"] .side-row__icon:not(.plat):not(:has(.prio-sig)) { color: var(--c-high); }
+.side-row[data-quick="medium"] .side-row__icon:not(.plat):not(:has(.prio-sig)) { color: var(--c-mid); }
+.side-row[data-quick="low"] .side-row__icon:not(.plat):not(:has(.prio-sig)) { color: var(--c-low); }
 /* 紧凑行（日历右侧列表、看板）仍可换行；
    内容卡片不换行——来源名让位，优先级信号条留在同一行右端。 */
 .row-card__meta { flex-wrap: wrap; row-gap: 6px; }
 .content-card__meta { flex-wrap: nowrap; }
 .content-card__author { min-width: 70px; }
-/* The shell owns the status strip; do not apply F1's compact row style here. */
-.shell__body > .status-bar { display: block; padding: 12px 24px 0; border: 0; border-radius: 0; background: var(--c-bg); }
-.shell__body > .status-bar .notice { width: 100%; }
+/* 任务条现在是纸面里的第一行（.workspace > .status-bar），
+   外边距与底色由 layout.css 的 .status-bar 规则给，这里只保留提示条本身的宽度。 */
+.workspace > .status-bar .notice { width: 100%; }
 @media (max-width: 1120px) {
   .calendar-layout { display: block; overflow-y: auto; }
   .calendar-panel { min-height: 430px; }
@@ -1594,7 +1568,7 @@
 .cal-pill--none .cal-pill__dot { background:var(--c-text-4); }
 .cal-day__heading { display:flex; align-items:center; gap:4px; width:100%; }
 .cal-day__heading .cal-day__today-tag { position:static; flex:none; }
-.cal-day__count { margin-left:auto; font-size:var(--fs-xs); color:var(--c-text-2); }
+.cal-day__count { font-size:var(--fs-xs); color:var(--c-text-2); }
 .calendar-legend .muted { font-size:var(--fs-sm); }
 .day-panel__foot p { margin-bottom:var(--s-2); }
 
@@ -2551,14 +2525,6 @@
   display: block;
   width: 100%;
   padding: var(--s-3);
-  border: 1px solid transparent;
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-text-2);
-  font: inherit;
-  font-size: var(--fs-cap);
-  line-height: 1.6;
-  text-align: left;
   cursor: pointer;
 }
 
@@ -2567,9 +2533,7 @@
 }
 
 .notes-toc__item.is-active {
-  border-color: var(--c-brand-border);
   background: var(--c-brand-weak);
-  color: var(--c-brand);
   /* 选中的那条左侧留一道品牌色，跟设计图一致。 */
   box-shadow: inset 2px 0 0 var(--c-brand);
 }
@@ -2579,8 +2543,6 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
 }
 
 /* 「静流」§笔记：目录条目下的摘要行。12px、中性色、两行封顶——
@@ -2675,11 +2637,9 @@
 }
 
 .notes-card__title {
-  margin: 0;
   font-size: var(--fs-base);
   font-weight: 600;
   line-height: 1.45;
-  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -2830,8 +2790,6 @@
 /* 选中的目录条目：青色左边线（轻科幻下换成信号青并带一点散光） */
 .notes-toc__item.is-active {
   background: var(--c-brand-weak-2);
-  border-color: transparent;
-  color: var(--c-text);
   box-shadow: inset 2px 0 0 var(--c-brand);
 }
 

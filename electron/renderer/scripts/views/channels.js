@@ -179,7 +179,7 @@
       ui.btn('重新查询',{icon:'refresh',onClick:function () { SF.app.refreshData(true); }}));
     if (!cache.loaded) return h('div',{'data-refresh-key':'channel-list'},toolbar,ui.state({icon:'clock',title:'正在载入渠道…'}));
     if (!cache.items.length) return h('div',{'data-refresh-key':'channel-list'},toolbar,h('div.panel',null,ui.state({icon:'folder-open',title:keyword ? '没有匹配的来源' : '还没有添加任何来源',desc:'使用作者 UID、主页链接或搜索结果添加来源，然后手动刷新。',actions:[{label:'添加来源',variant:'primary',onClick:function () { addDialog(app); }}]})));
-    return h('div',{'data-refresh-key':'channel-list'},toolbar,h('div.panel.channels__table-wrap',null,h('table.table.live-channels',null,
+    return h('div',{'data-refresh-key':'channel-list'},toolbar,h('div.panel.channels__table-wrap',null,h('table.table.dt.live-channels',null,
       /* 「静流」§渠道管理：平台列并入创作者名前的平台方块，表格少一列。 */
       h('thead',null,h('tr',null,['创作者 / 频道名','主页','同步方式','状态','覆盖范围','最近任务','操作'].map(function (label) { return h('th',{text:label}); }))),
       h('tbody',null,cache.items.map(function (c,i) {
@@ -188,13 +188,13 @@
           'data-refresh-preserve':JSON.stringify([c,cov])},
           h('td',null,h('div.channel-cell',null,ui.platformIcon(c.platform),ui.avatar(c.name),h('div.channel-cell__text',null,h('div.channel-cell__name',{text:c.name}),h('div.channel-cell__desc',null,h('span',{text:'UID '}),h('span.mono',{text:c.externalId}))))),
           h('td',null,ui.btn('打开主页',{size:'sm',icon:'external',onClick:function () { SF.app.act('source:' + c.id,function () { return app.client.openChannel(c.id); }); }})),
-          h('td',null,h('div.table__time',null,
-            ui.btn(c.frequency,{size:'sm',onClick:function () { scheduleDialog(app,c); },ariaLabel:'设置同步方式 ' + c.name}),
+          h('td',null,h('div.cadence',null,
+            h('b',null,ui.btn(c.frequency,{size:'sm',onClick:function () { scheduleDialog(app,c); },ariaLabel:'设置同步方式 ' + c.name})),
             h('small',{text:scheduleText(c)}))),
           h('td',null,ui.toggle(c.enabled,function (enabled) { SF.app.act('subscription:' + c.id,async function () { await app.client.setChannelEnabled(c.id,enabled); await SF.app.refreshData(true); }); },{label:(c.enabled?'暂停 ':'恢复 ') + c.name})),
-          h('td',null,h('button.coverage-cell' + (cov.complete?'':'.coverage-cell--limited'),{type:'button',title:cov.detail,onclick:function () { ui.dialog({title:c.name + ' · 覆盖范围',body:ui.notice({tone:cov.complete?'info':'warn',text:cov.detail})}); }},SF.icon(cov.complete?'check':'clock',14),h('span',{text:cov.label}))),
+          h('td',null,h('button.badge.coverage-cell' + (cov.complete?'':'.coverage-cell--limited'),{type:'button',title:cov.detail,onclick:function () { ui.dialog({title:c.name + ' · 覆盖范围',body:ui.notice({tone:cov.complete?'info':'warn',text:cov.detail})}); }},SF.icon(cov.complete?'check':'clock',14),h('span',{text:cov.label}))),
           h('td',{'data-channel-run':c.id},latestRun(app,c.id)),
-          h('td',null,h('div.table__ops',null,
+          h('td',null,h('div.ops.table__ops',null,
             ui.iconBtn('refresh','刷新来源',function () { startRun(app,c,'recent'); },{disabled:!c.enabled || !c.capabilities.canRefresh}),
             ui.iconBtn('clock','回溯历史',function () { var pages = collectPages(c,c.defaultBackfillBudget || 10); ui.confirm({title:'回溯 ' + c.name,message:c.checkedItems ? '本次按主页顺序检查前 ' + pages + ' 条' + (c.contentNoun || '内容') + '。已收录的也占一个名额，跳过详情后不向后补足；结果不代表全部历史。' : c.incrementalDetails ? '本次最多读取 ' + pages + ' 条' + (c.contentNoun || '内容') + '详情，已完整收录的会跳过；主页分页扫描有上限，结果不代表全部历史。' : '本次最多采集 ' + (c.collectItems || pages*(c.pageSize || 20)) + ' 条内容。已收录或解析失败的条目也占名额，不向后补足；回溯成功不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
             ui.iconBtn('sliders',(c.collectItems ? '采集条数（当前 '+c.collectItems+' 条）' : '采集条数（默认）'),function () { collectDialog(app,c); },{disabled:!c.enabled,ariaLabel:'设置采集条数'}),

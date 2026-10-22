@@ -307,8 +307,6 @@
   border-radius: var(--r-lg);
   background: var(--c-surface);
   box-shadow: var(--sh-card);
-  font: inherit;
-  color: var(--c-text);
   text-align: left;
   cursor: pointer;
   transition: box-shadow var(--dur-1) var(--ease), background var(--dur-1) var(--ease);

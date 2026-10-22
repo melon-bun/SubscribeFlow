@@ -14,10 +14,11 @@ body {
 }
 
 body {
-  margin: 0;
   font-family: var(--font-sans);
   font-size: var(--fs-base);
-  line-height: 1.5715;
+  /* 「静流」：参考页正文没有设 line-height，用浏览器默认的 normal。
+     这里原来写死 1.5715，所有继承行高的文本都比参考页高出一截。 */
+  line-height: normal;
   color: var(--c-text);
   background: var(--c-bg);
   -webkit-font-smoothing: antialiased;
