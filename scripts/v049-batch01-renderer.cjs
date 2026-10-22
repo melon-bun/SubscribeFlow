@@ -113,19 +113,25 @@ async function verify({window, core, root}) {
   })()`);
   await evaluate('SF.app.render()');
 
-  // 内容卡片上的 GitHub 文字标识同样是黑字浅底。
-  await until(`!!document.querySelector('.content-card .tag--github')`);
+  // 5.1 期（M31）：平台标识由「GitHub」文字胶囊改为平台色方块（.plat--github）。
+  // GitHub 不使用品牌色块，所以仍是浅底 + 黑色图形——这里验证方块存在、
+  // 底色够浅、图形够深，对比度要求没有因为换呈现形式而放松。
+  await until(`!!document.querySelector('.content-card .plat--github')`);
   const githubTag = await evaluate(`(() => {
-    const node = document.querySelector('.content-card .tag--github');
+    const node = document.querySelector('.content-card .plat--github');
     const parse = (value) => {
       const m = String(value).match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
       return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
     };
     const luma = (rgb) => rgb ? 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] : null;
-    return {text: node.textContent.trim(), ink: luma(parse(getComputedStyle(node).color)), backing: luma(parse(getComputedStyle(node).backgroundColor))};
+    const backing = luma(parse(getComputedStyle(node).backgroundColor));
+    // 图形颜色取 .plat--github 的前景（浅底 + 深色图形）
+    const ink = luma(parse(getComputedStyle(node).color));
+    return {title: node.getAttribute('title'), aria: node.getAttribute('aria-label'), backing, ink};
   })()`);
-  assert.equal(githubTag.text, 'GitHub', '卡片上的平台名仍是 GitHub');
-  assert.ok(githubTag.backing > 0 && githubTag.ink < githubTag.backing, 'GitHub 文字标识也要黑字浅底');
+  assert.equal(githubTag.title, 'GitHub', '卡片上的平台标识仍标注 GitHub');
+  assert.equal(githubTag.aria, 'GitHub', '平台标识保留无障碍标签');
+  assert.ok(githubTag.backing > 0 && githubTag.ink < githubTag.backing, 'GitHub 标识也要浅底深色图形');
 
   /* ================= M20：优先级名称 ================= */
 
@@ -199,8 +205,10 @@ async function verify({window, core, root}) {
   await until(`!!document.querySelector('.side-row[data-quick="high"]')`);
   const sidebarLabel = await evaluate(`document.querySelector('.side-row[data-quick="high"] .side-row__label').textContent`);
   assert.equal(sidebarLabel, '今天看', '侧栏快捷筛选要用新名字');
-  const cardTag = await evaluate(`document.querySelector('.content-card .tag--high')?.textContent || ''`);
-  assert.equal(cardTag, '今天看', '内容卡片上的优先级标签要用新名字');
+  // 5.1 期（M31）：卡片上的优先级标识改为「信号条 + 文字」，文字仍是自定义名称。
+  // 按等级类名精确定位「高」的那张卡片（.prio 会匹配到卡片列表里的第一个优先级标识）。
+  const cardTag = await evaluate(`document.querySelector('.content-card .prio--high')?.textContent || ''`);
+  assert.equal(cardTag.trim(), '今天看', '内容卡片上的优先级标签要用新名字');
   const filterOptions = await evaluate(`Array.from(document.querySelector('select[aria-label="筛选优先级"]').options).map(o => o.textContent)`);
   assert.ok(filterOptions.includes('今天看'), '收件箱优先级筛选要用新名字，实际：' + JSON.stringify(filterOptions));
   const bulkOptions = await evaluate(`(() => {

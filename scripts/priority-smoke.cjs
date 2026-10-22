@@ -28,9 +28,20 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   await evaluate(`document.querySelector('.detail .priority-opt--low').click()`);
   await until(`SF.app.state.counts.low===1 && document.querySelector('.detail .priority-opt--low[aria-pressed="true"]')`);
   assert.equal((await core.call('content.get',{item_id:firstId})).state.read,true);
-  await until(`!!document.querySelector('.priority-opt--medium .priority-opt__icon')`);
-  assert.ok(await evaluate(`(() => { const el=document.querySelector('.priority-opt--medium .priority-opt__icon');
-    return !!el && getComputedStyle(el).backgroundColor!=='rgba(0, 0, 0, 0)'; })()`));
+  // 5.1 期（M31）：优先级等级改由信号条表达（颜色只在图形上），
+  // 不再是彩色实心图标方块。这里验证信号条存在且真的带上了等级色，
+  // 而不是简单删掉这条断言——「等级要一眼可辨」这个要求本身没有变。
+  await until(`!!document.querySelector('.priority-opt--medium .prio-sig')`);
+  assert.ok(await evaluate(`(() => {
+    const sig = document.querySelector('.priority-opt--medium .prio-sig');
+    if (!sig) return false;
+    const bars = Array.from(sig.querySelectorAll('i'));
+    if (bars.length !== 3) return false;
+    // 中等级点亮前两格；第三格必须仍是中性色（未点亮）。
+    const lit = bars.slice(0,2).every(b => getComputedStyle(b).backgroundColor !== 'rgba(0, 0, 0, 0)');
+    const dim = bars[2] ? getComputedStyle(bars[2]).backgroundColor !== 'rgba(0, 0, 0, 0)' : false;
+    return lit && dim;
+  })()`), '中优先级的信号条应当点亮两格并保留第三格');
   await screenshot('m8-content-priority.png');
   await sourceSettings();
   await change(sourceLabel,'medium');

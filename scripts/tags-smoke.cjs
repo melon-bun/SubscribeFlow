@@ -255,11 +255,23 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   await evaluate(`Array.from(document.querySelectorAll('.tags-tab')).find(t => /AI/.test(t.textContent)).click()`);
   await until(`SF.app.state.tagTab === 'ai'`);
   assert.ok(await evaluate(`!!document.querySelector('[data-view="tags"]').textContent.trim()`), 'AI 页签不应是空白页');
-  // M9：未接入识别时本页不得出现可用的模型配置控件——放一个填了也没人用的表单，
+  // M9：未接入识别时本页不得出现可用的**模型参数**表单——放一个填了也没人用的表单，
   // 比诚实地说明「还没有这个功能」更糟。M15 起配置改到设置页，这里只保留入口。
-  assert.ok(await evaluate(`!document.querySelector('[data-view="tags"] input, [data-view="tags"] select, [data-view="tags"] textarea')`),
-    '未接入识别时不应出现模型配置控件');
-  assert.ok(await evaluate(`Array.from(document.querySelectorAll('[data-view="tags"] button')).some(b => /去设置/.test(b.textContent))`),
+  // 5.1 期修订（BUG-118）：M25 起「使用哪条连接」是有意保留在下拉框里的**选择器**
+  // （views/tags.js 的 ai-status「使用哪条连接」），它选的是已配置好的连接，不是模型参数表单，
+  // 因此不再计入违规。其余 input/textarea 一律仍算违规。
+  assert.ok(await evaluate(`(() => {
+    const view = document.querySelector('[data-view="tags"]');
+    if (!view) return false;
+    // 「使用哪条连接」是连接选择器，不是模型参数表单，按 aria-label 精确排除。
+    const providerSelect = Array.from(view.querySelectorAll('select[aria-label="选择连接"]'));
+    const controls = Array.from(view.querySelectorAll('input, textarea, select'))
+      .filter(c => !providerSelect.includes(c));
+    return controls.length === 0;
+  })()`),
+    '未接入识别时不应出现模型参数配置控件');
+  // 入口文案自 M15 起为「前往 AI API 配置」，不再匹配「去设置」。
+  assert.ok(await evaluate(`Array.from(document.querySelectorAll('[data-view="tags"] button')).some(b => /前往 AI API 配置/.test(b.textContent))`),
     '应提供通往设置页的配置入口');
   assert.ok(await evaluate(`!/模型选择|Base URL/.test(document.querySelector('[data-view="tags"]').textContent)`),
     '未接入识别时不应出现内联模型配置项');

@@ -83,10 +83,30 @@ async function verify({window, core, root}) {
   assert.equal(await evaluate(`!!document.querySelector('.sidebar')`), false, '设置是整页大面板，不套侧栏');
   const navLabels = await evaluate(`Array.from(document.querySelectorAll('.settings-nav__label')).map(n => n.textContent)`);
   // M29 增加了独立的「AI 总结」分区：总结策略不与 AI API 配置混在一起。
-  assert.deepEqual(navLabels, ['AI API 配置', '提醒设置', '优先级名称', 'AI 总结']);
+  // M32 增加了「外观」分区：轻科幻层开关，是纯前端设置。
+  assert.deepEqual(navLabels, ['AI API 配置', '提醒设置', '优先级名称', 'AI 总结', '外观']);
   assert.equal(await evaluate(`!!document.querySelector('.settings__foot')`), true, '底部操作区必须存在');
   assert.ok(await evaluate(`document.querySelector('[aria-label="关闭设置"]')`), '必须有可聚焦的关闭入口');
   await screenshot('m15-settings-tagging.png');
+
+  /* ---------- M32 外观分区：纯前端开关，没有保存动作 ---------- */
+
+  await evaluate(`SF.app.openSettings('appearance')`);
+  await until(`document.querySelector('.settings__title').textContent === '外观'`);
+  assert.equal(await evaluate(`!!document.querySelector('.settings__body .switch')`), true, '外观分区应有轻科幻开关');
+  // 纯前端设置：底部不显示保存条（留着点不动的橙色主按钮会误导用户）
+  assert.equal(await evaluate(`!!document.querySelector('.settings__foot')`), false, '外观分区不显示保存条');
+  assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '外观分区不应产生草稿');
+  // 切换即时生效并写入 localStorage
+  await evaluate(`document.querySelector('.settings__body .switch').click()`);
+  await until(`document.documentElement.getAttribute('data-fx') === 'off'`);
+  assert.equal(await evaluate(`localStorage.getItem('sf.fx')`), 'off', '轻科幻开关状态要持久化');
+  await evaluate(`document.querySelector('.settings__body .switch').click()`);
+  await until(`document.documentElement.getAttribute('data-fx') === 'on'`);
+  /* 回到 AI API 配置分区：后续 S02 要在那一页编辑草稿。 */
+  await evaluate(`SF.app.openSettings('ai')`);
+  await until(`document.querySelector('.settings__title').textContent === 'AI API 配置'`);
+  await until(`!!document.querySelector('.setting-block input')`);
 
   /* ---------- S02 编辑草稿：先不保存，重启也不该生效 ---------- */
   assert.equal(await setField('接口地址', 'https://example.com/draft-only', 'Jev'), true);
