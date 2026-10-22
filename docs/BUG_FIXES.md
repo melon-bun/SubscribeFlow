@@ -1917,3 +1917,62 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 ### 2026-10-22 Codex 最终复验 BUG-114（3bd4c5b）
 
 原3条策略/Provider/原文失效路径已在d2acc9b独立通过；3bd4c5b将编辑检查移至异步复核结束的实际写入前。原失败输入探针副本现after=用户新文字、adoptable=true、dirty=true，最新正式总结视图及M27/M28联合流程、Node142项均由Codex实际执行通过。BUG-114所有本轮实质门槛关闭，M29验收，Phase5五模块源码验收完成。Python193项+64subtests来自相同Python源码的前轮复验，不称本轮重跑。真实模型/系统人工范围仍待验；BUG-113只记录不派修。证据verification/phase5-review/batch-05-r02/REPORT.md及verification/phase5-review/REPORT.md。
+
+
+## BUG-115：笔记页面无法向下滚动，较低窗口下底部编辑操作不可达
+
+- 日期：2026-10-22；状态：**已修复，Codex 独立验收通过**。基线 `ee4ec25`（产品 `3bd4c5b`），修复提交 `9363959`。
+- 现象：用户反馈笔记页面不能下滚；需在隔离长内容/长心得和较低窗口实际复现，不能把此前常规视图检查当作滚动已通过。
+- 预期：可自然滚动查看完整笔记并到达保存/删除按钮，目录与阅读区合理协作，modal/切换/刷新不丢草稿和滚动位置。
+- 原因（已定位）：`.notes-layout` 这一层既没有高度约束（`align-items: start` 让两列按内容高度排），
+  也没有自己的滚动容器；内容超出视图后被外壳的 `.app { overflow: hidden }` 直接裁掉——
+  页面因此既滚不动，底部的保存与删除按钮也永远到不了。目录列里另有一层
+  `max-height: 52vh` 的嵌套滚动，等于在一条本来就滚不动的页面里塞了第二个滚动区。
+- 修复范围：本轮只修滚动可达性；另有用户明确授权的 AI 总结按钮着色；不提前实施待看图的
+  整体美化，也不改筛选/查询/AI 配置/采集与业务数据。
+- 修复：`.notes-layout` 改为占满视图剩余高度（`flex: 1` + `min-height: 0` + `overflow: hidden`），
+  目录与阅读区各自成为滚动容器（`overflow-y: auto`）；去掉目录里那层嵌套的 `max-height`；
+  窄窗（≤900px）改成**整页一起滚**，两列不再各滚各的（否则下面看着像没内容了）。
+  应用外壳保持固定，滚动区域仍是主要阅读区，没有出现整个窗口双重滚动或横向溢出。
+- 实际结果（正式 Renderer + 正式 Core，隔离种子，不触网）：
+  - 笔记页 1440×1000：阅读区 `scrollHeight 778 > clientHeight 724`，`scrollTop` 由 0 推进到 53.5，
+    保存按钮进入可视区；
+  - 窗口压到 1100×620：`clientHeight 345`，`scrollTop` 由 53.5 推进到 432.5，
+    保存与删除按钮都进入可视区；
+  - 草稿保护：开关联结原内容 modal、后台刷新、切标题再切回来，文字都在；
+  - 回归：M27／M28／M29 实机验收与设置页验收全部通过，Node 142/142；
+  - 截图：`verification/phase5-minimax/batch-ui-followup-01/`（notes-page-tall／notes-page-low 等）。
+- 证据：verification/phase5-minimax/batch-ui-followup-01/REPORT.md。
+
+- BUG-115 Codex复验（2026-10-22用户恢复后）：b298775工作树，独立Renderer/Main/Core隔离检查退出0；两处AI按钮计算颜色通过，1560字长内容在1440×1000和1100×620下scrollTop分别推进至492与1225.5，底部保存/删除均可见，modal/切换/后台刷新草稿检查通过。证据：verification/phase5-review/ui-followup-01/REPORT.md；关闭同号，不以实现方自述代替验收。
+
+
+## BUG-116：项目结论分段按钮重复点击未取消，保存旧判定结果
+
+- 日期：2026-10-22；状态：**已修复，Codex 独立复验通过**。产品 `ca29932`（工作树 HEAD `0e0379b`），修复提交 `65551e0`。
+- 现象/复现：正式Renderer/Core隔离项目笔记初始using，点“观望”再点“观望”，按交付约定应取消。保存后Core实际watching，预期null；点击过程按钮aria-pressed也一直显示初始“在用”。
+- 原因：note-editor.js的active在渲染时计算并捕获，点击只改草稿与refreshStatus，按钮状态未更新；第二次点击仍用旧active。
+- 修复范围：只修结论按钮使用最新草稿的选择/取消与视觉/aria同步，保留输入和保存语义。不借此重构其他业务。
+- 修复：点击时依据 `state.draft.verdict` 的**当下**值判断——再点一次选中的那个就是取消结论；
+  点击后立即同步三个按钮的高亮与 `aria-pressed`（不重建整套业务，也不重画输入框）。
+  总结、心得与草稿语义不变；保存与重载结果与最后一次选择一致。
+- 自验：
+  - Codex 原探针 `phase5-review/ui-followup-02/edge-check.cjs`（**复制到临时目录运行，canonical 原失败产物未覆盖**）
+    现在 verdict 快照为 在用 → 观望 → 无选中，`savedVerdict=null`，六项检查
+    （originalExact／modalTail／route／compact／actions／verdictCancel）全绿；
+    原文 31138 字与 sha256 `bb3eb77b…fdef834` 与修复前一致——只改了交互，没动数据。
+  - 正式视图补充用例：从未决定起的选择／切换／取消、视觉与 aria 即时同步、
+    结论按钮不动总结里的字、保存为 null、切走再切回来仍为取消状态。
+  - 回归：M27／M28／M29／前批 ui-followup 实机验收全部通过；Node 142/142。
+- 证据：verification/phase5-review/ui-followup-02/REPORT.md、edge.log、edge-results.json、
+  verification/phase5-minimax/ui-followup-02-r01/REPORT.md。
+
+- Codex独立复验（2026-10-22）：65551e0原失败探针六项通过，保存null；额外从未决定选择/切换/取消后保存null，aria/高亮即时同步、总结/心得及输入节点保留，Renderer重载后仍正确。M27/M28/M29正式隔离检查均退出0。证据verification/phase5-review/ui-followup-02-r01/REPORT.md；关闭BUG-116。
+
+## BUG-117：美化后AI说明容器重复渲染，出现多余空条
+
+- 日期：2026-10-22；状态：**非致命，仅记录，不单独派修**。产品ca29932。
+- 现象：笔记编辑区出现两条空AI说明容器；静态可见fields内部及body末尾均调用summaryEntry。错误或待确认结果也可能重复，后者未专项实测。
+- 预期：同一编辑区AI说明/结果只展示一份。
+- 原因/范围：共享note-editor.js渲染位置移动时保留旧调用；仅显示问题，不是生成/保存保护改变。
+- 验证：批准图/当前短内容截图对照与实际代码审查；尚未修复。按用户要求不为此另派，不作为本批返修门槛。
