@@ -329,16 +329,49 @@
 
   /* ---------------- 详情里的标签编辑器 ---------------- */
 
+  /* 详情读数条。
+   5.1 期（M32）：本期用**假数据**把读数条的版式与信息密度定下来，
+   真实取数（contents.first_seen_at / acquisition_complete / tagging_tasks）
+   在 5.2 期接入。
+   假数据必须显式标注为「示例」，不能让用户误以为是真实采集数据。
+   规则全部由 fx.css 的 [data-fx="on"] 控制，关闭效果时整条不显示。 */
+  function readoutBar() {
+    var rows = [
+      { key: '收录', val: '2026-10-22 09:14' },
+      { key: '完整度', val: '正文已采集' },
+      { key: 'AI 打标', val: '3 个标签' },
+    ];
+    return h(
+      'div.fx-readout',
+      { 'data-fx-readout': 'demo' },
+      rows.map(function (r) {
+        return h('span.fx-readout__item', null,
+          h('span.fx-readout__key', { text: r.key }),
+          h('span.fx-readout__val', { text: r.val }));
+      }),
+      h('span.fx-readout__demo', { text: '示例数据' })
+    );
+  }
+
   function priorityControls(app,item,repaint) {
+    // 「静流」5.1 期：优先级三张卡片 + 「跟随来源」合并为一个四段控件，
+    // 等级改用信号条表达（颜色只在图形上）。
+    var options = SF.catalog.PRIORITY_ORDER.map(function(id) {
+      var meta=SF.catalog.priority(id);
+      return {id:id, name:meta.name};
+    });
+    options.push({id:'inherit', name:'跟随来源'});
     return h('div.detail__section',{'data-refresh-key':'priority:' + item.id,'data-refresh-boundary':true,
       'data-refresh-preserve':JSON.stringify([item.priority, item.priorityOverride, contentPending(item.id)])},h('div.detail__section-title',{text:'优先级'}),
       h('p.field__hint',{text:item.priorityOverride ? '此内容已单独设置，不受来源默认值变化影响。' : '跟随来源 · 当前' + SF.catalog.priority(item.priority).name}),
-      h('div.priority-grid',{'aria-label':'内容优先级'}, SF.catalog.PRIORITY_ORDER.map(function(id) {
-        var meta=SF.catalog.priority(id);
-        return h('button.priority-opt.priority-opt--'+id+(item.priorityOverride===id?'.is-active':''),{type:'button',disabled:contentPending(item.id),'aria-pressed':String(item.priorityOverride===id),onclick:function() { save(id); }},
-          h('span.priority-opt__icon',null,icon(meta.icon,14)),h('span.priority-opt__name',{text:meta.name}));
-      })),
-      ui.btn('跟随来源',{size:'sm',disabled:contentPending(item.id)||!item.priorityOverride,onClick:function() { save(null); }}));
+      h('div.priority-grid',{'aria-label':'内容优先级'}, options.map(function(opt) {
+        var active = opt.id==='inherit' ? !item.priorityOverride : item.priorityOverride===opt.id;
+        var disabled = contentPending(item.id) || (opt.id==='inherit' && !item.priorityOverride);
+        return h('button.priority-opt.priority-opt--'+(opt.id==='inherit'?'inherit':opt.id)+(active?'.is-active':''),
+          {type:'button',disabled:disabled,'aria-pressed':String(active),onclick:function() { save(opt.id==='inherit'?null:opt.id); }},
+          opt.id==='inherit' ? null : ui.prioSig(opt.id),
+          h('span.priority-opt__name',{text:opt.name}));
+      })));
     function save(priority) {
       saveContent(app, item, {priority:priority}, repaint);
     }
@@ -555,6 +588,7 @@
       h('div.detail__byline', null, ui.avatar(item.channelName, null, 'md'), h('div.detail__byline-text', null,
         h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform),h('span.tag',{text:item.intakeMethod==='manual'?'手动收录':'自动采集'})), h('div.detail__byline-time', {text:fmt.publicationHeading(item)+' · '+fmt.publication(item)}), item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
       bodySection(item, whole),
+      readoutBar(),
       priorityControls(app,item,repaint),
       tagControls(app, item, repaint),
       h('div.detail__section', null, h('div.detail__section-title', {text:'整理内容（单选）'}),

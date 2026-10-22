@@ -56,6 +56,25 @@
     return el;
   };
 
+  /**
+   * 优先级信号条：三格高度代表等级，颜色只落在图形上，文字保持中性。
+   * 「静流」5.1 期（M31）：颜色语义唯一性要求——一张卡片上的彩色元素要收敛，
+   * 所以优先级不再用彩色文字胶囊，改用这个 11px 高也能分辨等级的信号条。
+   * 色弱用户靠格数同样能区分（高=3 格、中=2 格、低=1 格）。
+   */
+  ui.prioSig = function (level, opts) {
+    opts = opts || {};
+    var cls = "prio-sig";
+    if (level === "high") cls += " prio-sig--high";
+    else if (level === "medium" || level === "mid") cls += " prio-sig--mid";
+    else if (level === "low") cls += " prio-sig--low";
+    return h(
+      "span." + cls,
+      { "aria-hidden": "true", title: opts.title || null },
+      h("i"), h("i"), h("i")
+    );
+  };
+
   ui.iconBtn = function (iconName, title, onClick, opts) {
     opts = opts || {};
     var btn = h(
@@ -154,9 +173,19 @@
     return ui.tag(tag && tag.name ? tag.name : "");
   }
 
+  /**
+   * 平台标识（内容卡片用）。
+   * 「静流」5.1 期（M31）：原先是「B站」这样的彩色文字胶囊，
+   * 现在改为来源名前的 15px 平台色方块——颜色落在图形上，文字位置让给来源名。
+   */
   ui.platformTag = function (platformId) {
     var p = catalog.platform(platformId);
-    return h("span.tag.tag--" + p.id, { text: p.name });
+    var body = p.icon ? icon(p.icon, 11) : p.mark;
+    return h(
+      "span.plat.plat--sm.plat--" + p.id,
+      { title: p.name, "aria-label": p.name },
+      body
+    );
   };
 
   /**
@@ -182,9 +211,22 @@
     return h("span." + cls.split(" ").join("."), { title: name, "aria-label": name }, (name || "?").slice(0, 1));
   };
 
+  /**
+   * 优先级标识（内容卡片用）。
+   * 「静流」5.1 期（M31）：原先是「高优先级」这样的彩色文字胶囊，
+   * 现在改为三格信号条 + 一个字——颜色只落在图形上，文字保持中性。
+   */
   ui.priorityTag = function (priorityId) {
     var p = catalog.priority(priorityId);
-    return h("span." + p.tagClass.replace("tag--", "tag.tag--"), { text: p.name });
+    if (priorityId === "none" || !priorityId) {
+      return h("span.prio.prio--none", null, ui.prioSig("none"), h("span", { text: p.name }));
+    }
+    return h(
+      "span.prio.prio--" + priorityId,
+      null,
+      ui.prioSig(priorityId),
+      h("span", { text: p.name })
+    );
   };
 
   ui.countPill = function (n, variant) {
@@ -237,11 +279,18 @@
             "span.content-card__author",
             null,
             ui.avatar(item.channelName),
+            // 「静流」§3：平台标识放到来源名前面的色块上，来源名本身保持中性。
+            ui.platformTag(item.platform),
             h("span.t-ellipsis", { text: item.channelName })
           ),
-          ui.platformTag(item.platform),
           ui.priorityTag(item.priority),
-          h("span.tag", {text:item.intakeMethod === "manual" ? "手动收录" : "自动采集"}),
+          // 「静流」§3：收录方式由灰色胶囊改为小图标 + 浅灰文字。
+          h(
+            "span.content-card__method",
+            { title: item.intakeMethod === "manual" ? "手动收录" : "自动采集" },
+            icon(item.intakeMethod === "manual" ? "hand" : "refresh", 12),
+            h("span", { text: item.intakeMethod === "manual" ? "手动" : "自动" })
+          ),
           h("span.content-card__dot", { text: "·" }),
           h("span.content-card__time", { text: fmt.intakeTime(item, true) })
         ),

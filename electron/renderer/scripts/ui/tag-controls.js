@@ -18,9 +18,12 @@
   /* ---------------- 标签色块 ---------------- */
 
   /**
-   * 标签色块：底色 + 文字，颜色取自色板。
+   * 标签色块：中性底 + 彩色圆点。
    * 这是标签在页面里最主要的呈现形式，列表、内容卡片与详情共用。
    * origin 为 suggested 时加一个说明角标，避免人工标签与识别结果混为一谈。
+   *
+   * 5.1 期（M31）：按「静流」§4，底色与文字改走中性令牌（由 .tag-chip 的 CSS 决定），
+   * 颜色只由左侧圆点承载——标签再多也不会把卡片染花。
    */
   controls.tagChip = function (tag, opts) {
     opts = opts || {};
@@ -28,7 +31,6 @@
     var el = h(
       "span.tag-chip" + (opts.removable ? ".tag-chip--removable" : ""),
       {
-        style: { "background-color": c.soft, color: c.ink },
         title: opts.title || tag.name,
         "data-tag-id": tag.id || ""
       },

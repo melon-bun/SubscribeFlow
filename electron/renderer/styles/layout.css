@@ -1,5 +1,7 @@
 /* ==========================================================================
    布局层：应用外壳、侧边栏、顶栏、主区域、右侧详情面板
+   5.1 期（M31）：按「静流」方案 §2 重构为「纸面浮在底色上」的结构——
+   侧栏与顶栏落在底色上（无线），主区域与详情面板合成一张圆角纸面。
    ========================================================================== */
 
 .app {
@@ -13,7 +15,7 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--c-surface);
+  background: var(--c-bg);
 }
 
 /* 两种宿主：生产页 #app 直接挂在 body 下，预览页 #app 挂在 .preview-body 内。
@@ -32,8 +34,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--c-surface);
-  border-right: 1px solid var(--c-border);
+  /* 「静流」：侧栏不加边框，直接落在底色上，靠留白分区 */
+  background: var(--c-bg);
 }
 
 .sidebar__brand {
@@ -46,7 +48,8 @@
 }
 
 /* 品牌标记直接用应用图标 assets/brand.png，与 Dock 图标同源同构：白底方块 + 彩色流动标记。
-   旧版是蓝色渐变底 + 白色内联 glyph（icons.js 的 brand），两者视觉上不是同一个标识。 */
+   旧版是蓝色渐变底 + 白色内联 glyph（icons.js 的 brand），两者视觉上不是同一个标识。
+   5.1 期：logo 图形本身保持原样，只把外框阴影换成「静流」的半透明描边令牌。 */
 .brand__mark {
   display: block;
   width: 32px;
@@ -54,7 +57,7 @@
   flex: none;
   border-radius: var(--r-md);
   overflow: hidden;
-  box-shadow: 0 0 0 1px var(--c-border), 0 1px 3px rgba(15, 23, 42, 0.14);
+  box-shadow: var(--sh-card);
 }
 
 .brand__mark img {
@@ -111,10 +114,16 @@
   color: var(--c-text);
 }
 
+/* 「静流」：选中项是一块浮起的白色纸片，图标变青色，不再整行铺浅蓝。 */
 .nav__item.is-active {
-  background: var(--c-brand-weak);
-  color: var(--c-brand);
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: var(--sh-card);
   font-weight: 500;
+}
+
+.nav__item.is-active svg {
+  color: var(--c-brand);
 }
 
 .nav__item svg {
@@ -227,8 +236,8 @@
   height: var(--topbar-h);
   flex: none;
   padding: 0 var(--s-7);
-  background: var(--c-surface);
-  border-bottom: 1px solid var(--c-border);
+  /* 「静流」：顶栏不加下边线，直接落在底色上 */
+  background: var(--c-bg);
 }
 
 .topbar__search {
@@ -251,12 +260,13 @@
 .topbar__search input {
   width: 100%;
   height: 36px;
-  padding: 0 64px 0 var(--s-9);
-  border: 1px solid var(--c-border);
+  padding: 0 var(--s-8) 0 var(--s-9);
+  border: 0;
   border-radius: var(--r-md);
-  background: var(--c-surface-2);
+  background: var(--c-surface-3);
+  box-shadow: var(--sh-inset);
   font-size: var(--fs-base);
-  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+  transition: box-shadow var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
 
 .topbar__search input::placeholder {
@@ -264,13 +274,13 @@
 }
 
 .topbar__search input:hover {
-  border-color: var(--c-border-strong);
+  background: var(--c-surface);
+  box-shadow: var(--sh-card);
 }
 
 .topbar__search input:focus {
-  border-color: var(--c-brand);
   background: var(--c-surface);
-  box-shadow: 0 0 0 3px var(--c-brand-weak);
+  box-shadow: inset 0 0 0 1px var(--c-brand), 0 0 0 4px var(--c-brand-ring);
   outline: none;
 }
 
@@ -450,11 +460,18 @@
 
 /* ---------------- 主区域 ---------------- */
 
+/* 「静流」：主区域与详情面板合成一张圆角纸面，浮在底色上。
+   纸面同时承载 --c-sheet 底色与 --sh-sheet 阴影，右下各留 10px 外边距。 */
 .workspace {
   display: flex;
   min-width: 0;
   min-height: 0;
   flex: 1;
+  margin: 0 var(--s-5) var(--s-5) 0;
+  border-radius: var(--r-xl);
+  background: var(--c-sheet);
+  box-shadow: var(--sh-sheet);
+  overflow: hidden;
 }
 
 .main {
@@ -463,7 +480,7 @@
   min-width: 0;
   min-height: 0;
   flex: 1;
-  background: var(--c-bg);
+  background: var(--c-sheet);
 }
 
 .view {
@@ -521,13 +538,14 @@
 
 /* ---------------- 右侧详情面板 ---------------- */
 
+/* 「静流」：详情面板在纸面内用细线分隔，不再是独立的一块白底 */
 .detail {
   display: flex;
   flex-direction: column;
   width: var(--detail-w);
   flex: none;
-  background: var(--c-surface);
-  border-left: 1px solid var(--c-border);
+  background: var(--c-sheet);
+  border-left: 1px solid var(--c-divider);
 }
 
 .detail__head {
@@ -612,7 +630,7 @@
 
 @media (max-width: 900px) {
   .app {
-    grid-template-columns: var(--sidebar-w-collapsed) 1fr;
+    grid-template-columns: var(--sidebar-w-collapsed) minmax(0, 1fr);
   }
 
   .sidebar {
@@ -634,6 +652,7 @@
     padding: 0;
   }
 
+  /* 窄窗下详情面板脱离纸面成为浮层，纸面本身保留圆角，浮层贴右边缘。 */
   .detail {
     position: absolute;
     top: var(--topbar-h);
@@ -641,6 +660,7 @@
     bottom: 0;
     z-index: var(--z-drawer);
     width: min(420px, 92vw);
+    background: var(--c-surface);
     box-shadow: var(--sh-4);
   }
 

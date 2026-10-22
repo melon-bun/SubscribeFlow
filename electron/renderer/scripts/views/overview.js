@@ -256,7 +256,7 @@
       group.error ? h('div',null,h('p.field__error',{role:'alert',text:group.error.message}),!group.requestMore ? ui.btn('重试更新本栏',{onClick:function() { loadGroup(app,id,false); SF.app.renderContent(); }}) : null) : null,
       group.next_offset!=null ? ui.btn(group.loading?'正在加载…':group.error && group.requestMore?'重试加载':'加载更多',{disabled:group.loading,onClick:function() { loadGroup(app,id,true); SF.app.renderContent(); }}):null);
     return h('section.kanban__col.kanban__col--'+tone,{'aria-label':meta.name,'data-priority-column':id,'data-refresh-key':'priority-column:'+boardKey+':'+id},
-      h('div.kanban__head',null,h('span.kanban__head-icon',null,icon(meta.icon,14)),h('span.kanban__head-name',{text:meta.name}),ui.countPill(group.total==null?'—':group.total,tone)),
+      h('div.kanban__head',null,h('span.kanban__head-icon',null,ui.prioSig(id)),h('span.kanban__head-name',{text:meta.name}),ui.countPill(group.total==null?'—':group.total,tone)),
       h('p.kanban__head-desc',{text:meta.action}),contents,
       h('div.priority-column-foot',null,h('span.muted',{text:'已载入 '+(group.items||[]).length+' 条'}),ui.btn('查看全部',{size:'sm',onClick:function() { app.filters.priority=id; SF.app.navigate('inbox'); }})));
   }

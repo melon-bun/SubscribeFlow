@@ -60,15 +60,17 @@
   background: var(--c-surface-3);
 }
 
+/* 「静流」：设置页导航的选中态与主导航一致——浮起的白色纸片，不再整行铺浅蓝。 */
 .settings-nav__item.is-active {
-  background: var(--c-brand-weak);
-  color: var(--c-brand);
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: var(--sh-card);
   font-weight: 600;
 }
 
 .settings-nav__item:focus-visible {
-  outline: 2px solid var(--c-brand);
-  outline-offset: -2px;
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--c-brand), 0 0 0 4px var(--c-brand-ring);
 }
 
 .settings-nav__label {

@@ -391,28 +391,45 @@
   min-height: 0;
 }
 
+/* 「静流」组件样张：现在整列染色，三列放在一起很重。
+   改为中性列底，只在顶部留一层很淡的等级色渐隐——颜色退到边缘，不再压住内容。 */
 .kanban__col {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid var(--c-border);
+  border: 0;
   border-radius: var(--r-lg);
+  background: var(--c-surface-2);
+  box-shadow: var(--sh-card);
   overflow: hidden;
 }
 
 .kanban__col--high {
-  background: var(--c-high-bg);
-  border-color: var(--c-high-bg-2);
+  --pc: var(--c-high);
+  background: var(--c-surface-2);
 }
 
 .kanban__col--mid {
-  background: var(--c-mid-bg);
-  border-color: var(--c-mid-bg-2);
+  --pc: var(--c-mid);
+  background: var(--c-surface-2);
 }
 
 .kanban__col--low {
-  background: var(--c-low-bg);
-  border-color: var(--c-low-bg-2);
+  --pc: var(--c-low);
+  background: var(--c-surface-2);
+}
+
+/* 列顶的等级色渐隐 */
+.kanban__col::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 42px;
+  pointer-events: none;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pc, var(--c-text-3)) 12%, transparent), transparent);
 }
 
 .kanban__head {
@@ -423,14 +440,17 @@
   flex: none;
 }
 
+/* 「静流」§7：列头不再用彩色实心方块图标，改用与卡片一致的信号条，
+   等级只由格数与颜色条表达，标题文字保持中性。 */
 .kanban__head-icon {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
   flex: none;
   border-radius: var(--r-sm);
-  color: #fff;
+  color: inherit;
 }
 
 .kanban__head-icon svg {
@@ -440,15 +460,15 @@
 }
 
 .kanban__col--high .kanban__head-icon {
-  background: var(--c-high);
+  background: transparent;
 }
 
 .kanban__col--mid .kanban__head-icon {
-  background: var(--c-mid);
+  background: transparent;
 }
 
 .kanban__col--low .kanban__head-icon {
-  background: var(--c-low);
+  background: transparent;
 }
 
 .kanban__head-name {
@@ -1155,7 +1175,8 @@
 }
 
 .preview-bar select option {
-  color: #1d2129;
+  /* 原生 option 不继承主题色，只能给具体值；跟随浅色主题的正文色 */
+  color: #15171a;
 }
 
 .preview-bar__desc {
@@ -1509,34 +1530,10 @@
   background: var(--row-color, var(--c-border-strong));
 }
 
-.tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  height: 24px;
-  padding: 0 var(--s-3);
-  border-radius: var(--r-sm);
-  font-size: var(--fs-cap);
-  line-height: 1;
-  white-space: nowrap;
-  max-width: 100%;
-}
-
+/* 标签色块的基础样式（中性底 + 彩色圆点）统一在 components.css 定义，
+   这里只保留交互态，避免同一组件在两处漂移。 */
 .tag-chip.is-clickable {
   cursor: pointer;
-}
-
-.tag-chip__dot {
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border-radius: 50%;
-}
-
-.tag-chip__text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .tag-chip__origin {

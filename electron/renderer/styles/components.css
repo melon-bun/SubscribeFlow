@@ -1,6 +1,8 @@
 /* ==========================================================================
    组件层：按钮、筛选、标签、卡片、开关、表格、对话框、状态区块
    组件按实际复用需要拆分，不建设组件框架（见 IMPLEMENTATION.md F1.2）。
+   5.1 期（M31）：按「静流」方案 §4 调整——主操作改航天国际橙（每屏一处），
+   次一级重要操作（打开原文等）用墨色，新增 .btn-ink；基础按钮改「用阴影画边框」。
    ========================================================================== */
 
 /* ---------------- 按钮 ---------------- */
@@ -12,15 +14,16 @@
   gap: var(--s-2);
   height: 34px;
   padding: 0 var(--s-5);
-  border: 1px solid var(--c-border);
+  border: 0;
   border-radius: var(--r-md);
   background: var(--c-surface);
   color: var(--c-text);
   font-size: var(--fs-base);
   font-weight: 400;
   white-space: nowrap;
+  box-shadow: var(--sh-card);
   transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease),
-    color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+    color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 
 .btn svg {
@@ -30,12 +33,13 @@
 }
 
 .btn:hover:not(:disabled) {
-  border-color: var(--c-brand);
-  color: var(--c-brand);
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: var(--sh-card-hover);
 }
 
 .btn:active:not(:disabled) {
-  background: var(--c-brand-weak-2);
+  transform: translateY(0.5px) scale(0.99);
 }
 
 .btn:disabled {
@@ -43,21 +47,31 @@
   cursor: not-allowed;
 }
 
+/* 焦点：青色描边外再加一层散光 */
+.btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--c-brand), 0 0 0 4px var(--c-brand-ring);
+}
+
+/* 主操作：航天国际橙，每屏至多一处 */
 .btn--primary {
-  background: var(--c-brand);
-  border-color: var(--c-brand);
-  color: var(--c-text-inverse);
+  background: var(--c-action);
+  border-color: var(--c-action);
+  color: var(--c-on-action);
   font-weight: 500;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 1px 2px rgba(214, 63, 0, 0.35);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: var(--c-brand-hover);
-  border-color: var(--c-brand-hover);
-  color: var(--c-text-inverse);
+  background: var(--c-action-hover);
+  border-color: var(--c-action-hover);
+  color: var(--c-on-action);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 3px 8px rgba(214, 63, 0, 0.35);
 }
 
 .btn--primary:active:not(:disabled) {
-  background: var(--c-brand-active);
+  background: var(--c-action-hover);
+  transform: translateY(0.5px) scale(0.99);
 }
 
 .btn--ghost {
@@ -77,24 +91,44 @@
   color: var(--c-danger);
 }
 
-/* 强调但次于主按钮：品牌浅底 + 蓝字蓝边。
-   给「AI 总结」这类生成入口用——比 ghost 明显，又不与「保存笔记」的主按钮抢层级。 */
+/* 强调但次于主按钮：品牌浅底 + 青字青边。
+   给「AI 总结」这类生成入口用——比 ghost 明显，又不与「保存笔记」的橙色主按钮抢层级。 */
 .btn--accent {
   background: var(--c-brand-weak);
-  border-color: var(--c-brand-border);
-  color: var(--c-brand);
+  border: 1px solid var(--c-brand-border);
+  color: var(--c-brand-ink);
   font-weight: 500;
 }
 
 .btn--accent:hover:not(:disabled) {
   background: var(--c-brand-weak-2);
   border-color: var(--c-brand);
-  color: var(--c-brand);
+  color: var(--c-brand-ink);
 }
 
 .btn--accent:active:not(:disabled) {
   background: var(--c-brand-weak-2);
   border-color: var(--c-brand-active);
+}
+
+/* 次一级的重要操作（墨色）：「打开原文」这类需要被看见、但不该和主操作抢层级的动作。
+   5.1 期新增，对应「静流」方案 §4 的 .btn-ink。 */
+.btn--ink {
+  background: var(--c-ink);
+  color: var(--c-on-ink);
+  font-weight: 500;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.btn--ink:hover:not(:disabled) {
+  background: var(--c-ink-hover);
+  color: var(--c-on-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 3px 8px rgba(0, 0, 0, 0.24);
+}
+
+.btn--ink:active:not(:disabled) {
+  background: var(--c-ink-hover);
+  transform: translateY(0.5px) scale(0.99);
 }
 
 .btn--sm {
@@ -563,6 +597,19 @@ textarea.input {
   letter-spacing: -0.02em;
 }
 
+/* 「静流」§3：内容卡片里的平台标识用小一号方块（15px），放在来源名前。 */
+.plat--sm {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  font-size: 8px;
+}
+
+.plat--sm svg {
+  width: 10px;
+  height: 10px;
+}
+
 .plat--xiaohongshu {
   background: var(--c-xhs);
 }
@@ -645,28 +692,33 @@ textarea.input {
 
 /* ---------------- 内容卡片（收件箱 / 优先级模式共用） ---------------- */
 
+/* 「静流」§3：卡片用阴影画边框，悬停只换阴影；
+   选中态改信号青描边 + 光环（青色留给「选中 / 当前」）。 */
 .content-card {
   position: relative;
   display: flex;
   gap: var(--s-4);
   padding: var(--s-5);
-  border: 1px solid var(--c-border);
+  border: 0;
   border-radius: var(--r-lg);
   background: var(--c-surface);
+  box-shadow: var(--sh-card);
   text-align: left;
   width: 100%;
-  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+  transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
 }
 
 .content-card:hover {
-  border-color: var(--c-border-strong);
-  box-shadow: var(--sh-2);
+  box-shadow: var(--sh-card-hover);
+  transform: translateY(-1px);
 }
 
+/* 「静流」§3：选中态 = 信号青描边 + 光环（青色只表示「当前选中」） */
 .content-card.is-selected {
-  border-color: var(--c-brand);
-  background: var(--c-brand-weak-2);
-  box-shadow: 0 0 0 1px var(--c-brand) inset;
+  border-color: var(--c-signal);
+  background: var(--c-surface);
+  box-shadow: 0 0 0 1.5px var(--c-signal), 0 0 0 5px var(--c-signal-ring),
+    0 8px 20px -10px rgba(0, 140, 180, 0.35);
 }
 
 .content-card__thumb {
@@ -762,18 +814,30 @@ textarea.input {
   min-width: 0;
 }
 
+/* 「静流」§3：URL 行改为悬停时出现，不再每张卡片常驻一行蓝色链接。
+   链接用等宽字体（技术信息），颜色保持中性，避免再添一处彩色。 */
 .content-card__link {
   display: inline-flex;
   align-items: center;
   gap: var(--s-2);
   min-width: 0;
-  font-size: var(--fs-sm);
-  color: var(--c-brand);
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--c-text-4);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease);
+}
+
+.content-card:hover .content-card__link,
+.content-card.is-selected .content-card__link {
+  opacity: 1;
+  color: var(--c-text-3);
 }
 
 .content-card__link svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   flex: none;
 }
 
@@ -781,6 +845,31 @@ textarea.input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 「静流」§3：收录方式由灰色胶囊改为小图标 + 浅灰文字。 */
+.content-card__method {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  white-space: nowrap;
+  color: var(--c-text-3);
+}
+
+.content-card__method svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+/* 优先级标识：信号条 + 一个字，文字保持中性 */
+.prio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
 }
 
 .content-card__ops {
@@ -1543,25 +1632,70 @@ textarea.input {
   line-height: 1.75;
 }
 
+/* 「静流」§5：优先级由三张大卡片合并为一个分段控件（凹槽 + 浮起滑块），
+   等级改用三格信号条表达——颜色只落在图形上，文字保持中性。 */
 .priority-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--s-3);
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-md);
+  background: var(--c-surface-3);
+  box-shadow: var(--sh-inset);
 }
 
 .priority-opt {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: var(--s-2);
-  padding: var(--s-4) var(--s-3);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: var(--c-surface);
+  justify-content: center;
+  gap: var(--s-3);
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--s-4);
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--c-text-2);
   text-align: center;
-  transition: all var(--dur-1) var(--ease);
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
 }
 
+.priority-opt:hover:not(:disabled) {
+  color: var(--c-text);
+}
+
+.priority-opt:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 信号条：三格高度代表等级，色弱用户靠格数同样能区分 */
+.prio-sig {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 11px;
+  flex: none;
+}
+
+.prio-sig i {
+  width: 3px;
+  border-radius: 1px;
+  background: var(--c-text-4);
+  opacity: 0.45;
+}
+
+.prio-sig i:nth-child(1) { height: 4px; }
+.prio-sig i:nth-child(2) { height: 7.5px; }
+.prio-sig i:nth-child(3) { height: 11px; }
+
+.prio-sig--high i { background: var(--c-high); opacity: 1; }
+.prio-sig--mid i:nth-child(-n + 2) { background: var(--c-mid); opacity: 1; }
+.prio-sig--low i:nth-child(1) { background: var(--c-low); opacity: 1; }
+
+/* 保留旧图标容器的尺寸契约，但不再用彩色实心圆——颜色交给信号条 */
 .priority-opt__icon {
   display: grid;
   place-items: center;
@@ -1588,38 +1722,38 @@ textarea.input {
   line-height: 1.4;
 }
 
+/* 旧的三色实心图标底不再使用（颜色语义已交给信号条），仅保留类名以免旧结构散架 */
 .priority-opt--high .priority-opt__icon {
-  background: var(--c-high);
+  background: transparent;
 }
 .priority-opt--mid .priority-opt__icon,
 .priority-opt--medium .priority-opt__icon {
-  background: var(--c-mid);
+  background: transparent;
 }
 .priority-opt--low .priority-opt__icon {
-  background: var(--c-low);
+  background: transparent;
 }
 
-.priority-opt:hover {
-  border-color: var(--c-border-strong);
-}
-
+/* 选中项：浮起滑块，当前项一眼可见 */
 .priority-opt.is-active {
-  border-color: currentColor;
-  box-shadow: 0 0 0 1px currentColor inset;
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: var(--sh-card);
+  font-weight: 500;
 }
 
 .priority-opt--high.is-active {
-  color: var(--c-high);
-  background: var(--c-high-bg);
+  color: var(--c-text);
+  background: var(--c-surface);
 }
 .priority-opt--mid.is-active,
 .priority-opt--medium.is-active {
-  color: var(--c-mid);
-  background: var(--c-mid-bg);
+  color: var(--c-text);
+  background: var(--c-surface);
 }
 .priority-opt--low.is-active {
-  color: var(--c-low);
-  background: var(--c-low-bg);
+  color: var(--c-text);
+  background: var(--c-surface);
 }
 
 .op-grid {
@@ -1719,6 +1853,9 @@ textarea.input {
    颜色不写在这里：tag-controls.js 用 tagCatalog 把 solid / soft / ink 三个
    CSS 变量写到行内样式上，所以浅色与深色模式各自成立，页面也不出现任何色值。
    文字与底色的对比度由 tokens.css 里的 *-ink / *-soft 配对保证。
+
+   5.1 期（M31）：按「静流」§4 改为「中性底 + 彩色圆点」——标签多时也不把卡片染花。
+   颜色只由圆点承载，文字与底色统一走中性令牌。
    ========================================================================== */
 
 .tag-chip {
@@ -1728,7 +1865,10 @@ textarea.input {
   max-width: 100%;
   height: 24px;
   padding: 0 var(--s-3);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-full);
+  background: var(--c-surface-2);
+  box-shadow: inset 0 0 0 1px var(--c-border);
+  color: var(--c-text-2);
   font-size: var(--fs-sm);
   line-height: 1;
   white-space: nowrap;
