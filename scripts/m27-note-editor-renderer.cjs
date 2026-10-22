@@ -99,14 +99,14 @@ async function verify({window, core, root}) {
     select.value = 'project';
     select.dispatchEvent(new Event('change', {bubbles: true}));
   })()`);
-  await until(`!!document.querySelector('select[aria-label="项目结论"]')`);
+  await until(`!!document.querySelector('.note-editor__verdict')`);
   await evaluate(`(() => {
     const area = document.querySelector('textarea[aria-label="这个项目解决什么问题"]');
     area.value = '让本地文档能被检索。';
     area.dispatchEvent(new Event('input', {bubbles: true}));
-    const verdict = document.querySelector('select[aria-label="项目结论"]');
-    verdict.value = 'using';
-    verdict.dispatchEvent(new Event('change', {bubbles: true}));
+    // 结论是分段按钮：点「在用」。
+    Array.from(document.querySelectorAll('.note-editor__verdict-btn'))
+      .find(b => b.textContent.trim() === '在用').click();
   })()`);
   await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === '保存笔记').click()`);
   await until(`SF.app.state.client.getNote(${JSON.stringify(itemId)}).then(n => n && n.verdict === 'using')`);
@@ -126,12 +126,12 @@ async function verify({window, core, root}) {
     type: document.querySelector('select[aria-label="笔记类型"]').value,
     summary: document.querySelector('textarea[aria-label="这个项目解决什么问题"]').value,
     takeaway: document.querySelector('textarea[aria-label="我的判断／使用心得"]').value,
-    verdict: document.querySelector('select[aria-label="项目结论"]').value,
+    verdict: (document.querySelector('.note-editor__verdict-btn.is-active') || {}).textContent,
   }))()`);
   assert.equal(reloaded.type, 'project', '重载后模板要回显');
   assert.equal(reloaded.summary, '让本地文档能被检索。', '重载后总结要回显');
   assert.equal(reloaded.takeaway, '', '重载后心得要回显');
-  assert.equal(reloaded.verdict, 'using', '重载后结论要回显');
+  assert.equal(reloaded.verdict, '在用', '重载后结论要回显');
 
   /* 5. 项目切回通用：结论要确认后清除，总结与心得保留；未保存前不改库。 */
   await evaluate(`(() => {
@@ -146,7 +146,7 @@ async function verify({window, core, root}) {
   await until(`!document.querySelector('.dialog')`);
   const stillProject = await evaluate(`SF.app.state.client.getNote(${JSON.stringify(itemId)})`);
   assert.equal(stillProject.verdict, 'using', '没点保存前不能动已经存好的笔记');
-  const draftVerdict = await evaluate(`document.querySelector('select[aria-label="项目结论"]') ? 'has' : 'none'`);
+  const draftVerdict = await evaluate(`document.querySelector('.note-editor__verdict') ? 'has' : 'none'`);
   assert.equal(draftVerdict, 'none', '草稿里已经没有结论这一栏了');
 
   /* 6. 冲突：草稿保留，并说清有更新的版本。 */

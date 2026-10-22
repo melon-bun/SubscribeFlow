@@ -120,7 +120,7 @@ async function verify({window, core, root}) {
     area.dispatchEvent(new Event('input', {bubbles: true}));
   })()`);
   // 打开并关闭原内容 modal。
-  await evaluate(`Array.from(document.querySelectorAll('.notes-card button')).find(b => b.textContent.trim() === '查看内容').click()`);
+  await evaluate(`Array.from(document.querySelectorAll('.notes-card button')).find(b => b.textContent.trim() === '查看原内容').click()`);
   await until(`!!document.querySelector('.notes-modal')`);
   await evaluate(`Array.from(document.querySelectorAll('.dialog button')).find(b => b.getAttribute('aria-label') === '关闭对话框').click()`);
   await until(`!document.querySelector('.notes-modal')`);

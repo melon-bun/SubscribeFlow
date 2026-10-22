@@ -125,11 +125,11 @@ async function verify({window, core, root}) {
   const noteFields = await evaluate(`({
     summary: document.querySelector('textarea[aria-label="这个项目解决什么问题"]').value,
     takeaway: document.querySelector('textarea[aria-label="我的判断／使用心得"]').value,
-    verdict: document.querySelector('select[aria-label="项目结论"]').value,
+    verdict: (document.querySelector('.note-editor__verdict-btn.is-active') || {}).textContent,
   })`);
   assert.equal(noteFields.summary, '本地文档检索加桌面壳。');
   assert.equal(noteFields.takeaway, '先做索引，再谈接入。');
-  assert.equal(noteFields.verdict, 'using');
+  assert.equal(noteFields.verdict, '在用');
 
   /* 4. 搜索：覆盖标题与笔记文字。 */
   await evaluate(`(() => {
@@ -180,12 +180,13 @@ async function verify({window, core, root}) {
   const paging = await evaluate(`({
     total: (document.querySelector('.notes-toc__foot') || {}).textContent,
     items: document.querySelectorAll('.notes-toc__item').length,
-    more: !!document.querySelector('.notes-toc__pager button'),
+    more: !!document.querySelector('.notes-toc__foot .icon-btn'),
   })`);
   assert.ok(paging.more, '超过一页时要有翻页入口');
   assert.ok(paging.total.includes('共'), '目录底部要显示总数');
   const firstPage = paging.items;
-  await evaluate(`document.querySelector('.notes-toc__pager button').click()`);
+  // 翻页是目录底部的两个箭头按钮（上一页／下一页）。
+  await evaluate(`Array.from(document.querySelectorAll('.notes-toc__foot .icon-btn')).pop().click()`);
   // 翻页时列表会先短暂清空再填新页：等「新的一页有内容且条数不同」，
   // 别把那个中间的空状态当成翻好了。
   await until(`document.querySelectorAll('.notes-toc__item').length > 0 && document.querySelectorAll('.notes-toc__item').length !== ${firstPage}`);
@@ -196,7 +197,7 @@ async function verify({window, core, root}) {
   assert.equal(secondPage.total, paging.total, '翻页后总数不变');
   assert.ok(secondPage.items > 0, '下一页要有内容');
   // 回到第一页，后面的场景都在第一页上做。
-  await evaluate(`Array.from(document.querySelectorAll('.notes-toc__pager button')).find(b => b.textContent.trim() === '上一页').click()`);
+  await evaluate(`Array.from(document.querySelectorAll('.notes-toc__foot .icon-btn')).find(b => b.getAttribute('aria-label') === '上一页').click()`);
   await until(`document.querySelectorAll('.notes-toc__item').length === ${firstPage} && document.querySelectorAll('.notes-toc__item').length > 0`);
 
   /* 5c. 快速连改条件：最后一次的条件一定要真的下发，旧结果不冒充当前。 */
@@ -221,7 +222,9 @@ async function verify({window, core, root}) {
   })()`);
   await until(`document.querySelectorAll('.notes-toc__item').length > 1`);
 
-  /* 6. 标签筛选：选项来自笔记范围内的标签。 */
+  /* 6. 标签筛选：选项来自笔记范围内的标签（在「筛选」面板里）。 */
+  await evaluate(`Array.from(document.querySelectorAll('.notes-toc button')).find(b => b.textContent.trim() === '筛选').click()`);
+  await until(`!!document.querySelector('.notes-toc__panel')`);
   const tagNames = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__tag span:first-child')).map(s => s.textContent)`);
   assert.ok(tagNames.includes('检索'), '标签筛选要用笔记范围内的标签');
   assert.ok(!tagNames.includes('没有笔记的标签'), '不是笔记的标签不当作笔记标签');

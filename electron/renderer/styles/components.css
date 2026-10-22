@@ -2189,3 +2189,66 @@ textarea.input {
   line-height: 1.7;
   white-space: pre-wrap;
 }
+
+/* ---------------- M28 笔记页：编辑区层次 ---------------- */
+
+.note-editor__label-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+}
+
+.note-editor__label-row .field__label {
+  margin-bottom: 0;
+}
+
+.note-editor__verdict {
+  display: inline-flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+.note-editor__verdict-btn {
+  padding: var(--s-2) var(--s-5);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font: inherit;
+  font-size: var(--fs-cap);
+  cursor: pointer;
+}
+
+.note-editor__verdict-btn:hover:not(:disabled) {
+  border-color: var(--c-brand-border);
+  color: var(--c-brand);
+}
+
+.note-editor__verdict-btn.is-active {
+  border-color: var(--c-brand);
+  background: var(--c-brand-weak);
+  color: var(--c-brand);
+  font-weight: 500;
+}
+
+.note-editor__actionbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-5);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--c-divider);
+}
+
+.note-editor__actionbar.is-sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding-bottom: var(--s-3);
+  background: var(--c-bg);
+}
+
+.note-editor__actions-state {
+  min-width: 0;
+}

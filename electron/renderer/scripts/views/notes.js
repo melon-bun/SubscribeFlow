@@ -28,6 +28,8 @@
   var sort = 'updated';
   var offset = 0;
   var selectedId = null;
+  // 筛选面板默认收起：平台常在眼前，来源／结论／标签收在「筛选」里。
+  var filterOpen = false;
   // 选中条目的原内容（阅读区顶部那张卡片）。取不到就如实说取不到。
   var detail = {itemId:null, seq:0, loading:false, error:null, content:null};
 
@@ -242,10 +244,10 @@
   function head(app) {
     return h('div.view__head', {'data-refresh-key':'notes-head'},
       h('div.view__head-text', null,
-        h('div.view__title', null, h('h1.t-h1', {text:'笔记'})),
-        h('p.view__desc', {text:'从标题找回内容，从笔记找回自己的判断。'})),
-      h('div.view__actions', null,
-        h('span.muted', {text: list.loaded ? ('共 ' + list.total + ' 篇') : '正在读取…'})));
+        h('div.view__title', null,
+          h('h1.t-h1', {text:'笔记'}),
+          h('span.notes-head__count', {text: list.loaded ? (list.total + ' 篇') : ''})),
+        h('p.view__desc', {text:'把看过的内容，变成自己的判断。'})));
   }
 
   /* ---------------- 左列：原标题目录 ---------------- */
@@ -276,6 +278,15 @@
         }));
     }
     return h('aside.notes-toc', {'aria-label':'笔记目录','data-refresh-key':'notes-toc-wrap'},
+      h('div.notes-toc__head', null,
+        h('span.notes-toc__label', {text:'全部笔记'}),
+        h('div.spacer'),
+        ui.select(SORTS, sort, function (value) {
+          sort = value || 'updated';
+          offset = 0;
+          list.loaded = false; list.needLoad = true;
+          renderView(app);
+        }, {ariaLabel:'笔记排序', small:true})),
       h('div.notes-toc__tools', null,
         ui.searchInput('搜索标题或笔记…', filters.keyword, function (value) {
           filters.keyword = value;
@@ -291,45 +302,98 @@
             offset = 0;
             list.loaded = false; list.needLoad = true;
             renderView(app);
-          }, {ariaLabel:'按平台筛选'}),
-          ui.select([{value:'',label:'全部来源'}].concat(scope.sources.map(function (row) {
-            return {value: row.id, label: row.name || row.id};
-          })), filters.sourceId, function (value) {
-            filters.sourceId = value || '';
-            offset = 0;
-            list.loaded = false; list.needLoad = true;
-            renderView(app);
-          }, {ariaLabel:'按来源筛选'}),
-          ui.select([{value:'',label:'不限结论'},
-                     {value:'using', label:'在用'},
-                     {value:'watching', label:'观望'},
-                     {value:'dropped', label:'放弃'}],
-            filters.verdict, function (value) {
-              filters.verdict = value || '';
-              offset = 0;
-              list.loaded = false; list.needLoad = true;
-              renderView(app);
-            }, {ariaLabel:'按项目结论筛选'}),
-          ui.select(SORTS, sort, function (value) {
-            sort = value || 'updated';
-            offset = 0;
-            list.loaded = false; list.needLoad = true;
-            renderView(app);
-          }, {ariaLabel:'笔记排序'})),
-        tagFilter(app)),
+          }, {ariaLabel:'按平台筛选', small:true}),
+          ui.btn('筛选', {
+            size:'sm',
+            variant: filterOpen ? 'accent' : 'ghost',
+            onClick: function () { filterOpen = !filterOpen; renderView(app); },
+          }),
+          activeChips(app)),
+        filterOpen ? filterPanel(app) : null),
       body,
-      list.total ? h('p.notes-toc__foot', {text:'共 ' + list.total + ' 篇 · 目录只显示原标题'}) : null,
-      (list.next_offset != null || offset > 0) ? h('div.notes-toc__pager', null,
-        offset > 0 ? ui.btn('上一页', {onClick:function () {
+      h('div.notes-toc__foot', null,
+        h('span', {text: list.loaded ? ('共 ' + list.total + ' 篇') : ''}),
+        h('div.spacer'),
+        offset > 0 ? ui.iconBtn('chevron-left', '上一页', function () {
           offset = Math.max(0, offset - PAGE);
           list.loaded = false; list.needLoad = true;
           renderView(app);
-        }}) : null,
-        list.next_offset != null ? ui.btn('更多', {onClick:function () {
+        }) : null,
+        list.next_offset != null ? ui.iconBtn('chevron-right', '下一页', function () {
           offset = list.next_offset;
           list.loaded = false; list.needLoad = true;
           renderView(app);
-        }}) : null) : null);
+        }) : null));
+  }
+
+  /** 展开的筛选面板：来源、结论与标签。能力都在，只是收起来。 */
+  function filterPanel(app) {
+    return h('div.notes-toc__panel', null,
+      ui.select([{value:'',label:'全部来源'}].concat(scope.sources.map(function (row) {
+        return {value: row.id, label: row.name || row.id};
+      })), filters.sourceId, function (value) {
+        filters.sourceId = value || '';
+        offset = 0;
+        list.loaded = false; list.needLoad = true;
+        renderView(app);
+      }, {ariaLabel:'按来源筛选', small:true}),
+      ui.select([{value:'',label:'不限结论'},
+                 {value:'using', label:'在用'},
+                 {value:'watching', label:'观望'},
+                 {value:'dropped', label:'放弃'}],
+        filters.verdict, function (value) {
+          filters.verdict = value || '';
+          offset = 0;
+          list.loaded = false; list.needLoad = true;
+          renderView(app);
+        }, {ariaLabel:'按项目结论筛选', small:true}),
+      tagFilter(app));
+  }
+
+  /** 已经生效的筛选：做成可去掉的标签，一眼能看出在筛什么。 */
+  function activeChips(app) {
+    var chips = [];
+    function chip(label, onRemove) {
+      return h('span.notes-toc__chip', null,
+        h('span', {text: label}),
+        ui.iconBtn('close', '去掉这个筛选', onRemove, {size:14}));
+    }
+    if (filters.keyword) {
+      chips.push(chip('检索 ' + filters.keyword, function () {
+        filters.keyword = ''; offset = 0;
+        list.loaded = false; list.needLoad = true; renderView(app);
+      }));
+    }
+    if (filters.platform) {
+      var platform = (SF.catalog.platform(filters.platform) || {}).name || filters.platform;
+      chips.push(chip(platform, function () {
+        filters.platform = ''; offset = 0;
+        list.loaded = false; list.needLoad = true; renderView(app);
+      }));
+    }
+    if (filters.sourceId) {
+      var source = scope.sources.filter(function (row) { return row.id === filters.sourceId; })[0];
+      chips.push(chip((source && source.name) || filters.sourceId, function () {
+        filters.sourceId = ''; offset = 0;
+        list.loaded = false; list.needLoad = true; renderView(app);
+      }));
+    }
+    filters.tags.forEach(function (tagId) {
+      var tag = scope.tags.filter(function (row) { return row.id === tagId; })[0];
+      chips.push(chip((tag && tag.name) || tagId, function () {
+        filters.tags = filters.tags.filter(function (id) { return id !== tagId; });
+        offset = 0; list.loaded = false; list.needLoad = true; renderView(app);
+      }));
+    });
+    if (filters.verdict) {
+      var labels = {using:'在用', watching:'观望', dropped:'放弃'};
+      chips.push(chip(labels[filters.verdict] || filters.verdict, function () {
+        filters.verdict = ''; offset = 0;
+        list.loaded = false; list.needLoad = true; renderView(app);
+      }));
+    }
+    if (!chips.length) return null;
+    return h('div.notes-toc__chips', null, chips);
   }
 
   /** 标签筛选：选项只来自笔记范围内的标签，不是全库标签。 */
@@ -380,6 +444,8 @@
         item: detail.content || {},
         client: app.client,
         repaint: function () { renderView(app); },
+        // 阅读区里的保存/删除贴在底部，滚动时也能直接点到（确认图）。
+        stickyActions: true,
         onChanged: function (info) {
           // 存好或删掉：目录位置、数量与范围都要跟上。
           info = info || {};
@@ -396,7 +462,13 @@
       }) : null);
   }
 
-  /** 原内容卡片：只放原内容的信息，不重复个人笔记。 */
+  /**
+   * 原内容卡片：尽可能简洁。
+   *
+   * 只放平台/来源、原标题、短简介和「查看原内容」入口——小红书那种长正文、
+   * 多段换行、话题和长链接都不能把卡片撑高，也不铺大图；完整原文只到本地
+   * modal 里读。显示只做压缩，数据库里的原文一个字都不改。
+   */
   function contentCard(app) {
     var content = detail.content;
     if (detail.loading && !content) {
@@ -412,23 +484,37 @@
         }}));
     }
     if (!content) return null;
+    var source = content.channelName || content.platform || '';
+    var platform = (SF.catalog.platform(content.platform) || {}).name || content.platform || '';
+    var sourceLine = platform && source && platform !== source ? (platform + ' · ' + source) : (source || platform);
+    var tags = (content.tags || []).slice(0, 2);
+    var snippet = content.summary ? plainSnippet(content.summary, 240) : '';
     return h('div.notes-card', {'data-refresh-key':'notes-card:' + content.id},
-      h('div.notes-card__meta', null,
-        ui.platformTag(content.platform),
-        h('span.notes-card__source', {text: content.channelName || content.platform}),
-        h('span.tag', {text: content.intakeMethod === 'manual' ? '手动收录' : '自动采集'})),
-      h('h3.notes-card__title', {text: content.title}),
-      content.summary ? h('p.notes-card__summary', {text: content.summary}) : null,
-      h('div.notes-card__tags', null,
-        (content.tags || []).map(function (tag) { return ui.tag(tag.name); }),
-        h('span.spacer'),
+      h('div.notes-card__top', null,
+        h('span.notes-card__source', {title: sourceLine, text: sourceLine}),
+        h('div.spacer'),
         viewContentButton(app, content)),
-      h('p.notes-card__hint', {text:'这里只放原内容的信息；你的笔记在下面。'}));
+      h('h3.notes-card__title', {title: content.title, text: content.title}),
+      snippet ? h('p.notes-card__summary', {title: snippet, text: snippet}) : null,
+      tags.length ? h('div.notes-card__tags', null,
+        tags.map(function (tag) { return ui.tag(tag.name); })) : null);
   }
 
-  /** 「查看内容」按钮：触发元素留着，关闭 modal 后焦点回到它。 */
+  /**
+   * 纯文本片段：换行、多余空白、长话题与长链接都压成一行。
+   * 只影响显示——数据库里的原文一字不改，完整原文在本地 modal 里读。
+   */
+  function plainSnippet(text, limit) {
+    var flat = String(text || '')
+      .replace(/[\u0000-\u001f]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return flat.length > limit ? flat.slice(0, limit) + '…' : flat;
+  }
+
+  /** 「查看原内容」按钮：触发元素留着，关闭 modal 后焦点回到它。 */
   function viewContentButton(app, content) {
-    var button = ui.btn('查看内容', {size:'sm', icon:'external', onClick:function () {
+    var button = ui.btn('查看原内容', {size:'sm', icon:'external', onClick:function () {
       openContentModal(app, content, button);
     }});
     return button;

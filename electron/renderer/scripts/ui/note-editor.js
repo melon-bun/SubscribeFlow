@@ -546,12 +546,32 @@
       children.push(fields(draft, st));
       children.push(summaryEntry(st, opts));
       children.push(actions(draft, st));
-      children.push(status(draft, st));
       return children;
     }
 
     /**
-     * AI 总结入口。只有选了笔记模板、且总结开着时才出现。
+     * AI 总结的生成按钮。放在总结字段的标签行（按确认图）。
+     * 总结没开或还没选连接时不画按钮——由下面的说明告诉用户为什么。
+     */
+    function aiButton(state, options) {
+      if (!state.draft || state.draft.template === "none") return null;
+      var policy = summaryConfig.value;
+      if (!policy || !policy.enabled || !policy.providerId) return null;
+      var running = state.summary.status === "running";
+      return ui.btn(running ? "正在生成…" : "AI 总结", {
+        // 品牌浅底蓝字：比 ghost 明显，用户一眼能找到生成入口，
+        // 又不与「保存笔记」的主按钮抢层级。
+        variant: "accent",
+        size: "sm",
+        disabled: running,
+        onClick: function () {
+          startSummary(state, options, repaint);
+        },
+      });
+    }
+
+    /**
+     * AI 总结的说明与结果。只有选了笔记模板、且总结开着（或有待确认的结果）时才出现。
      * 没配置或连接不可用时，说清原因并给一条去设置的路——不给点不动的死按钮。
      */
     function summaryEntry(state, options) {
@@ -581,20 +601,6 @@
         );
         return h("div.note-editor__ai", null, children);
       }
-      children.push(
-        h("div.note-editor__ai-row", null,
-          ui.btn(running ? "正在生成…" : "AI 总结", {
-            // 品牌浅底蓝字：比 ghost 明显，用户一眼能找到生成入口，
-            // 又不与「保存笔记」的主按钮抢层级。
-            variant: "accent",
-            size: "sm",
-            disabled: running,
-            onClick: function () {
-              startSummary(state, options, repaint);
-            },
-          }),
-          h("span.field__hint", { text: "生成的是草稿：写不写、怎么改都归你。" }))
-      );
       if (state.summary.status === "error" && state.summary.error) {
         children.push(
           h("p.field__error", { role: "status", text: state.summary.error.message })
@@ -677,7 +683,10 @@
         h(
           "div.field",
           null,
-          h("span.field__label", { text: project ? "这个项目解决什么问题" : "总结" }),
+          h("div.note-editor__label-row", null,
+            h("span.field__label", { text: project ? "这个项目解决什么问题" : "总结" }),
+            h("div.spacer"),
+            aiButton(state, opts)),
           h("textarea.input.note-editor__input", {
             "aria-label": project ? "这个项目解决什么问题" : "总结",
             placeholder: project ? "这个项目解决什么问题？" : "这条内容讲了什么？",
@@ -694,7 +703,9 @@
               }
               refreshStatus();
             },
-          })
+          }),
+          summaryEntry(state, opts),
+          originHint(draft)
         )
       );
       if (project) {
@@ -702,17 +713,22 @@
           h(
             "div.field",
             null,
-            h("span.field__label", { text: "在用／观望／放弃" }),
-            ui.select(
-              VERDICTS,
-              draft.verdict || "",
-              function (value) {
-                state.draft.verdict = value;
-                state.touched = true;
-                refreshStatus();
-              },
-              { ariaLabel: "项目结论" }
-            )
+            h("span.field__label", { text: "我的结论" }),
+            h("div.note-editor__verdict", { role: "group", "aria-label": "项目结论" },
+              VERDICTS.filter(function (item) { return item.value; }).map(function (item) {
+                var active = (draft.verdict || "") === item.value;
+                return h("button.note-editor__verdict-btn" + (active ? ".is-active" : ""), {
+                  type: "button",
+                  "aria-pressed": String(active),
+                  title: active ? "再点一次取消这个结论" : item.label,
+                  onClick: function () {
+                    // 再点一次选中的那个＝取消结论。
+                    state.draft.verdict = active ? "" : item.value;
+                    state.touched = true;
+                    refreshStatus();
+                  },
+                }, item.label);
+              }))
           )
         );
       }
@@ -739,18 +755,7 @@
 
     function actions(draft, state) {
       var canSave = hasContent(draft) || !!state.note;
-      var buttons = [
-        ui.btn("保存笔记", {
-          variant: "primary",
-          disabled: state.saving || !canSave,
-          onClick: function () {
-            save(itemId, client, function (ok) {
-              repaint();
-              if (ok && opts.onChanged) opts.onChanged();
-            });
-          },
-        }),
-      ];
+      var buttons = [];
       if (state.note) {
         buttons.push(
           ui.btn("删除这条笔记", {
@@ -773,30 +778,55 @@
           })
         );
       }
-      return h("div.note-editor__actions", null, buttons);
+      buttons.push(
+        ui.btn("保存笔记", {
+          variant: "primary",
+          disabled: state.saving || !canSave,
+          onClick: function () {
+            save(itemId, client, function (ok) {
+              repaint();
+              if (ok && opts.onChanged) opts.onChanged();
+            });
+          },
+        })
+      );
+      return h("div.note-editor__actionbar" + (opts.stickyActions ? ".is-sticky" : ""), null,
+        h("div.note-editor__actions", null,
+          h("div.note-editor__actions-state", null, status(draft, state)),
+          h("div.spacer"),
+          buttons),
+        conflictRow(state));
+    }
+
+    /** 总结的来路提示：AI 生成过就说一声，用户知道这段文字不是自己敲的。 */
+    function originHint(draft) {
+      if (draft.origin === "ai") return h("p.field__hint", { text: "这段总结由 AI 生成，可以继续改。" });
+      if (draft.origin === "ai_edited") return h("p.field__hint", { text: "这段总结由 AI 生成后被你改过。" });
+      return null;
     }
 
     function status(draft, state) {
       var line = h("p.note-editor__status", { role: "status" });
-      var extra = [];
       if (state.notice) {
         line.textContent = state.notice.text;
         line.classList.add("is-" + (state.notice.tone || "danger"));
       } else if (state.note) {
-        line.textContent = "已保存 · " + (state.note.updated_at || "") + "。保存后会出现在「笔记」中。";
+        line.textContent = "已保存 · " + (state.note.updated_at || "");
       } else {
         line.textContent = "保存后会出现在「笔记」中。";
       }
-      if (state.conflict) {
-        extra.push(
+      return line;
+    }
+
+    /** 冲突时的两个动作：单独一行，放在操作条下面。 */
+    function conflictRow(state) {
+      if (!state.conflict) return null;
+      return h("div.note-editor__status-row", null,
+        h("div.note-editor__actions", null,
           ui.btn("刷新（放弃我的文字）", {
             size: "sm",
-            onClick: function () {
-              refreshNote(itemId, client, false, repaint);
-            },
-          })
-        );
-        extra.push(
+            onClick: function () { refreshNote(itemId, client, false, repaint); },
+          }),
           ui.btn("用我的文字覆盖", {
             size: "sm",
             variant: "danger",
@@ -809,11 +839,7 @@
                 });
               });
             },
-          })
-        );
-      }
-      if (!extra.length) return line;
-      return h("div.note-editor__status-row", null, line, h("div.note-editor__actions", null, extra));
+          })));
     }
 
     /** 只改提示文字，不重建输入框：正在打字时不能把光标弄丢。 */
