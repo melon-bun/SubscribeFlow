@@ -1,0 +1,323 @@
+/* ==========================================================================
+   知流 / Subscribe_Flow — 轻科幻层（FX）
+   --------------------------------------------------------------------------
+   5.1 期（M32）：按「静流」视觉风格方案 §「轻科幻层」落地。
+
+   全部规则挂在 [data-fx="on"] 下，关闭效果即回到同一套令牌的基础风格，
+   版式不受影响（需要的新增结构在关闭时都是 display:none）。
+
+   使用边界（方案原文，落地必须遵守）：
+     · 只作用于状态（选中、焦点、在线、扫描）和容器边缘，不进入标题、摘要、正文
+     · 信号青 --c-signal 不用于文字和大面积底色，只用于线条和小圆点
+     · 一屏内持续动画最多两处（logo 轨道、在线呼吸点），其余只在操作时触发一次
+     · 系统开启「减少动态效果」时全部动画停用，静态样式保留
+
+   本文件在其他样式之后加载（见 index.html）。
+   ========================================================================== */
+
+/* ---------------- 1. 点阵坐标纸 ----------------
+   只铺在应用底色上，从上往下渐隐；纸面内部不铺，正文背景保持干净。 */
+
+[data-fx="on"] .app {
+  position: relative;
+}
+
+[data-fx="on"] .app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(var(--c-grid-dot) 1px, transparent 1.3px);
+  background-size: 18px 18px;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.35) 55%, transparent 90%);
+          mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.35) 55%, transparent 90%);
+}
+
+[data-fx="on"] .sidebar,
+[data-fx="on"] .topbar,
+[data-fx="on"] .workspace {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------------- 2. 极光细线 + 扫描光 ----------------
+   纸面顶边一条 1px 信号青细线，两端渐隐，像仪表外壳上的指示灯条。 */
+
+[data-fx="on"] .workspace::before {
+  content: "";
+  position: absolute;
+  left: 28px;
+  right: 28px;
+  top: 0;
+  height: 1px;
+  z-index: 3;
+  pointer-events: none;
+  background: var(--line-signal);
+  opacity: 0.7;
+}
+
+/* 扫描光：点击「重新查询」或后台刷新时，纸面顶边扫过一道光，代替转圈的加载图标。 */
+[data-fx="on"] .workspace .fx-sweep {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 28%;
+  height: 2px;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--c-signal), transparent);
+  filter: drop-shadow(0 0 6px var(--c-signal));
+}
+
+[data-fx="on"] .workspace.is-scanning .fx-sweep {
+  animation: fx-sweep 1.1s var(--ease) 2;
+}
+
+@keyframes fx-sweep {
+  0% { transform: translateX(-100%); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateX(400%); opacity: 0; }
+}
+
+[data-theme="dark"][data-fx="on"] .workspace {
+  background: radial-gradient(900px 220px at 30% -90px, rgba(42, 208, 242, 0.06), transparent 70%), var(--c-sheet);
+}
+
+/* ---------------- 3. 选中卡片：取景框角标 ----------------
+   四个 L 形角标，只出现在「当前对象」上，等于一个更强的选中提示。 */
+
+[data-fx="on"] .content-card.is-selected::after,
+[data-fx="on"] .row-card.is-selected::after {
+  --b: var(--c-signal);
+  --l: 9px;
+  --w: 1.5px;
+  content: "";
+  position: absolute;
+  inset: -6px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--b), var(--b)) 0 0 / var(--l) var(--w),
+    linear-gradient(var(--b), var(--b)) 0 0 / var(--w) var(--l),
+    linear-gradient(var(--b), var(--b)) 100% 0 / var(--l) var(--w),
+    linear-gradient(var(--b), var(--b)) 100% 0 / var(--w) var(--l),
+    linear-gradient(var(--b), var(--b)) 0 100% / var(--l) var(--w),
+    linear-gradient(var(--b), var(--b)) 0 100% / var(--w) var(--l),
+    linear-gradient(var(--b), var(--b)) 100% 100% / var(--w) var(--l),
+    linear-gradient(var(--b), var(--b)) 100% 100% / var(--l) var(--w);
+  background-repeat: no-repeat;
+}
+
+/* ---------------- 4. 深色辉光 ----------------
+   只在深色模式下，优先级信号条与橙色主按钮带微弱辉光，像夜间座舱的背光。 */
+
+[data-theme="dark"][data-fx="on"] .prio-sig--high i {
+  box-shadow: 0 0 6px var(--c-high);
+}
+[data-theme="dark"][data-fx="on"] .prio-sig--mid i:nth-child(-n + 2) {
+  box-shadow: 0 0 6px var(--c-mid);
+}
+[data-theme="dark"][data-fx="on"] .prio-sig--low i:nth-child(1) {
+  box-shadow: 0 0 6px var(--c-low);
+}
+
+[data-theme="dark"][data-fx="on"] .btn--primary {
+  box-shadow: var(--glow-action);
+}
+
+[data-theme="dark"][data-fx="on"] .switch.is-on {
+  box-shadow: var(--glow-brand);
+}
+
+/* ---------------- 5. 品牌：logo 外一道缓慢转动的轨道弧 ----------------
+   logo 图形本身保持原样（assets/brand.png），轨道只加在标记外层。 */
+
+[data-fx="on"] .brand__mark {
+  position: relative;
+}
+
+[data-fx="on"] .brand__mark::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(from 0deg, transparent 0 62%, var(--c-signal) 82%, transparent 92%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: fx-spin 9s linear infinite;
+}
+
+@keyframes fx-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------------- 6. 导航选中：左侧发光指示条 ---------------- */
+
+[data-fx="on"] .nav__item.is-active {
+  position: relative;
+}
+
+[data-fx="on"] .nav__item.is-active::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c-signal);
+  box-shadow: 0 0 10px var(--c-signal);
+}
+
+/* ---------------- 7. 按钮：橙色主按钮悬停时掠过一道光 ---------------- */
+
+[data-fx="on"] .btn--primary {
+  position: relative;
+  overflow: hidden;
+}
+
+[data-fx="on"] .btn--primary::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 45%;
+  pointer-events: none;
+  transform: skewX(-20deg);
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transition: left 0.7s var(--ease);
+}
+
+[data-fx="on"] .btn--primary:hover::after {
+  left: 130%;
+}
+
+/* ---------------- 8. 焦点：青色描边外再加一层散光 ---------------- */
+
+[data-fx="on"] .btn:focus-visible,
+[data-fx="on"] .seg button:focus-visible,
+[data-fx="on"] .switch:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--c-brand), 0 0 0 4px var(--c-brand-ring), 0 0 22px -6px var(--c-signal);
+}
+
+/* ---------------- 9. 对话框与面板：边缘细节 ---------------- */
+
+[data-fx="on"] .dialog-stage {
+  background:
+    radial-gradient(600px 300px at 20% 0%, var(--c-brand-weak), transparent 70%),
+    radial-gradient(var(--c-grid-dot) 1px, transparent 1.3px) 0 0 / 18px 18px,
+    var(--c-surface-3);
+}
+
+[data-fx="on"] .dialog {
+  position: relative;
+}
+
+[data-fx="on"] .dialog::before {
+  content: "";
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 0;
+  height: 1px;
+  background: var(--line-signal);
+  opacity: 0.8;
+}
+
+/* ---------------- 10. 等宽读数条 ----------------
+   5.1 期：本期用假数据搭出版式，真实取数在 5.2 期。
+   假数据必须显式标注为示例，不得让用户误认为真实采集数据。 */
+
+[data-fx="on"] .fx-readout {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  background: var(--c-surface-2);
+  box-shadow: inset 0 0 0 1px var(--c-border);
+  flex-wrap: wrap;
+}
+
+[data-fx="on"] .fx-readout__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  white-space: nowrap;
+}
+
+[data-fx="on"] .fx-readout__key {
+  color: var(--c-text-4);
+}
+
+[data-fx="on"] .fx-readout__val {
+  color: var(--c-text-2);
+}
+
+/* 示例标记：明确告知这是版式示例，不是真实采集数据 */
+[data-fx="on"] .fx-readout__demo {
+  margin-left: auto;
+  padding: 1px var(--s-2);
+  border-radius: var(--r-full);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--c-mid);
+  background: var(--c-mid-bg);
+  white-space: nowrap;
+}
+
+/* ---------------- 11. 在线呼吸点 ----------------
+   顶栏的连接状态：正常是信号青呼吸点，异常时静止的琥珀色（座舱里的「注意」）。
+   不闪烁——闪烁会让人焦虑，而这里只是提示状态。 */
+
+[data-fx="on"] .fx-online {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--c-text-4);
+}
+
+[data-fx="on"] .fx-online[data-state="ok"] {
+  background: var(--c-signal);
+  animation: fx-ping 2.4s var(--ease) infinite;
+}
+
+[data-fx="on"] .fx-online[data-state="warn"] {
+  background: var(--c-mid);
+  /* 异常态静止：只换颜色，不呼吸 */
+  animation: none;
+}
+
+[data-fx="on"] .fx-online[data-state="error"] {
+  background: var(--c-high);
+  animation: none;
+}
+
+@keyframes fx-ping {
+  0% { box-shadow: 0 0 0 0 var(--c-signal-ring); }
+  70%, 100% { box-shadow: 0 0 0 7px transparent; }
+}
+
+/* ---------------- 12. 减少动态效果：全部动画停用 ---------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-fx="on"] *,
+  [data-fx="on"] *::before,
+  [data-fx="on"] *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

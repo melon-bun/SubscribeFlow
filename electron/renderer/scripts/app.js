@@ -65,10 +65,46 @@
     // M28：笔记数同理，由笔记页读到后回填。
     noteCount: null,
     theme: "light",
+    // M32：轻科幻层开关。true = 开启，规则挂在 [data-fx="on"] 下；
+    // 关闭即回到同一套令牌的基础风格，版式不受影响。
+    fx: true,
     search: "",
     contentEl: null,
     unsubscribe: [],
   };
+
+  /* M32：顶栏在线状态点。状态取自核心服务与采集连接，
+   与状态栏里的判断保持同一口径——这里只是把它缩成一个点。 */
+  function onlineState(app) {
+    if (app.coreStatus && app.coreStatus.state !== "ready") return "error";
+    var conn = app.session && app.session.connection;
+    if (conn && conn.state && conn.state !== "ready" && conn.state !== "unknown") return "warn";
+    return "ok";
+  }
+
+  function onlineTitle(app) {
+    var state = onlineState(app);
+    if (state === "error") return "核心服务不可用";
+    if (state === "warn") return "采集连接需要处理";
+    return "本地服务运行中";
+  }
+
+  /* M32：把轻科幻开关写到 <html data-fx>。规则全在 fx.css 里挂 [data-fx="on"]，
+     所以这里只管属性与持久化，不碰任何样式表。 */
+  function applyFx() {
+    document.documentElement.setAttribute("data-fx", app.fx ? "on" : "off");
+  }
+
+  function setFx(enabled) {
+    app.fx = !!enabled;
+    applyFx();
+    try {
+      global.localStorage.setItem("sf.fx", app.fx ? "on" : "off");
+    } catch (e) {
+      /* Electron 下可能禁用 localStorage，忽略即可 */
+    }
+    return app.fx;
+  }
 
   /* ---------------- 路由 ---------------- */
 
@@ -90,10 +126,12 @@
       : null;
     if (name === "settings") {
       // 分区始终带回路由参数：直接改哈希进来时左栏与正文必须对得上。
-      // M21：分区是 ai／reminder／priority，未知值回落到 ai。
+      // 分区白名单：ai／reminder／priority／summarization／appearance（M32 新增外观），
+      // 未知值回落到 ai。
       var section = params.section === "reminder" ? "reminder"
         : params.section === "priority" ? "priority"
-        : params.section === "summarization" ? "summarization" : "ai";
+        : params.section === "summarization" ? "summarization"
+        : params.section === "appearance" ? "appearance" : "ai";
       return { name: name, params: { section: section } };
     }
     if (!NAV.some(function (n) { return n.id === name; })) name = "inbox";
@@ -283,6 +321,14 @@
         "div.topbar__right",
         null,
         s.isDemo ? h("span.demo-badge", null, h("span.demo-dot"), h("span", { text: "演示数据" })) : null,
+        /* M32：在线状态点。连接正常是信号青呼吸点，异常时是静止的琥珀色
+           （座舱里的「注意」），不闪烁，避免焦虑。 */
+        h("span.fx-online", {
+          "data-state": onlineState(app),
+          title: onlineTitle(app),
+          "aria-label": onlineTitle(app),
+          role: "status",
+        }),
         h(
           "div.topbar__date",
           null,
@@ -460,6 +506,8 @@
       try {
         while (queuedReasons.size) {
           var batch = new Set(queuedReasons); queuedReasons.clear();
+          /* M32：只在真正要拉新数据时扫一次光；轮询兜底不扫，避免每 15 秒闪一下。 */
+          if (!batch.has('poll')) triggerSweep();
           var all = batch.has('all') || batch.has('poll') || !app.session;
           var readCounts = all || batch.has('content') || batch.has('tags') || batch.has('channels');
           var readSession = all || batch.has('connection') || batch.has('channels');
@@ -547,7 +595,31 @@
 
   function buildShellBody() {
     var result = buildMain();
-    return [buildStatusBar(), h("main.workspace", { id: "main", tabindex: "-1" }, [result.main, result.aside || null])];
+    /* M32：扫描光的载体。关闭轻科幻时它没有样式也不参与布局（fx.css 里
+       [data-fx="on"] 才给它 display:block）。 */
+    return [
+      buildStatusBar(),
+      h("main.workspace", { id: "main", tabindex: "-1" }, [
+        result.main,
+        result.aside || null,
+        h("span.fx-sweep", { "aria-hidden": "true" }),
+      ]),
+    ];
+  }
+
+  /* M32：后台刷新时纸面顶边扫过一道光，代替转圈的加载图标。
+     只在效果开启时做，且不打断刷新链路——纯粹是个视觉提示。 */
+  function triggerSweep() {
+    if (!app.fx) return;
+    var sheet = document.querySelector(".workspace");
+    if (!sheet) return;
+    sheet.classList.remove("is-scanning");
+    // 强制回流，保证连续刷新时动画能重新播放
+    void sheet.offsetWidth;
+    sheet.classList.add("is-scanning");
+    setTimeout(function () {
+      sheet.classList.remove("is-scanning");
+    }, 2400);
   }
 
   function syncNavState() {
@@ -633,6 +705,14 @@
   function boot() {
     try { app.theme = global.localStorage.getItem("sf.theme") || "light"; } catch (_) {}
     document.documentElement.setAttribute("data-theme", app.theme);
+    /* M32：恢复轻科幻层开关。存 "off" 才关闭；没有记录时默认开启。 */
+    try {
+      var fxSaved = global.localStorage.getItem("sf.fx");
+      app.fx = fxSaved !== "off";
+    } catch (_) {
+      app.fx = true;
+    }
+    applyFx();
     var resolved;
     try { resolved = SF.AppClient.createClient(); }
     catch (err) { showStartup("桌面连接不可用", err.message); return; }
@@ -801,6 +881,9 @@
     state: app,
     openSettings: openSettings,
     openReminderView: openReminderView,
+    /* M32：轻科幻层开关（设置 → 外观） */
+    setFx: setFx,
+    isFxOn: function () { return !!app.fx; },
     act: act,
     isPending: function (key) { return pending.has(key); },
     refreshData: refreshData,

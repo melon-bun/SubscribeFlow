@@ -60,6 +60,14 @@
       title: "AI 总结",
       desc: "为「留下点什么」准备一段总结草稿。总结由你决定要不要用，与自动打标互不影响。",
     },
+    {
+      // M32：轻科幻层开关。只切界面效果，不影响任何业务行为。
+      id: "appearance",
+      label: "外观",
+      icon: "sunmoon",
+      title: "外观",
+      desc: "选择界面的视觉风格。两种风格共用同一套配色与排版规则。",
+    },
   ];
 
   // M29：总结的详细程度与语言。长度是「简略 · 一句话」与「复杂 · 300 字」，
@@ -227,6 +235,8 @@
     if (cache.section === "reminder") return "reminder";
     if (cache.section === "priority") return "priority";
     if (cache.section === "summarization") return "summarization";
+    /* M32：外观分区是纯前端设置，不进 Core 的草稿与保存流程。 */
+    if (cache.section === "appearance") return "appearance";
     return "ai";
   }
 
@@ -238,6 +248,9 @@
   function isDirty(section) {
     var target = section || currentSection();
     if (!cache.saved || !cache.draft) return false;
+    /* M32：外观分区是纯前端设置，没有草稿，永远不是「已修改」。
+       不显式排除的话会掉到下面的 AI 分支去比较连接，得出错误的脏标记。 */
+    if (target === "appearance") return false;
     if (target === "priority") {
       var names = cache.draft.priority.names;
       var savedNames = (cache.saved.priority && cache.saved.priority.names) || {};
@@ -1164,6 +1177,9 @@
 
   function buildFoot(app) {
     var section = currentSection();
+    /* M32：外观分区是纯前端设置，切换即时生效，没有草稿也没有保存动作。
+       不显示保存条——留一个永远点不动的橙色主按钮会误导用户。 */
+    if (section === "appearance") return null;
     var dirty = isDirty(section);
     var saving = !!cache.saving;
     footEl = h(
@@ -1360,7 +1376,56 @@
     );
   }
 
+  /* ---------------- 外观（M32） ---------------- */
+
+  /* 轻科幻层是纯前端开关：不进 Core 设置、不走草稿与保存流程，
+     切换即时生效并写进 localStorage（sf.fx）。 */
+  function buildAppearance(app) {
+    var on = SF.app.isFxOn();
+    return h(
+      "section.setting-block",
+      null,
+      field(
+        "界面效果",
+        h(
+          "div.setting-row",
+          null,
+          h("span.setting-row__title", { text: on ? "轻科幻" : "简洁" }),
+          ui.toggle(on, function (next) {
+            SF.app.setFx(next);
+            paint(app);
+          }, { label: "轻科幻界面效果" })
+        ),
+        {
+          hint: "轻科幻会在选中、焦点和容器边缘加上一点仪器感；简洁模式保持同一套配色与排版，只是没有这些效果。随时可切换。",
+        }
+      ),
+      field(
+        "主题",
+        h(
+          "div.setting-row",
+          null,
+          h("span.setting-row__title", { text: app.theme === "dark" ? "深色" : "浅色" }),
+          ui.btn(app.theme === "dark" ? "切到浅色" : "切到深色", {
+            size: "sm",
+            onClick: function () {
+              app.theme = app.theme === "dark" ? "light" : "dark";
+              document.documentElement.setAttribute("data-theme", app.theme);
+              try { global.localStorage.setItem("sf.theme", app.theme); } catch (e) {}
+              paint(app);
+            },
+          })
+        ),
+        { hint: "两种主题共用同一套颜色规则，深色下部分强调色会换成更适合暗底的取值。" }
+      )
+    );
+  }
+
   function buildBody(app) {
+    /* M32：外观分区是纯前端设置，不读 Core、不用草稿。
+       它必须在草稿门控之前渲染——否则本地读取慢或失败时，这一页会永远
+       卡在「正在读取设置」，而它本来就不依赖任何本地数据。 */
+    if (currentSection() === "appearance") return [buildNotice(), buildAppearance(app)];
     if (!cache.draft) {
       if (cache.error) {
         return ui.state({
@@ -1420,7 +1485,7 @@
   /** 路由带 ?section= 时同步左栏选中项：直接改哈希进来也要落到对应分区。 */
   function setSection(section) {
     cache.section = section === "reminder" ? "reminder" : section === "priority" ? "priority"
-      : section === "summarization" ? "summarization" : "ai";
+      : section === "summarization" ? "summarization" : section === "appearance" ? "appearance" : "ai";
   }
 
   SF.views = SF.views || {};
