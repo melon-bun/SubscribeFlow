@@ -86,16 +86,29 @@
 }
 
 /* ---------------- 3. 选中卡片：取景框角标 ----------------
-   四个 L 形角标，只出现在「当前对象」上，等于一个更强的选中提示。 */
+   四个 L 形角标，只出现在「当前对象」上，等于一个更强的选中提示。
+
+   「静流」§轻科幻层原文：选中卡片改用 1.5px 真边框画信号青描边，
+   外圈只留一层 4px 光环；边框吃掉 1.5px，内边距同步减去 1.5px，
+   卡片内容不会因为多了边框而位移。角标外扩 8px（相对内边距框），
+   收件箱网格为此留了 10px 余量（见 views.css 的 .inbox__grid）。 */
+
+[data-fx="on"] .content-card.is-selected {
+  border: 1.5px solid var(--c-signal);
+  padding: calc(var(--s-card) - 1.5px);
+  box-shadow: 0 0 0 4px var(--c-signal-ring), 0 12px 28px -14px rgba(0, 150, 190, 0.5);
+}
 
 [data-fx="on"] .content-card.is-selected::after,
-[data-fx="on"] .row-card.is-selected::after {
+[data-fx="on"] .row-card.is-selected::after,
+/* 「静流」§标签：AI 识别的单选卡片，选中项也带取景框角标。 */
+[data-fx="on"] .mode-card.is-active::after {
   --b: var(--c-signal);
   --l: 9px;
   --w: 1.5px;
   content: "";
   position: absolute;
-  inset: -6px;
+  inset: -8px;
   pointer-events: none;
   background:
     linear-gradient(var(--b), var(--b)) 0 0 / var(--l) var(--w),
@@ -107,6 +120,25 @@
     linear-gradient(var(--b), var(--b)) 100% 100% / var(--w) var(--l),
     linear-gradient(var(--b), var(--b)) 100% 100% / var(--l) var(--w);
   background-repeat: no-repeat;
+}
+
+/* ---------------- 3b. 详情顶图：取景框角标 + 极淡扫描线 + 等宽读数 ---------------- */
+
+[data-fx="on"] .detail__hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 3px);
+}
+
+[data-fx="on"] .detail__hud {
+  display: block;
+}
+
+[data-fx="on"] .detail__readout {
+  display: flex;
 }
 
 /* ---------------- 4. 深色辉光 ----------------
@@ -235,15 +267,17 @@
    5.1 期：本期用假数据搭出版式，真实取数在 5.2 期。
    假数据必须显式标注为示例，不得让用户误认为真实采集数据。 */
 
+/* 「静流」§轻科幻层 4：读数条样式照方案的 .readout-line——
+   等宽字、浅底、细线描边，每项读数前是标签、后是取值。 */
 [data-fx="on"] .fx-readout {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
-  margin-top: var(--s-4);
-  padding: var(--s-2) var(--s-3);
+  gap: var(--s-4);
+  margin-top: var(--s-5);
+  padding: 7px var(--s-4);
   border-radius: var(--r-sm);
   font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-size: 10.5px;
   color: var(--c-text-3);
   background: var(--c-surface-2);
   box-shadow: inset 0 0 0 1px var(--c-border);
@@ -259,10 +293,11 @@
 
 [data-fx="on"] .fx-readout__key {
   color: var(--c-text-4);
+  margin-right: 2px;
 }
 
 [data-fx="on"] .fx-readout__val {
-  color: var(--c-text-2);
+  color: var(--c-low);
 }
 
 /* 示例标记：明确告知这是版式示例，不是真实采集数据 */

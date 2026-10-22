@@ -234,10 +234,10 @@
         } else {
           st.touched = false;
           st.draft = draftOf(note);
-          st.notice = {
-            tone: "success",
-            text: note ? "笔记已保存。" : "这条内容现在没有笔记。",
-          };
+          /* 「静流」§笔记：保存成功后状态行显示本地保存时间。
+             那行本身就是确认（已保存 · 13:15），不再另挂一句临时提示，
+             免得同一件事在界面上出现两种说法。 */
+          st.notice = note ? null : { tone: "success", text: "这条内容现在没有笔记。" };
         }
         if (done) done(true, note);
       },
@@ -349,6 +349,7 @@
             message: result.message || "生成失败，可以再试一次。",
           };
           state.summary.result = result.draft || null;
+          state.summary.at = Date.now();
           state.summary.stale = result.code === "stale";
           state.summary.reasons = result.code === "stale" ? [result.message] : [];
           repaint();
@@ -363,6 +364,7 @@
           var all = localStaleReasons(state, result).concat(reasons || []);
           state.summary.status = "done";
           state.summary.result = result;
+          state.summary.at = Date.now();
           state.summary.stale = all.length > 0;
           state.summary.reasons = all;
           if (!all.length) {
@@ -733,11 +735,19 @@
           h("div.field", null, h("span.field__label", { text: "我的结论" }), group)
         );
       }
+      /* 「静流」§笔记：收获字段的标签行右侧给一个等宽字数读数。
+         和标签页的「N / 上限」同一个读法，用户改名前就知道还剩多少。 */
+      var takeawayCount = h("span.note-editor__count.mono", {
+        text: String((draft.takeaway || "").length) + " / " + TAKEAWAY_MAX,
+      });
       children.push(
         h(
           "div.field",
           null,
-          h("span.field__label", { text: project ? "我的判断／使用心得" : "我的收获／打算用在哪" }),
+          h("div.note-editor__label-row", null,
+            h("span.field__label", { text: project ? "我的判断／使用心得" : "我的收获／打算用在哪" }),
+            h("div.spacer"),
+            takeawayCount),
           h("textarea.input.note-editor__input", {
             "aria-label": project ? "我的判断／使用心得" : "我的收获／打算用在哪",
             placeholder: project ? "你打算怎么用它？" : "你打算拿它做什么？",
@@ -745,6 +755,7 @@
             value: draft.takeaway,
             oninput: function (e) {
               state.draft.takeaway = e.target.value;
+              takeawayCount.textContent = String(e.target.value.length) + " / " + TAKEAWAY_MAX;
               state.touched = true;
               refreshStatus();
             },
@@ -812,8 +823,40 @@
 
     /** 总结的来路提示：AI 生成过就说一声，用户知道这段文字不是自己敲的。 */
     function originHint(draft) {
-      if (draft.origin === "ai") return h("p.field__hint", { text: "这段总结由 AI 生成，可以继续改。" });
-      if (draft.origin === "ai_edited") return h("p.field__hint", { text: "这段总结由 AI 生成后被你改过。" });
+      if (draft.origin !== "ai" && draft.origin !== "ai_edited") return null;
+      /* 「静流」§笔记：AI 总结只是一行读数提示「AI 草稿 · 模型 · 时间」，
+         总结正文本身不加任何特效。模型只在确实知道的时候写上去：
+         刚生成的草稿带着模型名，已保存的笔记没有记模型，就不写模型，
+         免得把「现在配置的模型」说成「当时用的模型」。 */
+      var parts = ["AI 草稿"];
+      var model = summaryModelName();
+      if (model) parts.push(model);
+      var at = summaryDraftTime();
+      if (at) parts.push(at);
+      parts.push(draft.origin === "ai_edited" ? "你改过，可以继续修改" : "可以继续修改");
+      return h("div.ai-line", null, h("i", { "aria-hidden": "true" }), h("span", { text: parts.join(" · ") }));
+    }
+
+    /** 这次草稿是谁生成的：刚生成的用回包里的模型，已保存的用当前配置的模型。 */
+    function summaryModelName() {
+      var result = st.summary && st.summary.result;
+      if (result) {
+        if (result.model) return result.model;
+        if (result.provider && result.provider.model) return result.provider.model;
+      }
+      var policy = summaryConfig.value;
+      var providers = (summaryConfig.settings && summaryConfig.settings.ai && summaryConfig.settings.ai.providers) || null;
+      if (policy && policy.providerId && providers && providers[policy.providerId]) {
+        return providers[policy.providerId].model || null;
+      }
+      return null;
+    }
+
+    /** 草稿时间：刚生成的是生成时刻，已保存的是保存时刻。都是本地时间。 */
+    function summaryDraftTime() {
+      var result = st.summary && st.summary.result;
+      if (result && st.summary.at) return SF.fmt.absolute(st.summary.at);
+      if (st.note && st.note.updated_at) return "已保存 " + SF.fmt.absolute(st.note.updated_at);
       return null;
     }
 
@@ -823,7 +866,8 @@
         line.textContent = state.notice.text;
         line.classList.add("is-" + (state.notice.tone || "danger"));
       } else if (state.note) {
-        line.textContent = "已保存 · " + (state.note.updated_at || "");
+        /* 「静流」§笔记：「已保存」时间用本地时间，不再直接显示 Core 的 ISO 串。 */
+        line.textContent = "已保存 · " + SF.fmt.absolute(state.note.updated_at);
       } else {
         line.textContent = "保存后会出现在「笔记」中。";
       }

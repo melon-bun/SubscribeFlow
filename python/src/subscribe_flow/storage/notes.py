@@ -24,6 +24,10 @@ DEFAULT_NOTE_SORT = "updated"
 NOTE_JOIN = " JOIN content_notes n ON n.content_id=c.id"
 NOTE_QUERY_COLUMNS = ("c.title", "n.summary", "n.takeaway")
 
+# 目录条目上那一行摘要的长度上限（「静流」方案 §笔记的目录条目）。
+# 只给这么多字：目录是扫读用的，完整正文由笔记详情自己取。
+EXCERPT_CHARS = 120
+
 
 def _note(row):
     return {
@@ -94,9 +98,13 @@ class NoteRepository:
 
     def list_notes(self, *, limit=50, offset=0, query=None, channel=None, source_id=None,
                    tags=None, tag_mode=None, verdict=None, sort=None, timezone='UTC'):
-        """标题目录用的列表：只给 ID、原标题与笔记更新时间。
+        """标题目录用的列表：ID、原标题、笔记更新时间，以及目录条目上要显示的小标量。
 
-        不返回总结与收获正文——目录不画卡片墙，正文由笔记详情自己取。
+        5.1 期（「静流」视觉方案）要求目录条目下面带平台、来源与结论／模板徽标，
+        所以额外返回 platform、source_name、verdict、template 四个标量。
+        同一份方案的目录条目还有一行摘要，所以再多给一个 excerpt：
+        它是**截断后**的总结（没有总结时退回收获），最多 EXCERPT_CHARS 个字，
+        不是正文——目录不画卡片墙，完整正文由笔记详情自己取。
         """
         if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 1000000:
             raise ChannelError("INVALID_INPUT", "note.list", "分页参数无效")
@@ -107,9 +115,17 @@ class NoteRepository:
                                   tag_mode=tag_mode, verdict=verdict, timezone=timezone)
         total = self.db.execute("SELECT count(*) " + base, args).fetchone()[0]
         rows = self.db.execute(
-            "SELECT c.id, c.title, n.updated_at AS note_updated_at " + base +
+            "SELECT c.id, c.title, n.updated_at AS note_updated_at, c.channel AS platform, "
+            "(SELECT src.name FROM content_sources cs JOIN sources src ON src.id=cs.source_id "
+            " WHERE cs.content_id=c.id LIMIT 1) AS source_name, "
+            "n.verdict AS verdict, n.template AS template, "
+            f"substr(CASE WHEN trim(COALESCE(n.summary,''))<>'' THEN n.summary ELSE n.takeaway END, 1, {EXCERPT_CHARS}) "
+            "AS excerpt " + base +
             f" ORDER BY {order} LIMIT ? OFFSET ?", (*args, limit, offset))
-        items = [{"id": row["id"], "title": row["title"], "note_updated_at": row["note_updated_at"]}
+        items = [{"id": row["id"], "title": row["title"], "note_updated_at": row["note_updated_at"],
+                  "platform": row["platform"], "source_name": row["source_name"],
+                  "verdict": row["verdict"], "template": row["template"],
+                  "excerpt": row["excerpt"]}
                  for row in rows]
         return {"items": items, "total": total, "limit": limit, "offset": offset,
                 "next_offset": offset + limit if offset + limit < total else None}

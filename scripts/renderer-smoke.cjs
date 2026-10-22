@@ -121,6 +121,9 @@ async function verify({window, core, root, mode}) {
     await click('保存采集条数');
     await until(`!document.querySelector('.dialog') && !!document.querySelector('[aria-label="设置采集条数"]')`);
     assert.equal((await core.call('subscription.list'))[0].collect_items,35);
+    // 保存后渠道列表是异步刷新的：表格行必须先显示新的采集上限，
+    // 后面回溯对话框里的条数才是新值，否则读到的是刷新前的旧上限。
+    await until(`!!document.querySelector('[data-tip="采集条数（当前 35 条）"]')`);
     await click('回溯历史');
     await until(`!!document.querySelector('.dialog')`);
     assert.ok(await evaluate(`document.querySelector('.dialog').textContent.includes('本次最多采集 35 条')`));
@@ -131,6 +134,7 @@ async function verify({window, core, root, mode}) {
     await evaluate(`document.querySelector('#collect-items').value='10'`);
     await click('保存采集条数');
     await until(`!document.querySelector('.dialog')`);
+    await until(`!!document.querySelector('[data-tip="采集条数（当前 10 条）"]')`);
     await click('回溯历史');
     await until(`!!document.querySelector('.dialog')`);
     assert.ok(await evaluate(`document.querySelector('.dialog').textContent.includes('本次最多采集 10 条') && !document.querySelector('.dialog').textContent.includes('20 条')`));
@@ -197,8 +201,10 @@ async function verify({window, core, root, mode}) {
   await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
   await until(`document.querySelectorAll('.content-card').length > 0`);
   const platformCount=(await core.call('channel.list')).length;
-  assert.equal(await evaluate(`document.querySelectorAll('.chips .chip').length`),platformCount+1);
-  assert.equal(await evaluate(`document.querySelectorAll('.chips .chip__count').length`),platformCount+1);
+  // 「静流」5.1 期：平台筛选改成 .seg 分段控件（.chips .chip 已下线）。
+  // 断言意图不变：每个平台一段，外加「全部」一段；每段都带自己的计数。
+  assert.equal(await evaluate(`document.querySelectorAll('.inbox__toolbar .seg .seg__item').length`),platformCount+1);
+  assert.equal(await evaluate(`document.querySelectorAll('.inbox__toolbar .seg .seg__item .n').length`),platformCount+1);
   if (mode === 'live') {
     await click('补充详情');
     await until(`SF.app.state.runs[0]?.kind === 'detail' && ['succeeded','failed','partial','waiting'].includes(SF.app.state.runs[0].state)`,75000);
@@ -229,7 +235,7 @@ async function verify({window, core, root, mode}) {
   assert.equal(await title(),'收件箱');
   if(mode === 'offline') {
     // Each independent processing action leaves inbox, and undo returns it.
-    for(const [field,label,heading] of [['deferred','稍后处理','稍后处理'],['archived','归档','已归档']]) {
+    for(const [field,label,heading] of [['deferred','稍后','稍后处理'],['archived','归档','已归档']]) {
       const id=await evaluate('SF.app.state.selectedId');
       await contentAction(label, id);
       await until(`SF.app.state.counts.unread === 23 && document.querySelectorAll('.content-card').length > 0 && ${absent(id)}`);
@@ -283,22 +289,22 @@ async function verify({window, core, root, mode}) {
   if(mode === 'offline') {
     // BUG-005: processing choices replace one another on the same note.
     await selectContent(firstId);
-    for(const [field,label] of [['deferred','稍后处理'],['archived','归档']]) {
+    for(const [field,label] of [['deferred','稍后'],['archived','归档']]) {
       await contentAction(label, firstId);
-      await until(`SF.app.state.selectedId === ${JSON.stringify(firstId)} && document.querySelectorAll('.detail .op-btn[aria-pressed="true"]').length === 1 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === ${JSON.stringify(label)}`);
+      await until(`SF.app.state.selectedId === ${JSON.stringify(firstId)} && document.querySelectorAll('.detail .state-btn[aria-pressed="true"]').length === 1 && document.querySelector('.detail .state-btn[aria-pressed="true"]')?.textContent.trim() === ${JSON.stringify(label)}`);
       assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:false,archived:field==='archived',deferred:field==='deferred'});
     }
     await screenshot('bug-005-single-processing-state.png');
     // The card menu must use the same exclusive write path as the detail panel.
     await evaluate(`document.querySelector(${JSON.stringify(card(firstId) + ' [aria-label="更多操作"]')}).click()`);
     await click('标记为已读');
-    await until(`SF.app.state.counts.read === 1 && SF.app.state.counts.archived === 4 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
+    await until(`SF.app.state.counts.read === 1 && SF.app.state.counts.archived === 4 && document.querySelector('.detail .state-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
     assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:true,archived:false,deferred:false});
     await contentAction('已读', firstId);
-    await until(`SF.app.state.counts.unread === 21 && document.querySelectorAll('.detail .op-btn[aria-pressed="true"]').length === 0`);
+    await until(`SF.app.state.counts.unread === 21 && document.querySelectorAll('.detail .state-btn[aria-pressed="true"]').length === 0`);
     assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:false,archived:false,deferred:false});
     await contentAction('已读', firstId);
-    await until(`SF.app.state.counts.unread === 20 && SF.app.state.counts.read === 1 && document.querySelector('.detail .op-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
+    await until(`SF.app.state.counts.unread === 20 && SF.app.state.counts.read === 1 && document.querySelector('.detail .state-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
     assert.equal(await evaluate(`document.querySelectorAll('.content-card').length`),20);
     await click('下一页');
     await until(`document.querySelectorAll('.content-card').length === 5`);

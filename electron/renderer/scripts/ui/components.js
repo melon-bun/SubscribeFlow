@@ -68,6 +68,7 @@
     if (level === "high") cls += " prio-sig--high";
     else if (level === "medium" || level === "mid") cls += " prio-sig--mid";
     else if (level === "low") cls += " prio-sig--low";
+    else if (level === "none") cls += " prio-sig--none";
     return h(
       "span." + cls,
       { "aria-hidden": "true", title: opts.title || null },
@@ -108,6 +109,67 @@
     var wrap = h("span.select" + (opts.small ? ".select--sm" : ""), null, sel);
     wrap._input = sel;
     return wrap;
+  };
+
+  /**
+   * 筛选条上的无框按钮（不是原生下拉）。
+   * 「静流」§筛选条：下拉一律用无框形态——靠留白与悬停底色区分，
+   * 旁边再画一条细竖线分段；只有真正需要选项的才用原生 select。
+   */
+  ui.selectBtn = function (label, opts) {
+    opts = opts || {};
+    return h(
+      "button.select.select--btn" + (opts.arrow === false ? ".select--no-arrow" : ""),
+      {
+        type: "button",
+        title: opts.title || label,
+        "aria-label": opts.ariaLabel || label,
+        onclick: opts.onClick || null,
+      },
+      opts.icon ? icon(opts.icon, 14) : null,
+      label ? h("span", { text: label }) : null
+    );
+  };
+
+  /**
+   * 筛选条上的下拉。
+   *
+   * 不用原生 <select>：原生控件的宽度由**最长选项**决定，
+   * 优先级名可被用户改成「开箱即用的项目_教程」这类长名，
+   * 一条筛选条会被撑得横跨整屏、散成一排。
+   * 方案里的 .select 是一个按钮 + 箭头，点开才是选项；
+   * 这里用同一套视觉，选项走已有的 ui.menu（浮层、Esc 关闭、焦点管理都有）。
+   *
+   * options: [{ value, label }]
+   */
+  ui.dropdown = function (options, value, onChange, opts) {
+    opts = opts || {};
+    options = options || [];
+    var current = options.filter(function (o) { return o.value === value; })[0] || options[0];
+    if (!current) return null;
+    var btn = h(
+      "button.select.select--btn",
+      {
+        type: "button",
+        title: opts.title || current.label,
+        "aria-label": opts.ariaLabel || current.label,
+        "aria-haspopup": "menu",
+        onclick: function (e) {
+          e.stopPropagation();
+          ui.menu(options.map(function (o) {
+            return {
+              label: o.label,
+              value: o.value,
+              active: o.value === value,
+              onClick: function () { onChange && onChange(o.value); },
+            };
+          }), btn);
+        },
+      },
+      opts.icon ? icon(opts.icon, 14) : null,
+      h("span", { text: current.label })
+    );
+    return btn;
   };
 
   ui.searchInput = function (placeholder, value, onInput, opts) {
@@ -213,19 +275,23 @@
 
   /**
    * 优先级标识（内容卡片用）。
-   * 「静流」5.1 期（M31）：原先是「高优先级」这样的彩色文字胶囊，
+   * 「静流」§3：原先是「高优先级」这样的彩色文字胶囊，
    * 现在改为三格信号条 + 一个字——颜色只落在图形上，文字保持中性。
+   *
+   * 那个「一个字」用固定等级字（高 / 中 / 低），不是用户自定义的显示名：
+   * 显示名可长到 12 个字（例：开箱即用的项目_教程），塞进卡片元信息行
+   * 会把整行挤成两行。完整名字放在 title 里，悬停可见。
    */
   ui.priorityTag = function (priorityId) {
     var p = catalog.priority(priorityId);
     if (priorityId === "none" || !priorityId) {
-      return h("span.prio.prio--none", null, ui.prioSig("none"), h("span", { text: p.name }));
+      return h("span.prio.prio--none", { title: p.name }, ui.prioSig("none"), h("span", { text: p.short || p.name }));
     }
     return h(
       "span.prio.prio--" + priorityId,
-      null,
+      { title: p.name },
       ui.prioSig(priorityId),
-      h("span", { text: p.name })
+      h("span", { text: p.short || p.name })
     );
   };
 
@@ -239,12 +305,17 @@
 
   /**
    * 收件箱 / 优先级模式共用的内容卡片。
+   *
+   * 「静流」§3 + §组件样张：版式照方案的 .card —
+   *   左列 96px 缩略图；右列依次是标题、摘要、元信息行、脚注行。
+   * 元信息行：平台方块 + 来源名 · 日期，优先级信号条贴最右。
+   * 脚注行：标签、收录方式、URL（悬停才出现）——不再单独占一行，也不画分隔线。
+   *
    * opts: { selected, onSelect, onToggleRead, onToggleArchive, onDefer, onBookmark, now }
    */
   ui.contentCard = function (item, opts) {
     opts = opts || {};
     var p = catalog.platform(item.platform);
-    var prio = catalog.priority(item.priority);
 
     var ops = h(
       "div.content-card__ops",
@@ -265,7 +336,9 @@
       h(
         "span.content-card__thumb",
         null,
-        item.cover ? h("img", { src: item.cover, alt: "", loading: "lazy" }) : null
+        /* 没有封面时放一个山形占位（方案样张的缩略图就是这个画法），
+           比一块纯灰的空框更像「这里本来该是图」。 */
+        item.cover ? h("img", { src: item.cover, alt: "", loading: "lazy" }) : icon("mountain", 40)
       ),
       h(
         "span.content-card__main",
@@ -275,39 +348,32 @@
         h(
           "span.content-card__meta",
           null,
+          // 「静流」§3：平台标识放到来源名前面的色块上，来源名本身保持中性。
           h(
             "span.content-card__author",
             null,
-            ui.avatar(item.channelName),
-            // 「静流」§3：平台标识放到来源名前面的色块上，来源名本身保持中性。
             ui.platformTag(item.platform),
             h("span.t-ellipsis", { text: item.channelName })
           ),
-          ui.priorityTag(item.priority),
-          // 「静流」§3：收录方式由灰色胶囊改为小图标 + 浅灰文字。
+          h("span.content-card__dot"),
+          h("span.content-card__time", { text: fmt.intakeTime(item, true) }),
+          // 「静流」§3：优先级用信号条表达，贴在元信息行最右。
+          ui.priorityTag(item.priority)
+        ),
+        h(
+          "span.content-card__foot",
+          null,
+          // 标签容器固定存在，具体标签由调用方（收件箱）按数据填充。
+          h("span.content-card__tags", null),
+          // M27：写过的笔记在卡片上留个记号。没有笔记不显示否定徽标。
+          item.hasNote ? h("span.content-card__note", { text: "有笔记" }) : null,
+          // 「静流」§3：收录方式由灰色胶囊改为小图标 + 浅灰文字，排在卡片脚注里。
           h(
             "span.content-card__method",
             { title: item.intakeMethod === "manual" ? "手动收录" : "自动采集" },
             icon(item.intakeMethod === "manual" ? "hand" : "refresh", 12),
             h("span", { text: item.intakeMethod === "manual" ? "手动" : "自动" })
           ),
-          h("span.content-card__dot", { text: "·" }),
-          h("span.content-card__time", { text: fmt.intakeTime(item, true) })
-        ),
-        item.tags && item.tags.length
-          ? h(
-              "span.content-card__tags",
-              null,
-              item.tags.map(function (t) {
-                return tagChip(t);
-              })
-            )
-          : null,
-        // M27：写过的笔记在卡片上留个记号。没有笔记不显示否定徽标。
-        item.hasNote ? h("span.content-card__note", { text: "有笔记" }) : null,
-        h(
-          "span.content-card__foot",
-          null,
           h(
             "span.content-card__link",
             null,
@@ -583,7 +649,7 @@
   }
 
   /**
-   * items: [{ label, icon, danger, onClick }] 或 '-' 分隔线
+   * items: [{ label, icon, danger, active, onClick }] 或 '-' 分隔线
    * anchor: 触发元素，菜单相对其右下角定位
    */
   ui.menu = function (items, anchor) {
@@ -594,17 +660,21 @@
       items.map(function (it) {
         if (it === "-") return h("div.menu__sep");
         return h(
-          "button.menu__item" + (it.danger ? ".menu__item--danger" : ""),
+          "button.menu__item" + (it.danger ? ".menu__item--danger" : "") + (it.active ? ".is-active" : ""),
           {
             type: "button",
             role: "menuitem",
+            /* 带选项值：下拉菜单的选项要能被按值定位（验收脚本与自动化都靠它） */
+            "data-value": it.value === undefined ? null : String(it.value),
             onclick: function () {
               ui.closeMenu();
               it.onClick && it.onClick();
             },
           },
           it.icon ? icon(it.icon, 14) : null,
-          h("span", { text: it.label })
+          h("span", { text: it.label }),
+          /* 当前项在菜单末尾打一个勾——下拉里必须能一眼看出「现在是哪个」。 */
+          it.active ? icon("check", 14) : null
         );
       })
     );
@@ -800,15 +870,23 @@
 
   /* ---------------- 统计卡 ---------------- */
 
+  /* 5.1 期补齐（「静流」§内容总览）：统计卡加一条占比细条，
+     等级用信号条表达而不是彩色实心图标块。
+     opts.level：优先级 id（high/medium/low/none），给出时图标位换成信号条；
+     opts.share：0~1 的占比，给出时画底部细条与右上角读数。 */
   ui.stat = function (opts) {
-    return h(
-      "div.stat",
+    var level = opts.level;
+    var hasBar = typeof opts.share === "number" && isFinite(opts.share);
+    var iconBox = h(
+      "div.stat__icon.stat__icon--" + (opts.tone || "brand"),
       null,
-      h(
-        "div.stat__icon.stat__icon--" + (opts.tone || "brand"),
-        null,
-        icon(opts.icon || "file-text", 18)
-      ),
+      level ? ui.prioSig(level) : icon(opts.icon || "file-text", 18)
+    );
+    if (level) iconBox.classList.remove("stat__icon--" + (opts.tone || "brand"));
+    return h(
+      "div.stat" + (hasBar ? ".stat--has-bar" : ""),
+      level ? { style: { "--pc": "var(--c-" + (level === "medium" ? "mid" : level) + ")" } } : null,
+      iconBox,
       h(
         "div.grow",
         null,
@@ -816,6 +894,7 @@
           "div.stat__value",
           null,
           h("span.stat__num", { text: String(opts.value) }),
+          hasBar ? h("span.stat__share", { text: Math.round(opts.share * 100) + "%" }) : null,
           opts.trend !== undefined && opts.trend !== null
             ? h(
                 "span.stat__trend.stat__trend--" + (opts.trend >= 0 ? "up" : "down"),
@@ -825,19 +904,101 @@
               )
             : null
         ),
-        h("div.stat__label", { text: opts.label })
-      )
+        h("div.stat__label", { text: opts.label, title: opts.label })
+      ),
+      hasBar
+        ? h("span.stat__bar", null, h("i", { style: { "--w": Math.max(0, Math.min(1, opts.share)) * 100 + "%" } }))
+        : null
+    );
+  };
+
+  /* ---------------- 分段控件 ---------------- */
+
+  /**
+   * 「静流」§组件样张：分段控件替代并排的胶囊按钮和单选卡片。
+   * 凹槽 + 浮起滑块，当前项一眼可见。
+   *
+   * options: [{value, label, icon?, title?}]
+   * opts: {role:'tablist'|'group', ariaLabel, full}
+   */
+  ui.seg = function (options, value, onChange, opts) {
+    opts = opts || {};
+    var role = opts.role || "tablist";
+    var group = h("div.seg" + (opts.full ? ".seg--full" : ""), {
+      role: role,
+      "aria-label": opts.ariaLabel || null,
+    });
+    (options || []).forEach(function (opt) {
+      var active = opt.value === value;
+      group.appendChild(
+        h(
+          "button.seg__item" + (active ? ".is-active" : ""),
+          {
+            type: "button",
+            role: role === "group" ? "radio" : "tab",
+            "aria-selected": role === "group" ? null : active ? "true" : "false",
+            "aria-checked": role === "group" ? String(active) : null,
+            title: opt.title || null,
+            onclick: function () {
+              if (active) return;
+              onChange(opt.value);
+            },
+          },
+          opt.icon ? icon(opt.icon, 15) : null,
+          /* opt.node：分段项前面的自定义节点（平台方块、信号条等）。
+             「静流」组件样张里收件箱的平台筛选就是「方块 + 名称 + 计数」。 */
+          opt.node || null,
+          h("span", { text: opt.label }),
+          /* opt.count：等宽计数。样张里写成 .n，和 .seg 的字重体系统一。 */
+          opt.count === undefined || opt.count === null
+            ? null
+            : h("span.n", { text: String(opt.count) })
+        )
+      );
+    });
+    return group;
+  };
+
+  /* ---------------- 通用小组件 ---------------- */
+
+  /* 状态徽标：ok / warn / bad / info */
+  ui.badge = function (text, tone) {
+    return h("span.badge" + (tone ? ".badge--" + tone : ""), { text: text });
+  };
+
+  /* 状态点：最近任务、连接状态 */
+  ui.statusDot = function (tone, title) {
+    return h("span.status-dot" + (tone ? ".status-dot--" + tone : ""), {
+      title: title || null,
+      "aria-hidden": "true",
+    });
+  };
+
+  /* 分段队列条：完成 / 进行中 / 失败三段拼成一条。
+     segments: [{value: 0~1, color: cssColor, run?: bool}] */
+  ui.queueBar = function (segments) {
+    return h(
+      "div.queue",
+      null,
+      segments.map(function (s) {
+        return h("i" + (s.run ? ".run" : ""), {
+          style: { width: Math.max(0, Math.min(1, s.value)) * 100 + "%", "--qc": s.color || null },
+        });
+      })
     );
   };
 
   /* ---------------- 标签输入 ---------------- */
 
-  ui.tagInput = function (initial, onChange) {
+  /* 标签输入：已加的词以标签形式列出，右边跟一条数量上限读数。
+     opts: {placeholder, max}——max 存在时才显示「N / max」。 */
+  ui.tagInput = function (initial, onChange, opts) {
+    opts = opts || {};
     var tags = (initial || []).slice();
     var list = h("span.row.row-gap-2", { style: { "flex-wrap": "wrap", gap: "6px" } });
     var input = h("input", {
-      placeholder: "输入标签，回车添加",
-      "aria-label": "添加标签",
+      placeholder: opts.placeholder || "输入标签，回车添加",
+      "aria-label": opts.placeholder || "添加标签",
       onkeydown: function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
@@ -849,6 +1010,7 @@
         }
       },
     });
+    var counter = opts.max ? h("span.tag-input__count.mono") : null;
 
     function commit() {
       var v = input.value.trim();
@@ -884,10 +1046,11 @@
           )
         );
       });
+      if (counter) counter.textContent = tags.length + " / " + opts.max;
     }
 
     paint();
-    var wrap = h("div.tag-input", { onclick: function () { input.focus(); } }, list, input);
+    var wrap = h("div.tag-input", { onclick: function () { input.focus(); } }, list, input, counter);
     wrap._getTags = function () {
       return tags.slice();
     };

@@ -205,11 +205,23 @@ async function verify({window, core, root}) {
   await until(`!!document.querySelector('.side-row[data-quick="high"]')`);
   const sidebarLabel = await evaluate(`document.querySelector('.side-row[data-quick="high"] .side-row__label').textContent`);
   assert.equal(sidebarLabel, '今天看', '侧栏快捷筛选要用新名字');
-  // 5.1 期（M31）：卡片上的优先级标识改为「信号条 + 文字」，文字仍是自定义名称。
+  // 5.1 期（M31/M33）：卡片上的优先级标识是「信号条 + 等级字」（高/中/低），
+  // 完整自定义名放在悬停提示里；自定义名在侧栏、筛选选项、看板列名上照常生效。
   // 按等级类名精确定位「高」的那张卡片（.prio 会匹配到卡片列表里的第一个优先级标识）。
-  const cardTag = await evaluate(`document.querySelector('.content-card .prio--high')?.textContent || ''`);
-  assert.equal(cardTag.trim(), '今天看', '内容卡片上的优先级标签要用新名字');
-  const filterOptions = await evaluate(`Array.from(document.querySelector('select[aria-label="筛选优先级"]').options).map(o => o.textContent)`);
+  const cardTag = await evaluate(`(() => {
+    const el = document.querySelector('.content-card .prio--high');
+    return el ? {text: el.textContent.trim(), title: el.getAttribute('title')} : null;
+  })()`);
+  assert.ok(cardTag, '内容卡片上应有高优先级标识');
+  assert.equal(cardTag.title, '今天看', '卡片优先级标识的悬停提示要给出完整自定义名');
+  const filterOptions = await evaluate(`(() => {
+    const btn = document.querySelector('[aria-label="筛选优先级"]');
+    if (!btn) return [];
+    btn.click();
+    const labels = Array.from(document.querySelectorAll('.menu__item')).map(o => o.textContent.trim());
+    document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+    return labels;
+  })()`);
   assert.ok(filterOptions.includes('今天看'), '收件箱优先级筛选要用新名字，实际：' + JSON.stringify(filterOptions));
   const bulkOptions = await evaluate(`(() => {
     const box = document.querySelector('.content-selection .check');

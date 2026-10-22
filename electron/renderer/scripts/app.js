@@ -89,6 +89,22 @@
     return "本地服务运行中";
   }
 
+  /* 「静流」§顶栏：呼吸点右边跟一句等宽读数。
+     口径是「通过可用性检查的采集连接 / 连接总数」——数据取自核心服务已返回的
+     session.connections，不额外发请求，与渠道管理页的连接判定同源。 */
+  function syncReadout(app) {
+    var conns = (app.session && app.session.connections) || [];
+    var total = conns.length;
+    var ok = conns.filter(function (c) { return c && c.readiness && c.readiness.state === "ready"; }).length;
+    return {
+      ok: ok,
+      total: total,
+      title: total
+        ? ok + " / " + total + " 个采集连接通过可用性检查"
+        : "尚未登记采集连接",
+    };
+  }
+
   /* M32：把轻科幻开关写到 <html data-fx>。规则全在 fx.css 里挂 [data-fx="on"]，
      所以这里只管属性与持久化，不碰任何样式表。 */
   function applyFx() {
@@ -243,7 +259,11 @@
               navigate("inbox"); render();
             },
           },
-          h("span.side-row__icon", { "aria-hidden": "true" }, icon(f.icon, 13)),
+          /* 「静流」§侧栏：优先级三行用信号条表达等级，不再用同一个图标；
+             其余筛选项沿用固定图标。 */
+          ["high", "medium", "low"].indexOf(f.id) >= 0
+            ? h("span.side-row__icon", { "aria-hidden": "true" }, ui.prioSig(f.id))
+            : h("span.side-row__icon", { "aria-hidden": "true" }, icon(f.icon, 13)),
           h("span.side-row__label", { text: label }),
           h("span.side-row__count", { text: String(app.counts[f.countKey] || 0) })
         );
@@ -285,6 +305,7 @@
 
   function buildTopbar() {
     var s = app.session || {};
+    var sync = syncReadout(app);
     var input = h("input", {
       type: "search",
       placeholder: "搜索内容标题...",
@@ -321,14 +342,18 @@
         "div.topbar__right",
         null,
         s.isDemo ? h("span.demo-badge", null, h("span.demo-dot"), h("span", { text: "演示数据" })) : null,
-        /* M32：在线状态点。连接正常是信号青呼吸点，异常时是静止的琥珀色
+        /* 「静流」§顶栏：同步状态 = 呼吸点 + 「同步 N/M」等宽读数，装在一个内凹描边的小胶囊里。
+           M32：在线状态点是信号青呼吸点，异常时是静止的琥珀色
            （座舱里的「注意」），不闪烁，避免焦虑。 */
-        h("span.fx-online", {
-          "data-state": onlineState(app),
-          title: onlineTitle(app),
-          "aria-label": onlineTitle(app),
-          role: "status",
-        }),
+        h("span.topbar__sync", { title: sync.title, "aria-label": sync.title },
+          h("span.fx-online", {
+            "data-state": onlineState(app),
+            title: onlineTitle(app),
+            "aria-label": onlineTitle(app),
+            role: "status",
+          }),
+          h("span", { text: "同步" }),
+          sync.total ? h("b.mono", { text: sync.ok + "/" + sync.total }) : null),
         h(
           "div.topbar__date",
           null,
@@ -398,38 +423,64 @@
     return promise;
   }
 
+  /* 「静流」§顶部任务条：一条横向读数行 —— 状态灯 + 状态 + 名称 + 等宽读数 +
+     操作按钮，底部一条 2px 进度轨道。
+     轨道三种形态：中断/失败是停在半路的虚线，同步中是流动的青色进度线，
+     完成态不画轨道（没有未完成的进度可言）。 */
+  function runLamp(state) {
+    if (state === "running" || state === "queued") return "live";
+    if (state === "succeeded") return "ok";
+    if (state === "failed") return "error";
+    if (["partial", "waiting", "interrupted", "cancelled"].indexOf(state) >= 0) return "warn";
+    return "idle";
+  }
+
+  /* 任务读数：一行等宽文字，说清这次采集提交了多少、存了多少、覆盖到哪里。 */
+  function runReadout(run) {
+    var metrics = run.kind === "detail"
+      ? "更新已有内容 · " + (run.items || 0) + " 条"
+      : (Object.keys(run.acquisitionMetrics || {}).length
+        ? "已保存 " + (run.items || 0) + " 条 · 新增 " + (run.newItems || 0) + " 条"
+        : "已提交 " + (run.pages || 0) + " 页 · " + (run.items || 0) + " 条 · 新增 " + (run.newItems || 0) + " 条");
+    return [run.message, metrics, run.kind === "detail" ? "" : SF.fmt.coverage(run.scope)]
+      .filter(Boolean).join(" · ");
+  }
+
   function buildStatusBar() {
     var conn = app.session && app.session.connection;
     var active = app.runs.find(function (r) { return ["queued", "running"].includes(r.state); });
-    var title, detail, tone = "info", actions = [], key, closable = true;
+    var state = "", name = "", read = "", lamp = "idle", actions = [], key, closable = true;
     if (app.coreStatus.state !== "ready") {
-      title = "核心服务" + (app.coreStatus.state === "starting" ? "正在启动" : "已断开");
-      detail = app.coreStatus.message || "已显示的内容是上次读取的结果，请重启服务后重新查询。";
-      tone = "danger";
+      state = app.coreStatus.state === "starting" ? "正在启动" : "已断开";
+      name = "核心服务";
+      read = app.coreStatus.message || "已显示的内容是上次读取的结果，请重启服务后重新查询。";
+      lamp = "error";
       key = "core:" + app.coreStatus.state;
       closable = false; // 阻塞态且带重启入口，藏起来会丢掉唯一的恢复操作
       actions.push(ui.btn("重启核心服务", { onClick: restart }));
     } else if (app.notice) {
-      title = "状态读取失败"; detail = app.notice; tone = "danger";
+      state = "读取失败"; name = "核心服务"; read = app.notice; lamp = "error";
       key = "notice:" + app.notice;
       actions.push(ui.btn("重新查询", { onClick: function () { refreshData(true); } }));
     } else if (active) {
-      title = "正在同步 " + active.channelName; detail = active.message;
+      state = "正在同步"; name = active.channelName || "采集任务"; read = active.message; lamp = "live";
       key = "active:" + active.id + ":" + active.state;
       closable = false; // 实时进度，关掉就看不到采集在推进
       actions.push(ui.btn("取消任务", { onClick: function () { act("cancel:" + active.id, async function () { await app.client.cancelRun(active.id); await refreshData(true); }); } }));
     } else if (conn && conn.state !== "ready" && (conn.state !== "unknown" || !app.runs.length)) {
-      title = conn.state === "unknown" ? "采集环境尚未检查" : conn.dependency === "unavailable" ? "采集依赖不可用" : "采集连接需要处理";
-      detail = conn.detail; tone = "warn";
+      state = conn.state === "unknown" ? "尚未检查"
+        : conn.dependency === "unavailable" ? "依赖不可用" : "需要处理";
+      name = "采集连接"; read = conn.detail; lamp = "warn";
       key = "conn:" + JSON.stringify([conn.state, conn.dependency, conn.authentication, conn.detail,
         app.runs[0] && app.runs[0].id, app.runs[0] && app.runs[0].state]);
       actions.push(ui.btn("查看连接与任务", { onClick: function () { navigate("channels"); } }));
     } else {
       var latest = app.runs[0];
       if (!latest) return null;
-      title = SF.fmt.runState(latest.state) + " · " + latest.channelName;
-      detail = latest.message + (latest.kind === "detail" ? "" : " · " + SF.fmt.coverage(latest.scope));
-      tone = ["failed", "partial", "waiting", "interrupted"].includes(latest.state) ? "warn" : "info";
+      state = SF.fmt.runState(latest.state);
+      name = latest.channelName || "采集任务";
+      read = runReadout(latest);
+      lamp = runLamp(latest.state);
       // 带上 run id 和状态：新任务或状态推进后签名自然变化，关闭过的旧提示会重新出现
       key = "run:" + latest.id + ":" + latest.state;
       actions.push(ui.btn("查看任务", { onClick: function () { navigate("channels"); } }));
@@ -437,10 +488,14 @@
     // 只压住同一条提示；签名一变就重新出现，不会把后续新结果一起藏掉
     if (app.dismissedStatus === key) return null;
     return h("div.status-bar", { role: "status", "aria-live": "polite" },
-      h("div.notice.notice--" + tone, null, icon("info", 16),
-        h("div.notice__body", null, h("div.notice__title", { text: title }), h("div.notice__text", { text: detail })),
-        actions,
-        closable ? ui.iconBtn("close", "关闭提示", function () { app.dismissedStatus = key; patchStatusBar(); }) : null));
+      h("div.task.task--" + lamp, null,
+        h("span.task-lamp", { "data-state": lamp, "aria-hidden": "true" }),
+        h("span.task-state", { text: state }),
+        h("b.task-name", { text: name }),
+        h("span.task-read.mono", { text: read }),
+        h("div.task-ops", null, actions,
+          closable ? ui.iconBtn("close", "关闭提示", function () { app.dismissedStatus = key; patchStatusBar(); }) : null),
+        h("span.task-track", { "aria-hidden": "true" })));
   }
 
   function invalidateViews(reasons) {

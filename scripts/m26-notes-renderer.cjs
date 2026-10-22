@@ -59,8 +59,12 @@ async function verify({window, core, root}) {
   /* 4. 目录：形状与计数。 */
   const listing = await evaluate(`SF.app.state.client.listNotes({limit: 10}).then(r => ({total: r.total, items: r.items, next_offset: r.next_offset}))`);
   assert.equal(listing.total, 1);
-  assert.deepEqual(Object.keys(listing.items[0]).sort(), ['id', 'note_updated_at', 'title']);
+  // 5.1 期：目录条目多了平台、来源与结论／模板四个标量，
+  // 外加一行截断后的摘要（正文仍然不返回）。
+  assert.deepEqual(Object.keys(listing.items[0]).sort(),
+    ['excerpt', 'id', 'note_updated_at', 'platform', 'source_name', 'template', 'title', 'verdict']);
   assert.equal(listing.items[0].id, itemId);
+  assert.equal(listing.items[0].excerpt, '这篇讲清楚了异步的边界。', '目录摘要行取笔记的总结');
   const titleOf = await evaluate(`SF.app.state.client.getContent(${JSON.stringify(itemId)}).then(c => c.title)`);
   assert.equal(listing.items[0].title, titleOf, '目录里用的是原标题');
 

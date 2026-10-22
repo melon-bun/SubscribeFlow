@@ -99,12 +99,12 @@
   align-items: center;
   gap: var(--s-4);
   width: 100%;
-  height: 40px;
+  height: 34px;
   padding: 0 var(--s-4);
   margin-bottom: 2px;
   border-radius: var(--r-md);
   color: var(--c-text-2);
-  font-size: var(--fs-base);
+  font-size: var(--fs-nav);
   text-align: left;
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
@@ -140,21 +140,15 @@
   white-space: nowrap;
 }
 
-/* 侧栏分组 */
+/* 侧栏分组：「静流」§侧栏不加分隔线，靠留白分区。 */
 .side-group {
-  padding: var(--s-4) var(--s-3) 0;
-}
-
-.side-group + .side-group {
-  margin-top: var(--s-3);
-  padding-top: var(--s-5);
-  border-top: 1px solid var(--c-divider);
+  padding: 0;
 }
 
 .side-group__title {
-  padding: 0 var(--s-4);
-  margin-bottom: var(--s-3);
-  font-size: var(--fs-sm);
+  padding: 18px var(--s-4) 6px;
+  font-size: var(--fs-label);
+  letter-spacing: 0.04em;
   color: var(--c-text-3);
 }
 
@@ -163,11 +157,11 @@
   align-items: center;
   gap: var(--s-4);
   width: 100%;
-  height: 36px;
+  height: 34px;
   padding: 0 var(--s-4);
   border-radius: var(--r-md);
   color: var(--c-text-2);
-  font-size: var(--fs-base);
+  font-size: var(--fs-nav);
   text-align: left;
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
@@ -318,6 +312,26 @@
   white-space: nowrap;
 }
 
+/* 「静流」§顶栏：同步状态是一个内凹描边的小胶囊——呼吸点 + 等宽读数。
+   文字中性，数字用等宽，不再给整块染色：颜色只留在那个状态点上。 */
+.topbar__sync {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 26px;
+  padding: 0 var(--s-4);
+  border-radius: var(--r-full);
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+  box-shadow: inset 0 0 0 1px var(--c-border);
+  white-space: nowrap;
+}
+
+.topbar__sync b {
+  font-weight: 500;
+  color: var(--c-text-2);
+}
+
 .topbar__date svg {
   width: 16px;
   height: 16px;
@@ -446,12 +460,12 @@
   background: var(--c-bg);
 }
 
-.status-bar .notice {
+.status-bar .task {
   align-items: center;
 }
 
 /* 状态栏里的关闭按钮：比通用图标按钮更收敛，避免抢走提示本身的注意力 */
-.status-bar .notice .icon-btn {
+.status-bar .task .icon-btn {
   width: 28px;
   height: 28px;
   margin-left: var(--s-1);
@@ -548,32 +562,41 @@
   border-left: 1px solid var(--c-divider);
 }
 
+/* 「静流」§详情面板：标题在左，位置读数与上一条 / 下一条 / 关闭在右。 */
 .detail__head {
   display: flex;
   align-items: center;
-  gap: var(--s-4);
-  height: 56px;
+  gap: var(--s-2);
+  height: 52px;
   flex: none;
-  padding: 0 var(--s-5);
+  padding: 0 var(--s-4) 0 var(--s-7);
   border-bottom: 1px solid var(--c-divider);
 }
 
+.detail__head b {
+  margin-right: auto;
+  font-size: var(--fs-cap);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
 .detail__counter {
-  font-size: var(--fs-base);
-  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  margin-right: var(--s-2);
   font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
 }
 
 .detail__pager {
   display: flex;
-  gap: var(--s-2);
-  margin-left: auto;
+  gap: var(--s-1);
 }
 
 .detail__body {
   flex: 1;
   min-height: 0;
-  padding: var(--s-6) var(--s-5) var(--s-8);
+  padding: var(--s-6) var(--s-7) var(--s-8);
 }
 
 /* ---------------- 弹层 ---------------- */

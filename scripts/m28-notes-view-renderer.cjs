@@ -78,7 +78,7 @@ async function verify({window, core, root}) {
   await evaluate(`SF.app.navigate('notes')`);
   await until(`SF.app.state.route.name === 'notes'`);
   await until(`document.querySelectorAll('.notes-toc__item').length > 0`);
-  const toc = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__item')).map(b => b.textContent.trim())`);
+  const toc = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__item')).map(b => (b.querySelector('.notes-toc__title')||{}).textContent)`);
   assert.ok(toc.includes('local-rag / desktop-kit'), '目录里要有那两条笔记的原标题');
   assert.ok(toc.includes('一篇讲检索设计的文章'), '目录里要有那两条笔记的原标题');
   assert.ok(!toc.includes('没有写笔记的一条内容'), '没有笔记的内容不出现');
@@ -95,10 +95,39 @@ async function verify({window, core, root}) {
   assert.equal(tocShape.tags, 0, '目录里不出现标签');
   assert.equal(tocShape.covers, 0, '目录里不出现封面');
 
+  /* 1b. 5.1 期「静流」：目录条目下带平台、日期与结论／模板徽标，
+         选中项用青色左边线；右侧原内容收进浅底卡，编辑器是纸面卡片。 */
+  const tocMeta = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__item')).map(b => ({
+    platform: !!b.querySelector('.notes-toc__meta .plat'),
+    date: (b.querySelector('.notes-toc__date') || {}).textContent || '',
+    badge: (b.querySelector('.notes-toc__meta .badge') || {}).textContent || '',
+  }))`);
+  assert.ok(tocMeta.length > 0 && tocMeta.every(m => m.platform), '目录条目要带平台标识');
+  assert.ok(tocMeta.every(m => /^\d{2}-\d{2}$/.test(m.date)), '目录条目要带日期');
+  assert.ok(tocMeta.some(m => m.badge), '目录条目要带结论／模板徽标');
+  const activeLine = await evaluate(`(() => {
+    const item = document.querySelector('.notes-toc__item.is-active');
+    if (!item) return null;
+    const style = getComputedStyle(item);
+    return { shadow: style.boxShadow, bg: style.backgroundColor };
+  })()`);
+  assert.ok(activeLine && /inset/.test(activeLine.shadow), '选中的目录条目要有左边线');
+  assert.ok(activeLine && activeLine.bg !== 'rgba(0, 0, 0, 0)', '选中的目录条目要有底色');
+  const cardLook = await evaluate(`(() => {
+    const card = document.querySelector('.notes-card');
+    const editor = document.querySelector('.note-editor');
+    if (!card || !editor) return null;
+    const cs = getComputedStyle(card), es = getComputedStyle(editor);
+    return { cardBg: cs.backgroundColor, cardShadow: cs.boxShadow, editorBg: es.backgroundColor, editorShadow: es.boxShadow };
+  })()`);
+  assert.ok(cardLook, '右侧要有原内容卡与编辑区');
+  assert.ok(cardLook.cardBg !== cardLook.editorBg, '来源浅底卡要和纸面编辑区分开');
+  assert.ok(cardLook.editorShadow && cardLook.editorShadow !== 'none', '编辑器要是纸面卡片（有阴影）');
+
   /* 2. 选中标题只在本页切换：不跳收件箱，主路由仍是 notes。 */
   await evaluate(`(() => {
     const item = Array.from(document.querySelectorAll('.notes-toc__item'))
-      .find(b => b.textContent.trim() === 'local-rag / desktop-kit');
+      .find(b => (b.querySelector('.notes-toc__title')||{}).textContent === 'local-rag / desktop-kit');
     item.click();
   })()`);
   await until(`!!document.querySelector('.notes-reader__title')`);
@@ -138,7 +167,7 @@ async function verify({window, core, root}) {
     input.dispatchEvent(new Event('input', {bubbles: true}));
   })()`);
   await until(`document.querySelectorAll('.notes-toc__item').length === 1`);
-  const searched = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__item')).map(b => b.textContent.trim())`);
+  const searched = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__item')).map(b => (b.querySelector('.notes-toc__title')||{}).textContent)`);
   assert.deepEqual(searched, ['一篇讲检索设计的文章'], '搜索要搜得到笔记正文');
   /* 全局数与范围数分开：页内是当前范围，侧栏是全体笔记数（BUG-112）。 */
   const counts = await evaluate(`({
@@ -166,7 +195,7 @@ async function verify({window, core, root}) {
     select.dispatchEvent(new Event('change', {bubbles: true}));
   })()`);
   await until(`document.querySelectorAll('.notes-toc__item').length === 1`);
-  const filtered = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__item')).map(b => b.textContent.trim())`);
+  const filtered = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__item')).map(b => (b.querySelector('.notes-toc__title')||{}).textContent)`);
   assert.deepEqual(filtered, ['一篇讲检索设计的文章'], '平台筛选要生效');
   // 换回全部平台。
   await evaluate(`(() => {
@@ -212,7 +241,7 @@ async function verify({window, core, root}) {
   await until(`document.querySelectorAll('.notes-toc__item').length === 1`);
   const lastCall = JSON.parse(await evaluate(`JSON.stringify(window.__listCalls)`)).pop();
   assert.ok(lastCall.platform, '最后下发的请求要带最后的平台条件');
-  const quickTitles = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__item')).map(b => b.textContent.trim())`);
+  const quickTitles = await evaluate(`Array.from(document.querySelectorAll('.notes-toc__item')).map(b => (b.querySelector('.notes-toc__title')||{}).textContent)`);
   assert.deepEqual(quickTitles, ['local-rag / desktop-kit'], '结果要对得上最后的条件');
   // 换回全部平台。
   await evaluate(`(() => {
@@ -282,7 +311,7 @@ async function verify({window, core, root}) {
   /* 11. A／B 切换：草稿按内容 ID 分开，不串条。 */
   await evaluate(`(() => {
     const item = Array.from(document.querySelectorAll('.notes-toc__item'))
-      .find(b => b.textContent.trim() === '一篇讲检索设计的文章');
+      .find(b => (b.querySelector('.notes-toc__title')||{}).textContent === '一篇讲检索设计的文章');
     item.click();
   })()`);
   await until(`document.querySelector('select[aria-label="笔记类型"]').value === 'general'`);
@@ -293,7 +322,7 @@ async function verify({window, core, root}) {
   })()`);
   await evaluate(`(() => {
     const item = Array.from(document.querySelectorAll('.notes-toc__item'))
-      .find(b => b.textContent.trim() === 'local-rag / desktop-kit');
+      .find(b => (b.querySelector('.notes-toc__title')||{}).textContent === 'local-rag / desktop-kit');
     item.click();
   })()`);
   await until(`document.querySelector('select[aria-label="笔记类型"]').value === 'project'`);
@@ -301,7 +330,7 @@ async function verify({window, core, root}) {
   assert.equal(bValue, '本地文档检索加桌面壳。', 'B 的内容不能被 A 的草稿顶掉');
   await evaluate(`(() => {
     const item = Array.from(document.querySelectorAll('.notes-toc__item'))
-      .find(b => b.textContent.trim() === '一篇讲检索设计的文章');
+      .find(b => (b.querySelector('.notes-toc__title')||{}).textContent === '一篇讲检索设计的文章');
     item.click();
   })()`);
   await until(`document.querySelector('select[aria-label="笔记类型"]').value === 'general'`);
@@ -325,9 +354,9 @@ async function verify({window, core, root}) {
   await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === '删除这条笔记').click()`);
   await until(`!!document.querySelector('.dialog')`);
   await evaluate(`Array.from(document.querySelectorAll('.dialog button')).find(b => b.textContent.trim() === '删除').click()`);
-  await until(`!Array.from(document.querySelectorAll('.notes-toc__item')).some(b => b.textContent.trim() === '一篇讲检索设计的文章')`);
+  await until(`!Array.from(document.querySelectorAll('.notes-toc__item')).some(b => (b.querySelector('.notes-toc__title')||{}).textContent === '一篇讲检索设计的文章')`);
   const afterDelete = await evaluate(`({
-    items: Array.from(document.querySelectorAll('.notes-toc__item')).map(b => b.textContent.trim()),
+    items: Array.from(document.querySelectorAll('.notes-toc__item')).map(b => (b.querySelector('.notes-toc__title')||{}).textContent),
     selected: (document.querySelector('.notes-reader__title') || {}).textContent,
     total: (document.querySelector('.notes-toc__foot') || {}).textContent,
   })`);

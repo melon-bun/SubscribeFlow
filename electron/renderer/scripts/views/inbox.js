@@ -209,33 +209,49 @@
                                 : '最终优先级为「' + highName + '」且尚未归档的内容，包含已读内容。与提醒里的「' + highName + '未归档」数字同源。')
           : (descriptions[app.filters.quick] || '按日期查看收录的内容。')}),
         viewToggle),
-      h('div.view__actions', null, h('span.muted', {text:'按日历时间排列'}),
+      /* 「静流」§主界面：动作按「信息 → 次级操作 → 主操作」排，
+         橙色主操作每屏只出现一次，放在最右。 */
+      h('div.view__actions', null,
+        h('span.muted', {text:'按日历时间排列'}),
+        ui.btn('重新查询', {icon:'refresh', onClick:function () { invalidate(['content']); SF.app.refreshData(true); }}),
         ui.btn('添加内容', {variant:'primary', icon:'plus', disabled:!app.session.capabilities.canIntake,
           title: app.session.capabilities.canIntake ? '粘贴链接收录单条内容' : '当前渠道尚未支持单条链接收录',
-          onClick:function () { SF.intakeDialog.open(app); }}),
-        ui.btn('重新查询', {icon:'refresh', onClick:function () { invalidate(['content']); SF.app.refreshData(true); }})));
+          onClick:function () { SF.intakeDialog.open(app); }})));
     var chips = h('div.inbox__toolbar', {'data-refresh-key':'inbox-filters'},
-      h('div.chips', null,
-        h('button.chip' + (!app.filters.platform ? '.is-active' : ''), {type:'button', onclick:function () { app.filters.platform = null; SF.app.render(); }},
-          h('span', {text:'全部'}), h('span.chip__count', {text:String(app.counts.total || 0)})),
-        app.platforms.map(function (p) {
-          return h('button.chip' + (app.filters.platform === p.id ? '.is-active' : ''), {type:'button', onclick:function () { app.filters.platform = p.id; SF.app.render(); }},
-            h('span', {text:SF.catalog.platform(p.id).name}), h('span.chip__count', {text:String(p.count || 0)}));
-        }),
-        app.filters.channelId || app.filters.sourceId || app.filters.day ? ui.btn('清除来源 / 日期筛选', {onClick:function () { app.filters.channelId = null; app.filters.sourceId = null; delete app.filters.day; SF.app.render(); }}) : null));
-    chips.appendChild(ui.select([{value:'',label:'全部优先级'}].concat(['high','medium','low','none'].map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), app.filters.priority || '', function(value) { app.filters.priority=value || null; SF.app.render(); }, {ariaLabel:'筛选优先级'}));
+      /* 「静流」§落地改动清单 4：平台筛选用分段控件（凹槽 + 浮起滑块），
+         每一段带平台方块和计数，不再是一排药丸按钮。 */
+      ui.seg(
+        [{value:'',label:'全部',count:app.counts.total || 0}].concat(app.platforms.map(function (p) {
+          return {
+            value: p.id,
+            /* 方案样张里平台筛选写的是「公众号」而不是「微信公众号」——
+               用短名，分段控件才不会把筛选条撑到换行。 */
+            label: SF.catalog.platform(p.id).short || SF.catalog.platform(p.id).name,
+            count: p.count || 0,
+            node: ui.platformIcon(p.id, {className:'plat--sm', decorative:true}),
+          };
+        })),
+        app.filters.platform || '',
+        function (value) { app.filters.platform = value || null; SF.app.render(); },
+        {ariaLabel:'按平台筛选', role:'group'}),
+      /* 分段控件与下拉之间一条细竖线：把「切换维度」和「筛选条件」分开。 */
+      h('span.filters__sep', {'aria-hidden':'true'}));
+    if (app.filters.channelId || app.filters.sourceId || app.filters.day) {
+      chips.appendChild(ui.btn('清除来源 / 日期筛选', {onClick:function () { app.filters.channelId = null; app.filters.sourceId = null; delete app.filters.day; SF.app.render(); }}));
+    }
+    chips.appendChild(ui.dropdown([{value:'',label:'全部优先级'}].concat(['high','medium','low','none'].map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), app.filters.priority || '', function(value) { app.filters.priority=value || null; SF.app.render(); }, {ariaLabel:'筛选优先级'}));
     if (!cache.sourcesRequested && !cache.sourcesPromise) {
       var sourceOwner=cache; sourceOwner.sourcesRequested=true;
       sourceOwner.sourcesPromise = app.client.listContentSources({}).then(function(r) {if(cache===sourceOwner) {sourceOwner.sources=r.items; delete sourceOwner.sourcesError; renderView();}})
         .catch(function(err) {if(cache===sourceOwner) {sourceOwner.sourcesError=err; renderView();}})
         .finally(function () { sourceOwner.sourcesPromise = null; if (cache === sourceOwner && !sourceOwner.sourcesRequested) renderView(); });
     }
-    chips.appendChild(ui.select([{value:'',label:'全部来源'}].concat((cache.sources||[]).map(function(s) {return {value:s.id,label:SF.catalog.platform(s.platform).name+' · '+s.name};})), app.filters.sourceId||'',function(v) {app.filters.sourceId=v||null;app.filters.channelId=null;SF.app.render();},{ariaLabel:'筛选来源'}));
-    chips.appendChild(ui.select([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},{ariaLabel:'筛选收录方式'}));
+    chips.appendChild(ui.dropdown([{value:'',label:'全部来源'}].concat((cache.sources||[]).map(function(s) {return {value:s.id,label:s.name};})), app.filters.sourceId||'',function(v) {app.filters.sourceId=v||null;app.filters.channelId=null;SF.app.render();},{ariaLabel:'筛选来源'}));
+    chips.appendChild(ui.dropdown([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},{ariaLabel:'筛选收录方式'}));
     if(cache.sourcesError) chips.appendChild(ui.btn('重试来源筛选',{size:'sm',title:cache.sourcesError.message,onClick:function() {cache.sourcesRequested=false;cache.sourcesError=null;SF.app.renderContent();}}));
     /* 标签筛选入口紧跟优先级，和其它筛选项同属一条工具栏；面板展开时插在工具栏下方。 */
     var picked = pickedTags(app);
-    chips.appendChild(ui.btn('标签' + (picked.length ? ' · ' + picked.length : ''), {icon:'tag', onClick:function () { tagPanelOpen = !tagPanelOpen; SF.app.renderContent(); }}));
+    chips.appendChild(ui.selectBtn('标签' + (picked.length ? ' · ' + picked.length : ''), {icon:'tag', arrow:false, onClick:function () { tagPanelOpen = !tagPanelOpen; SF.app.renderContent(); }}));
     var tagPanel = tagPanelOpen ? tagFilterPanel(app) : null;
     var body;
     if (cache.error) body = ui.state({icon:'alert', title:'内容读取失败', desc:cache.error.message, actions:[{label:'重试', onClick:function () { cache = {}; SF.app.renderContent(); }}]});
@@ -245,8 +261,9 @@
       {label:'清除筛选', onClick:function () { app.filters = {quick:app.filters.quick, platform:null, channelId:null}; app.search = ''; SF.app.render(); }}].concat(isInbox ? [
       {label:'查看全部更新', onClick:function () { app.filters = {quick:'all', platform:null, channelId:null}; app.search = ''; SF.app.render(); }}] : [])});
     else body = h('div.inbox__grid.scroll-y', {'data-scroll-key':'contents:' + offset,'data-refresh-key':'contents:' + offset}, cache.items.map(function (item) {
-      return h('div.content-selection', {'data-refresh-key':'content-selection:' + item.id}, ui.check(selected.has(item.id), function () { if (selected.has(item.id)) selected.delete(item.id); else selected.add(item.id); SF.app.renderContent(); }, '选择 ' + item.title),
-        withTags(ui.contentCard(item, {selected:app.selectedId === item.id, now:app.now,
+      var isCurrent = app.selectedId === item.id;
+      return h('div.content-selection' + (isCurrent ? '.is-selected' : ''), {'data-refresh-key':'content-selection:' + item.id}, ui.check(selected.has(item.id), function () { if (selected.has(item.id)) selected.delete(item.id); else selected.add(item.id); SF.app.renderContent(); }, '选择 ' + item.title),
+        withTags(ui.contentCard(item, {selected:isCurrent, now:app.now,
           onSelect:function () { app.selectedId = item.id; SF.app.renderContent(); },
           onMenu:function (e) { e.stopPropagation(); ui.menu([
             {label:item.state.read ? '标记为未读' : '标记为已读', onClick:function () { update(app, item.id, {read:!item.state.read}); }},
@@ -258,16 +275,33 @@
         var ids = Array.from(selected), state = {}; state[['read','deferred','archived'][i]] = true;
         SF.app.act('bulk', async function () { await app.client.bulkUpdate(ids, {state:state}); selected.clear(); await SF.app.refreshData(true); });
       }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复跟随来源'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true); }); },{ariaLabel:'批量设置优先级'}), bulkTagControl(app), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
-    var pager = cache.loaded && !cache.error ? h('div.inbox__toolbar', {'data-refresh-key':'inbox-pager'},
-      h('span.muted', {text:'共 ' + cache.total + ' 条 · 第 ' + (Math.floor(offset / 20) + 1) + ' 页'}),
-      ui.btn('上一页', {disabled:offset === 0, onClick:function () { offset = Math.max(0, offset - 20); cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }}),
-      ui.btn('下一页', {disabled:cache.next_offset == null, onClick:function () { offset = cache.next_offset; cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }})) : null;
+    var pager = cache.loaded && !cache.error ? h('div.pager', {'data-refresh-key':'inbox-pager'},
+      h('span.pager__count', null, '共 ', h('span.num', {text:String(cache.total)}), ' 条 · 第 ', h('span.num', {text:String(Math.floor(offset / 20) + 1)}), ' 页'),
+      ui.btn('上一页', {variant:'ghost', size:'sm', disabled:offset === 0, onClick:function () { offset = Math.max(0, offset - 20); cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }}),
+      ui.btn('下一页', {variant:'secondary', size:'sm', disabled:cache.next_offset == null, onClick:function () { offset = cache.next_offset; cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }})) : null;
     var item = cache.items && cache.items.find(function (c) { return c.id === app.selectedId; });
+    /* 「静流」§详情面板：标题行右侧是位置读数与上一条 / 下一条 / 关闭。 */
+    var listItems = cache.items || [];
+    var listIndex = item ? listItems.findIndex(function (c) { return c.id === item.id; }) : -1;
+    var step = function (delta) {
+      var next = listItems[listIndex + delta];
+      if (!next) return;
+      app.selectedId = next.id;
+      SF.app.renderContent();
+    };
+    var detailHead = h('div.detail__head', null,
+      h('b', {text:'内容详情'}),
+      listIndex >= 0 ? h('span.detail__counter', {text:(listIndex + 1) + ' / ' + listItems.length}) : null,
+      h('div.detail__pager', null,
+        ui.iconBtn('chevron-left', '上一条', function () { step(-1); }, {disabled: listIndex <= 0}),
+        ui.iconBtn('chevron-right', '下一条', function () { step(1); }, {disabled: listIndex < 0 || listIndex >= listItems.length - 1}),
+        ui.iconBtn('close', '关闭详情', function () { closeDetail(app); })));
     return {main:h('div.view', {'data-view':'inbox','data-refresh-key':'inbox:' + key + ':' + offset}, head, h('div.view__body.inbox', {'data-refresh-key':'inbox-body'}, chips, tagPanel, bulk,
       cache.refreshError ? h('p.field__error', {role:'status','data-refresh-key':'inbox-refresh-error',text:'更新失败，正在显示已加载内容：' + cache.refreshError.message}) : null, body, pager)),
       aside:item && !cache.error ? h('aside.detail', {'aria-label':'内容详情','data-refresh-key':'detail:' + item.id},
-        h('div.detail__head', null, h('span', {text:'内容详情'}), h('div.spacer'), ui.iconBtn('close', '关闭详情', function () { closeDetail(app); })),
-        h('div.detail__body.scroll-y', {'data-scroll-key':'detail:' + item.id}, detailBody(app, item, function (fresh, settled) { repaintContent(app, fresh, settled); }))) : null};
+        detailHead,
+        h('div.detail__body.scroll-y', {'data-scroll-key':'detail:' + item.id}, detailBody(app, item, function (fresh, settled) { repaintContent(app, fresh, settled); })),
+        detailFoot(app, item, function (fresh, settled) { repaintContent(app, fresh, settled); })) : null};
   }
   /**
    * 关闭内容详情。笔记里还有没保存的文字时，先问保存还是放弃：
@@ -321,9 +355,20 @@
     var slot = card.querySelector('.content-card__tags'), tags = item.tags || [];
     if (!slot || !tags.length) return card;
     while (slot.firstChild) slot.removeChild(slot.firstChild);
-    tags.forEach(function (t) {
-      slot.appendChild(chip(t, {title: t.origin === 'suggested' ? t.name + ' · 识别建议，未经确认' : t.name}));
+    /* 「静流」§组件样张的 .tag.more：卡片横向只放得下一个标签，
+       其余收成「+N」——完整标签在详情面板里看。
+       硬塞会把标签块挤成半个字，反而看不清。 */
+    var shown = tags.slice(0, 1);
+    shown.forEach(function (t) {
+      slot.appendChild(chip(t, {compact: true, title: t.origin === 'suggested' ? t.name + ' · 识别建议，未经确认' : t.name}));
     });
+    if (tags.length > shown.length) {
+      var more = h('span.tag-chip.tag-chip--more', {
+        title: tags.slice(shown.length).map(function (t) { return t.name; }).join('、'),
+        text: '+' + (tags.length - shown.length),
+      });
+      slot.appendChild(more);
+    }
     return card;
   }
 
@@ -336,10 +381,13 @@
    假数据必须显式标注为「示例」，不能让用户误以为是真实采集数据。
    规则全部由 fx.css 的 [data-fx="on"] 控制，关闭效果时整条不显示。 */
   function readoutBar() {
+    /* 「静流」§轻科幻层 4：读数条一行放得下，字段名短、取值紧。
+       真实取数（contents.first_seen_at / acquisition_complete / tagging_tasks）
+       仍在 5.2 期接；在此之前这行是版式示例，必须带「示例数据」标记。 */
     var rows = [
-      { key: '收录', val: '2026-10-22 09:14' },
-      { key: '完整度', val: '正文已采集' },
-      { key: 'AI 打标', val: '3 个标签' },
+      { key: '采集', val: '09:14' },
+      { key: '详情', val: '正文已采集' },
+      { key: 'AI 打标', val: '3 个' },
     ];
     return h(
       'div.fx-readout',
@@ -354,23 +402,30 @@
   }
 
   function priorityControls(app,item,repaint) {
-    // 「静流」5.1 期：优先级三张卡片 + 「跟随来源」合并为一个四段控件，
-    // 等级改用信号条表达（颜色只在图形上）。
+    /* 「静流」§5：优先级三张卡片 + 「跟随来源」合并为一个四段控件。
+       段里只放固定等级字（高 / 中 / 低）——用户自定义的显示名可能很长
+       （例如「开箱即用的项目_教程」），直接放进分段会把控件挤爆；
+       完整名字放到标题行的提示里，悬停分段也能看到全名。 */
+    var current = SF.catalog.priority(item.priority);
     var options = SF.catalog.PRIORITY_ORDER.map(function(id) {
-      var meta=SF.catalog.priority(id);
-      return {id:id, name:meta.name};
+      var meta = SF.catalog.priority(id);
+      return {id:id, short:meta.short, name:meta.name};
     });
-    options.push({id:'inherit', name:'跟随来源'});
+    options.unshift({id:'inherit', short:'跟随来源', name:'跟随来源'});
     return h('div.detail__section',{'data-refresh-key':'priority:' + item.id,'data-refresh-boundary':true,
-      'data-refresh-preserve':JSON.stringify([item.priority, item.priorityOverride, contentPending(item.id)])},h('div.detail__section-title',{text:'优先级'}),
-      h('p.field__hint',{text:item.priorityOverride ? '此内容已单独设置，不受来源默认值变化影响。' : '跟随来源 · 当前' + SF.catalog.priority(item.priority).name}),
+      'data-refresh-preserve':JSON.stringify([item.priority, item.priorityOverride, contentPending(item.id)])},
+      h('div.detail__section-title', null,
+        h('span', {text:'优先级'}),
+        /* 提示里用完整显示名：用户改过名（「开箱即用的项目_教程」）时，
+           这里能看出当前到底是哪一档；太长由 CSS 省略。 */
+        h('span.detail__section-hint', {text:(item.priorityOverride ? '已单独设置' : '跟随来源') + ' · 当前为' + current.name})),
       h('div.priority-grid',{'aria-label':'内容优先级'}, options.map(function(opt) {
         var active = opt.id==='inherit' ? !item.priorityOverride : item.priorityOverride===opt.id;
         var disabled = contentPending(item.id) || (opt.id==='inherit' && !item.priorityOverride);
         return h('button.priority-opt.priority-opt--'+(opt.id==='inherit'?'inherit':opt.id)+(active?'.is-active':''),
-          {type:'button',disabled:disabled,'aria-pressed':String(active),onclick:function() { save(opt.id==='inherit'?null:opt.id); }},
+          {type:'button',disabled:disabled,'aria-pressed':String(active),title:opt.name,onclick:function() { save(opt.id==='inherit'?null:opt.id); }},
           opt.id==='inherit' ? null : ui.prioSig(opt.id),
-          h('span.priority-opt__name',{text:opt.name}));
+          h('span.priority-opt__name',{text:opt.short}));
       })));
     function save(priority) {
       saveContent(app, item, {priority:priority}, repaint);
@@ -384,10 +439,12 @@
       while (box.firstChild) box.removeChild(box.firstChild);
       var tags = item.tags || [];
       var suggested = tags.some(function (t) { return t.origin === 'suggested'; });
-      box.appendChild(h('div.detail__section-title', {text:'标签'}));
-      box.appendChild(h('p.field__hint', {text: suggested
-        ? '在对话框里点选标签，确认挂载后保存。带「识别」角标的是自动识别建议，可以直接移除，也可以保留。'
-        : '在对话框里点选标签，确认挂载后保存。'}));
+      /* 「静流」§5：分节标题右侧是「AI 识别 N · 手动 M」的读数，
+         颜色与字重都比标题弱一档，不与标题抢层级。 */
+      var suggestedCount = tags.filter(function (t) { return t.origin === 'suggested'; }).length;
+      box.appendChild(h('div.detail__section-title', null,
+        h('span', {text:'标签'}),
+        h('span.detail__section-hint', {text:'AI 识别 ' + suggestedCount + ' · 手动 ' + (tags.length - suggestedCount)})));
       if (!SF.tagUi) {
         /* 标签控件没加载时只展示现状，不给一个点了没反应的添加入口。 */
         box.appendChild(h('div.tag-editor__chips', null, tags.length
@@ -579,28 +636,72 @@
     section.appendChild(h('div.detail__more', null, toggle));
     return section;
   }
+  /**
+   * 详情作者行的时间：「原始发布 · 2026-10-11 10:00（Asia/Tokyo）」。
+   * 不直接用 fmt.publication —— 那是给表格用的完整 ISO，
+   * 放进 400px 的详情栏会顶出一行。
+   */
+  function publicationLine(item) {
+    var heading = fmt.publicationHeading(item);
+    var raw = item.publishedAt ? String(item.publishedAt) : '';
+    var day = raw.slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return heading;
+    var time = raw.slice(11, 16);
+    var zone = item.publishedTimezone ? '（' + item.publishedTimezone + '）' : '';
+    return heading + ' · ' + day + (/^\d{2}:\d{2}$/.test(time) ? ' ' + time : '') + zone;
+  }
+
+  /** 原文链接行里的短标识：取 URL 最后一段（BV 号、仓库名等）。 */
+  function shortKey(item) {
+    var url = String(item.url || '').split('?')[0].split('#')[0];
+    var parts = url.replace(/^https?:\/\//, '').split('/').filter(Boolean);
+    var last = parts.length ? parts[parts.length - 1] : url;
+    return last.length > 26 ? last.slice(0, 26) + '…' : last;
+  }
+
+  /**
+   * 详情顶图。「静流」§4：176px 高的取景框，右下角一行等宽读数，
+   * 轻科幻层在图上叠一层取景框角标。数据来自这条内容本身，不编造。
+   */
+  function detailHero(item) {
+    var platform = SF.catalog.platform(item.platform);
+    var manual = item.intakeMethod === 'manual';
+    return h('div.detail__hero' + (item.cover ? '' : '.detail__hero--empty'), null,
+      item.cover ? h('img', {src:item.cover, alt:'', referrerPolicy:'no-referrer'}) : null,
+      item.cover ? null : h('span.detail__hero-mark', {'aria-hidden':'true'}, icon('mountain', 96)),
+      h('span.detail__hud', {'aria-hidden':'true'}),
+      h('div.detail__readout', null,
+        h('span' + (manual ? '' : '.is-live'), {text: manual ? '手动收录' : '已收录'}),
+        h('span', {text: platform.name + ' · ' + shortKey(item)})));
+  }
+
+  /** 原文区：一条可点的链接行，点开即用系统浏览器打开。 */
+  function linkSection(app, item) {
+    return h('div.detail__section', null,
+      h('div.detail__section-title', {text:'原文'}),
+      h('button.detail__link-row', {
+        type:'button', title:item.url,
+        onclick:function () { SF.app.act('open:' + item.id, function () { return app.client.openContent(item.id); }); }},
+        icon('link', 15),
+        h('span.mono', {text:item.url}),
+        icon('external', 15)));
+  }
+
   function detailBody(app, item, repaint) {
-    var canDetail = item.canFetchDetail !== false && !!item.channelId && app.session.channels.some(function (c) { return c.channel === item.platform && c.operations.get_item_detail && c.operations.get_item_detail.supported; });
     var whole = fullText(item);
     return h('div.detail-preview', null,
-      item.cover ? h('div.detail__cover', null, h('img', {src:item.cover, alt:'', referrerPolicy:'no-referrer'})) : null,
+      detailHero(item),
       h('h2.detail__title', {text:item.title}),
       h('div.detail__byline', null, ui.avatar(item.channelName, null, 'md'), h('div.detail__byline-text', null,
-        h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform),h('span.tag',{text:item.intakeMethod==='manual'?'手动收录':'自动采集'})), h('div.detail__byline-time', {text:fmt.publicationHeading(item)+' · '+fmt.publication(item)}), item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
-      bodySection(item, whole),
+        h('div.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform)),
+        h('div.detail__byline-time', {text:publicationLine(item)+' · '+(item.intakeMethod==='manual'?'手动收录':'自动采集')}),
+        item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
       readoutBar(),
+      bodySection(item, whole),
       priorityControls(app,item,repaint),
       tagControls(app, item, repaint),
-      h('div.detail__section', null, h('div.detail__section-title', {text:'整理内容（单选）'}),
-        h('p.field__hint', {text:'选择一项会取消其他状态，再次点击可取消。'}),
-        h('div.op-grid', {role:'group','aria-label':'整理内容（单选）'},
-        [['read','已读','check'],['deferred','稍后处理','clock'],['archived','归档','archive']].map(function (entry) {
-          return h('button.op-btn', {type:'button', disabled:contentPending(item.id), 'aria-pressed':String(item.state[entry[0]]), onclick:function () {
-            var state = {}; state[entry[0]] = !item.state[entry[0]];
-            saveContent(app, item, {state:state}, repaint);
-          }}, icon(entry[2],18), h('span',{text:entry[1]}));
-        }))),
-      // M27：留下点什么。写在处理状态之后、内容动作之前——
+      linkSection(app, item),
+      // M27：留下点什么。写在处理状态之后——
       // 它是用户自己的东西，和「打开原文」这类内容动作不是一回事。
       SF.noteUi ? SF.noteUi.noteEditor({
         itemId: item.id, item: item, client: app.client,
@@ -608,10 +709,33 @@
         repaint: function () { renderView(); },
         // 存好或删掉之后，内容列表的「有笔记」记号要跟着更新。
         onChanged: function () { SF.app.refreshData(true); },
-      }) : null,
-      h('div.detail__section.col', {style:{gap:'12px'}},
-        canDetail ? ui.btn('补充详情', {icon:'refresh', onClick:function () { SF.app.act('detail:' + item.id, async function () { await app.client.fetchDetail(item.id); ui.toast('详情任务已创建'); await SF.app.refreshData(true); }); }}) : null,
-        ui.btn('打开原文', {variant:'primary', block:true, icon:'external', onClick:function () { SF.app.act('open:' + item.id, function () { return app.client.openContent(item.id); }); }})));
+      }) : null);
+  }
+
+  /**
+   * 详情面板底部的固定操作条。
+   *
+   * 「静流」§5：已读／稍后／归档与「打开原文」固定在底部，
+   * 滚动正文时它们一直可见。三个状态键是等分的一排图标按钮，
+   * 「打开原文」用墨色——橙色主操作留给「保存」这类真主操作。
+   */
+  function detailFoot(app, item, repaint) {
+    var canDetail = item.canFetchDetail !== false && !!item.channelId && app.session.channels.some(function (c) { return c.channel === item.platform && c.operations.get_item_detail && c.operations.get_item_detail.supported; });
+    var states = [['read','已读','check'],['deferred','稍后','clock'],['archived','归档','archive']];
+    return h('div.action-bar', {role:'group','aria-label':'内容操作'},
+      h('div.state-group', null, states.map(function (entry) {
+        return h('button.state-btn' + (item.state[entry[0]] ? '.is-on' : ''), {
+          type:'button',
+          disabled: contentPending(item.id),
+          'aria-pressed': String(!!item.state[entry[0]]),
+          onclick: function () {
+            var state = {}; state[entry[0]] = !item.state[entry[0]];
+            saveContent(app, item, {state:state}, repaint);
+          },
+        }, icon(entry[2],16), h('span',{text:entry[1]}));
+      })),
+      canDetail ? ui.btn('补充详情', {icon:'refresh', onClick:function () { SF.app.act('detail:' + item.id, async function () { await app.client.fetchDetail(item.id); ui.toast('详情任务已创建'); await SF.app.refreshData(true); }); }}) : null,
+      ui.btn('打开原文', {variant:'ink', block:true, icon:'external', onClick:function () { SF.app.act('open:' + item.id, function () { return app.client.openContent(item.id); }); }}));
   }
   /* 数据刷新时只丢内容缓存。标签目录不跟着内容刷新失效——它变化极慢，
      每次刷新都重取只会多出一轮异步往返和一次多余重绘。真正该重取的是

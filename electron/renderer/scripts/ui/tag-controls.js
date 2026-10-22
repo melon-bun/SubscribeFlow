@@ -36,7 +36,11 @@
       },
       h("span.tag-chip__dot", { style: { "background-color": c.solid }, "aria-hidden": "true" }),
       h("span.tag-chip__text", { text: tag.name }),
-      tag.origin === "suggested" ? h("span.tag-chip__origin", { text: "识别", title: "由自动识别建议，未经人工确认" }) : null
+      /* 卡片上的标签是紧凑形态：不挂「识别」角标（方案样张里卡片标签只有圆点 + 名称），
+         「是不是自动识别」放到 title 里说明，详情面板仍挂角标。 */
+      !opts.compact && tag.origin === "suggested"
+        ? h("span.tag-chip__origin", { text: "识别", title: "由自动识别建议，未经人工确认" })
+        : null
     );
     if (opts.onClick) {
       el.classList.add("is-clickable");
@@ -100,13 +104,15 @@
    * 不用原生 <input type=color>：标签色是受控的 11 档，不该出现任意色值。
    */
   controls.colorPicker = function (current, onPick) {
-    var wrap = h("div.swatches", { role: "radiogroup", "aria-label": "标签颜色" });
+    /* 「静流」§标签：颜色选择器换成圆点，选中项外加一圈。
+       不再在色块里画勾——勾是第二层信号，圆点加圈已经说清了。 */
+    var wrap = h("div.cdots", { role: "radiogroup", "aria-label": "标签颜色" });
     tagCatalog.colorOptions().forEach(function (opt) {
       var c = tagCatalog.color(opt.id);
       var active = opt.id === current;
       wrap.appendChild(
         h(
-          "button.swatch" + (active ? ".is-active" : ""),
+          "button.cdot" + (active ? ".is-active" : ""),
           {
             type: "button",
             role: "radio",
@@ -114,12 +120,11 @@
             "aria-label": opt.name,
             title: opt.name,
             "data-color": opt.id,
-            style: { "background-color": c.solid },
+            style: { "--dc": c.solid },
             onclick: function () {
               onPick(opt.id);
             }
-          },
-          active ? icon("check", 11) : null
+          }
         )
       );
     });

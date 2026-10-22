@@ -295,28 +295,32 @@
   gap: var(--s-4);
 }
 
+/* 「静流」§组件样张：单选卡片（方案 .opt）——纸面卡片 + 圆形单选点，
+   选中项是浅底 + 青色描边 + 一圈光环。 */
 .mode-card {
+  position: relative;
   display: flex;
   align-items: flex-start;
-  gap: var(--s-4);
+  gap: 10px;
   padding: var(--s-5);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: var(--c-surface-2);
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  box-shadow: var(--sh-card);
   font: inherit;
   color: var(--c-text);
   text-align: left;
   cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+  transition: box-shadow var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
 
 .mode-card:hover {
-  border-color: var(--c-brand-border);
+  box-shadow: var(--sh-card-hover);
 }
 
 .mode-card.is-active {
-  border-color: var(--c-brand);
   background: var(--c-brand-weak-2);
+  box-shadow: inset 0 0 0 1.5px var(--c-brand), 0 0 0 4px var(--c-brand-ring);
 }
 
 .mode-card:focus-visible {
@@ -324,22 +328,21 @@
   outline-offset: 2px;
 }
 
+/* 单选点：空心圆，选中后整颗填成品牌色 */
 .mode-card__mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: 18px;
   height: 18px;
-  margin-top: 2px;
-  border: 1.5px solid var(--c-border-strong);
+  margin-top: 1px;
   border-radius: var(--r-full);
-  color: var(--c-text-inverse);
+  background: var(--c-surface);
+  box-shadow: inset 0 0 0 1.5px var(--c-border-strong);
+  color: transparent;
   flex: none;
 }
 
 .mode-card.is-active .mode-card__mark {
-  background: var(--c-brand);
-  border-color: var(--c-brand);
+  background: var(--c-surface);
+  box-shadow: inset 0 0 0 5px var(--c-brand);
 }
 
 .mode-card__text {

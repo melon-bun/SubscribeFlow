@@ -4,6 +4,38 @@
 
 /* ---------------- 收件箱 ---------------- */
 
+/* 「静流」§筛选条：分段控件与下拉之间一条细竖线，
+   把「切换维度」和「筛选条件」分开，不再是一排药丸按钮。 */
+.filters__sep {
+  width: 1px;
+  height: 18px;
+  flex: none;
+  margin: 0 var(--s-1);
+  background: var(--c-border-strong);
+}
+
+/* 「静流」§分页器：一条细线把列表和翻页分开，页码用等宽数字。 */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex: none;
+  padding: var(--s-5) 0 var(--s-6);
+  border-top: 1px solid var(--c-divider);
+  color: var(--c-text-3);
+  font-size: var(--fs-sm);
+}
+
+.pager__count {
+  white-space: nowrap;
+}
+
+.pager .num {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--c-text-2);
+}
+
 .inbox {
   display: flex;
   flex-direction: column;
@@ -28,6 +60,16 @@
   flex: none;
 }
 
+/* 「静流」§3 + §轻科幻层：选中卡片带一圈外发光（4~5px）和四个取景框角标（外扩 6~8px），
+   这些都画在卡片边界**之外**。收件箱网格是滚动容器（.scroll-y 的 overflow 在 padding 边裁切），
+   网格没有余量时超出部分会被裁掉——表现就是「选中卡片的上边和左边被遮住」（BUG-119）。
+   两条规则一起解决：
+     · .view__body.inbox 取消裁切，否则网格的负外边距伸出去的部分会被再裁一次；
+     · .inbox__grid 给 10px 内边距，再用等量负外边距把卡片位置拉回与页头对齐。 */
+.view__body.inbox {
+  overflow: visible;
+}
+
 .inbox__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -35,7 +77,8 @@
   align-content: start;
   min-height: 0;
   flex: 1;
-  padding-bottom: var(--s-6);
+  padding: 10px 10px 16px;
+  margin: -10px -10px 0;
 }
 
 .inbox__grid--single {
@@ -172,8 +215,9 @@
   flex-direction: column;
   gap: var(--s-2);
   padding: var(--s-3) var(--s-3) var(--s-2);
-  border-right: 1px solid var(--c-border);
-  border-bottom: 1px solid var(--c-border);
+  /* 「静流」§日历：网格线减淡，条目用优先级圆点 + 标题 */
+  border-right: 1px solid var(--c-divider);
+  border-bottom: 1px solid var(--c-divider);
   background: var(--c-surface);
   text-align: left;
   overflow: hidden;
@@ -192,14 +236,45 @@
   color: var(--c-text-4);
 }
 
+/* 今天：青色圆环 */
 .cal-day.is-today {
-  background: var(--c-brand-weak-2);
+  background: var(--c-surface);
   box-shadow: 0 0 0 1.5px var(--c-brand) inset;
 }
 
+/* 当前选中日：青色描边 + 散光 */
+/* 当前选中日：浅底 + 青色内描边 */
 .cal-day.is-selected {
   background: var(--c-brand-weak-2);
-  box-shadow: 0 0 0 1.5px var(--c-brand) inset;
+  box-shadow: inset 0 0 0 1.5px var(--c-brand);
+}
+
+[data-fx="on"] .cal-day.is-selected {
+  box-shadow: inset 0 0 0 1.5px var(--c-signal), 0 0 16px -4px var(--c-signal);
+}
+
+/* 热度条：每格底部一条信号青细条，长度即当天条数占比。
+   只在轻科幻下显示（关掉效果时静态样式保留但不可见）。 */
+.cal-day__heat {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+}
+
+.cal-day__heat i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  width: var(--w, 0%);
+  background: var(--c-signal);
+  opacity: 0.75;
+}
+
+[data-fx="on"] .cal-day__heat {
+  display: block;
 }
 
 .cal-day__num {
@@ -210,15 +285,15 @@
   flex: none;
 }
 
+/* 今天：日期徽标（品牌色胶囊） */
 .cal-day.is-today .cal-day__num {
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
+  display: inline-block;
+  padding: 0 7px;
   margin: -2px 0 0 -3px;
-  border-radius: 50%;
+  border-radius: var(--r-full);
   background: var(--c-brand);
-  color: #fff;
+  color: var(--c-on-brand);
+  font-weight: 600;
 }
 
 .cal-day__items {
@@ -229,24 +304,24 @@
   overflow: hidden;
 }
 
+/* 「静流」§日历：条目用「优先级圆点 + 标题」，标题保持中性，
+   颜色只落在那个 5px 圆点上——一格里最多三行，全是彩色会太吵。 */
 .cal-pill {
   display: flex;
   align-items: center;
-  gap: var(--s-2);
-  height: 20px;
-  padding: 0 var(--s-2) 0 0;
-  border-radius: var(--r-xs);
+  gap: 5px;
+  height: 17px;
   font-size: var(--fs-sm);
   color: var(--c-text-2);
   overflow: hidden;
 }
 
 .cal-pill__dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   flex: none;
-  border-radius: 2px;
-  background: currentColor;
+  border-radius: 50%;
+  background: var(--c-text-4);
 }
 
 .cal-pill__text {
@@ -255,19 +330,19 @@
   white-space: nowrap;
 }
 
-.cal-pill--high {
-  color: var(--c-high);
+.cal-pill--high .cal-pill__dot {
+  background: var(--c-high);
 }
-.cal-pill--mid {
-  color: var(--c-mid);
+.cal-pill--mid .cal-pill__dot {
+  background: var(--c-mid);
 }
-.cal-pill--low {
-  color: var(--c-low);
+.cal-pill--low .cal-pill__dot {
+  background: var(--c-low);
 }
 
 .cal-pill--more {
-  color: var(--c-brand);
-  font-weight: 500;
+  color: var(--c-brand-ink);
+  font-weight: 560;
   padding-left: 0;
 }
 
@@ -602,11 +677,41 @@
   opacity: 1;
 }
 
+/* 「静流」§组件样张：空列不是一句灰字，而是一块斜纹底的空位，
+   一眼看出「这里该有内容但现在没有」。 */
 .kanban__empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 140px;
   padding: var(--s-8) var(--s-5);
   text-align: center;
   font-size: var(--fs-cap);
   color: var(--c-text-3);
+  border-radius: var(--r-md);
+  background: repeating-linear-gradient(135deg, transparent 0 8px, var(--c-divider) 8px 9px);
+  box-shadow: inset 0 0 0 1px var(--c-border-strong);
+  margin-bottom: var(--s-2);
+}
+
+/* 空列：原因 + 下一步。下一步按钮用墨色次级样式，不与页头橙色主操作争。 */
+.kanban__empty-reason {
+  margin: 0 0 var(--s-2);
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+}
+
+.kanban__empty-hint {
+  margin: 0 0 var(--s-4);
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+}
+
+.kanban__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  justify-content: center;
 }
 
 @media (max-width: 1180px) {
@@ -1007,16 +1112,138 @@
 
 /* ---------------- 任务 / 连接状态条 ---------------- */
 
-.status-bar {
+/* 「静流」§顶部任务条：横向一行读数——状态灯、状态、名称、等宽读数、操作按钮；
+   底部一条 2px 进度轨道。颜色语义按方案：正常=绿、注意=琥珀、故障=红、
+   进行中=信号青。卡片本身保持中性，不整块染色。
+   外层 .status-bar 的留白与底色由 layout.css 负责，这里只管卡片本身。 */
+.task {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--s-4);
-  flex: none;
-  padding: var(--s-4) var(--s-5);
-  border: 1px solid var(--c-border);
+  gap: var(--s-3);
+  min-width: 0;
+  flex: 1;
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
   border-radius: var(--r-md);
   background: var(--c-surface);
+  box-shadow: var(--sh-card);
   font-size: var(--fs-cap);
+  overflow: hidden;
+}
+
+.task-lamp {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--c-text-4);
+  box-shadow: 0 0 0 3px var(--c-surface-3);
+}
+
+.task-lamp[data-state="live"] {
+  background: var(--c-signal);
+  box-shadow: 0 0 0 3px var(--c-signal-ring);
+}
+
+.task-lamp[data-state="ok"] {
+  background: var(--c-low);
+  box-shadow: 0 0 0 3px var(--c-low-bg);
+}
+
+.task-lamp[data-state="warn"] {
+  background: var(--c-mid);
+  box-shadow: 0 0 0 3px var(--c-mid-bg);
+}
+
+.task-lamp[data-state="error"] {
+  background: var(--c-high);
+  box-shadow: 0 0 0 3px var(--c-high-bg);
+}
+
+.task-state {
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--c-text-2);
+}
+
+.task--live .task-state { color: var(--c-brand-ink); }
+.task--ok .task-state { color: var(--c-low); }
+.task--warn .task-state { color: var(--c-mid); }
+.task--error .task-state { color: var(--c-high); }
+
+.task-name {
+  font-weight: 500;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+
+.task-read {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-text-3);
+}
+
+.task-ops {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex: none;
+}
+
+/* 进度轨道：只在轻科幻层出现。中断/失败是停在半路的虚线，
+   同步中是流动的青色进度线，完成态不画轨道。 */
+.task-track {
+  display: none;
+}
+
+[data-fx="on"] .task-track {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+}
+
+[data-fx="on"] .task--warn .task-track::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 34%;
+  background: repeating-linear-gradient(90deg, var(--c-mid) 0 6px, transparent 6px 10px);
+  opacity: 0.65;
+}
+
+[data-fx="on"] .task--error .task-track::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 34%;
+  background: repeating-linear-gradient(90deg, var(--c-high) 0 6px, transparent 6px 10px);
+  opacity: 0.65;
+}
+
+[data-fx="on"] .task--live .task-track::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 26%;
+  background: linear-gradient(90deg, transparent, var(--c-signal), transparent);
+  animation: fx-indet 1.6s linear infinite;
+}
+
+@keyframes fx-indet {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
 }
 
 .status-bar__dot {
@@ -1231,23 +1458,64 @@
 
 /* M5: reuse F1 panels for real connection/task state and accessible selection. */
 .content-selection { position: relative; min-width: 0; }
-.content-selection > .check { position: absolute; top: 8px; right: 8px; z-index: 1; }
-.content-selection .content-card { height: 100%; padding-right: 32px; cursor: pointer; }
-.content-card__thumb:empty { display: grid; place-items: center; background: var(--c-surface-3); }
-.content-card__thumb:empty::after { content: '暂无封面'; font-size: var(--fs-xs); color: var(--c-text-3); }
-.op-btn[aria-pressed=true] { color: var(--c-brand); border-color: var(--c-brand); background: var(--c-brand-weak); }
+/* 「静流」§3：复选框落在卡片右上角，未选中时只在悬停或选中时出现。
+   复选框保留在 .content-selection 上（卡片本身是 role="button"，里面再塞真按钮不合 ARIA）；
+   卡片铺满这个包装层，两者角点重合，所以位置与卡片右上角一致。 */
+.content-selection > .check {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease);
+}
+.content-selection:hover > .check,
+.content-selection.is-selected > .check,
+.content-selection:focus-within > .check {
+  opacity: 1;
+}
+.content-selection .content-card { height: 100%; cursor: pointer; }
+/* 「静流」§3：没有封面时的占位缩略图——一层浅渐变 + 山形线稿，
+   不用「暂无封面」四个字占位：文字会把小图塞满，看起来像报错。 */
+.content-card__thumb {
+  background: linear-gradient(160deg, var(--c-surface-2), var(--c-surface-3));
+}
+
+.content-card__thumb svg {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  width: 52px;
+  height: 40px;
+  color: var(--c-text-4);
+  opacity: 0.5;
+  stroke-width: 1.4;
+}
+
+.content-card__thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+  pointer-events: none;
+}
 .channels-content { display: block; }
 .channels-content > * + * { margin-top: 20px; }
 .channels-content .channels__table-wrap { overflow-x: auto; }
 .live-channels { min-width: 970px; }
-.live-channels th:nth-child(1) { width: 55px; }
-.live-channels th:nth-child(2) { width: 175px; }
-.live-channels th:nth-child(3) { width: 100px; }
-.live-channels th:nth-child(4) { width: 90px; }
-.live-channels th:nth-child(5) { width: 60px; }
-.live-channels th:nth-child(6) { width: 155px; }
-.live-channels th:nth-child(7) { width: 110px; }
-.live-channels th:nth-child(8) { width: 150px; }
+/* 「静流」§渠道管理：平台列已并入创作者名列，列宽要跟着重排——
+   第一列还是旧平台列的 55px 时，创作者名会被第二列的按钮压住。 */
+.live-channels th:nth-child(1) { width: 210px; }
+.live-channels th:nth-child(2) { width: 96px; }
+.live-channels th:nth-child(3) { width: 130px; }
+.live-channels th:nth-child(4) { width: 68px; }
+.live-channels th:nth-child(5) { width: 120px; }
+.live-channels th:nth-child(6) { width: 140px; }
+.live-channels th:nth-child(7) { width: 140px; }
 .live-panel { padding: 22px; min-width: 0; }
 .live-panel h2 { margin-bottom: 16px; }
 .run-row { padding: 14px 0; border-bottom: 1px solid var(--c-border); }
@@ -1289,7 +1557,10 @@
 .side-row[data-quick="high"] .side-row__icon:not(.plat) { color: var(--c-high); }
 .side-row[data-quick="medium"] .side-row__icon:not(.plat) { color: var(--c-mid); }
 .side-row[data-quick="low"] .side-row__icon:not(.plat) { color: var(--c-low); }
-.content-card__meta, .row-card__meta { flex-wrap: wrap; row-gap: 6px; }
+/* 紧凑行（日历右侧列表、看板）仍可换行；
+   内容卡片不换行——来源名让位，优先级信号条留在同一行右端。 */
+.row-card__meta { flex-wrap: wrap; row-gap: 6px; }
+.content-card__meta { flex-wrap: nowrap; }
 .content-card__author { min-width: 70px; }
 /* The shell owns the status strip; do not apply F1's compact row style here. */
 .shell__body > .status-bar { display: block; padding: 12px 24px 0; border: 0; border-radius: 0; background: var(--c-bg); }
@@ -1319,8 +1590,8 @@
 
 /* M8 calendar uses the same priority semantics as the board and detail view. */
 .calendar-filters, .calendar-legend { flex-wrap:wrap; }
-.cal-pill--none { background:var(--c-surface-3); color:var(--c-text-2); }
-.cal-pill--none .cal-pill__dot { background:var(--c-text-3); }
+.cal-pill--none { color:var(--c-text-2); }
+.cal-pill--none .cal-pill__dot { background:var(--c-text-4); }
 .cal-day__heading { display:flex; align-items:center; gap:4px; width:100%; }
 .cal-day__heading .cal-day__today-tag { position:static; flex:none; }
 .cal-day__count { margin-left:auto; font-size:var(--fs-xs); color:var(--c-text-2); }
@@ -1501,6 +1772,11 @@
 
 .tags-table-wrap tbody tr.is-selected td:first-child {
   box-shadow: inset 3px 0 0 var(--c-brand);
+}
+
+/* 「静流」§标签：选中行用青色左边线。轻科幻下换成信号青。 */
+[data-fx="on"] .tags-table-wrap tbody tr.is-selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--c-signal);
 }
 
 .tags-table-wrap tbody tr:focus-visible {
@@ -2307,6 +2583,20 @@
   white-space: pre-wrap;
 }
 
+/* 「静流」§笔记：目录条目下的摘要行。12px、中性色、两行封顶——
+   目录是扫读用的，摘要只给一个判断「要不要点进去」的线索。 */
+.notes-toc__excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
 .notes-toc__empty {
   padding: var(--s-4) 0;
 }
@@ -2492,4 +2782,215 @@
     overflow: visible;
     padding-right: 0;
   }
+}
+
+/* ==========================================================================
+   「静流」5.1 期：笔记页还原
+   --------------------------------------------------------------------------
+   方案 §「其他页面」笔记条目：左列表选中项改青色左边线、条目下加平台／日期／
+   模板·结论徽标；右侧编辑器用纸面卡片，来源信息收进浅底卡；「已保存」时间
+   改本地时间；AI 总结只是一行读数提示。
+   ========================================================================== */
+
+/* 目录条目下面那行：平台、来源、日期、结论／模板徽标 */
+.notes-toc__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  margin-top: var(--s-2);
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+}
+
+.notes-toc__src {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.notes-toc__src-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-toc__date {
+  flex: none;
+  color: var(--c-text-4);
+}
+
+/* 徽标靠右，日期与来源在左 */
+.notes-toc__meta .badge {
+  margin-left: auto;
+  flex: none;
+}
+
+/* 选中的目录条目：青色左边线（轻科幻下换成信号青并带一点散光） */
+.notes-toc__item.is-active {
+  background: var(--c-brand-weak-2);
+  border-color: transparent;
+  color: var(--c-text);
+  box-shadow: inset 2px 0 0 var(--c-brand);
+}
+
+[data-fx="on"] .notes-toc__item.is-active {
+  box-shadow: inset 2px 0 0 var(--c-signal), inset 10px 0 14px -10px var(--c-signal);
+}
+
+/* 来源浅底卡：原内容的来源信息收进这张浅底卡里 */
+.notes-card {
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-5);
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
+  background: var(--c-surface-2);
+  box-shadow: inset 0 0 0 1px var(--c-border);
+}
+
+.notes-card__top {
+  gap: var(--s-3);
+}
+
+.notes-card__source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+}
+
+/* 编辑器：一张纸面卡片，和左侧目录、右侧阅读区分开 */
+.note-editor {
+  margin-top: var(--s-5);
+  padding: var(--s-6);
+  border-top: 1px solid transparent;
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  box-shadow: var(--sh-card);
+}
+
+/* 「已保存 · 时间」：本地时间 + 等宽读数 */
+.note-editor__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+}
+
+.note-editor__status::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--c-text-4);
+}
+
+.note-editor__status.is-danger::before {
+  background: var(--c-high);
+}
+
+.note-editor__status.is-success::before {
+  background: var(--c-low);
+}
+
+/* AI 草稿读数行：一行小字，不给总结正文加任何特效 */
+.ai-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+}
+
+.ai-line i {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--c-signal);
+}
+
+[data-fx="on"] .ai-line {
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-2);
+  box-shadow: inset 0 0 0 1px var(--c-border);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+[data-fx="on"] .ai-line i {
+  box-shadow: 0 0 6px var(--c-signal);
+}
+
+.notes-card__date {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--c-text-4);
+}
+
+/* ==========================================================================
+   「静流」5.1 期：渠道管理还原
+   --------------------------------------------------------------------------
+   方案 §「其他页面」渠道管理：平台列并入创作者名列、UID 与下次同步时间用等宽
+   字体、最近任务改状态点 + 文字、优先级设置页顶部加分布条、已设置的下拉框
+   带信号条。
+   ========================================================================== */
+
+/* UID：等宽，技术信息用等宽读数 */
+.channel-cell__desc .mono {
+  font-family: var(--font-mono);
+}
+
+/* 下次同步时间：等宽 */
+.live-channels .table__time small {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+/* 最近任务：状态点 + 文字 */
+.run-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+/* 优先级设置页头：分布条靠右 */
+.source-priorities__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-5);
+  flex-wrap: wrap;
+}
+
+.source-priorities__dist {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s-2);
+}
+
+.source-priorities__dist .mono {
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+}
+
+/* 已设置的来源：下拉框左边一条等级信号条 */
+.source-priority-row__ctl {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex: none;
+}
+
+/* 标签 AI 页：后台队列条与图例 */
+.tags-ai__queue {
+  margin-bottom: var(--s-5);
 }

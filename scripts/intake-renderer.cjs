@@ -5,7 +5,16 @@ async function verify({window,core,root,fixture}) {
   const evaluate=code=>window.webContents.executeJavaScript(code);
   const until=async code=>{const end=Date.now()+15000;while(!await evaluate(code)) {if(Date.now()>end) throw new Error('Intake renderer timed out: '+code+'\n'+await evaluate('document.body.innerText'));await new Promise(r=>setTimeout(r,50));}};
   const click=label=>evaluate(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b||b.disabled)throw new Error('Missing button');b.click();})()`);
-  const change=(label,value)=>evaluate(`(()=>{const s=document.querySelector('select[aria-label='+${JSON.stringify(JSON.stringify(label))}+']');if(!s)throw new Error('Missing select');s.value=${JSON.stringify(value)};s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  // 筛选条件：原生 select 与「静流」的无框下拉按钮都要能用。
+  const change=(label,value)=>evaluate(`(()=>{
+    const el=document.querySelector('[aria-label='+${JSON.stringify(JSON.stringify(label))}+']');
+    if(!el)throw new Error('Missing filter');
+    if(el.tagName==='SELECT'){el.value=${JSON.stringify(value)};el.dispatchEvent(new Event('change',{bubbles:true}));return;}
+    el.click();
+    const item=Array.from(document.querySelectorAll('.menu__item')).find(b=>b.getAttribute('data-value')===${JSON.stringify(String(value))});
+    if(!item)throw new Error('Missing filter option '+${JSON.stringify(String(value))});
+    item.click();
+  })()`);
   const shot=async name=>{
     await evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
     const out=process.env.SUBSCRIBE_FLOW_VERIFY_OUTPUT||path.join(root,'docs/verification/m13');fs.mkdirSync(out,{recursive:true});

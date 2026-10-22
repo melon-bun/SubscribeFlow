@@ -12,7 +12,7 @@ const assert = require('node:assert/strict');
  * 新建标签走对话框而非行内编辑器。
  */
 async function verifyTags({evaluate, until, click, screenshot, core, window, firstId}) {
-  const {selectContent} = require('./renderer-actions.cjs').rendererActions({evaluate, until});
+  const {selectContent, setFilter} = require('./renderer-actions.cjs').rendererActions({evaluate, until});
   const tagByName = async name => (await core.call('tag.list', {})).items.filter(t => t.name === name)[0];
   /** 等到某个按钮可点再点：视图可能在异步数据到达后重画，测试不能假设 DOM 静止。 */
   const clickWhenReady = async (label, scope) => {
@@ -227,11 +227,11 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   // 还原额外的样本归类，让后续使用量与删除影响断言保持可读。
   await evaluate(`SF.app.state.client.bulkSetTags(${JSON.stringify(otherIds)}, []).then(() => SF.app.refreshData(true))`);
 
-  await setValue('[aria-label="筛选优先级"]', 'high');
+  await setFilter('筛选优先级', 'high');
   await until(`document.querySelectorAll('.content-card').length === 0`);
   assert.equal((await core.call('content.list', {tags: [travel.id], priority: 'high'})).total, 0,
     '标签与优先级应能组合筛选');
-  await setValue('[aria-label="筛选优先级"]', '');
+  await setFilter('筛选优先级', '');
   await until(`document.querySelectorAll('.content-card').length === 1`);
   await screenshot('m9-tags-inbox-filter.png');
 
@@ -252,7 +252,7 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
 
   /* ---------------- AI 页签是设计化空态 ---------------- */
 
-  await evaluate(`Array.from(document.querySelectorAll('.tags-tab')).find(t => /AI/.test(t.textContent)).click()`);
+  await evaluate(`Array.from(document.querySelectorAll('.tags-tabbar .seg__item')).find(t => /AI/.test(t.textContent)).click()`);
   await until(`SF.app.state.tagTab === 'ai'`);
   assert.ok(await evaluate(`!!document.querySelector('[data-view="tags"]').textContent.trim()`), 'AI 页签不应是空白页');
   // M9：未接入识别时本页不得出现可用的**模型参数**表单——放一个填了也没人用的表单，
@@ -276,7 +276,7 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
   assert.ok(await evaluate(`!/模型选择|Base URL/.test(document.querySelector('[data-view="tags"]').textContent)`),
     '未接入识别时不应出现内联模型配置项');
   await screenshot('m9-tags-ai.png');
-  await evaluate(`Array.from(document.querySelectorAll('.tags-tab')).find(t => /列表/.test(t.textContent)).click()`);
+  await evaluate(`Array.from(document.querySelectorAll('.tags-tabbar .seg__item')).find(t => /列表/.test(t.textContent)).click()`);
   await until(`SF.app.state.tagTab === 'list'`);
 
   /* ---------------- 删除如实回报影响条数 ---------------- */

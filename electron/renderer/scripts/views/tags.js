@@ -342,28 +342,18 @@
   }
 
   function buildTabs(app) {
-    return h(
-      "div.tags-tabbar",
-      { role: "tablist", "aria-label": "标签管理分区" },
-      TABS.map(function (t) {
-        return h(
-          "button.tags-tab" + (app.tagTab === t.id ? ".is-active" : ""),
-          {
-            type: "button",
-            role: "tab",
-            "aria-selected": app.tagTab === t.id ? "true" : "false",
-            onclick: function () {
-              if (app.tagTab === t.id) return;
-              // 点同一个页签不会改 hash，因此这里必须自己重绘一次
-              SF.app.navigate("tags", { tab: t.id });
-              app.tagTab = t.id;
-              SF.app.renderContent();
-            },
-          },
-          h("span", { text: t.label })
-        );
-      })
-    );
+    /* 「静流」§标签：视图切换做成分段控件（标签列表 / AI 自动识别）。 */
+    return h("div.tags-tabbar", null, ui.seg(
+      TABS.map(function (t) { return { value: t.id, label: t.label }; }),
+      app.tagTab,
+      function (value) {
+        // 点同一个页签不会改 hash，因此这里必须自己重绘一次
+        SF.app.navigate("tags", { tab: value });
+        app.tagTab = value;
+        SF.app.renderContent();
+      },
+      { ariaLabel: "标签管理分区" }
+    ));
   }
 
   function buildBody(app) {
@@ -822,7 +812,7 @@
               draft.synonyms = list.slice(0, MAX_SYNONYMS);
               markField("synonyms");
               setFieldError(aliasError, "");
-            }),
+            }, { placeholder: "输入别名，回车添加", max: MAX_SYNONYMS }),
             aliasError
           )
         ),
@@ -1745,9 +1735,31 @@
       h("div", null, h("p.tags-empty__note-t", {text: "还没有自动打标任务"}),
         h("p", {text: "开启自动打标后，新收录的内容会进入后台队列。人工标签不受影响，随时可用。"})));
     var owner = aiState;
+    /* 「静流」§标签：后台任务改成分段队列条——完成 / 进行中 / 失败三段，
+       进行中那段有流动光。下面仍然留着逐条的任务明细。 */
+    var counts = {done:0, running:0, failed:0};
+    recent.forEach(function (t) {
+      var s = t.state;
+      if (s === "succeeded" || s === "skipped") counts.done++;
+      else if (s === "failed" || s === "blocked") counts.failed++;
+      else counts.running++;
+    });
+    var total = recent.length;
+    function share(n) { return total ? n / total : 0; }
+    var queue = h("div.tags-ai__queue", null,
+      ui.queueBar([
+        { value: share(counts.done), color: "var(--c-low)" },
+        { value: share(counts.running), color: "var(--c-signal)", run: true },
+        { value: share(counts.failed), color: "var(--c-high)" },
+      ]),
+      h("div.queue-legend", null,
+        h("span", { style: { "--qc": "var(--c-low)" } }, "已完成 ", h("b", { text: String(counts.done) })),
+        h("span", { style: { "--qc": "var(--c-signal)" } }, "排队或执行中 ", h("b", { text: String(counts.running) })),
+        h("span", { style: { "--qc": "var(--c-high)" } }, "失败或被阻塞 ", h("b", { text: String(counts.failed) }))));
     return h("section.tags-ai__section", {"aria-label": "最近任务"},
       h("h2.t-h2", {text: "最近任务"}),
       owner.retryError ? h("p.field__error", {role: "alert", text: owner.retryError}) : null,
+      queue,
       h("ol.ai-tasklist", null, recent.map(function (task) {
         return h("li.ai-task", {"data-task-id": task.id},
           h("span.ai-task__name", {text: task.content_id}),

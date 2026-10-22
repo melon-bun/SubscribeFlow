@@ -464,6 +464,7 @@ async function start() {
       else if (rendererSmoke === 'polish') await require('../../scripts/ui-followup-02-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'uishot') await require('../../scripts/ui-shot-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'm32') await require('../../scripts/m32-fx-renderer.cjs').verify({window,core,root});
+      else if (rendererSmoke === 'm35') await require('../../scripts/m35-zhiliu-renderer.cjs').verify({window,core,root});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
       // 验收同样走 M17 的统一退出流程，否则关窗仍会被拦截为隐藏到托盘。
       await lifecycle.quit();

@@ -64,6 +64,16 @@ async function verify({window, core, root}) {
     await pause(1200);
   };
 
+  /* 0. 收件箱：主页面，带详情面板与底部操作条。 */
+  await goto('inbox', null, `document.querySelectorAll('.content-card').length > 0`);
+  await evaluate(`(() => {
+    const first = document.querySelector('.content-card');
+    if (first) first.click();
+  })()`);
+  await until(`!!document.querySelector('.detail .action-bar')`);
+  await pause(600);
+  await shoot('00-inbox.png');
+
   /* 1. 笔记页：选中第一条，阅读区才有内容。 */
   await goto('notes', null, `document.querySelectorAll('.notes-toc__item').length > 0`);
   await evaluate(`(() => {

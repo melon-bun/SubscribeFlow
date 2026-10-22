@@ -49,15 +49,16 @@
   transition: color var(--dur-1) var(--ease);
 }
 
+/* 「静流」§组件样张：步骤条当前项带光环。 */
 .steps__num {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   flex: none;
   border-radius: var(--r-full);
-  border: 1px solid var(--c-border-strong);
   background: var(--c-surface);
+  box-shadow: inset 0 0 0 1px var(--c-border-strong);
   font-size: var(--fs-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -66,14 +67,14 @@
 }
 
 .steps__item.is-active {
-  color: var(--c-brand);
-  font-weight: 500;
+  color: var(--c-text);
+  font-weight: 560;
 }
 
 .steps__item.is-active .steps__num {
   background: var(--c-brand);
-  border-color: var(--c-brand);
-  color: var(--c-text-inverse);
+  color: var(--c-on-brand);
+  box-shadow: 0 0 0 3px var(--c-brand-ring);
 }
 
 .steps__item.is-done {
@@ -81,9 +82,9 @@
 }
 
 .steps__item.is-done .steps__num {
-  background: var(--c-brand-weak);
-  border-color: var(--c-brand-border);
-  color: var(--c-brand);
+  background: var(--c-surface-3);
+  box-shadow: none;
+  color: var(--c-text-3);
 }
 
 .steps__arrow {

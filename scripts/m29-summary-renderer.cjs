@@ -83,7 +83,9 @@ async function verify({window, core, root}) {
 
   /* 1. 设置里的「AI 总结」分区：能打开，字段都在。 */
   await evaluate(`SF.app.navigate('settings', {section: 'summarization'})`);
-  await until(`document.querySelector('.settings__title') && document.querySelector('.settings__title').textContent === 'AI 总结'`);
+  /* 设置内容是异步读回来的：只等标题会在字段还没画出来时就去断言。
+     连字段一起等，断言才是对同一时刻的界面做的。 */
+  await until(`document.querySelector('.settings__title') && document.querySelector('.settings__title').textContent === 'AI 总结' && !!document.querySelector('select[aria-label="总结使用的连接"]')`);
   const fields = await evaluate(`({
     toggle: !!document.querySelector('.field .switch, .field [role="switch"]'),
     provider: !!document.querySelector('select[aria-label="总结使用的连接"]'),
@@ -165,6 +167,16 @@ async function verify({window, core, root}) {
   const aiNote = await evaluate(`SF.app.state.client.getNote(${JSON.stringify(await evaluate(`SF.app.state.client.listNotes({}).then(r => r.items[0].id)`))})`);
   assert.equal(aiNote.summary_origin, 'ai', '未改动的 AI 总结存成 ai');
   assert.equal(aiNote.summary, '这是一段 AI 总结。');
+
+  /* 7b. 5.1 期「静流」：AI 总结只是一行读数提示；「已保存」时间是本地时间。 */
+  const aiLine = await evaluate(`(() => {
+    const line = document.querySelector('[data-note-editor] .ai-line');
+    const status = document.querySelector('[data-note-editor] .note-editor__status');
+    return { line: line ? line.textContent.trim() : '', status: status ? status.textContent.trim() : '' };
+  })()`);
+  assert.ok(aiLine.line.startsWith('AI 草稿'), 'AI 总结要有一行读数提示，实际：' + aiLine.line);
+  assert.ok(!/T\d{2}:\d{2}/.test(aiLine.status), '「已保存」时间不能是原始 ISO 串，实际：' + aiLine.status);
+  assert.ok(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(aiLine.status), '「已保存」时间要显示本地时间，实际：' + aiLine.status);
 
   /* 8. 手改 AI 总结再保存：来路变成 ai_edited。 */
   await evaluate(`(() => {

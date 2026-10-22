@@ -187,11 +187,12 @@ kbd {
 }
 
 /* ---- 排版工具 ---- */
+/* 「静流」§主界面：页头标题 26px / 650，与方案样张一致。 */
 .t-h1 {
-  font-size: var(--fs-2xl);
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.01em;
+  font-size: var(--fs-view);
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
 }
 
 .t-h2 {
@@ -227,7 +228,17 @@ kbd {
   font-feature-settings: "tnum";
 }
 
+/* 「静流」§等宽读数：技术信息（时间、计数、UID、比例）统一用等宽字体。
+   方案里用 .mono，这里作为全局工具类，供任务条、顶栏读数、渠道表格复用。 */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* min-width: 0 —— flex 子项默认 min-width:auto，内容多长都不肯收缩，
+   省略号因此不生效（文字会顶出容器）。 */
 .t-ellipsis {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

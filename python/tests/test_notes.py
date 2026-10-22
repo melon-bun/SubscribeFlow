@@ -358,9 +358,33 @@ class NoteQueryTests(_NoteFixture, unittest.TestCase):
     def test_list_returns_the_title_directory_shape(self):
         result = self.notes.list_notes()
         self.assertEqual(result['total'], 2)
-        self.assertEqual(set(result['items'][0]), {'id', 'title', 'note_updated_at'})
+        # 5.1 期：目录条目多了平台、来源与结论／模板四个标量，
+        # 外加一行**截断后**的摘要。完整正文仍然不返回——目录不画卡片墙。
+        self.assertEqual(set(result['items'][0]), {'id', 'title', 'note_updated_at',
+                                                   'platform', 'source_name', 'verdict', 'template',
+                                                   'excerpt'})
         titles = sorted(item['title'] for item in result['items'])
         self.assertEqual(titles, ['乙内容', '甲内容'])
+
+    def test_excerpt_prefers_summary_and_falls_back_to_takeaway(self):
+        """目录摘要行：有总结用总结，没有总结才用收获。"""
+        items = {item['title']: item for item in self.notes.list_notes()['items']}
+        self.assertEqual(items['甲内容']['excerpt'], '关于甲的总结')
+        self.assertEqual(items['乙内容']['excerpt'], '关于乙的总结')
+
+        # 只有收获、没有总结时退回收获。
+        self.notes.save(self.a, expected_version=self.notes.get(self.a)['version'],
+                        template='general', summary='   ', summary_origin=None, takeaway='只剩心得')
+        items = {item['title']: item for item in self.notes.list_notes()['items']}
+        self.assertEqual(items['甲内容']['excerpt'], '只剩心得')
+
+    def test_excerpt_is_truncated(self):
+        """摘要行不能变成正文搬运：超长只给前 EXCERPT_CHARS 个字。"""
+        from subscribe_flow.storage.notes import EXCERPT_CHARS
+        self.notes.save(self.a, expected_version=self.notes.get(self.a)['version'],
+                        template='general', summary='长' * 500, summary_origin='manual', takeaway='')
+        items = {item['title']: item for item in self.notes.list_notes()['items']}
+        self.assertEqual(len(items['甲内容']['excerpt']), EXCERPT_CHARS)
 
     def test_query_searches_title_summary_and_takeaway(self):
         self.assertEqual(self.notes.list_notes(query='甲')['total'], 1)

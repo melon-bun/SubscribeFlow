@@ -135,7 +135,7 @@ PRAGMA user_version=2;
     assert.ok(fs.existsSync(path.join(dataDir,`subscribe-flow.before-v${schema}.backup`)));
     await until(()=>app.evaluate('document.querySelectorAll(".content-card").length===2'));
     const selected=await app.evaluate('SF.app.state.selectedId');
-    await app.evaluate(`Array.from(document.querySelectorAll('.detail .op-btn')).find(b=>b.textContent.trim()==='稍后处理').click()`);
+    await app.evaluate(`Array.from(document.querySelectorAll('.detail .state-btn')).find(b=>b.textContent.trim()==='稍后').click()`);
     await until(()=>app.evaluate('SF.app.state.counts.unread===1 && document.querySelectorAll(".content-card").length===1'));
     assert.equal((await call('content.get',{item_id:selected})).state.deferred,true);
     await call('subscription.update',{subscription_id:sub.id,sync_mode:'automatic',interval_seconds:259200});

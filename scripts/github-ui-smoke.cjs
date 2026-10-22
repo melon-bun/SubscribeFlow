@@ -17,14 +17,23 @@ async function verifyGithub({evaluate, until, click, screenshot}) {
   await until(`!!document.querySelector('.connection-card')`);
   // Kept on one line: a line break before `.includes` would parse as two
   // statements and fail to execute.
-  const githubCard = `(Array.from(document.querySelectorAll('.connection-card')).find(c => c.querySelector('h3') && c.querySelector('h3').textContent.trim() === 'GitHub') || {innerText:''}).innerText`;
+  // M24 起渠道管理底部的连接区改成可展开的行（.connection-row），
+  // 不再是 .connection-card。行头默认收起，认证说明与按钮都在展开区里，
+  // 所以先点开行头再读内容。
+  const githubCard = `(Array.from(document.querySelectorAll('.connection-row')).find(c => c.querySelector('.connection-row__name') && c.querySelector('.connection-row__name').textContent.trim() === 'GitHub') || {innerText:''}).innerText`;
   assert.ok(await evaluate(githubCard).then(text => text.length > 0),
             'the GitHub connection card must be rendered');
+  await evaluate(`(() => {
+    const node = Array.from(document.querySelectorAll('.connection-row'))
+      .find(c => c.querySelector('.connection-row__name') && c.querySelector('.connection-row__name').textContent.trim() === 'GitHub');
+    node.querySelector('.connection-row__head').click();
+  })()`);
+  await until(`!!document.querySelector('.connection-row.is-open')`);
   assert.ok((await evaluate(githubCard)).includes('不需要登录'),
             'the direct-http backend must be explained');
   const loginButtons = await evaluate(`(() => {
-    const node = Array.from(document.querySelectorAll('.connection-card'))
-      .find(c => c.querySelector('h3') && c.querySelector('h3').textContent.trim() === 'GitHub');
+    const node = Array.from(document.querySelectorAll('.connection-row'))
+      .find(c => c.querySelector('.connection-row__name') && c.querySelector('.connection-row__name').textContent.trim() === 'GitHub');
     return Array.from(node.querySelectorAll('button')).filter(b => b.textContent.includes('登录')).map(b => b.textContent.trim());
   })()`);
   assert.deepEqual(loginButtons, [], 'the GitHub card must offer no login button');
@@ -33,8 +42,8 @@ async function verifyGithub({evaluate, until, click, screenshot}) {
   // actual https://github.com/trending request through the direct-http backend;
   // the seed's no-network transport is a different process and does not apply here.
   await evaluate(`(() => {
-    const node = Array.from(document.querySelectorAll('.connection-card'))
-      .find(c => c.querySelector('h3') && c.querySelector('h3').textContent.trim() === 'GitHub');
+    const node = Array.from(document.querySelectorAll('.connection-row'))
+      .find(c => c.querySelector('.connection-row__name') && c.querySelector('.connection-row__name').textContent.trim() === 'GitHub');
     Array.from(node.querySelectorAll('button')).find(b => b.textContent.trim() === '检查连接').click();
   })()`);
   await until(`(${githubCard}).includes('无需登录')`, 60000);
@@ -96,7 +105,7 @@ async function verifyGithub({evaluate, until, click, screenshot}) {
   await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
   await until(`document.querySelectorAll('.content-card').length > 0`);
   const chip = await evaluate(`(() => {
-    const node = Array.from(document.querySelectorAll('.chips .chip')).find(c => c.textContent.includes('GitHub'));
+    const node = Array.from(document.querySelectorAll('.inbox__toolbar .seg .seg__item')).find(c => c.textContent.includes('GitHub'));
     return node ? node.innerText : null;
   })()`);
   assert.ok(chip, 'the inbox must offer a GitHub platform filter');
@@ -111,7 +120,7 @@ async function verifyGithub({evaluate, until, click, screenshot}) {
   await screenshot('m18-github-inbox-dedup.png');
 
   // Filtering by one board must still find the shared repository (§9.2.8).
-  await evaluate(`Array.from(document.querySelectorAll('.chips .chip')).find(c => c.textContent.includes('GitHub')).click()`);
+  await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar .seg .seg__item')).find(c => c.textContent.includes('GitHub')).click()`);
   await until(`document.querySelectorAll('.content-card').length > 0`);
   const week = await evaluate(`Array.from(document.querySelectorAll('.content-card')).map(c => c.innerText)`);
   assert.ok(week.some(text => text.includes('morluto/rea')),
@@ -131,7 +140,8 @@ async function verifyGithub({evaluate, until, click, screenshot}) {
   // preview rather than an 'already collected' short-circuit. It costs two
   // public GETs through the direct-http backend, same as any user would spend.
   const PASTE = 'torvalds/linux';
-  await evaluate(`(() => { const d=document.querySelector('.detail'); if(d) d.querySelector('[aria-label="关闭详情"], .icon-btn')?.click(); })()`);
+  // 详情头现在有上一条／下一条／关闭三个图标键，必须按 aria-label 精确点关闭。
+  await evaluate(`(() => { const d=document.querySelector('.detail'); if(d) d.querySelector('button[aria-label="关闭详情"]')?.click(); })()`);
   await click('添加内容');
   await until(`!!document.querySelector('.dialog--intake')`);
   assert.equal(await evaluate(`document.querySelector('.dialog').getAttribute('aria-label')`), '添加内容');

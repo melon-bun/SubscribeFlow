@@ -41,9 +41,18 @@
       if (current === cache) { renderView(); refreshCoverage(app); }
     });
   }
+  /* 「静流」§渠道管理：最近任务改成「状态点 + 文字」，失败用红色。
+     状态点本身带 title，鼠标悬停能看到具体状态与时间。 */
   function latestRun(app, id) {
     var job = app.runs.find(function (run) { return run.channelId === id; });
-    return job ? h('div.table__time',null,h('span',{text:fmt.runState(job.state)}),h('small',{text:fmt.relative(job.startedAt,app.now)})) : h('span.muted',{text:'尚未采集'});
+    if (!job) return h('span.muted',{text:'尚未采集'});
+    var tone = job.state === 'failed' ? 'bad'
+      : job.state === 'succeeded' ? 'ok'
+      : ['running','queued'].includes(job.state) ? 'busy'
+      : ['partial','waiting','interrupted','cancelled'].includes(job.state) ? 'warn' : null;
+    return h('div.table__time',null,
+      h('span.run-cell',null,ui.statusDot(tone, fmt.runState(job.state)),h('span',{text:fmt.runState(job.state)})),
+      h('small',{text:fmt.relative(job.startedAt,app.now)}));
   }
   function updateRuns(app) {
     var active = ['queued', 'running', 'waiting'];
@@ -118,13 +127,36 @@
     return h('div.view', {'data-view':'channels','data-refresh-key':'channels:' + app.channelTab}, h('div.view__head', null,
       h('div.view__head-text', null, h('h1.t-h1',{text:'渠道管理'}), h('p.view__desc',{text:'管理关注的创作者，选择手动或自动刷新，并查看采集状态。'})),
       h('div.view__actions', null, ui.btn('添加渠道或创作者',{variant:'primary',icon:'plus',disabled:!app.session.capabilities.canManageChannels,onClick:function () { addDialog(app); }}))),
-      h('div.inbox__toolbar',null,['list','priorities'].map(function(tab) { return ui.btn(tab==='list'?'渠道列表':'优先级设置',{variant:app.channelTab===tab?'primary':'ghost',onClick:function() { app.channelTab=tab; SF.app.navigate('channels',{tab:tab}); SF.app.renderContent(); }}); })),
+      /* 「静流」§渠道管理：视图切换做成分段控件（渠道列表 / 优先级设置）。 */
+      h('div.inbox__toolbar',null,ui.seg(
+        [{value:'list',label:'渠道列表'},{value:'priorities',label:'优先级设置'}],
+        app.channelTab,
+        function (value) { app.channelTab=value; SF.app.navigate('channels',{tab:value}); SF.app.renderContent(); },
+        {ariaLabel:'渠道视图'})),
       h('div.view__body', null, body));
   }
   function prioritySettings(app) {
+    /* 「静流」§渠道管理：优先级设置页顶部加一条分布条，
+       一眼看出多少来源还没设默认优先级。 */
+    var total = cache.items.length;
+    var counts = {high:0, medium:0, low:0};
+    cache.items.forEach(function (c) {
+      var p = c.defaultPriority;
+      if (p && counts[p] != null) counts[p]++;
+    });
+    var setCount = counts.high + counts.medium + counts.low;
+    var dist = h('div.source-priorities__dist', null,
+      h('div.dist', null, ['high','medium','low'].map(function (id) {
+        return counts[id] ? h('i', {style:{width:(total ? counts[id] / total * 100 : 0) + '%',
+          background:'var(--c-' + (id === 'medium' ? 'mid' : id) + ')'}}) : null;
+      })),
+      h('span.mono', {text:'已设置 ' + setCount + ' / ' + total + ' · 未设置 ' + (total - setCount)}));
     return h('section.panel.source-priorities',{'aria-label':'来源优先级设置'},
-      h('h2.t-h2',{text:'来源默认优先级'}),
-      h('p.view__desc',{text:'未单独设置的历史和新内容都会跟随来源；单条内容的手动设置会保留。'}),
+      h('div.source-priorities__head', null,
+        h('div', null,
+          h('h2.t-h2',{text:'来源默认优先级'}),
+          h('p.view__desc',{text:'未单独设置的历史和新内容都会跟随来源；单条内容的手动设置会保留。'})),
+        dist),
       keyword ? ui.btn('显示全部来源',{onClick:function() { keyword=''; reload(); }}) : null,
       cache.items.length ? cache.items.map(function(c) {
         var saving=false;
@@ -134,8 +166,11 @@
           catch(err) { select._input.value=c.defaultPriority || ''; ui.toast(err.message,'danger'); }
           finally { saving=false; select._input.disabled=false; }
         },{ariaLabel:'来源优先级 '+c.name});
+        /* 已设置的来源：下拉框左边带一条等级信号条，
+           不用点开下拉就知道这一行设的是哪一档。 */
         return h('div.source-priority-row',{'data-priority-source':c.id,'data-refresh-key':'source-priority:' + c.id,
-          'data-refresh-boundary':true,'data-refresh-preserve':JSON.stringify(c)},ui.avatar(c.name),h('div.grow',null,h('strong',{text:c.name}),h('div.muted',{text:SF.catalog.platform(c.platform).name+' · '+(c.enabled?'追踪中':'已暂停')})),select);
+          'data-refresh-boundary':true,'data-refresh-preserve':JSON.stringify(c)},ui.avatar(c.name),h('div.grow',null,h('strong',{text:c.name}),h('div.muted',{text:SF.catalog.platform(c.platform).name+' · '+(c.enabled?'追踪中':'已暂停')})),h('div.source-priority-row__ctl',null,
+            c.defaultPriority ? ui.prioSig(c.defaultPriority) : null, select));
       }) : ui.state({icon:'folder-open',title:'还没有可设置的来源',desc:'添加来源后可在这里设置默认优先级。'}));
   }
   function channelList(app) {
@@ -145,13 +180,13 @@
     if (!cache.loaded) return h('div',{'data-refresh-key':'channel-list'},toolbar,ui.state({icon:'clock',title:'正在载入渠道…'}));
     if (!cache.items.length) return h('div',{'data-refresh-key':'channel-list'},toolbar,h('div.panel',null,ui.state({icon:'folder-open',title:keyword ? '没有匹配的来源' : '还没有添加任何来源',desc:'使用作者 UID、主页链接或搜索结果添加来源，然后手动刷新。',actions:[{label:'添加来源',variant:'primary',onClick:function () { addDialog(app); }}]})));
     return h('div',{'data-refresh-key':'channel-list'},toolbar,h('div.panel.channels__table-wrap',null,h('table.table.live-channels',null,
-      h('thead',null,h('tr',null,['平台','创作者 / 频道名','主页','同步方式','状态','覆盖范围','最近任务','操作'].map(function (label) { return h('th',{text:label}); }))),
+      /* 「静流」§渠道管理：平台列并入创作者名前的平台方块，表格少一列。 */
+      h('thead',null,h('tr',null,['创作者 / 频道名','主页','同步方式','状态','覆盖范围','最近任务','操作'].map(function (label) { return h('th',{text:label}); }))),
       h('tbody',null,cache.items.map(function (c,i) {
         var cov = cache.coverage[i];
         return h('tr',{'data-channel-id':c.id,'data-refresh-key':'channel:' + c.id,'data-refresh-boundary':true,
           'data-refresh-preserve':JSON.stringify([c,cov])},
-          h('td',null,ui.platformIcon(c.platform)),
-          h('td',null,h('div.channel-cell',null,ui.avatar(c.name),h('div.channel-cell__text',null,h('div.channel-cell__name',{text:c.name}),h('div.channel-cell__desc',{text:'UID ' + c.externalId})))),
+          h('td',null,h('div.channel-cell',null,ui.platformIcon(c.platform),ui.avatar(c.name),h('div.channel-cell__text',null,h('div.channel-cell__name',{text:c.name}),h('div.channel-cell__desc',null,h('span',{text:'UID '}),h('span.mono',{text:c.externalId}))))),
           h('td',null,ui.btn('打开主页',{size:'sm',icon:'external',onClick:function () { SF.app.act('source:' + c.id,function () { return app.client.openChannel(c.id); }); }})),
           h('td',null,h('div.table__time',null,
             ui.btn(c.frequency,{size:'sm',onClick:function () { scheduleDialog(app,c); },ariaLabel:'设置同步方式 ' + c.name}),

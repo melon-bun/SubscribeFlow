@@ -52,7 +52,7 @@ async function verifyListState({evaluate, until, click, screenshot, core, window
     assert.equal(await scroll(list),350);
     await evaluate(`SF.app.state.client.updateContent=window.updateOriginal; delete window.updateOriginal; void 0`);
 
-    for (const label of ['已读','稍后处理','归档']) {
+    for (const label of ['已读','稍后','归档']) {
       const before=await ids();
       await select(before[5]);
       await setScroll(list);
@@ -94,7 +94,7 @@ async function verifyListState({evaluate, until, click, screenshot, core, window
     await select(keep);
     await setScroll(list);
     await arrange('已读');
-    await until(`SF.app.state.counts.read===1 && SF.app.state.selectedId===${JSON.stringify(keep)} && !!document.querySelector('.detail .op-btn[aria-pressed="true"]')`);
+    await until(`SF.app.state.counts.read===1 && SF.app.state.selectedId===${JSON.stringify(keep)} && !!document.querySelector('.detail .state-btn[aria-pressed="true"]')`);
     assert.equal(await scroll(list),350);
     await core.call('content.bulk_update',{item_ids:allIds,patch:{deferred:true}});
     await evaluate(`document.querySelector('[data-quick="deferred"]').click(); SF.app.refreshData(true)`);
@@ -123,7 +123,11 @@ async function verifyListState({evaluate, until, click, screenshot, core, window
     await evaluate(`document.querySelector('[data-calendar-item]').click()`);
     await until(`!!document.querySelector('.dialog .priority-opt--low')`);
     const detail='.dialog__body';
-    const detailTop=await setScroll(detail,120);
+    /* 详情弹窗正文变短了（整理操作移到底部操作条），滚动目标按实际可滚动范围取，
+       但必须真的有可滚动距离——否则「滚动被保留」这条断言就是空的。 */
+    const detailMax=await evaluate(`(() => { const el=document.querySelector('.dialog__body'); return el ? el.scrollHeight - el.clientHeight : 0; })()`);
+    assert.ok(detailMax>0,'详情弹窗必须真的能滚动');
+    const detailTop=await setScroll(detail, Math.min(120, detailMax));
     await evaluate(`document.querySelector('.dialog .priority-opt--low').click()`);
     await until(`!!document.querySelector('.dialog .priority-opt--low[aria-pressed="true"]')`);
     assert.equal(await scroll(detail),detailTop,'Modal detail repaint preserves scroll');

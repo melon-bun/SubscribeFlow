@@ -22,6 +22,10 @@
     high: {
       id: "high",
       name: "高优先级",
+      /* 「静流」§5：分段控件里只放一个固定等级字（高/中/低），
+         用户自定义的显示名（可能很长）放到提示行里。
+         short 是等级本身，不随改名变化。 */
+      short: "高",
       hint: "重要内容，尽快查看",
       action: "重要内容，尽快查看",
       icon: "priority-set",
@@ -32,6 +36,7 @@
     medium: {
       id: "medium",
       name: "中优先级",
+      short: "中",
       hint: "有价值，稍后查看",
       action: "有价值，稍后查看",
       icon: "priority-set",
@@ -42,6 +47,7 @@
     low: {
       id: "low",
       name: "低优先级",
+      short: "低",
       hint: "暂不关注，可稍后处理",
       action: "暂不关注，可稍后处理",
       icon: "priority-set",
@@ -51,7 +57,7 @@
     },
   };
 
-  PRIORITIES.none = {id:'none', name:'未设置', hint:'尚未指定优先级', action:'可设置来源默认值或单条内容优先级', icon:'inbox', tagClass:'tag--neutral', color:'var(--c-text-3)', bg:'var(--c-surface)'};
+  PRIORITIES.none = {id:'none', short:'未设置', name:'未设置', hint:'尚未指定优先级', action:'可设置来源默认值或单条内容优先级', icon:'inbox', tagClass:'tag--neutral', color:'var(--c-text-3)', bg:'var(--c-surface)'};
 
   var PRIORITY_ORDER = ["high", "medium", "low"];
 

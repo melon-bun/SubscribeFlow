@@ -252,6 +252,33 @@
 
   /* ---------------- 左列：原标题目录 ---------------- */
 
+  /* 「静流」§笔记：条目下加平台、日期和模板／结论徽标。
+     徽标只给一个：项目笔记看结论，通用笔记看类型，两个都没有就不占位。 */
+  var VERDICT_LABELS = {using:'在用', watching:'观望', dropped:'放弃'};
+  var TEMPLATE_LABELS = {general:'通用', project:'项目'};
+
+  function noteBadge(item) {
+    if (item.verdict) {
+      return h('span.badge.badge--info', {text: VERDICT_LABELS[item.verdict] || item.verdict});
+    }
+    if (item.template && item.template !== 'none') {
+      return h('span.badge', {text: TEMPLATE_LABELS[item.template] || item.template});
+    }
+    return null;
+  }
+
+  /**
+   * 目录条目下的那一行摘要。
+   * Core 给的是截断后的总结（没有总结时退回收获）；这里再压平空白、收一次长度，
+   * 免得多行文本把目录条目撑高。什么都没写的时候直说「还没写收获」，
+   * 而不是留一段空白让人以为坏了。
+   */
+  function excerptText(raw) {
+    var flat = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!flat) return '还没写收获';
+    return flat.length > 90 ? flat.slice(0, 90) + '…' : flat;
+  }
+
   function directory(app) {
     var body;
     if (list.error) {
@@ -274,7 +301,15 @@
             type:'button', 'aria-current': active ? 'true' : null,
             title: item.title,
             onclick: function () { select(app, item.id); },
-          }, h('span.notes-toc__title', {text: item.title})));
+          },
+            h('span.notes-toc__title', {text: item.title}),
+            h('span.notes-toc__meta', null,
+              h('span.notes-toc__src', null,
+                item.platform ? ui.platformIcon(item.platform, {className:'plat--sm', decorative:true}) : null,
+                h('span.notes-toc__src-name', {text: item.source_name || ''})),
+              item.note_updated_at ? h('span.notes-toc__date.mono', {text: fmt.ymd(item.note_updated_at).slice(5)}) : null,
+              noteBadge(item)),
+            h('span.notes-toc__excerpt', {text: excerptText(item.excerpt)})));
         }));
     }
     return h('aside.notes-toc', {'aria-label':'笔记目录','data-refresh-key':'notes-toc-wrap'},
@@ -491,7 +526,10 @@
     var snippet = content.summary ? plainSnippet(content.summary, 240) : '';
     return h('div.notes-card', {'data-refresh-key':'notes-card:' + content.id},
       h('div.notes-card__top', null,
-        h('span.notes-card__source', {title: sourceLine, text: sourceLine}),
+        h('span.notes-card__source', {title: sourceLine},
+          content.platform ? ui.platformIcon(content.platform, {className:'plat--sm', decorative:true}) : null,
+          h('span', {text: source || platform})),
+        content.publishedAt ? h('span.notes-card__date.mono', {text: fmt.ymd(content.publishedAt).slice(5)}) : null,
         h('div.spacer'),
         viewContentButton(app, content)),
       h('h3.notes-card__title', {title: content.title, text: content.title}),
@@ -514,7 +552,8 @@
 
   /** 「查看原内容」按钮：触发元素留着，关闭 modal 后焦点回到它。 */
   function viewContentButton(app, content) {
-    var button = ui.btn('查看原内容', {size:'sm', icon:'external', onClick:function () {
+    /* 「静流」§组件样张：「打开原文」这类次一级重要操作用墨色。 */
+    var button = ui.btn('查看原内容', {variant:'ink', size:'sm', icon:'external', onClick:function () {
       openContentModal(app, content, button);
     }});
     return button;

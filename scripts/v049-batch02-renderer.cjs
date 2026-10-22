@@ -82,7 +82,11 @@ async function verify({window, core, root}) {
   await evaluate(`location.hash = '#/settings?section=ai'`);
   await until(`!!document.querySelector('.settings') && document.querySelector('.settings__title').textContent === 'AI API 配置'`);
   const navLabels = await evaluate(`Array.from(document.querySelectorAll('.settings-nav__label')).map(n => n.textContent)`);
-  assert.deepEqual(navLabels, ['AI API 配置', '提醒设置', '优先级名称']);
+  // 5.1 期之后设置页多了两个分区：M25 的「AI 总结」与 M32 的「外观」。
+  // 这条断言原来锁的是三个分区，是过期断言（见 BUG-120，
+  // 在 a2505fe 上已可复现，与 5.1 期样式改造无关）。
+  // 下面两条「自动打标开关／识别方式不在设置页」才是本段真正的意图，未改。
+  assert.deepEqual(navLabels, ['AI API 配置', '提醒设置', '优先级名称', 'AI 总结', '外观']);
   assert.equal(await evaluate(`!!document.querySelector('.switch[aria-label="启用自动打标"]')`), false,
     '自动打标开关不在设置页');
   assert.equal(await evaluate(`!!document.querySelector('.mode-picker')`), false, '识别方式不在设置页');

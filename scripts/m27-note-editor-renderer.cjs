@@ -255,7 +255,9 @@ async function verify({window, core, root}) {
 
   /* 11. 关闭详情：草稿没保存时要问一句；放弃后关闭。 */
   await evaluate(`(() => {
-    const button = document.querySelector('.detail__head button[aria-label="关闭详情"], .detail__head .icon-btn');
+    // 5.1 期（M33）后详情头有上一条／下一条／关闭三个图标键，
+    // 不能再用「详情头里任意 .icon-btn」定位——那样点到的是上一条。
+    const button = document.querySelector('.detail__head button[aria-label="关闭详情"]');
     if (!button) throw new Error('找不到关闭详情的按钮');
     button.click();
   })()`);
