@@ -77,6 +77,26 @@
   color: var(--c-danger);
 }
 
+/* 强调但次于主按钮：品牌浅底 + 蓝字蓝边。
+   给「AI 总结」这类生成入口用——比 ghost 明显，又不与「保存笔记」的主按钮抢层级。 */
+.btn--accent {
+  background: var(--c-brand-weak);
+  border-color: var(--c-brand-border);
+  color: var(--c-brand);
+  font-weight: 500;
+}
+
+.btn--accent:hover:not(:disabled) {
+  background: var(--c-brand-weak-2);
+  border-color: var(--c-brand);
+  color: var(--c-brand);
+}
+
+.btn--accent:active:not(:disabled) {
+  background: var(--c-brand-weak-2);
+  border-color: var(--c-brand-active);
+}
+
 .btn--sm {
   height: 28px;
   padding: 0 var(--s-4);

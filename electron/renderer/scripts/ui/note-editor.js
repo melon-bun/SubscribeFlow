@@ -584,7 +584,9 @@
       children.push(
         h("div.note-editor__ai-row", null,
           ui.btn(running ? "正在生成…" : "AI 总结", {
-            variant: "ghost",
+            // 品牌浅底蓝字：比 ghost 明显，用户一眼能找到生成入口，
+            // 又不与「保存笔记」的主按钮抢层级。
+            variant: "accent",
             size: "sm",
             disabled: running,
             onClick: function () {

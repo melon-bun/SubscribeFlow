@@ -2136,20 +2136,28 @@
 
 /* ---------------- M28 笔记页：原标题目录 + 阅读区 ---------------- */
 
+/* 笔记页：外壳固定，目录与阅读区各自滚动。
+   之前这一层没有高度约束，内容超出就被外层的 overflow:hidden 裁掉——
+   页面因此既不能滚，也到不了底部的保存与删除。 */
 .notes-layout {
   display: grid;
   grid-template-columns: 244px minmax(0, 1fr);
   gap: var(--s-7);
-  align-items: start;
+  align-items: stretch;
+  /* 占满视图剩余高度，并把滚动交给两列内部。 */
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .notes-toc {
-  position: sticky;
-  top: 0;
   display: flex;
   flex-direction: column;
   gap: var(--s-4);
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .notes-toc__tools {
@@ -2202,8 +2210,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
-  max-height: 52vh;
-  overflow-y: auto;
 }
 
 /* 目录只放原标题：长标题换行，不截断。 */
@@ -2251,9 +2257,14 @@
 
 .notes-reader {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--s-6);
+  /* 长总结与长心得要能一路滚到底，按钮也在滚动范围内。 */
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: var(--s-2);
 }
 
 .notes-reader__head {
@@ -2385,14 +2396,16 @@
 }
 
 /* 窄窗口：目录与阅读区上下排列，不把整页缩成小字。 */
+/* 窄窗：上下排列，整页一起滚——两列各滚各的会让人以为下面没内容了。 */
 @media (max-width: 900px) {
   .notes-layout {
     grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+    overflow-x: hidden;
   }
-  .notes-toc {
-    position: static;
-  }
-  .notes-toc__list {
-    max-height: 32vh;
+  .notes-toc,
+  .notes-reader {
+    overflow: visible;
+    padding-right: 0;
   }
 }
