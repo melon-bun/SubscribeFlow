@@ -1,43 +1,79 @@
 /* ==========================================================================
    知流 / Subscribe_Flow — 设计令牌
-   还原依据：doc/frontend/IMPLEMENTATION.md 所列 F1 设计稿（2026-04 版）
+   依据：doc/frontend/IMPLEMENTATION.md 所列 F1 设计稿（2026-04 版）
+   5.1 期（M30）重构：取值与设计原则改按仓库根目录 zhiliu-visual-style.html
+   （「静流」视觉风格方案），变量名保持不变，新增变量见下方标注。
+
+   色彩语义（每种颜色只有一个含义）：
+     橙 --c-action / --c-orange  主操作与品牌，每屏至多一处
+     青 --c-brand / --c-signal     选中 / 当前 / 焦点；signal 只用于线条与小圆点
+     红·琥珀·绿 --c-high/mid/low   优先级告警分级
+     铝灰 / 座舱黑 --c-bg         中性底，不带蓝紫偏色
+
    所有颜色、尺寸、字号均从设计稿取值，新增样式必须引用本文件的变量。
    ========================================================================== */
 
 :root {
   /* ---- 品牌与主色 ---- */
-  --c-brand: #2563eb;
-  --c-brand-hover: #1d4ed8;
-  --c-brand-active: #1e40af;
-  --c-brand-weak: #eef3ff;
-  --c-brand-weak-2: #f5f8ff;
-  --c-brand-border: #c3d4fd;
+  /* 青色：座舱显示里“由你设定的值”。只表示选中 / 当前 / 焦点。 */
+  --c-brand: #007fa8;
+  --c-brand-hover: #006f93;
+  --c-brand-active: #00607f;
+  --c-brand-ink: #00698b;
+  --c-on-brand: #ffffff;
+  --c-brand-weak: #e2f4fa;
+  --c-brand-weak-2: #f0f9fc;
+  --c-brand-border: #a6dcee;
+  /* 焦点与选中光环 */
+  --c-brand-ring: rgba(0, 160, 205, 0.2);
+
+  /* ---- 主操作：航天国际橙，每屏只出现一处 ---- */
+  --c-orange: #ff4f00;
+  --c-action: #d63f00;
+  --c-action-hover: #bf3800;
+  --c-on-action: #ffffff;
+
+  /* ---- 次一级重要操作（墨色） ---- */
+  --c-ink: #18181b;
+  --c-ink-hover: #2c2c31;
+  --c-on-ink: #ffffff;
 
   /* ---- 中性色 ---- */
-  --c-bg: #f4f5f7;
+  --c-bg: #eceef0;
+  --c-sheet: #fafbfb;
   --c-surface: #ffffff;
-  --c-surface-2: #fafbfc;
-  --c-surface-3: #f2f3f5;
-  --c-border: #e6e8eb;
-  --c-border-strong: #d5d8dd;
-  --c-divider: #f0f1f3;
+  --c-surface-2: #f5f6f7;
+  --c-surface-3: #e8eaec;
+  --c-border: rgba(20, 24, 32, 0.08);
+  --c-border-strong: rgba(20, 24, 32, 0.15);
+  --c-divider: rgba(20, 24, 32, 0.06);
 
-  --c-text: #1d2129;
-  --c-text-2: #5c6270;
-  --c-text-3: #8a9099;
-  --c-text-4: #a8aeb8;
+  --c-text: #15171a;
+  --c-text-2: #4d5258;
+  --c-text-3: #80868d;
+  --c-text-4: #b0b4b9;
   --c-text-inverse: #ffffff;
 
-  /* ---- 优先级语义色 ---- */
-  --c-high: #f53f3f;
-  --c-high-bg: #fff1f0;
-  --c-high-bg-2: #ffe8e6;
-  --c-mid: #ff8f1f;
-  --c-mid-bg: #fff7e8;
-  --c-mid-bg-2: #fff0d6;
-  --c-low: #00b42a;
-  --c-low-bg: #eafbee;
-  --c-low-bg-2: #d6f5de;
+  /* ---- 轻科幻层（新增）：信号青只用于“在线 / 扫描 / 选中”的发光线条 ---- */
+  --c-signal: #00b2dc;
+  --c-signal-ring: rgba(0, 178, 220, 0.22);
+  --line-signal: linear-gradient(90deg, transparent, var(--c-signal) 25%, var(--c-signal) 75%, transparent);
+  --c-grid-dot: rgba(20, 24, 32, 0.07);
+  --glow-brand: 0 0 0 0 transparent;
+  --glow-action: 0 0 0 0 transparent;
+
+  /* ---- 优先级语义色 ----
+     沿用座舱告警分级：红=警告、琥珀=注意、绿=正常。
+     红偏玫红、琥珀偏黄，和主操作橙拉开色相。 */
+  --c-high: #d81f45;
+  --c-high-bg: #fdebef;
+  --c-high-bg-2: #f8dfe5;
+  --c-mid: #c98a00;
+  --c-mid-bg: #fdf4dc;
+  --c-mid-bg-2: #f9e9bd;
+  --c-low: #13945f;
+  --c-low-bg: #e4f5ec;
+  --c-low-bg-2: #cfeadd;
 
   /* ---- 平台色 ---- */
   --c-xhs: #ff2442;
@@ -49,24 +85,24 @@
   /* GitHub 不用品牌色块：官方标识是黑色的，用浅色承托底保证图形清晰可见。
      深色主题沿用浅底，只把图形压成纯黑（见下方深色覆盖）。 */
   --c-github-ink: #1b1f24;
-  --c-github-bg: #eceef1;
+  --c-github-bg: #e7e7e4;
 
   /* ---- 状态色 ---- */
-  --c-info: #2563eb;
-  --c-info-bg: #eef3ff;
-  --c-success: #00b42a;
-  --c-success-bg: #eafbee;
-  --c-warn: #ff8f1f;
-  --c-warn-bg: #fff7e8;
-  --c-danger: #f53f3f;
-  --c-danger-bg: #fff1f0;
+  --c-info: #007fa8;
+  --c-info-bg: #e2f4fa;
+  --c-success: #13945f;
+  --c-success-bg: #e4f5ec;
+  --c-warn: #c98a00;
+  --c-warn-bg: #fdf4dc;
+  --c-danger: #d81f45;
+  --c-danger-bg: #fdebef;
 
-  /* ---- 圆角 ---- */
-  --r-xs: 4px;
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
-  --r-xl: 16px;
+  /* ---- 圆角（同心圆角，整体加大一档） ---- */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
   --r-full: 999px;
 
   /* ---- 间距 ---- */
@@ -94,10 +130,12 @@
 
   /* ---- 字体 ---- */
   --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", "Segoe UI", Roboto, sans-serif;
+    "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", Roboto, sans-serif;
   --font-num: "SF Pro Display", -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* 等宽：链接、快捷键、技术信息、详情读数 */
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
-  /* ---- 布局尺寸 ---- */
+  /* ---- 布局尺寸（本次不变） ---- */
   --sidebar-w: 248px;
   --sidebar-w-collapsed: 64px;
   --topbar-h: 60px;
@@ -107,23 +145,30 @@
   --thumb-md: 96px;
   --thumb-lg: 120px;
 
-  /* ---- 阴影 ---- */
-  --sh-1: 0 1px 2px rgba(29, 33, 41, 0.04);
-  --sh-2: 0 2px 8px rgba(29, 33, 41, 0.08);
-  --sh-3: 0 8px 24px rgba(29, 33, 41, 0.1);
-  --sh-4: 0 16px 48px rgba(29, 33, 41, 0.14);
+  /* ---- 阴影 ----
+     5.1 期：用阴影画边框，悬停只换阴影。--sh-card 系列为新增。 */
+  --sh-1: 0 1px 2px rgba(24, 24, 27, 0.04);
+  --sh-card: 0 0 0 1px var(--c-border), 0 1px 2px rgba(24, 24, 27, 0.04);
+  --sh-card-hover: 0 0 0 1px var(--c-border-strong), 0 6px 16px -6px rgba(24, 24, 27, 0.12);
+  --sh-sheet: 0 0 0 1px var(--c-border), 0 1px 3px rgba(24, 24, 27, 0.05), 0 12px 32px -12px rgba(24, 24, 27, 0.08);
+  --sh-pop: 0 0 0 1px var(--c-border), 0 24px 56px -16px rgba(24, 24, 27, 0.22);
+  --sh-inset: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  /* 兼容既有引用：--sh-2/3/4 继续提供浮层与深色下的阴影 */
+  --sh-2: 0 0 0 1px var(--c-border), 0 2px 8px rgba(24, 24, 27, 0.08);
+  --sh-3: 0 0 0 1px var(--c-border), 0 8px 24px rgba(24, 24, 27, 0.1);
+  --sh-4: 0 0 0 1px var(--c-border), 0 16px 48px rgba(24, 24, 27, 0.14);
 
   /* ---- 动效 ---- */
-  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --dur-1: 120ms;
-  --dur-2: 200ms;
+  --dur-2: 220ms;
 
   --z-drawer: 40;
   --z-dialog: 60;
   --z-toast: 80;
   --z-preview: 100;
-  /* ---- 标签色板（M9）----
-   * 11 档受控色板，键名即标签数据里的 color 值。solid/soft/ink 三个角色驱动
+  /* ---- 标签色板（M9，5.1 期保持 11 档不变）----
+   * 键名即标签数据里的 color 值。solid/soft/ink 三个角色驱动
    * 同一标签在色块、表格色条、使用量条和编辑器里的全部呈现——颜色是身份，
    * 不是贴上去的装饰。未知色值由 tag-catalog.js 收敛到 slate。 */
   --tag-violet: #7c4dff;   --tag-violet-soft: #f0eaff;  --tag-violet-ink: #5a2fd6;
@@ -140,60 +185,87 @@
 
 }
 
-/* 深色模式：设计稿右上角有主题切换，色板在此集中定义。 */
+/* 深色模式：座舱黑，中性石墨，不带蓝紫偏色。 */
 :root[data-theme="dark"] {
-  --c-bg: #16181d;
-  --c-surface: #1c1f26;
-  --c-surface-2: #22262e;
-  --c-surface-3: #2a2e37;
-  --c-border: #30353f;
-  --c-border-strong: #3d434e;
-  --c-divider: #272b33;
+  --c-bg: #0a0b0c;
+  --c-sheet: #101214;
+  --c-surface: #16181b;
+  --c-surface-2: #1b1e21;
+  --c-surface-3: #23262a;
+  --c-border: rgba(255, 255, 255, 0.08);
+  --c-border-strong: rgba(255, 255, 255, 0.15);
+  --c-divider: rgba(255, 255, 255, 0.06);
 
-  --c-text: #e8eaed;
-  --c-text-2: #a8aeb8;
-  --c-text-3: #7d838e;
-  --c-text-4: #5f656f;
+  --c-text: #ecedee;
+  --c-text-2: #a4a8ad;
+  --c-text-3: #70757b;
+  --c-text-4: #4a4e53;
 
-  --c-brand: #4d7cff;
-  --c-brand-hover: #6690ff;
-  --c-brand-weak: #1c2740;
-  --c-brand-weak-2: #192031;
-  --c-brand-border: #2f4478;
+  --c-brand: #2ad0f2;
+  --c-brand-hover: #5adcf6;
+  --c-brand-active: #19b6d6;
+  --c-brand-ink: #7fe4fa;
+  --c-on-brand: #04232c;
+  --c-brand-weak: rgba(42, 208, 242, 0.13);
+  --c-brand-weak-2: rgba(42, 208, 242, 0.07);
+  --c-brand-border: rgba(42, 208, 242, 0.38);
+  --c-brand-ring: rgba(42, 208, 242, 0.24);
 
-  --c-high: #ff6369;
-  --c-high-bg: #2e1a1d;
-  --c-high-bg-2: #3a2124;
-  --c-mid: #ffa64d;
-  --c-mid-bg: #2f2416;
-  --c-mid-bg-2: #3b2d1b;
-  --c-low: #4fd46a;
-  --c-low-bg: #16281a;
-  --c-low-bg-2: #1c3322;
+  --c-action: #ff5c1a;
+  --c-action-hover: #ff7840;
+  --c-on-action: #140700;
 
-  --c-info-bg: #1c2740;
-  --c-success-bg: #16281a;
-  --c-warn-bg: #2f2416;
-  --c-danger-bg: #2e1a1d;
+  --c-ink: #ededf0;
+  --c-ink-hover: #ffffff;
+  --c-on-ink: #111114;
 
-  /* GitHub 标识在深色主题下仍用浅底 + 黑色图形，不随主题反色成浅图形。 */
+  --c-signal: #3fe0ff;
+  --c-signal-ring: rgba(63, 224, 255, 0.22);
+  --c-grid-dot: rgba(255, 255, 255, 0.06);
+  --glow-brand: 0 0 16px -2px rgba(42, 208, 242, 0.5);
+  --glow-action: 0 0 18px -4px rgba(255, 92, 26, 0.65);
+
+  --c-high: #ff4d6d;
+  --c-high-bg: rgba(255, 77, 109, 0.12);
+  --c-high-bg-2: rgba(255, 77, 109, 0.2);
+  --c-mid: #ffc53d;
+  --c-mid-bg: rgba(255, 197, 61, 0.12);
+  --c-mid-bg-2: rgba(255, 197, 61, 0.2);
+  --c-low: #3fd68f;
+  --c-low-bg: rgba(63, 214, 143, 0.12);
+  --c-low-bg-2: rgba(63, 214, 143, 0.2);
+
+  --c-info: #2ad0f2;
+  --c-info-bg: rgba(42, 208, 242, 0.13);
+  --c-success: #3fd68f;
+  --c-success-bg: rgba(63, 214, 143, 0.12);
+  --c-warn: #ffc53d;
+  --c-warn-bg: rgba(255, 197, 61, 0.12);
+  --c-danger: #ff4d6d;
+  --c-danger-bg: rgba(255, 77, 109, 0.12);
+
   --c-github-ink: #000;
-  --c-github-bg: #dcdfe3;
+  --c-github-bg: #d9d9de;
 
-  --sh-2: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --sh-3: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --sh-4: 0 16px 48px rgba(0, 0, 0, 0.6);
+  --sh-card: 0 0 0 1px var(--c-border);
+  --sh-card-hover: 0 0 0 1px var(--c-border-strong), 0 8px 20px -8px rgba(0, 0, 0, 0.6);
+  --sh-sheet: 0 0 0 1px var(--c-border), 0 16px 40px -16px rgba(0, 0, 0, 0.7);
+  --sh-pop: 0 0 0 1px var(--c-border-strong), 0 28px 64px -16px rgba(0, 0, 0, 0.8);
+  --sh-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --sh-2: 0 0 0 1px var(--c-border), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --sh-3: 0 0 0 1px var(--c-border), 0 8px 24px rgba(0, 0, 0, 0.5);
+  --sh-4: 0 0 0 1px var(--c-border-strong), 0 16px 48px rgba(0, 0, 0, 0.6);
   /* ---- 标签色板：深色模式覆盖 ---- */
-  --tag-violet: #a684ff;   --tag-violet-soft: #2a2145;  --tag-violet-ink: #c3adff;
-  --tag-blue:   #6b9bff;   --tag-blue-soft:   #1c2942;  --tag-blue-ink:   #93b7ff;
-  --tag-cyan:   #38bedd;   --tag-cyan-soft:   #13333b;  --tag-cyan-ink:   #6bd3ec;
-  --tag-green:  #3fc477;   --tag-green-soft:  #14321f;  --tag-green-ink:  #6bd894;
-  --tag-lime:   #9ac43a;   --tag-lime-soft:   #22300f;  --tag-lime-ink:   #b3d667;
-  --tag-yellow: #ecab26;   --tag-yellow-soft: #33280d;  --tag-yellow-ink: #f2c563;
-  --tag-amber:  #ff9450;   --tag-amber-soft:  #35210f;  --tag-amber-ink:  #ffb07d;
-  --tag-red:    #ff6b70;   --tag-red-soft:    #351c1e;  --tag-red-ink:    #ff9094;
-  --tag-pink:   #ff6ba4;   --tag-pink-soft:   #351c28;  --tag-pink-ink:   #ff92bd;
-  --tag-plum:   #b47bf5;   --tag-plum-soft:   #2b1c3c;  --tag-plum-ink:   #cba6f8;
-  --tag-slate:  #94a3b8;   --tag-slate-soft:  #21262e;  --tag-slate-ink:  #b3bfcd;
+  --tag-violet: #a684ff; --tag-violet-soft: #2a2145; --tag-violet-ink: #c3adff;
+  --tag-blue:   #6b9bff; --tag-blue-soft:   #1c2942; --tag-blue-ink:   #93b7ff;
+  --tag-cyan:   #38bedd; --tag-cyan-soft:   #13333b; --tag-cyan-ink:   #6bd3ec;
+  --tag-green:  #3fc477; --tag-green-soft:  #14321f; --tag-green-ink:  #6bd894;
+  --tag-lime:   #9ac43a; --tag-lime-soft:   #22300f; --tag-lime-ink:  #b3d667;
+  --tag-yellow: #ecab26; --tag-yellow-soft: #33280d; --tag-yellow-ink: #f2c563;
+  --tag-amber:  #ff9450; --tag-amber-soft:  #35210f; --tag-amber-ink: #ffb07d;
+  --tag-red:    #ff6b70; --tag-red-soft:    #351c1e; --tag-red-ink:   #ff9094;
+  --tag-pink:   #ff6ba4; --tag-pink-soft:   #351c28; --tag-pink-ink:  #ff92bd;
+  --tag-plum:   #b47bf5; --tag-plum-soft:   #2b1c3c; --tag-plum-ink:  #cba6f8;
+  --tag-slate:  #94a3b8; --tag-slate-soft:  #21262e; --tag-slate-ink: #b3bfcd;
 
 }
