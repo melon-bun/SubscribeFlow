@@ -189,6 +189,55 @@ async function verify({window, core, root}) {
   })()`);
   assert.ok(verdict && verdict.length === 3, '结论是三个分段按钮：' + JSON.stringify(verdict));
 
+  /* ---------------- BUG-116：结论按钮的选择／切换／取消 ---------------- */
+  // 从「还没决定」开始：选放弃 → 切到观望 → 再点观望取消 → 保存应为 null；
+  // 期间的总结与心得输入必须保留，视觉与 aria 要即时同步。
+  await evaluate(`(() => {
+    const area = document.querySelector('[data-note-editor] textarea');
+    area.value = '结论按钮测试期间的总结。';
+    area.dispatchEvent(new Event('input', {bubbles: true}));
+  })()`);
+  const clickVerdict = async (label) => {
+    await evaluate(`Array.from(document.querySelectorAll('.note-editor__verdict-btn')).find(b => b.textContent.trim() === ${JSON.stringify(label)}).click()`);
+    await pause(60);
+    return evaluate(`(() => {
+      const buttons = Array.from(document.querySelectorAll('.note-editor__verdict-btn'));
+      return {
+        pressed: buttons.filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.textContent.trim()),
+        active: buttons.filter(b => b.classList.contains('is-active')).map(b => b.textContent.trim()),
+      };
+    })()`);
+  };
+  const afterDropped = await clickVerdict('放弃');
+  assert.deepEqual(afterDropped.pressed, ['放弃'], '选中后 aria-pressed 要立刻跟着变');
+  assert.deepEqual(afterDropped.active, ['放弃'], '选中后高亮要立刻跟着变');
+  const afterWatching = await clickVerdict('观望');
+  assert.deepEqual(afterWatching.pressed, ['观望'], '切换到另一项后 aria-pressed 要更新');
+  const afterCancel = await clickVerdict('观望');
+  assert.deepEqual(afterCancel.pressed, [], '再点一次选中的项＝取消结论');
+  assert.deepEqual(afterCancel.active, [], '取消后高亮也要清掉');
+  const textKept = await evaluate(`document.querySelector('[data-note-editor] textarea').value`);
+  assert.equal(textKept, '结论按钮测试期间的总结。', '结论按钮不能动总结里的字');
+  await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === '保存笔记').click()`);
+  await until(`SF.app.state.client.getNote('zhihu:feed:polish-2').then(n => n && n.verdict === null)`);
+  const savedVerdict = await evaluate(`SF.app.state.client.getNote('zhihu:feed:polish-2').then(n => n.verdict)`);
+  assert.equal(savedVerdict, null, '保存的结论要与最后一次选择一致');
+  const savedSummary = await evaluate(`SF.app.state.client.getNote('zhihu:feed:polish-2').then(n => n.summary)`);
+  assert.equal(savedSummary, '结论按钮测试期间的总结。', '保存的总结不能丢');
+  // 切走再切回来：结论仍是「取消」，不是回到旧的在用。
+  await evaluate(`(() => {
+    const items = Array.from(document.querySelectorAll('.notes-toc__item'));
+    items.find(b => b.textContent.trim().indexOf('一条很长的小红书笔记') === 0).click();
+  })()`);
+  await until(`(document.querySelector('.notes-card__title')||{}).textContent && document.querySelector('.notes-card__title').textContent.indexOf('一条很长的小红书笔记') === 0`);
+  await evaluate(`(() => {
+    const items = Array.from(document.querySelectorAll('.notes-toc__item'));
+    items.find(b => b.textContent.trim() === '一条很短的内容').click();
+  })()`);
+  await until(`!!document.querySelector('.note-editor__verdict')`);
+  const afterReload = await evaluate(`Array.from(document.querySelectorAll('.note-editor__verdict-btn')).filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.textContent.trim())`);
+  assert.deepEqual(afterReload, [], '重开后结论仍应是取消状态');
+
   /* ---------------- 草稿保护与保存不回归 ---------------- */
   // 回到长内容那条再试保存。
   await evaluate(`(() => {

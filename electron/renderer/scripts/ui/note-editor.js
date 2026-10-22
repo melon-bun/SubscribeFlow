@@ -709,27 +709,28 @@
         )
       );
       if (project) {
+        // 结论是三个分段按钮：再点一次选中的那个＝取消结论。
+        // 判断依据必须是**当下**的草稿值，不能用渲染时捕获的旧值——
+        // 否则第二次点击会把刚选上的又选一遍，取消不掉。
+        var group = h("div.note-editor__verdict", { role: "group", "aria-label": "项目结论" },
+          VERDICTS.filter(function (item) { return item.value; }).map(function (item) {
+            return h("button.note-editor__verdict-btn", {
+              type: "button",
+              "data-verdict": item.value,
+              "aria-pressed": "false",
+              title: item.label,
+              onClick: function () {
+                var current = state.draft.verdict || "";
+                state.draft.verdict = current === item.value ? "" : item.value;
+                state.touched = true;
+                syncVerdictButtons(group, state.draft.verdict || "");
+                refreshStatus();
+              },
+            }, item.label);
+          }));
+        syncVerdictButtons(group, draft.verdict || "");
         children.push(
-          h(
-            "div.field",
-            null,
-            h("span.field__label", { text: "我的结论" }),
-            h("div.note-editor__verdict", { role: "group", "aria-label": "项目结论" },
-              VERDICTS.filter(function (item) { return item.value; }).map(function (item) {
-                var active = (draft.verdict || "") === item.value;
-                return h("button.note-editor__verdict-btn" + (active ? ".is-active" : ""), {
-                  type: "button",
-                  "aria-pressed": String(active),
-                  title: active ? "再点一次取消这个结论" : item.label,
-                  onClick: function () {
-                    // 再点一次选中的那个＝取消结论。
-                    state.draft.verdict = active ? "" : item.value;
-                    state.touched = true;
-                    refreshStatus();
-                  },
-                }, item.label);
-              }))
-          )
+          h("div.field", null, h("span.field__label", { text: "我的结论" }), group)
         );
       }
       children.push(
@@ -796,6 +797,17 @@
           h("div.spacer"),
           buttons),
         conflictRow(state));
+    }
+
+    /** 结论按钮的即时状态：选中项高亮，aria-pressed 与当下草稿一致。 */
+    function syncVerdictButtons(group, verdict) {
+      if (!group) return;
+      Array.prototype.forEach.call(group.querySelectorAll(".note-editor__verdict-btn"), function (button) {
+        var active = button.getAttribute("data-verdict") === (verdict || "");
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+        button.title = active ? "再点一次取消这个结论" : button.textContent.trim();
+      });
     }
 
     /** 总结的来路提示：AI 生成过就说一声，用户知道这段文字不是自己敲的。 */
