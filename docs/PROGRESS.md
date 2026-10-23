@@ -1,3 +1,8 @@
+2026-10-23 M35 细节返修完成：任务条留白、图标/状态色、单圆点、卡片/详情/看板文字边界、
+笔记短窗与窄窗、AI 开关及空/重复说明已修。隔离专项 33/33、Node 142/142、原 M35、
+主 Renderer、M27/M28/M29 通过；BUG-117/121 关闭。保留并整合已有笔记面板在途调整，
+分支 `feature/phase51-visual`，本地源码交付。[验收与截图](verification/phase51/m35-details/REPORT.md)。
+
 2026-10-22三项UI优化交付：AI按钮着色、笔记滚动及已批准美化/紧凑原内容卡片均验收通过；BUG-115/116关闭。31138字原文modal完整可读、存储不变，必要共享视图检查通过。main/feature已安全集成至fb66b94，工作树干净，未打包/推送/发布。非致命BUG-113/117及真实人工范围保留，本轮跟进结束并删除。[最终交付](verification/phase5-review/ui-followup-final/REPORT.md)。
 
 2026-10-22笔记美化审查：长文卡片/31138字完整modal/低窗底部操作已通过；唯一实质BUG-116结论重复点击取消仍保存watching，已交原MiniMax ui-followup-02-r01最小返修。BUG-117非致命只记；尚未集成main。[审查](verification/phase5-review/ui-followup-02/REPORT.md)。

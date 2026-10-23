@@ -1,5 +1,11 @@
 # Subscribe_Flow 模块化开发计划
 
+2026-10-23 M35 细节返修完成：按静流原稿复查并修正任务条留白、文字边界、图标/重复圆点、
+笔记短窗滚动与窄窗导航、AI 开关及重复说明。33/33 专项、Node 142/142、原 M35、
+主 Renderer、M27/M28/M29 回归通过。BUG-117/121 关闭；
+当前方案与证据见 [5.1 期计划](../DEVELOPMENT_PLAN_PHASE51.md)、[本轮验收](../verification/phase51/m35-details/REPORT.md)。
+分支 `feature/phase51-visual`，本次为本地源码交付。
+
 2026-10-22 5.1 期完成：第五期之后补的界面优化任务，模块 M30–M32。已按仓库根目录 `zhiliu-visual-style.html`（「静流」）重构整个设计风格与设计原则，采用轻科幻 design token，**知流 logo 保持原样**。M30 令牌重构 `ed36d50` → M31 界面样式重构 `347246b` → M32 轻科幻层 `6c6d0bf`，分支 `feature/phase51-visual`（基线 `fb66b94`），Codex 实机验收通过（Node 142 项、主 Renderer 验收、M26–M29 实机脚本、新增 M32 专项验收 13 项断言）。快捷键不做；详情读数用假数据并标注「示例」，真实取数归 5.2 期。**未合并 main、未打包／推送／发布。** 详见 [5.1 期方案](../DEVELOPMENT_PLAN_PHASE51.md)。
 
 2026-10-21 第五期开发：用户已授权原 MiniMax session 实现全部 M25–M29，Codex 分发与独立验收；M25 首批启动已确认，20 分钟定时跟进已启用。工作分支 feature/phase5-notes，详细状态见 [Phase5 分发记录](../PHASE5_TASK_DISPATCH.md)，不自动打包／推送／发布。

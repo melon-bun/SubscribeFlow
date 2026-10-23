@@ -1460,11 +1460,6 @@
 
 .content-card__thumb svg {
   position: absolute;
-  left: 50%;
-  bottom: 6px;
-  transform: translateX(-50%);
-  width: 52px;
-  height: 40px;
   stroke-width: 1.4;
 }
 
@@ -1558,7 +1553,13 @@
 .kanban__col--none { background:var(--c-surface); }
 .kanban__col--none .kanban__head-icon { background:var(--c-text-3); }
 .priority-column-foot { display:flex; justify-content:space-between; align-items:center; padding:var(--s-3) var(--s-4); gap:var(--s-2); border-top:1px solid var(--c-border); }
-.priority-body .kanban__item { flex-shrink:0; text-align:left; }
+.priority-body .kanban__item { display:block; flex-shrink:0; text-align:left; }
+.kanban__item-head { min-width: 0; }
+.kanban__item-title { min-width: 0; overflow-wrap: anywhere; }
+.kanban__item-meta { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.kanban__item-meta .kanban__item-author { margin-top: 0; min-width: 0; overflow: hidden; }
+.kanban__item-date { flex: none; white-space: nowrap; color: var(--c-text-3); }
+.kanban__item-meta .kanban__item-rule { flex: none; white-space: nowrap; }
 .source-priority-row .select { flex-shrink:0; }
 @media (max-width:1180px) { .priority-body .kanban__col { min-height:280px; max-height:420px; } }
 
@@ -2412,6 +2413,20 @@
   background: var(--c-surface);
 }
 
+.notes-layout > .notes-toc {
+  padding: 0;
+  gap: 0;
+  border: 0;
+  overflow: hidden;
+}
+
+.notes-layout > .notes-reader {
+  padding: 20px 22px 0;
+  overflow-y: auto;
+}
+
+.notes-reader > * { flex-shrink: 0; }
+
 .notes-toc__head {
   display: flex;
   align-items: center;
@@ -2518,6 +2533,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* 目录只放原标题：长标题换行，不截断。 */
@@ -2526,6 +2544,7 @@
   width: 100%;
   padding: var(--s-3);
   cursor: pointer;
+  text-align: left;
 }
 
 .notes-toc__item:hover {
@@ -2637,6 +2656,7 @@
 }
 
 .notes-card__title {
+  overflow-wrap: anywhere;
   font-size: var(--fs-base);
   font-weight: 600;
   line-height: 1.45;
@@ -2732,16 +2752,19 @@
 /* 窄窗口：目录与阅读区上下排列，不把整页缩成小字。 */
 /* 窄窗：上下排列，整页一起滚——两列各滚各的会让人以为下面没内容了。 */
 @media (max-width: 900px) {
-  .notes-layout {
+  .view[data-view="notes"] .notes-layout {
     grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: max-content;
+    align-content: start;
     overflow-y: auto;
     overflow-x: hidden;
   }
-  .notes-toc,
-  .notes-reader {
+  .notes-layout > .notes-reader {
     overflow: visible;
-    padding-right: 0;
+    min-height: auto;
+    padding-bottom: 20px;
   }
+  .notes-layout > .notes-toc { min-height: 260px; max-height: 360px; }
 }
 
 /* ==========================================================================

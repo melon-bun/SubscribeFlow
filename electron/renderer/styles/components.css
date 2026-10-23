@@ -849,12 +849,11 @@ textarea.input {
 
 /* GitHub：黑色图形 + 浅色承托底。侧栏标识块自带 color:#fff，
    这里用组合选择器压过它，保证任何入口都画成同一套黑标。 */
-/* 「静流」§.pf.github：浅底承托 + 黑色官方标识。
-   文字色保持 .plat 的白（这里没有文字），黑色由 svg 的 fill 承担。 */
-.plat--github,
+/* 「静流」§.pf.github：浅底承托 + 黑色官方标识。 */
+.plat.plat--github,
 .side-row__icon.plat--github {
   background: var(--c-github-bg);
-  color: #fff;
+  color: var(--c-github-ink);
 }
 
 .plat--github svg {
@@ -876,6 +875,8 @@ textarea.input {
   background: var(--c-surface);
   border-radius: var(--r-lg);
 }
+
+.mode-card__hud { display: none; }
 
 .panel__head {
   display: flex;
@@ -940,9 +941,11 @@ textarea.input {
 }
 
 .content-card__main {
+  min-width: 0;
 }
 
 .content-card__title {
+  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -1000,6 +1003,18 @@ textarea.input {
 .content-card__tags {
   display: flex;
   align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.content-card__tags .tag-chip:first-child {
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.content-card__foot .content-card__method {
+  font-size: var(--fs-sm);
 }
 
 /* 「静流」§3：URL 行改为悬停时出现，不再每张卡片常驻一行蓝色链接。
@@ -1007,6 +1022,8 @@ textarea.input {
 .content-card__link {
   display: inline-flex;
   align-items: center;
+  flex: 1 1 0;
+  overflow: hidden;
   /* 靠右（margin-left:auto），内容再长也只在这一行里省略。 */
   transition: opacity var(--dur-1) var(--ease);
 }
@@ -1024,6 +1041,7 @@ textarea.input {
 }
 
 .content-card__link span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1817,6 +1835,13 @@ textarea.input {
   color: var(--c-text);
 }
 
+.detail .detail__title,
+.detail .detail__summary,
+.detail .detail__byline-time {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .detail__byline {
   display: flex;
   align-items: center;
@@ -2457,7 +2482,9 @@ textarea.input {
   display: inline-flex;
   align-items: center;
   flex: none;
-  padding: 1px var(--s-2);
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   border: 1px solid var(--c-brand-border);
   border-radius: var(--r-sm);
   background: var(--c-brand-weak);
@@ -2465,6 +2492,8 @@ textarea.input {
   font-size: var(--fs-xs);
   line-height: 1.6;
 }
+
+.content-card__note svg.i { width: 12px; height: 12px; }
 
 .note-editor {
   margin-top: var(--s-7);

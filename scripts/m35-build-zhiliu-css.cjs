@@ -6,8 +6,8 @@ const {CLASS_MAP, FX_MAP, DOC_ONLY} = require('./zhiliu-map.cjs');
  * 「静流」样式移植器。
  *
  * 把参考页 zhiliu-visual-style.html 的 CSS **原样**搬到产品里，
- * 只做一件事：把演示页的类名换成产品真实类名（见 zhiliu-map.cjs）。
- * 规则顺序、取值、层级一律不动——参考页是唯一规格。
+ * 把演示页的类名换成产品真实类名（见 zhiliu-map.cjs），
+ * 笔记样张的固定最小高度适配真实窗口；其余取值与规则顺序沿用规格。
  *
  * 产物：electron/renderer/styles/zhiliu.css（在其它样式之后加载），
  * 同时重写 fx.css 里的轻科幻层，使效果层也来自同一份规格。
@@ -33,10 +33,16 @@ function extractCss(html) {
  * 所以把所有键合成一个正则（长的优先），一次扫描过去。
  */
 function rename(selector) {
-  const keys = Object.keys(CLASS_MAP).sort((a, b) => b.length - a.length);
+  const mapping = {...CLASS_MAP, ...FX_MAP};
+  const keys = Object.keys(mapping).sort((a, b) => b.length - a.length);
   const pattern = keys.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
   const re = new RegExp('(?<![\\w-])(?:' + pattern + ')(?![\\w-])', 'g');
-  return selector.trim().replace(re, (m) => CLASS_MAP[m]);
+  return selector.trim().replace(re, (m) => mapping[m]);
+}
+
+// 参考页是固定高度样张；真实窗口由滚动容器分配剩余空间。
+function adaptWindow(selector, body) {
+  return /\.notes-layout\s*$/.test(selector) ? body.replace(/min-height:\s*640px/g, 'min-height: 0') : body;
 }
 
 /** 去掉参考页「方案文档外壳」的规则 */
@@ -115,7 +121,7 @@ function main() {
     if (sels.every(s => /^:root/.test(s))) { skipped++; continue; }
     const renamed = sels.map(s => rename(s)).join(',\n');
     const isFx = /\[data-fx="on"\]|\[data-theme="dark"\]\[data-fx="on"\]/.test(prelude);
-    (isFx ? fx : base).push({prelude: renamed, body});
+    (isFx ? fx : base).push({prelude: renamed, body: adaptWindow(renamed, body)});
   }
 
   const render = list => list.map(b => {
@@ -131,9 +137,10 @@ function main() {
    本文件由 scripts/m35-build-zhiliu-css.cjs 从仓库根目录
    zhiliu-visual-style.html 的样式表**逐条移植**而来：
    参考页的类名按 scripts/zhiliu-map.cjs 换成产品真实类名，
-   规则顺序与取值一律保持参考页原样。
+   规则顺序与取值沿用参考页；笔记布局的固定样张高度适配真实窗口。
 
-   要改视觉，改参考页后重跑生成器；直接改这里会在下次生成时被覆盖。
+   规格取值在参考页维护，产品映射在 zhiliu-map.cjs 维护；改源后重跑生成器。
+   直接改这里会在下次生成时被覆盖。
    ========================================================================== */
 
 `;

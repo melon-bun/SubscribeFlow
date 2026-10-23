@@ -125,7 +125,7 @@
     var s = size || 18;
     var wrap = document.createElement("div");
     wrap.innerHTML =
-      '<svg viewBox="0 0 24 24" width="' + s + '" height="' + s + '" aria-hidden="true" focusable="false">' +
+      '<svg class="i" viewBox="0 0 24 24" width="' + s + '" height="' + s + '" aria-hidden="true" focusable="false">' +
       path +
       "</svg>";
     return wrap.firstElementChild;

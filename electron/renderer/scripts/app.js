@@ -195,7 +195,9 @@
     var brand = h(
       "div.sidebar__brand",
       null,
-      h("div.brand__mark", { "aria-hidden": "true" }, h("img.brand__logo", { src: "assets/brand.png", alt: "", draggable: "false" })),
+      h("div.brand__mark", { "aria-hidden": "true" },
+        h("img.brand__logo", { src: "assets/brand.png", alt: "", draggable: "false" }),
+        h("span.brand__orbit")),
       h(
         "div.brand__text",
         null,

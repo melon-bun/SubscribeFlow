@@ -294,7 +294,7 @@
           ? '没有符合条件的笔记。换个关键词或清除筛选看看。'
           : '还没有笔记。打开任意内容，在“留下点什么”里记一句。'}));
     } else {
-      body = h('ul.notes-toc__list', {'data-refresh-key':'notes-toc'},
+      body = h('ul.panel__body.notes-toc__list', {'data-refresh-key':'notes-toc'},
         list.items.map(function (item) {
           var active = item.id === selectedId;
           return h('li', null, h('button.notes-toc__item' + (active ? '.is-active' : ''), {
@@ -312,8 +312,10 @@
             h('span.notes-toc__excerpt', {text: excerptText(item.excerpt)})));
         }));
     }
-    return h('aside.notes-toc', {'aria-label':'笔记目录','data-refresh-key':'notes-toc-wrap'},
-      h('div.notes-toc__head', null,
+    /* 「静流」§笔记页：左列是一张面板——面板头（标题+排序）、工具区、面板体（列表）、面板脚。
+       这里直接套上参考页的组件类名，让移植过来的 .panel/.panel-head/.panel-body 规则生效。 */
+    return h('aside.panel.notes-toc', {'aria-label':'笔记目录','data-refresh-key':'notes-toc-wrap'},
+      h('div.panel__head.notes-toc__head', null,
         h('span.notes-toc__label', {text:'全部笔记'}),
         h('div.spacer'),
         ui.select(SORTS, sort, function (value) {
@@ -322,7 +324,7 @@
           list.loaded = false; list.needLoad = true;
           renderView(app);
         }, {ariaLabel:'笔记排序', small:true})),
-      h('div.notes-toc__tools', null,
+      h('div.nl-tools.notes-toc__tools', null,
         ui.searchInput('搜索标题或笔记…', filters.keyword, function (value) {
           filters.keyword = value;
           offset = 0;
@@ -346,7 +348,7 @@
           activeChips(app)),
         filterOpen ? filterPanel(app) : null),
       body,
-      h('div.notes-toc__foot', null,
+      h('div.panel__foot.notes-toc__foot', null,
         h('span', {text: list.loaded ? ('共 ' + list.total + ' 篇') : ''}),
         h('div.spacer'),
         offset > 0 ? ui.iconBtn('chevron-left', '上一页', function () {
@@ -463,13 +465,13 @@
 
   function reader(app) {
     if (!selectedId) {
-      return h('section.notes-reader', {'aria-label':'笔记阅读区'},
+      return h('section.panel.notes-reader', {'aria-label':'笔记阅读区'},
         ui.state({icon:'edit', title:'还没有选中笔记', desc:'左边挑一条标题，这里显示原内容和你的笔记。'}));
     }
     var item = list.items.find(function (i) { return i.id === selectedId; });
     var title = item ? item.title : '（这条笔记已不在当前范围里）';
     var updated = item ? item.note_updated_at : null;
-    return h('section.notes-reader', {'aria-label':'笔记阅读区','data-refresh-key':'notes-reader:' + selectedId},
+    return h('section.panel.notes-reader', {'aria-label':'笔记阅读区','data-refresh-key':'notes-reader:' + selectedId},
       h('div.notes-reader__head', null,
         h('h2.notes-reader__title', {text: title}),
         h('p.notes-reader__meta', {text: updated ? ('笔记更新于 ' + fmt.absolute(updated)) : '笔记更新时间未知'})),

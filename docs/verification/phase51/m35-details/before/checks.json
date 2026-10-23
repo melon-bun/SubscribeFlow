@@ -1,0 +1,131 @@
+{
+  "checks": [
+    {
+      "name": "task-insets",
+      "ok": false,
+      "left": 28,
+      "top": 24
+    },
+    {
+      "name": "card-text-bounds",
+      "ok": false,
+      "bad": [
+        "zhihu:feed:m35-11",
+        "zhihu:feed:m35-10",
+        "zhihu:feed:m35-9",
+        "zhihu:feed:m35-8",
+        "zhihu:feed:m35-7",
+        "zhihu:feed:m35-6",
+        "zhihu:feed:m35-5",
+        "zhihu:feed:m35-4",
+        "zhihu:feed:m35-3",
+        "zhihu:feed:m35-2",
+        "zhihu:feed:m35-1",
+        "zhihu:feed:m35-0",
+        "zhihu:feed:polish-2",
+        "xiaohongshu:feed:polish-1",
+        "github:repo:1122334455",
+        "github:repo:173228436",
+        "github:repo:1209966933"
+      ]
+    },
+    {
+      "name": "high-signal",
+      "ok": false,
+      "actual": "rgb(176, 180, 185)",
+      "expected": "rgb(216, 31, 69)"
+    },
+    {
+      "name": "github-ink",
+      "ok": false,
+      "actual": "rgb(255, 255, 255)",
+      "expected": "rgb(27, 31, 36)"
+    },
+    {
+      "name": "placeholder-bounds",
+      "ok": false,
+      "left": -48,
+      "right": 48
+    },
+    {
+      "name": "single-tag-dot",
+      "ok": false,
+      "pseudo": true,
+      "child": true
+    },
+    {
+      "name": "single-dropdown-arrow",
+      "ok": true,
+      "content": "none"
+    },
+    {
+      "name": "detail-hud",
+      "ok": false,
+      "display": "none"
+    },
+    {
+      "name": "online-dot",
+      "ok": false,
+      "width": 0,
+      "height": 0
+    },
+    {
+      "name": "footnote-size",
+      "ok": false,
+      "size": 14
+    },
+    {
+      "name": "single-calendar-dot",
+      "ok": false,
+      "pseudo": true,
+      "child": true
+    },
+    {
+      "name": "calendar-heading",
+      "ok": false,
+      "gap": 67.15625
+    },
+    {
+      "name": "kanban-reading-order",
+      "ok": false,
+      "titleBottom": 619.6953125,
+      "authorTop": 571.6953125
+    },
+    {
+      "name": "note-field-width",
+      "ok": false,
+      "gap": 224,
+      "width": 560
+    },
+    {
+      "name": "no-empty-ai-box",
+      "ok": false,
+      "count": 2
+    },
+    {
+      "name": "notes-left-aligned",
+      "ok": false,
+      "align": "center"
+    },
+    {
+      "name": "tag-toolbar-row",
+      "ok": true,
+      "titleY": 288,
+      "buttonY": 288
+    },
+    {
+      "name": "notes-viewport-1100",
+      "ok": false,
+      "bottom": 859,
+      "paperBottom": 676
+    },
+    {
+      "name": "notes-viewport-800",
+      "ok": false,
+      "bottom": 875,
+      "paperBottom": 676
+    }
+  ],
+  "failed": 17,
+  "passed": 2
+}

@@ -465,7 +465,6 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  min-height: 0;
 }
 
 /* 「静流」§其他页面：任务条是**纸面的一部分**（方案里 .task 就在 .sheet 内，
@@ -475,11 +474,18 @@
   grid-column: 1 / -1;
   grid-row: 1;
   min-width: 0;
-  margin: 12px 14px 0;
+  /* 12px/14px 留白由内部 .task 承担，只算一次。 */
 }
 
 .status-bar .task {
   align-items: center;
+}
+
+.task-name {
+  min-width: 0;
+  max-width: 28%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 状态栏里的关闭按钮：比通用图标按钮更收敛，避免抢走提示本身的注意力 */
@@ -706,6 +712,10 @@
   .side-row__count {
     display: none;
   }
+
+  .sidebar .nav__item .count-pill { display: none; }
+  .sidebar .nav__item,
+  .sidebar .side-row { padding: 0; }
 
   .sidebar__brand,
   .nav__item,

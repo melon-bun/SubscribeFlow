@@ -546,7 +546,6 @@
       }
       children.push(hintBox(draft, opts));
       children.push(fields(draft, st));
-      children.push(summaryEntry(st, opts));
       children.push(actions(draft, st));
       return children;
     }
@@ -634,7 +633,7 @@
         );
         children.push(adoptBlock(state));
       }
-      return h("div.note-editor__ai", null, children);
+      return children.length ? h("div.note-editor__ai", null, children) : null;
     }
 
     /** 把一段结果交给用户：要点「采用」才真的填进总结。 */

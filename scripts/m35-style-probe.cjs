@@ -136,7 +136,7 @@ const PAGES = {
     ready: `!!document.querySelector('[data-view="notes"]')`,
     map: [
       ['.notes-wrap', '.notes-layout', []],
-      ['.panel', '.notes-toc', []],
+      ['.panel', '.panel', []],
       ['.nl-tools', '.notes-toc__tools', []],
       ['.nli', '.notes-toc__item', []],
       ['.nli b', '.notes-toc__title', []],

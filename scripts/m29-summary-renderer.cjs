@@ -147,7 +147,8 @@ async function verify({window, core, root}) {
     select.value = 'general';
     select.dispatchEvent(new Event('change', {bubbles: true}));
   })()`);
-  await until(`!!document.querySelector('[data-note-editor] .note-editor__ai')`);
+  await until(`Array.from(document.querySelectorAll('[data-note-editor] button')).some(b => b.textContent.trim() === 'AI 总结')`);
+  assert.equal(await evaluate(`document.querySelectorAll('[data-note-editor] .note-editor__ai').length`), 0, 'BUG-117：没有说明时不画空容器');
   const draftCalls = await evaluate(`JSON.stringify(window.__draftCalls)`);
   assert.equal(JSON.parse(draftCalls).length, 0, '不会自动生成');
 
@@ -223,6 +224,7 @@ async function verify({window, core, root}) {
   await until(`(document.querySelector('[data-note-editor] .field__error') || {}).textContent`);
   const failureText = await evaluate(`document.querySelector('[data-note-editor] .field__error').textContent`);
   assert.ok(failureText.includes('密钥') || failureText.includes('auth'), '失败要说清原因：' + failureText);
+  assert.equal(await evaluate(`document.querySelectorAll('[data-note-editor] .note-editor__ai .field__error').length`), 1, 'BUG-117：失败说明只画一份');
   const afterFailure = await evaluate(`document.querySelector('[data-note-editor] textarea[aria-label="总结"]').value`);
   assert.equal(afterFailure, '纯手写的总结。', '失败不能先清空旧文字');
   await setDraft(nextDraft);
@@ -254,6 +256,7 @@ async function verify({window, core, root}) {
   assert.equal(lateText, '我在生成期间写的。', '迟到的结果不能静默覆盖用户输入');
   const adoptable = await evaluate(`!!Array.from(document.querySelectorAll('[data-note-editor] button')).find(b => b.textContent.trim() === '采用这段总结')`);
   assert.equal(adoptable, true, '结果要保留成可采用的草稿');
+  assert.equal(await evaluate(`document.querySelectorAll('[data-note-editor] .note-editor__ai-result').length`), 1, 'BUG-117：待采用结果只画一份');
   await evaluate(`(() => { SF.app.state.client.draftNote = window.__originalDraft; delete window.__originalDraft; })()`);
   await setDraft(nextDraft);
 
@@ -451,7 +454,7 @@ async function verify({window, core, root}) {
   await until(`document.querySelectorAll('.notes-toc__item').length === 1`);
   await evaluate(`document.querySelector('.notes-toc__item').click()`);
   await until(`!!document.querySelector('[data-note-editor]')`);
-  const notesEntry = await evaluate(`!!document.querySelector('[data-note-editor] .note-editor__ai')`);
+  const notesEntry = await evaluate(`Array.from(document.querySelectorAll('[data-note-editor] button')).some(b => b.textContent.trim() === 'AI 总结')`);
   assert.equal(notesEntry, true, '笔记页也要有同一个生成入口');
   const sameShape = await evaluate(`({
     editor: !!document.querySelector('[data-note-editor] select[aria-label="笔记类型"]'),

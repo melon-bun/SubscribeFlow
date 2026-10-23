@@ -374,7 +374,7 @@
           // 标签容器固定存在，具体标签由调用方（收件箱）按数据填充。
           h("span.content-card__tags", null),
           // M27：写过的笔记在卡片上留个记号。没有笔记不显示否定徽标。
-          item.hasNote ? h("span.content-card__note", { text: "有笔记" }) : null,
+          item.hasNote ? h("span.content-card__note", { title: "有笔记", "aria-label": "有笔记" }, icon("edit", 12)) : null,
           // 「静流」§3：收录方式由灰色胶囊改为小图标 + 浅灰文字，排在卡片脚注里。
           h(
             "span.content-card__method",

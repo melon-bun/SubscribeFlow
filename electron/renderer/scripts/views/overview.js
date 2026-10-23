@@ -287,8 +287,10 @@
     else contents=h('div.kanban__list.scroll-y',{'data-scroll-key':'priority:' + id},
       (group.items||[]).length ? group.items.map(function(item) { return h('button.kanban__item',{type:'button','data-priority-item':item.id,'data-refresh-key':'priority-item:'+item.id,onclick:function() { openDetail(app,item); }},
         h('div.kanban__item-head',null,item.cover?h('div.kanban__item-thumb',null,h('img',{src:item.cover,alt:'',loading:'lazy'})):null,h('div.kanban__item-title',{text:item.title})),
-        h('div.kanban__item-author',null,ui.avatar(item.channelName),h('span',{text:item.channelName}),ui.platformTag(item.platform)),
-        h('div.kanban__item-foot',null,h('span',{text:fmt.publication(item,true)}),h('span',{text:item.priorityOverride?'单独设置':'跟随来源'}))); }) : emptyColumn(app,id,meta),
+        h('div.kanban__item-meta',null,
+          h('span.kanban__item-author',null,ui.platformTag(item.platform),h('span.t-ellipsis',{text:item.channelName,title:item.channelName})),
+          h('span.kanban__item-date',{text:fmt.publication(item,true)}),
+          h('span.kanban__item-rule'+(item.priorityOverride?'.is-own':''),{text:item.priorityOverride?'单独设置':'跟随来源'}))); }) : emptyColumn(app,id,meta),
       group.error ? h('div',null,h('p.field__error',{role:'alert',text:group.error.message}),!group.requestMore ? ui.btn('重试更新本栏',{onClick:function() { loadGroup(app,id,false); SF.app.renderContent(); }}) : null) : null,
       group.next_offset!=null ? ui.btn(group.loading?'正在加载…':group.error && group.requestMore?'重试加载':'加载更多',{disabled:group.loading,onClick:function() { loadGroup(app,id,true); SF.app.renderContent(); }}):null);
     return h('section.kanban__col.kanban__col--'+tone,{'aria-label':meta.name,'data-priority-column':id,'data-refresh-key':'priority-column:'+boardKey+':'+id},

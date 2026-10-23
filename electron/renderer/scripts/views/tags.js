@@ -461,7 +461,7 @@
           },
           { ariaLabel: "状态筛选" }
         ),
-        ui.btn("新建标签", { variant: "primary", icon: "plus", onClick: function () { openCreateTag(app); } })
+        ui.btn("新建标签", { variant: "secondary", icon: "plus", onClick: function () { openCreateTag(app); } })
       )
     );
   }
@@ -1448,17 +1448,11 @@
             ? "开启中：此后收录的内容会进入后台队列并由模型打标。"
             : "已关闭：新收录的内容不会自动打标，需要时可手动补打。",
         }),
-        h("div.switch", {
-          role: "switch",
-          tabindex: "0",
-          "aria-checked": draft.enabled ? "true" : "false",
-          "aria-label": "启用自动打标",
-          onclick: function () {
-            draft.enabled = !draft.enabled;
-            recognition.notice = null;
-            paintRecognition(app);
-          },
-        }, h("span.switch__knob"))
+        ui.toggle(draft.enabled, function (on) {
+          draft.enabled = on;
+          recognition.notice = null;
+          paintRecognition(app);
+        }, { label: "启用自动打标" })
       )
     );
     children.push(
@@ -1488,6 +1482,7 @@
               },
             },
             h("span.mode-card__mark", { "aria-hidden": "true" }, picked ? icon("check", 13) : null),
+            h("span.mode-card__hud", { "aria-hidden": "true" }),
             h(
               "span.mode-card__text",
               null,
