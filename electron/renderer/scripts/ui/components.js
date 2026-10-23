@@ -158,6 +158,8 @@
         "aria-haspopup": "menu",
         /* 当前值挂在按钮上：验收脚本与外部自动化按值定位用 */
         "data-value": String(value),
+        /* 按钮文案未变时，异步目录仍可能增加菜单项；让协调器同步新的回调。 */
+        "data-options": JSON.stringify(options.map(function (o) { return [o.value, o.label]; })),
         onclick: function (e) {
           e.stopPropagation();
           ui.menu(options.map(function (o) {

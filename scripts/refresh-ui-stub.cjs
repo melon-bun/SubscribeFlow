@@ -28,6 +28,8 @@ const bridge = {async call(name,args) {
       return result;
     }
     case 'getContent': return rows.find(row=>row.id===args[0]);
+    case 'getNote': return null;
+    case 'getSettings': return {summarization:{enabled:false}};
     case 'listTags': case 'listContentSources': case 'listChannels': return {items:[],total:0};
     default: throw new Error('Refresh stub missing '+name);
   }

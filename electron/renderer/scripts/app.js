@@ -164,13 +164,13 @@
     app.reminderView = target;
     // 一次性清空旧筛选：通知说 23 条、页面只剩当前平台下 2 条是真实发生过的问题。
     app.filters = {quick: null, platform: null, channelId: null};
-    app.search = "";
+    clearSearch();
     app.filters.day = null;
     if (global.location.hash !== '#/inbox?view=' + target) {
       global.location.hash = '#/inbox?view=' + target;   // 路由会触发重渲染与重查
       return;
     }
-    if (app.session) { render(); refreshData(true); }
+    if (app.session) { renderView('inbox'); refreshData(true); }
   }
 
   /** 记住来处，设置页关闭时回到原处，而不是一律跳回收件箱。 */
@@ -232,10 +232,11 @@
             onclick: function () {
               if (n.id === "inbox") {
                 app.filters = {quick:"unread", platform:null, channelId:null};
-                app.search = ""; app.selectedId = null;
+                clearSearch();
+                if (app.route.name !== "inbox") app.selectedId = null;
               }
               navigate(n.id);
-              if (n.id === "inbox") render(); // The hash may already be #/inbox.
+              if (n.id === "inbox" && app.route.name === "inbox") renderView("inbox"); // The hash may already be #/inbox.
             },
           },
           icon(n.icon, 18),
@@ -262,8 +263,9 @@
               app.filters.quick = ['high','medium','low'].includes(f.id) ? 'all' : f.id;
               app.filters.priority = ['high','medium','low'].includes(f.id) ? f.id : null;
               app.filters.channelId = null; delete app.filters.day;
-              app.selectedId = null;
-              navigate("inbox"); render();
+              if (app.route.name !== "inbox") app.selectedId = null;
+              navigate("inbox");
+              if (app.route.name === "inbox") renderView("inbox");
             },
           },
           /* 「静流」§侧栏：优先级三行用信号条表达等级，不再用同一个图标；
@@ -291,8 +293,8 @@
             "aria-label": meta.name, title: meta.name,
             onclick: function () {
               app.filters.platform = app.filters.platform === p.id ? null : p.id;
-              app.selectedId = null;
-              render();
+              if (app.route.name === "inbox") renderView("inbox");
+              else { app.selectedId = null; render(); }
             },
           },
           ui.platformIcon(meta.id, { className: "side-row__icon", decorative: true }),
@@ -387,10 +389,18 @@
   var sunmoon = true;
   var searchTimer = null;
 
+  function clearSearch() {
+    clearTimeout(searchTimer);
+    app.search = "";
+    var input = document.querySelector('.topbar__search input');
+    if (input) input.value = "";
+  }
+
   function scheduleSearch() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(function () {
-      renderContent();
+      if (app.route.name === "inbox") renderView("inbox");
+      else renderContent();
     }, 220);
   }
 
@@ -659,7 +669,10 @@
 
   // Async results can only repaint the route that requested them.
   function renderView(name) {
-    if (app.route.name === name && app.session) renderContent({background:true});
+    if (app.route.name === name && app.session) {
+      renderContent({background:true});
+      syncNavState();
+    }
   }
 
   function buildShellBody() {
@@ -818,6 +831,12 @@
       var was = app.route.name;
       var wasHash = previousHash;
       previousHash = global.location.hash;
+      // 收件箱内部的口径/筛选导航沿用现有纸面；只有真正离页才重建外壳。
+      if (was === "inbox" && parseHash().name === "inbox") {
+        refreshRoute();
+        if (app.session) renderView("inbox");
+        return;
+      }
       // 带着未保存的草稿离开设置页（包括浏览器后退）先问保存还是放弃。
       // 确认期间仍保留 settings 路由，后台刷新不能提前把表单替换成目标页面。
       if (was === "settings" && parseHash().name !== "settings") {
@@ -964,6 +983,7 @@
     render: render,
     renderContent: renderContent,
     renderView: renderView,
+    clearSearch: clearSearch,
     navigate: navigate,
     refreshCounts: refreshCounts,
     refreshRuns: refreshRuns,

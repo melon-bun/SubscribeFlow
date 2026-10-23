@@ -40,8 +40,11 @@ function rename(selector) {
   return selector.trim().replace(re, (m) => mapping[m]);
 }
 
-// 参考页是固定高度样张；真实窗口由滚动容器分配剩余空间。
+// 产品把顶栏和纸面包在同一个 shell；侧栏只占根网格的第一行。
+// 参考页直接把二者放在根网格，照搬跨两行会生成随内容伸缩的空行（BUG-102）。
 function adaptWindow(selector, body) {
+  if (/\.sidebar\s*$/.test(selector)) body = body.replace(/grid-row:\s*1\s*\/\s*3/g, 'grid-row: 1');
+  // 参考页是固定高度样张；真实窗口由滚动容器分配剩余空间。
   return /\.notes-layout\s*$/.test(selector) ? body.replace(/min-height:\s*640px/g, 'min-height: 0') : body;
 }
 

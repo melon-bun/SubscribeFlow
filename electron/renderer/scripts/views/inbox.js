@@ -6,6 +6,8 @@
   var previousIds = [], selectLast = false;
   /* 标签目录单独缓存：筛选面板与详情编辑器都要用，不该跟着内容列表一起失效。 */
   var tagCache = {}, tagPanelOpen = false;
+  /* 来源目录与查询条件无关，切换平台/来源时保留目录和正在进行的请求。 */
+  var sourceCache = {};
   /* 后端 content.bulk_set_tags 的硬上限。界面先拦一道，好过只丢一个后端错误码上来。 */
   var BULK_LIMIT = 100, BULK_CLEAR = '__clear__';
 
@@ -16,7 +18,10 @@
     if (!hasReason(reasons, ['all', 'content', 'tags', 'channels'])) return;
     cache.stale = true;
     cache.revision = (cache.revision || 0) + 1;
-    if (hasReason(reasons, ['all', 'channels'])) cache.sourcesRequested = false;
+    if (hasReason(reasons, ['all', 'channels', 'content'])) {
+      sourceCache.stale = true;
+      sourceCache.revision = (sourceCache.revision || 0) + 1;
+    }
     if (hasReason(reasons, ['all', 'tags'])) invalidateTags();
   }
   function invalidateTags() {
@@ -31,8 +36,26 @@
     return Object.assign(previous, fresh);
   }
   function whenIdle() {
-    var pending = [cache.promise, cache.sourcesPromise, tagCache.promise].filter(Boolean);
+    var pending = [cache.promise, sourceCache.promise, tagCache.promise].filter(Boolean);
     return pending.length ? Promise.all(pending).then(whenIdle) : Promise.resolve();
+  }
+
+  function ensureSources(app) {
+    if (sourceCache.loading || (sourceCache.loaded && !sourceCache.stale)) return;
+    var current = sourceCache, revision = current.revision || 0;
+    current.loading = true; current.stale = false;
+    current.promise = app.client.listContentSources({}).then(function (r) {
+      if (sourceCache !== current || (current.revision || 0) !== revision) return;
+      current.items = r.items; current.loaded = true; delete current.error;
+    }).catch(function (err) {
+      if (sourceCache !== current || (current.revision || 0) !== revision) return;
+      current.loaded = true; current.error = err;
+    }).finally(function () {
+      current.loading = false; current.promise = null;
+      if (sourceCache !== current) return;
+      if ((current.revision || 0) !== revision) current.stale = true;
+      renderView();
+    });
   }
 
   /* ---------------- 标签目录 ---------------- */
@@ -132,7 +155,15 @@
 
   function render(app) {
     var key = identity(app);
-    if (key !== queryKey) { queryKey = key; offset = 0; cache = {}; selected.clear(); previousIds = []; selectLast = false; }
+    if (key !== queryKey) {
+      queryKey = key; offset = 0;
+      // 显示快照与新请求分开：回执前保留原列表和详情，回执后一次落定。
+      // 每次切换仍创建独立请求身份，迟到回包不能覆盖下一次筛选。
+      cache = {loaded:!!cache.items, items:cache.items, total:cache.total,
+        next_offset:cache.next_offset, dataKey:cache.dataKey, dataOffset:cache.dataOffset,
+        switching:!!cache.items, stale:true};
+      selected.clear(); previousIds = []; selectLast = false;
+    }
     if ((!cache.loaded || cache.stale) && !cache.loading) {
       var current = cache, revision = current.revision || 0, requestOffset = offset;
       current.loading = true; current.stale = false;
@@ -144,12 +175,13 @@
           selectLast = true;
           if (r.total) { cache = {}; renderView(); return; }
         }
-        var hadData = !!current.loaded;
+        var hadData = !!current.loaded, wasSwitching = !!current.switching;
         var previousItems = new Map((current.items || []).map(function (item) { return [item.id, item]; }));
         r.items = r.items.map(function (item) { return mergeItem(previousItems.get(item.id), item); });
-        Object.assign(cache, r, {loaded: true, loading: false});
+        Object.assign(cache, r, {loaded: true, loading: false, dataKey:key, dataOffset:requestOffset});
+        delete current.switching;
         delete current.error; delete current.refreshError;
-        if (app.route.name === 'inbox' && (!hadData || app.selectedId != null) && !r.items.some(function (c) { return c.id === app.selectedId; })) {
+        if (app.route.name === 'inbox' && (!hadData || wasSwitching || !previousItems.size || app.selectedId != null) && !r.items.some(function (c) { return c.id === app.selectedId; })) {
           var ids = r.items.map(function (c) { return c.id; });
           var index = previousIds.indexOf(app.selectedId);
           var next = index < 0 ? null : previousIds.slice(index + 1).find(function (id) { return ids.includes(id); });
@@ -251,23 +283,18 @@
           };
         })),
         app.filters.platform || '',
-        function (value) { app.filters.platform = value || null; SF.app.render(); },
+        function (value) { app.filters.platform = value || null; renderView(); },
         {ariaLabel:'按平台筛选', role:'group'}),
       /* 分段控件与下拉之间一条细竖线：把「切换维度」和「筛选条件」分开。 */
       h('span.filters__sep', {'aria-hidden':'true'}));
     if (app.filters.channelId || app.filters.sourceId || app.filters.day) {
-      chips.appendChild(ui.btn('清除来源 / 日期筛选', {onClick:function () { app.filters.channelId = null; app.filters.sourceId = null; delete app.filters.day; SF.app.render(); }}));
+      chips.appendChild(ui.btn('清除来源 / 日期筛选', {onClick:function () { app.filters.channelId = null; app.filters.sourceId = null; delete app.filters.day; renderView(); }}));
     }
-    chips.appendChild(ui.dropdown([{value:'',label:'全部优先级'}].concat(['high','medium','low','none'].map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), app.filters.priority || '', function(value) { app.filters.priority=value || null; SF.app.render(); }, {ariaLabel:'筛选优先级'}));
-    if (!cache.sourcesRequested && !cache.sourcesPromise) {
-      var sourceOwner=cache; sourceOwner.sourcesRequested=true;
-      sourceOwner.sourcesPromise = app.client.listContentSources({}).then(function(r) {if(cache===sourceOwner) {sourceOwner.sources=r.items; delete sourceOwner.sourcesError; renderView();}})
-        .catch(function(err) {if(cache===sourceOwner) {sourceOwner.sourcesError=err; renderView();}})
-        .finally(function () { sourceOwner.sourcesPromise = null; if (cache === sourceOwner && !sourceOwner.sourcesRequested) renderView(); });
-    }
-    chips.appendChild(ui.dropdown([{value:'',label:'全部来源'}].concat((cache.sources||[]).map(function(s) {return {value:s.id,label:s.name};})), app.filters.sourceId||'',function(v) {app.filters.sourceId=v||null;app.filters.channelId=null;SF.app.render();},{ariaLabel:'筛选来源'}));
-    chips.appendChild(ui.dropdown([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},{ariaLabel:'筛选收录方式'}));
-    if(cache.sourcesError) chips.appendChild(ui.btn('重试来源筛选',{size:'sm',title:cache.sourcesError.message,onClick:function() {cache.sourcesRequested=false;cache.sourcesError=null;SF.app.renderContent();}}));
+    chips.appendChild(ui.dropdown([{value:'',label:'全部优先级'}].concat(['high','medium','low','none'].map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), app.filters.priority || '', function(value) { app.filters.priority=value || null; renderView(); }, {ariaLabel:'筛选优先级'}));
+    ensureSources(app);
+    chips.appendChild(ui.dropdown([{value:'',label:'全部来源'}].concat((sourceCache.items||[]).map(function(s) {return {value:s.id,label:s.name};})), app.filters.sourceId||'',function(v) {app.filters.sourceId=v||null;app.filters.channelId=null;renderView();},{ariaLabel:'筛选来源'}));
+    chips.appendChild(ui.dropdown([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;renderView();},{ariaLabel:'筛选收录方式'}));
+    if(sourceCache.error) chips.appendChild(ui.btn('重试来源筛选',{size:'sm',title:sourceCache.error.message,onClick:function() {sourceCache.stale=true;sourceCache.error=null;renderView();}}));
     /* 标签筛选入口紧跟优先级，和其它筛选项同属一条工具栏；面板展开时插在工具栏下方。 */
     var picked = pickedTags(app);
     chips.appendChild(ui.selectBtn('标签' + (picked.length ? ' · ' + picked.length : ''), {icon:'tag', arrow:false, onClick:function () { tagPanelOpen = !tagPanelOpen; SF.app.renderContent(); }}));
@@ -275,11 +302,12 @@
     var body;
     if (cache.error) body = ui.state({icon:'alert', title:'内容读取失败', desc:cache.error.message, actions:[{label:'重试', onClick:function () { cache = {}; SF.app.renderContent(); }}]});
     else if (!cache.loaded) body = ui.skeletonCards(4);
+    else if (cache.switching && !cache.items.length) body = ui.state({icon:'inbox', title:cache.loading ? '正在筛选内容' : '筛选未完成'});
     else if (!cache.items.length) body = ui.state({icon:'inbox', title:isInbox ? '当前没有待处理内容' : '当前没有内容', desc:isInbox ? '添加来源并手动刷新，或在“全部更新”和对应分类中查看已处理内容。' : '添加来源并手动刷新，或清除筛选后查看已保存的内容。', actions:[
       {label:'添加来源', variant:'primary', onClick:function () { SF.app.navigate('channels'); }},
-      {label:'清除筛选', onClick:function () { app.filters = {quick:app.filters.quick, platform:null, channelId:null}; app.search = ''; SF.app.render(); }}].concat(isInbox ? [
-      {label:'查看全部更新', onClick:function () { app.filters = {quick:'all', platform:null, channelId:null}; app.search = ''; SF.app.render(); }}] : [])});
-    else body = h('div.inbox__grid.scroll-y', {'data-scroll-key':'contents:' + offset,'data-refresh-key':'contents:' + offset}, cache.items.map(function (item) {
+      {label:'清除筛选', onClick:function () { app.filters = {quick:app.filters.quick, platform:null, channelId:null}; SF.app.clearSearch(); renderView(); }}].concat(isInbox ? [
+      {label:'查看全部更新', onClick:function () { app.filters = {quick:'all', platform:null, channelId:null}; SF.app.clearSearch(); renderView(); }}] : [])});
+    else body = h('div.inbox__grid.scroll-y', {'data-scroll-key':'contents:' + cache.dataOffset,'data-refresh-key':'contents:' + cache.dataKey + ':' + cache.dataOffset, inert:cache.switching}, cache.items.map(function (item) {
       var isCurrent = app.selectedId === item.id;
       return h('div.content-selection' + (isCurrent ? '.is-selected' : ''), {'data-refresh-key':'content-selection:' + item.id}, ui.check(selected.has(item.id), function () { if (selected.has(item.id)) selected.delete(item.id); else selected.add(item.id); SF.app.renderContent(); }, '选择 ' + item.title),
         withTags(ui.contentCard(item, {selected:isCurrent, now:app.now,
@@ -295,9 +323,9 @@
         SF.app.act('bulk', async function () { await app.client.bulkUpdate(ids, {state:state}); selected.clear(); await SF.app.refreshData(true); });
       }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复跟随来源'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true); }); },{ariaLabel:'批量设置优先级'}), bulkTagControl(app), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
     var pager = cache.loaded && !cache.error ? h('div.pager', {'data-refresh-key':'inbox-pager'},
-      h('span.pager__count', null, '共 ', h('span.num', {text:String(cache.total)}), ' 条 · 第 ', h('span.num', {text:String(Math.floor(offset / 20) + 1)}), ' 页'),
-      ui.btn('上一页', {variant:'ghost', size:'sm', disabled:offset === 0, onClick:function () { offset = Math.max(0, offset - 20); cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }}),
-      ui.btn('下一页', {variant:'secondary', size:'sm', disabled:cache.next_offset == null, onClick:function () { offset = cache.next_offset; cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }})) : null;
+      h('span.pager__count', {role:cache.switching ? 'status' : null}, cache.switching ? (cache.loading ? '筛选中…' : '未切换，显示上次结果') : ['共 ', h('span.num', {text:String(cache.total)}), ' 条 · 第 ', h('span.num', {text:String(Math.floor(offset / 20) + 1)}), ' 页']),
+      ui.btn('上一页', {variant:'ghost', size:'sm', disabled:cache.switching || offset === 0, onClick:function () { offset = Math.max(0, offset - 20); cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }}),
+      ui.btn('下一页', {variant:'secondary', size:'sm', disabled:cache.switching || cache.next_offset == null, onClick:function () { offset = cache.next_offset; cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }})) : null;
     var item = cache.items && cache.items.find(function (c) { return c.id === app.selectedId; });
     /* 「静流」§详情面板：标题行右侧是位置读数与上一条 / 下一条 / 关闭。 */
     var listItems = cache.items || [];
@@ -315,9 +343,11 @@
         ui.iconBtn('chevron-left', '上一条', function () { step(-1); }, {disabled: listIndex <= 0}),
         ui.iconBtn('chevron-right', '下一条', function () { step(1); }, {disabled: listIndex < 0 || listIndex >= listItems.length - 1}),
         ui.iconBtn('close', '关闭详情', function () { closeDetail(app); })));
-    return {main:h('div.view', {'data-view':'inbox','data-refresh-key':'inbox:' + key + ':' + offset}, head, h('div.view__body.inbox', {'data-refresh-key':'inbox-body'}, chips, tagPanel, bulk,
-      cache.refreshError ? h('p.field__error', {role:'status','data-refresh-key':'inbox-refresh-error',text:'更新失败，正在显示已加载内容：' + cache.refreshError.message}) : null, body, pager)),
-      aside:item && !cache.error ? h('aside.detail', {'aria-label':'内容详情','data-refresh-key':'detail:' + item.id},
+    return {main:h('div.view', {'data-view':'inbox','data-refresh-key':'inbox','aria-busy':String(!!cache.loading)}, head, h('div.view__body.inbox', {'data-refresh-key':'inbox-body'}, chips, tagPanel, bulk,
+      cache.refreshError ? h('div.field__error', {role:'status','data-refresh-key':'inbox-refresh-error'},
+        (cache.switching ? '筛选失败，正在显示上次结果：' : '更新失败，正在显示已加载内容：') + cache.refreshError.message,
+        cache.switching ? ui.btn('重试筛选', {size:'sm',onClick:function () {cache.stale=true;renderView();}}) : null) : null, body, pager)),
+      aside:item && !cache.error ? h('aside.detail', {'aria-label':'内容详情','data-refresh-key':'detail:' + item.id,inert:cache.switching},
         detailHead,
         h('div.detail__body.scroll-y', {'data-scroll-key':'detail:' + item.id}, detailBody(app, item, function (fresh, settled) { repaintContent(app, fresh, settled); })),
         detailFoot(app, item, function (fresh, settled) { repaintContent(app, fresh, settled); })) : null};
@@ -524,7 +554,7 @@
     app.filters.tags = ids;
     /* 清空后回到默认语义，避免上一次留下的 all 影响下一次筛选。 */
     if (!ids.length) app.filters.tagMode = 'any';
-    SF.app.render();
+    renderView();
   }
 
   function tagFilterPanel(app) {
@@ -535,7 +565,7 @@
         h('span.tag-filter__title', {text:'按标签筛选'}),
         h('div.spacer'),
         ui.btn('收起', {size:'sm', onClick:function () { tagPanelOpen = false; SF.app.renderContent(); }}),
-        ui.btn('清除标签筛选', {size:'sm', disabled:!picked.length, onClick:function () { app.filters.tags = []; app.filters.tagMode = 'any'; SF.app.render(); }})),
+        ui.btn('清除标签筛选', {size:'sm', disabled:!picked.length, onClick:function () { app.filters.tags = []; app.filters.tagMode = 'any'; renderView(); }})),
       tagCache.error ? h('p.field__hint.field__error', {text:'标签目录读取失败：' + tagCache.error.message}) : null,
       !list.length && !tagCache.loading ? h('p.field__hint', {text:'还没有任何标签，先到标签管理里创建后再回来筛选。'}) : null,
       list.length ? h('div.tag-filter__tags', null, list.map(function (t) {
@@ -554,7 +584,7 @@
             return h('button.segment__item' + (mode === entry[0] ? '.is-active' : ''), {type:'button', 'aria-pressed':String(mode === entry[0]),
               disabled: picked.length < 2,
               title: picked.length < 2 ? '选择 2 个以上标签后才能区分两种语义' : null,
-              onclick:function () { app.filters.tagMode = entry[0]; SF.app.render(); }},
+              onclick:function () { app.filters.tagMode = entry[0]; renderView(); }},
               h('span', {text:entry[1]}));
           })),
         h('p.tag-filter__hint', {'aria-live':'polite', text:tagFilterHint(app)})));
@@ -776,7 +806,7 @@
     return !!(SF.noteUi && SF.noteUi.hasDirty(SF.app.state.selectedId));
   }
 
-  SF.views.inbox = {render:render, reset:function () { cache = {}; }, invalidate:invalidate,
+  SF.views.inbox = {render:render, reset:function () { cache = {}; sourceCache = {}; }, invalidate:invalidate,
     whenIdle:whenIdle, detailBody:detailBody, invalidateTags:invalidateTags, confirmLeave:confirmLeave,
     hasNoteDraft:hasNoteDraft};
 })(window);

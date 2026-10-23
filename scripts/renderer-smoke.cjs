@@ -336,7 +336,7 @@ async function verify({window, core, root, mode}) {
   assert.equal((await core.call('content.get',{item_id:firstId})).state.read,true);
   if(mode === 'offline') {
     await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
-    await until(`document.querySelectorAll('.content-card').length === 20 && SF.app.state.counts.unread === 20`);
+    await until(`document.querySelector('[data-view="inbox"][aria-busy="false"]') && document.querySelectorAll('.content-card').length === 20 && SF.app.state.counts.unread === 20`);
     assert.ok(await evaluate(absent(firstId)));
     assert.equal((await core.call('content.list',{limit:1})).total,25);
   }
