@@ -59,6 +59,9 @@ async function verify({window, root}) {
     await ev(expression);
     await until('switchTest.pending.length > 0');
     await pause(180);
+    // Hidden windows can receive no paint during a fixed delay under load.
+    // Require real sampled frames before judging a transition as flicker-free.
+    await until('switchTest.frames.length>=6');
   };
   const stable = async name => {
     const data = await ev(`(() => {

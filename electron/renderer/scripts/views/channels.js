@@ -131,7 +131,7 @@
       h('div.inbox__toolbar',null,ui.seg(
         [{value:'list',label:'渠道列表'},{value:'priorities',label:'优先级设置'}],
         app.channelTab,
-        function (value) { app.channelTab=value; SF.app.navigate('channels',{tab:value}); SF.app.renderContent(); },
+        function (value) { app.channelTab=value; SF.app.navigate('channels',{tab:value}); renderView(); },
         {ariaLabel:'渠道视图'})),
       h('div.view__body', null, body));
   }

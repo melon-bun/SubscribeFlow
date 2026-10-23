@@ -191,6 +191,14 @@
 
   /* ---------------- 渲染外壳 ---------------- */
 
+  function navActive(id) {
+    return id === app.route.name && (id !== "inbox" || app.filters.quick === "unread");
+  }
+  function quickActive(id) {
+    return app.route.name === "inbox" && id === (app.filters.priority || app.filters.quick) && !app.filters.platform;
+  }
+  function platformActive(id) { return id === app.filters.platform; }
+
   function buildSidebar() {
     var brand = h(
       "div.sidebar__brand",
@@ -224,7 +232,7 @@
             ? h("span.count-pill", { text: String(app.noteCount) })
             : null;
         return h(
-          "button.nav__item",
+          "button.nav__item" + (navActive(n.id) ? ".is-active" : ""),
           {
             type: "button",
             "data-nav": n.id,
@@ -254,7 +262,7 @@
         // 优先级三行用当前显示名；其余筛选项名称固定。
         var label = f.name || catalog.priority(f.id).name;
         return h(
-          "button.side-row",
+          "button.side-row" + (quickActive(f.id) ? ".is-active" : ""),
           {
             type: "button",
             "data-quick": f.id,
@@ -286,7 +294,7 @@
       app.platforms.map(function (p) {
         var meta = catalog.platform(p.id);
         return h(
-          "button.side-row",
+          "button.side-row" + (platformActive(p.id) ? ".is-active" : ""),
           {
             type: "button",
             "data-platform": p.id,
@@ -708,14 +716,18 @@
   }
 
   function syncNavState() {
+    // 相同选中态不写 class：计数回包不能重新启动导航底色过渡。
+    function active(button, value) {
+      if (button.classList.contains("is-active") !== !!value) button.classList.toggle("is-active", !!value);
+    }
     document.querySelectorAll("[data-nav]").forEach(function (b) {
-      b.classList.toggle("is-active", b.dataset.nav === app.route.name && (b.dataset.nav !== "inbox" || app.filters.quick === "unread"));
+      active(b, navActive(b.dataset.nav));
     });
     document.querySelectorAll("[data-quick]").forEach(function (b) {
-      b.classList.toggle("is-active", app.route.name === "inbox" && (b.dataset.quick === (app.filters.priority || app.filters.quick)) && !app.filters.platform);
+      active(b, quickActive(b.dataset.quick));
     });
     document.querySelectorAll("[data-platform]").forEach(function (b) {
-      b.classList.toggle("is-active", b.dataset.platform === app.filters.platform);
+      active(b, platformActive(b.dataset.platform));
     });
   }
 
@@ -831,10 +843,10 @@
       var was = app.route.name;
       var wasHash = previousHash;
       previousHash = global.location.hash;
-      // 收件箱内部的口径/筛选导航沿用现有纸面；只有真正离页才重建外壳。
-      if (was === "inbox" && parseHash().name === "inbox") {
+      // 普通页面内部切模式/页签沿用外壳；设置页有独立布局和草稿门控。
+      if (was !== "settings" && parseHash().name === was) {
         refreshRoute();
-        if (app.session) renderView("inbox");
+        if (app.session) renderView(was);
         return;
       }
       // 带着未保存的草稿离开设置页（包括浏览器后退）先问保存还是放弃。

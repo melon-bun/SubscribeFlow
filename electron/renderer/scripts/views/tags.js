@@ -350,7 +350,7 @@
         // 点同一个页签不会改 hash，因此这里必须自己重绘一次
         SF.app.navigate("tags", { tab: value });
         app.tagTab = value;
-        SF.app.renderContent();
+        SF.app.renderView('tags');
       },
       { ariaLabel: "标签管理分区" }
     ));
