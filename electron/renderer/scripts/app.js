@@ -625,15 +625,18 @@
     var main = result && result.main || result;
     if (main) main.dataset.scrollScope = JSON.stringify([app.route.name, app.filters, app.search,
       app.overviewMode, app.calendarMonth, app.channelTab, app.tagTab]);
+    /* 「静流」：纸面里是「主区 + 详情」两列，主区自带内边距 26px 26px 0。
+       产品原来直接把这个视图当主区，纸面里就没有 .main 这一层，
+       内边距只好挂在视图自己身上——与参考页的结构对不上。
+       注意：两个分支都要包。只包 {main, aside} 那一支的话，
+       笔记 / 总览 / 渠道 / 标签这些直接返回元素的视图就没有 .main，
+       内边距消失，页面标题会直接贴上顶部任务条。 */
     if (result && result.main) {
       app.contentEl = result.main;
-      /* 「静流」：纸面里是「主区 + 详情」两列，主区自带内边距。
-         产品原来直接把这个视图当主区，纸面里就没有 .main 这一层，
-         内边距只好挂在视图自己身上——与参考页的结构对不上。 */
       return { main: h('div.main', null, result.main), aside: result.aside || null };
     }
     app.contentEl = result;
-    return { main: result, aside: null };
+    return { main: h('div.main', null, result), aside: null };
   }
 
   function renderContent(options) {
@@ -665,7 +668,7 @@
        margin:12px 14px 0），不是浮在纸面上方的灰底横条。
        所以它排在 .workspace 的第一个子位，横跨主区与详情两列。 */
     return [
-      h("main.workspace", { id: "main", tabindex: "-1" }, [
+      h("main.workspace" + (result.aside ? "" : ".solo"), { id: "main", tabindex: "-1" }, [
         buildStatusBar(),
         result.main,
         result.aside || null,

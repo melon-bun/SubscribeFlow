@@ -511,6 +511,19 @@
   overflow: hidden;
 }
 
+/* 没有右侧详情面板时（总览／标签／笔记等整页视图），纸面收成一列。
+   参考页用 .sheet.solo 表达同一件事：那一类页面整块使用纸面，没有 400px 详情列。
+   不收的话，第二列会白白占掉 400px，主区被挤到左边、右边空一块。 */
+.workspace.solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* 整页视图的内容留白按参考页的 .pv.on：18px 24px 20px。
+   有详情面板的收件箱按 .main：26px 26px 0。 */
+.workspace.solo .main {
+  padding: 18px 24px 20px;
+}
+
 /* 「静流」§.main：主区自带内边距 26px 26px 0，内容贴着纸面顶边排。 */
 .main {
   display: flex;
@@ -675,6 +688,11 @@
 @media (max-width: 900px) {
   .app {
     grid-template-columns: var(--sidebar-w-collapsed) minmax(0, 1fr);
+  }
+
+  /* 窄屏下详情面板变成浮层，不再占列——纸面收成一列。 */
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .sidebar {

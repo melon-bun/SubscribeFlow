@@ -120,7 +120,9 @@
             "aria-label": opt.name,
             title: opt.name,
             "data-color": opt.id,
-            style: { "--dc": c.solid },
+            /* --dc 是产品自己的变量；--tc 是参考页圆点用的变量。
+             两个都给，移植过来的 .cdots button 才能取到颜色。 */
+          style: { "--dc": c.solid, "--tc": c.solid },
             onclick: function () {
               onPick(opt.id);
             }

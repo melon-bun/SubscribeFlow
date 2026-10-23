@@ -234,7 +234,7 @@ const CLASS_MAP = {
   '.group-label': '.group-label',
   '.preview-row': '.preview-row',
   '.cdots': '.cdots',
-  '.cdots button': '.cdot',
+  '.cdots button': '.cdot',   // 参考页的 .cdots 是容器、.cdots button 是圆点
 
   // ---------------- AI 自动识别 ----------------
   '.set-row': '.ai-status__row',
