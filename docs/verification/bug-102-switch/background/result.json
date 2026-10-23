@@ -1,0 +1,32 @@
+{
+  "productionRenderer": true,
+  "offline": true,
+  "progressNoContentQueries": true,
+  "focusSelection": true,
+  "textSelection": true,
+  "scrollAnchor": true,
+  "continuousEvents": true,
+  "terminalStates": true,
+  "errorRecovery": true,
+  "lateRouteGuard": true,
+  "dom": {
+    "boundary": true,
+    "keyed": true
+  },
+  "workspaceReplacements": 0,
+  "skeletonPaintFrames": 0,
+  "workspaceConnected": true,
+  "total": 76,
+  "calls": {
+    "core.status": 1,
+    "getSession": 5,
+    "getCounts": 9,
+    "listPlatforms": 9,
+    "getRuns": 13,
+    "getSettings": 3,
+    "listContents": 8,
+    "listTags": 1,
+    "listContentSources": 9,
+    "getNote": 2
+  }
+}

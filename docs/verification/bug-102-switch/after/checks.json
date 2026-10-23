@@ -1,0 +1,618 @@
+{
+  "checks": [
+    {
+      "name": "top-platform-on",
+      "ok": true,
+      "frames": 35,
+      "skeletonFrames": 0,
+      "disconnectedFrames": 0,
+      "movedFrames": 0,
+      "before": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "loading": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "sourceReads": 0,
+      "busy": "true",
+      "inert": true
+    },
+    {
+      "name": "loading-content-read-only",
+      "ok": true
+    },
+    {
+      "name": "top-platform-on-result",
+      "ok": true,
+      "ids": [
+        "github:repo:1122334455",
+        "github:repo:173228436",
+        "github:repo:1209966933"
+      ]
+    },
+    {
+      "name": "top-platform-off",
+      "ok": true,
+      "frames": 37,
+      "skeletonFrames": 0,
+      "disconnectedFrames": 0,
+      "movedFrames": 0,
+      "before": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "loading": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "sourceReads": 0,
+      "busy": "true",
+      "inert": true
+    },
+    {
+      "name": "top-platform-off-result",
+      "ok": true,
+      "ids": [
+        "github:repo:1122334455",
+        "github:repo:173228436",
+        "github:repo:1209966933"
+      ]
+    },
+    {
+      "name": "sidebar-platform",
+      "ok": true,
+      "frames": 15,
+      "skeletonFrames": 0,
+      "disconnectedFrames": 0,
+      "movedFrames": 0,
+      "before": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "loading": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "sourceReads": 0,
+      "busy": "true",
+      "inert": true
+    },
+    {
+      "name": "sidebar-result",
+      "ok": true,
+      "ids": [
+        "zhihu:feed:m35-11",
+        "zhihu:feed:m35-10",
+        "zhihu:feed:m35-9",
+        "zhihu:feed:m35-8",
+        "zhihu:feed:m35-7",
+        "zhihu:feed:m35-6",
+        "zhihu:feed:m35-5",
+        "zhihu:feed:m35-4",
+        "zhihu:feed:m35-3",
+        "zhihu:feed:m35-2",
+        "zhihu:feed:m35-1",
+        "zhihu:feed:m35-0",
+        "zhihu:feed:polish-2"
+      ]
+    },
+    {
+      "name": "source-dropdown",
+      "ok": true,
+      "frames": 13,
+      "skeletonFrames": 0,
+      "disconnectedFrames": 0,
+      "movedFrames": 0,
+      "before": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "loading": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "sourceReads": 0,
+      "busy": "true",
+      "inert": true
+    },
+    {
+      "name": "source-label-retained",
+      "ok": true
+    },
+    {
+      "name": "source-result",
+      "ok": true,
+      "ids": [
+        "zhihu:feed:m35-11",
+        "zhihu:feed:m35-10",
+        "zhihu:feed:m35-9",
+        "zhihu:feed:m35-8",
+        "zhihu:feed:m35-7",
+        "zhihu:feed:m35-6",
+        "zhihu:feed:m35-5",
+        "zhihu:feed:m35-4",
+        "zhihu:feed:m35-3",
+        "zhihu:feed:m35-2",
+        "zhihu:feed:m35-1",
+        "zhihu:feed:m35-0"
+      ]
+    },
+    {
+      "name": "priority-dropdown",
+      "ok": true,
+      "frames": 14,
+      "skeletonFrames": 0,
+      "disconnectedFrames": 0,
+      "movedFrames": 0,
+      "before": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "loading": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "sourceReads": 0,
+      "busy": "true",
+      "inert": true
+    },
+    {
+      "name": "priority-result",
+      "ok": true,
+      "ids": [
+        "zhihu:feed:m35-9",
+        "zhihu:feed:m35-6",
+        "zhihu:feed:m35-3",
+        "zhihu:feed:m35-0",
+        "github:repo:1209966933"
+      ]
+    },
+    {
+      "name": "sidebar-quick-filter",
+      "ok": true,
+      "frames": 14,
+      "skeletonFrames": 0,
+      "disconnectedFrames": 0,
+      "movedFrames": 0,
+      "before": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "loading": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 325,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "sourceReads": 0,
+      "busy": "true",
+      "inert": true
+    },
+    {
+      "name": "quick-filter-result",
+      "ok": true,
+      "ids": [
+        "zhihu:feed:m35-9",
+        "zhihu:feed:m35-6",
+        "zhihu:feed:m35-3",
+        "zhihu:feed:m35-0",
+        "github:repo:1209966933"
+      ]
+    },
+    {
+      "name": "narrow-dark-platform",
+      "ok": true,
+      "frames": 8,
+      "skeletonFrames": 0,
+      "disconnectedFrames": 0,
+      "movedFrames": 0,
+      "before": {
+        "sheet": {
+          "x": 64,
+          "y": 60,
+          "width": 726,
+          "height": 630
+        },
+        "main": {
+          "x": 64,
+          "y": 116,
+          "width": 326,
+          "height": 574
+        },
+        "title": {
+          "x": 106,
+          "y": 158,
+          "width": 242,
+          "height": 32.5
+        },
+        "rows": "700px"
+      },
+      "loading": {
+        "sheet": {
+          "x": 64,
+          "y": 60,
+          "width": 726,
+          "height": 630
+        },
+        "main": {
+          "x": 64,
+          "y": 116,
+          "width": 326,
+          "height": 574
+        },
+        "title": {
+          "x": 106,
+          "y": 158,
+          "width": 242,
+          "height": 32.5
+        },
+        "rows": "700px"
+      },
+      "sourceReads": 0,
+      "busy": "true",
+      "inert": true
+    },
+    {
+      "name": "narrow-dark-result",
+      "ok": true,
+      "ids": [
+        "github:repo:1122334455",
+        "github:repo:173228436",
+        "github:repo:1209966933"
+      ]
+    },
+    {
+      "name": "late-query-isolation",
+      "ok": true
+    },
+    {
+      "name": "failed-switch-retains-content",
+      "ok": true
+    },
+    {
+      "name": "retry-result",
+      "ok": true,
+      "ids": [
+        "github:repo:1122334455",
+        "github:repo:173228436",
+        "github:repo:1209966933"
+      ]
+    },
+    {
+      "name": "empty-result-loading",
+      "ok": true,
+      "frames": 12,
+      "skeletonFrames": 0,
+      "disconnectedFrames": 0,
+      "movedFrames": 0,
+      "before": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "loading": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 834
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "sourceReads": 0,
+      "busy": "true",
+      "inert": true
+    },
+    {
+      "name": "empty-result-settled",
+      "ok": true,
+      "ids": []
+    },
+    {
+      "name": "closed-detail-loading",
+      "ok": true,
+      "frames": 13,
+      "skeletonFrames": 0,
+      "disconnectedFrames": 0,
+      "movedFrames": 0,
+      "before": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 1182,
+          "height": 834
+        },
+        "title": {
+          "x": 272,
+          "y": 134,
+          "width": 390,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "loading": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 890
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 1182,
+          "height": 834
+        },
+        "title": {
+          "x": 272,
+          "y": 134,
+          "width": 390,
+          "height": 32.5
+        },
+        "rows": "960px"
+      },
+      "sourceReads": 0,
+      "busy": "true",
+      "inert": true
+    },
+    {
+      "name": "closed-detail-opens-on-result",
+      "ok": true
+    },
+    {
+      "name": "invalidation-retains-pending-snapshot",
+      "ok": true
+    },
+    {
+      "name": "invalidation-follow-up-result",
+      "ok": true,
+      "ids": [
+        "github:repo:1122334455",
+        "github:repo:173228436",
+        "github:repo:1209966933"
+      ]
+    },
+    {
+      "name": "late-result-after-navigation",
+      "ok": true
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "checks": [
+    {
+      "name": "top-platform-on",
+      "ok": false,
+      "frames": 20,
+      "skeletonFrames": 20,
+      "disconnectedFrames": 20,
+      "movedFrames": 20,
+      "before": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 876
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 782,
+          "height": 820
+        },
+        "title": {
+          "x": 274,
+          "y": 142,
+          "width": 348.5,
+          "height": 32.5
+        },
+        "rows": "946px 14px"
+      },
+      "loading": {
+        "sheet": {
+          "x": 248,
+          "y": 60,
+          "width": 1182,
+          "height": 537
+        },
+        "main": {
+          "x": 248,
+          "y": 116,
+          "width": 1182,
+          "height": 481
+        },
+        "title": {
+          "x": 272,
+          "y": 134,
+          "width": 390,
+          "height": 32.5
+        },
+        "rows": "607px 353px"
+      },
+      "sourceReads": 1,
+      "busy": null,
+      "inert": false
+    }
+  ]
+}

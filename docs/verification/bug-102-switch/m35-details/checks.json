@@ -1,0 +1,293 @@
+{
+  "checks": [
+    {
+      "name": "task-insets",
+      "ok": true,
+      "left": 14,
+      "top": 12
+    },
+    {
+      "name": "card-text-bounds",
+      "ok": true,
+      "bad": []
+    },
+    {
+      "name": "high-signal",
+      "ok": true,
+      "actual": "rgb(216, 31, 69)",
+      "expected": "rgb(216, 31, 69)"
+    },
+    {
+      "name": "github-ink",
+      "ok": true,
+      "icons": [
+        {
+          "actual": "rgb(27, 31, 36)",
+          "host": "plat plat--github side-row__icon"
+        },
+        {
+          "actual": "rgb(27, 31, 36)",
+          "host": "plat plat--github plat--sm"
+        },
+        {
+          "actual": "rgb(27, 31, 36)",
+          "host": "plat plat--sm plat--github"
+        },
+        {
+          "actual": "rgb(27, 31, 36)",
+          "host": "plat plat--sm plat--github"
+        },
+        {
+          "actual": "rgb(27, 31, 36)",
+          "host": "plat plat--sm plat--github"
+        }
+      ],
+      "expected": "rgb(27, 31, 36)"
+    },
+    {
+      "name": "card-tag-space",
+      "ok": true,
+      "width": 75.875,
+      "methodGap": 69.125,
+      "textWidth": 47.875,
+      "text": "另一枚用于检索的长标签"
+    },
+    {
+      "name": "detail-text-bounds",
+      "ok": true,
+      "bad": []
+    },
+    {
+      "name": "placeholder-bounds",
+      "ok": true,
+      "left": 0,
+      "right": 0
+    },
+    {
+      "name": "single-tag-dot",
+      "ok": true,
+      "pseudo": false,
+      "child": true
+    },
+    {
+      "name": "single-dropdown-arrow",
+      "ok": true,
+      "content": "none"
+    },
+    {
+      "name": "detail-hud",
+      "ok": true,
+      "display": "block"
+    },
+    {
+      "name": "online-dot",
+      "ok": true,
+      "width": 6,
+      "height": 6
+    },
+    {
+      "name": "footnote-size",
+      "ok": true,
+      "size": 12
+    },
+    {
+      "name": "platform-mark-fits",
+      "ok": true,
+      "bad": []
+    },
+    {
+      "name": "single-calendar-dot",
+      "ok": true,
+      "pseudo": false,
+      "child": true
+    },
+    {
+      "name": "calendar-heading",
+      "ok": true,
+      "gap": 0
+    },
+    {
+      "name": "calendar-filter-row",
+      "ok": true,
+      "native": 0,
+      "buttons": 6,
+      "noRing": 0,
+      "wide": [],
+      "sameLine": true
+    },
+    {
+      "name": "day-card-meta-width",
+      "ok": true,
+      "nameWidth": 93,
+      "nameText": "GitHub 趋势 · 日榜",
+      "kids": [
+        {
+          "cls": "row-card__src",
+          "w": 113
+        },
+        {
+          "cls": "row-card__prio",
+          "w": 12
+        }
+      ]
+    },
+    {
+      "name": "long-source-truncated",
+      "ok": true,
+      "width": 220,
+      "text": "知乎 · 长名称创作者用于检查筛选行宽度是否被撑爆的超长来源名",
+      "scroll": 375,
+      "client": 178
+    },
+    {
+      "name": "kanban-reading-order",
+      "ok": true,
+      "titleBottom": 528.5390625,
+      "authorTop": 534.5390625
+    },
+    {
+      "name": "kanban-rule-size",
+      "ok": true,
+      "width": 42,
+      "height": 14.5
+    },
+    {
+      "name": "priority-filter-row",
+      "ok": true,
+      "native": 0,
+      "buttons": 6,
+      "noRing": 0,
+      "wide": [],
+      "sameLine": true
+    },
+    {
+      "name": "note-field-width",
+      "ok": true,
+      "gap": 0,
+      "width": 746
+    },
+    {
+      "name": "no-empty-ai-box",
+      "ok": true,
+      "count": 0
+    },
+    {
+      "name": "notes-left-aligned",
+      "ok": true,
+      "align": "left"
+    },
+    {
+      "name": "tag-toolbar-row",
+      "ok": true,
+      "titleY": 276,
+      "buttonY": 276
+    },
+    {
+      "name": "ai-switch-state",
+      "ok": true,
+      "tag": "BUTTON",
+      "checked": "true",
+      "transform": "matrix(1, 0, 0, 1, 14, 0)"
+    },
+    {
+      "name": "selected-mode-hud",
+      "ok": true,
+      "position": "absolute",
+      "width": 532,
+      "background": "linear-gradient(rgb(0, 178, 220), rgb(0, 178, 220)), linear-gradient(rgb(0, 178, 220), rgb(0, 178, 220)), linear-gradient(rgb(0, 178, 220), rgb(0, 178, 220)), linear-gradient(rgb(0, 178, 220), rgb(0, 178, 220)), linear-gradient(rgb(0, 178, 220), rgb(0, 178, 220)), linear-gradient(rgb(0, 178, 220), rgb(0, 178, 220)), linear-gradient(rgb(0, 178, 220), rgb(0, 178, 220)), linear-gradient(rgb(0, 178, 220), rgb(0, 178, 220))"
+    },
+    {
+      "name": "notes-viewport-1100",
+      "ok": true,
+      "bottom": 670,
+      "paperBottom": 690
+    },
+    {
+      "name": "notes-actions-reachable-1100",
+      "ok": true,
+      "top": 630,
+      "bottom": 664,
+      "paperBottom": 690
+    },
+    {
+      "name": "notes-reader-surface-1100",
+      "ok": true,
+      "actionsBottom": 664,
+      "panelBottom": 670
+    },
+    {
+      "name": "notes-last-field-reachable-1100",
+      "ok": true,
+      "top": 497.1953125,
+      "bottom": 581.1953125,
+      "paperBottom": 690
+    },
+    {
+      "name": "notes-viewport-800",
+      "ok": true,
+      "bottom": 654,
+      "paperBottom": 690
+    },
+    {
+      "name": "notes-actions-reachable-800",
+      "ok": true,
+      "top": 620,
+      "bottom": 654,
+      "paperBottom": 690
+    },
+    {
+      "name": "notes-reader-surface-800",
+      "ok": true,
+      "actionsBottom": 654,
+      "panelBottom": 1019.6953125
+    },
+    {
+      "name": "notes-last-field-reachable-800",
+      "ok": true,
+      "top": 461.1953125,
+      "bottom": 545.1953125,
+      "paperBottom": 690
+    },
+    {
+      "name": "collapsed-nav-icons",
+      "ok": true,
+      "iconWidth": 16,
+      "iconLeft": 24,
+      "buttonLeft": 20
+    },
+    {
+      "name": "github-ink-dark",
+      "ok": true,
+      "icons": [
+        {
+          "actual": "rgb(0, 0, 0)",
+          "host": "plat plat--github side-row__icon"
+        },
+        {
+          "actual": "rgb(0, 0, 0)",
+          "host": "plat plat--github plat--sm"
+        },
+        {
+          "actual": "rgb(0, 0, 0)",
+          "host": "plat plat--sm plat--github"
+        },
+        {
+          "actual": "rgb(0, 0, 0)",
+          "host": "plat plat--sm plat--github"
+        },
+        {
+          "actual": "rgb(0, 0, 0)",
+          "host": "plat plat--sm plat--github"
+        }
+      ],
+      "expected": "rgb(0, 0, 0)"
+    },
+    {
+      "name": "fx-off-decoration",
+      "ok": true,
+      "visible": []
+    }
+  ],
+  "failed": 0,
+  "passed": 38
+}
