@@ -1,0 +1,163 @@
+{
+  "checks": [
+    {
+      "name": "module-loaded",
+      "ok": true,
+      "selector": ".seg, .segment"
+    },
+    {
+      "name": "resting-inbox",
+      "ok": true,
+      "groups": 2,
+      "bad": [],
+      "moved": 0
+    },
+    {
+      "name": "glide-mid-inbox-platform",
+      "ok": true,
+      "replaced": true,
+      "opacity": "1",
+      "x": 66,
+      "fromX": 3,
+      "toX": 70
+    },
+    {
+      "name": "glide-end-inbox-platform",
+      "ok": true,
+      "left": 0,
+      "bg": "rgb(255, 255, 255)",
+      "rest": "rgb(255, 255, 255)"
+    },
+    {
+      "name": "glide-mid-detail-priority",
+      "ok": true,
+      "replaced": true,
+      "opacity": "1",
+      "x": 17,
+      "fromX": 269,
+      "toX": 3
+    },
+    {
+      "name": "glide-end-detail-priority",
+      "ok": true,
+      "left": 0,
+      "bg": "rgb(255, 255, 255)",
+      "rest": "rgb(255, 255, 255)"
+    },
+    {
+      "name": "interrupt",
+      "ok": true,
+      "startX": 13,
+      "ax": 70,
+      "bx": 3
+    },
+    {
+      "name": "glide-mid-tag-filter-mode",
+      "ok": true,
+      "replaced": true,
+      "opacity": "1",
+      "x": 104,
+      "fromX": 0,
+      "toX": 110
+    },
+    {
+      "name": "glide-end-tag-filter-mode",
+      "ok": true,
+      "left": 0,
+      "bg": "rgb(255, 255, 255)",
+      "rest": "rgb(255, 255, 255)"
+    },
+    {
+      "name": "resting-overview",
+      "ok": true,
+      "groups": 1,
+      "bad": [],
+      "moved": 0
+    },
+    {
+      "name": "glide-mid-overview-mode",
+      "ok": true,
+      "replaced": true,
+      "opacity": "1",
+      "x": 94,
+      "fromX": 3,
+      "toX": 99
+    },
+    {
+      "name": "glide-end-overview-mode",
+      "ok": true,
+      "left": 0,
+      "bg": "rgb(255, 255, 255)",
+      "rest": "rgb(255, 255, 255)"
+    },
+    {
+      "name": "resting-channels",
+      "ok": true,
+      "groups": 1,
+      "bad": [],
+      "moved": 0
+    },
+    {
+      "name": "glide-mid-channels-tab",
+      "ok": true,
+      "replaced": true,
+      "opacity": "1",
+      "x": 75,
+      "fromX": 3,
+      "toX": 79
+    },
+    {
+      "name": "glide-end-channels-tab",
+      "ok": true,
+      "left": 0,
+      "bg": "rgb(255, 255, 255)",
+      "rest": "rgb(255, 255, 255)"
+    },
+    {
+      "name": "resting-tags",
+      "ok": true,
+      "groups": 1,
+      "bad": [],
+      "moved": 0
+    },
+    {
+      "name": "glide-mid-tags-tab",
+      "ok": true,
+      "replaced": true,
+      "opacity": "1",
+      "x": 75,
+      "fromX": 3,
+      "toX": 79
+    },
+    {
+      "name": "glide-end-tags-tab",
+      "ok": true,
+      "left": 0,
+      "bg": "rgb(255, 255, 255)",
+      "rest": "rgb(255, 255, 255)"
+    },
+    {
+      "name": "glide-mid-tags-tab-dark",
+      "ok": true,
+      "replaced": true,
+      "opacity": "1",
+      "x": 6,
+      "fromX": 79,
+      "toX": 3
+    },
+    {
+      "name": "glide-end-tags-tab-dark",
+      "ok": true,
+      "left": 0,
+      "bg": "rgb(22, 24, 27)",
+      "rest": "rgb(22, 24, 27)"
+    },
+    {
+      "name": "reduced-motion",
+      "ok": true,
+      "glided": false
+    }
+  ],
+  "failed": 0,
+  "passed": 21
+}

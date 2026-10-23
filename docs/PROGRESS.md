@@ -1,3 +1,9 @@
+2026-10-23 分段控件滑块动画：所有 `.seg` / `.segment` 切换时选中底色从旧项滑到新项（260ms），
+兼容 reconciler 整块替换与连续重绘、中途再切接力，减少动态效果时不播放，静止样式不变。
+专项 21/21、Node 142/142、`smoke:renderer` 通过，`m35-style-probe` 与基线 14174 项计算样式差异为 0。
+分支 `feature/seg-slide`（worktree `.worktrees/seg-slide`，基线 `7a61b95`），**未合并**。
+[说明与约束](UI_SEG_GLIDE.md) · [验收截图](verification/phase51/seg-glide/)。
+
 2026-10-23 M35 细节返修完成：任务条留白、图标/状态色、单圆点、卡片/详情/看板文字边界、
 笔记短窗与窄窗、AI 开关及空/重复说明已修。隔离专项 33/33、Node 142/142、原 M35、
 主 Renderer、M27/M28/M29 通过；BUG-117/121 关闭。保留并整合已有笔记面板在途调整，
