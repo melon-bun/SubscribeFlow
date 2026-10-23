@@ -9,6 +9,10 @@
 与当前视觉修整共同复验：专项 21/21、M35 细节 38/38、Node 142/142、
 完整离线 Renderer 回归通过，见 [集成记录](verification/phase51/main-integration-20261024/REPORT.md)。
 
+2026-10-24 模式切换补记：`34a2a3f` 将页面内部切换改为局部协调，修复左侧导航高亮闪烁。
+动画实现保持原样，正式专项仍 **21/21**；同页模式与侧栏稳定专项 **33/33**，
+见 [本轮验收](verification/bug-102-view-modes/REPORT.md)。下表同步当前刷新方式。
+
 ## 1. 做了什么
 
 所有分段控件（`.seg` / `.segment`）切换选中项时，选中底色（浮起滑块）从旧项滑到新项。
@@ -24,12 +28,12 @@
 
 | 位置 | 来源 | 选择器 | 切换后的重绘方式 |
 | --- | --- | --- | --- |
-| 收件箱平台筛选 | `ui.seg`（`inbox.js`） | `.inbox__toolbar .seg` | 分组整块替换 |
+| 收件箱平台筛选 | `ui.seg`（`inbox.js`） | `.inbox__toolbar .seg` | 同页局部协调 |
 | 详情优先级 | `inbox.js` 四段 | `.seg.priority-grid` | 刷新边界整块替换 |
 | 标签筛选方式（任一 / 全部） | `inbox.js` | `.tag-filter__mode .segment` | 就地改 class |
-| 内容总览 日历 / 优先级 | `ui.seg`（`overview.js`） | `.view__actions .seg` | 整页重绘 |
-| 渠道管理页签 | `ui.seg`（`channels.js`） | `.seg` | 连续重绘两次（navigate + renderContent） |
-| 标签管理页签 | `ui.seg`（`tags.js`） | `.seg` | 连续重绘两次 |
+| 内容总览 日历 / 优先级 | `ui.seg`（`overview.js`） | `.view__actions .seg` | 同页局部协调 |
+| 渠道管理页签 | `ui.seg`（`channels.js`） | `.seg` | 页签局部协调，地址参数变化后再同步一次 |
+| 标签管理页签 | `ui.seg`（`tags.js`） | `.seg` | 页签局部协调，地址参数变化后再同步一次 |
 
 ## 3. 文件
 

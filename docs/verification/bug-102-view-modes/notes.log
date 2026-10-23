@@ -1,0 +1,3 @@
+[m28] 笔记页实机验收通过
+[54095:1024/010204.680444:ERROR:base/process/process_mac.cc:53] task_policy_set TASK_CATEGORY_POLICY: (os/kern) invalid argument (4)
+[54095:1024/010204.682937:ERROR:base/process/process_mac.cc:98] task_policy_set TASK_SUPPRESSION_POLICY: (os/kern) invalid argument (4)
