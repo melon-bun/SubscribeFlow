@@ -42,6 +42,12 @@
   flex-wrap: wrap;
 }
 
+/* 筛选条里的下拉按钮封顶：来源名可以很长，不封顶就会把整行撑爆、
+   把「重置筛选」挤到第二行。宽度封顶后超出部分省略号收尾。 */
+.inbox__toolbar .select--btn {
+  max-width: 220px;
+}
+
 .inbox__sort {
   display: flex;
   align-items: center;
@@ -421,10 +427,13 @@
 .day-panel__list {
   flex: 1;
   min-height: 0;
-  padding: var(--s-4) var(--s-5);
+  /* 列表行自带内边距和分隔线（参考页 .panel-body 里就是直接放 .dli），
+     容器不再另加内边距和间距，否则行与行之间会出现双重的缝。 */
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--s-3);
+  gap: 0;
+  border-top: 1px solid var(--c-divider);
 }
 
 .day-panel__foot {
@@ -1544,8 +1553,6 @@
 .source-priorities { padding: var(--s-6); }
 .source-priority-row { display:flex; align-items:center; gap:var(--s-4); padding:var(--s-4) 0; border-bottom:1px solid var(--c-border); }
 .priority-filters { flex-wrap:wrap; }
-.priority-date { display:flex; align-items:center; gap:var(--s-2); font-size:var(--fs-sm); }
-.priority-date input { width:150px; }
 .priority-scope { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--s-3); padding:0 var(--s-6) var(--s-3); }
 .priority-body { display:flex; min-height:0; }
 .priority-body .kanban { width:100%; }

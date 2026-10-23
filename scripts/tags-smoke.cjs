@@ -254,6 +254,10 @@ async function verifyTags({evaluate, until, click, screenshot, core, window, fir
 
   await evaluate(`Array.from(document.querySelectorAll('.tags-tabbar .seg__item')).find(t => /AI/.test(t.textContent)).click()`);
   await until(`SF.app.state.tagTab === 'ai'`);
+  /* AI 区块的连接状态是异步取回的：切过去的那一帧可能还没画出入口按钮。
+     先等入口出现，再做下面两条断言——否则「入口存在」这条会在状态落定前
+     被判失败，而「没有模型参数表单」那条会在空壳状态下空转通过。 */
+  await until(`Array.from(document.querySelectorAll('[data-view="tags"] button')).some(b => /前往 AI API 配置/.test(b.textContent))`);
   assert.ok(await evaluate(`!!document.querySelector('[data-view="tags"]').textContent.trim()`), 'AI 页签不应是空白页');
   // M9：未接入识别时本页不得出现可用的**模型参数**表单——放一个填了也没人用的表单，
   // 比诚实地说明「还没有这个功能」更糟。M15 起配置改到设置页，这里只保留入口。

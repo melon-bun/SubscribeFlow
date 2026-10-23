@@ -329,8 +329,18 @@
    「打开面板」这类动作（例如标签筛选）。 */
 .select--btn {
   /* 右侧留出箭头的位置：原生下拉是 30px，按钮沿用同一套内边距。 */
+  max-width: 100%;
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
     box-shadow var(--dur-1) var(--ease);
+}
+
+/* 下拉按钮里的文字标签：选项名可能很长（「知乎 · 深杯酒满」），
+   按钮要封顶并省略，否则一个控件就能把整条筛选行撑爆。 */
+.select__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 不是下拉的入口（标签面板）不画箭头。 */
@@ -1097,29 +1107,36 @@ textarea.input {
   font-weight: 500;
 }
 
-/* 紧凑行（日历详情、右侧列表复用） */
+/* 紧凑行：日历右侧「当日内容」列表 —— 照参考页 .dli 的画法。
+   列表行不是卡片：只有一条分隔线，缩略图小，标题两行，元信息只有
+   「平台 + 来源名」和右端的优先级信号条。 */
 .row-card {
   display: flex;
-  gap: var(--s-4);
-  padding: var(--s-4);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
-  background: var(--c-surface);
+  gap: 10px;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--c-divider);
+  border-radius: 0;
+  background: transparent;
   width: 100%;
   text-align: left;
-  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+  transition: background var(--dur-1) var(--ease);
 }
 
 .row-card:hover {
+  background: var(--c-surface-2);
 }
 
 .row-card__thumb {
-  width: 68px;
-  height: 50px;
+  width: 56px;
+  height: 42px;
   flex: none;
-  border-radius: var(--r-sm);
+  border-radius: 7px;
   overflow: hidden;
-  background: var(--c-surface-3);
+  background: var(--c-surface-2);
+  display: grid;
+  place-items: center;
+  color: var(--c-text-4);
 }
 
 .row-card__thumb img {
@@ -1129,9 +1146,9 @@ textarea.input {
 }
 
 .row-card__title {
-  font-size: var(--fs-base);
+  font-size: 12.5px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -1139,35 +1156,35 @@ textarea.input {
   overflow: hidden;
 }
 
-.row-card__summary {
-  display: block; /* span 默认 inline，overflow/ellipsis 对 inline 不生效 */
-  margin-top: 2px;
-  font-size: var(--fs-sm);
-  color: var(--c-text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .row-card__meta {
   display: flex;
   align-items: center;
-  gap: var(--s-2);
-  margin-top: var(--s-3);
-  font-size: var(--fs-sm);
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 11px;
   color: var(--c-text-3);
+  flex-wrap: nowrap;
   min-width: 0;
 }
 
-.row-card__meta > .t-ellipsis {
+/* 平台块 + 来源名：来源名可省略，但平台块不能被挤没 */
+.row-card__src {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--c-text-2);
+}
+
+.row-card__src > .t-ellipsis {
   min-width: 0;
   flex: 0 1 auto;
 }
 
-.row-card__meta > .tag,
-.row-card__meta > span:last-child {
+/* 优先级信号条顶到右端（参考页 .dli .meta 里就是 margin-left:auto） */
+.row-card__prio {
+  margin-left: auto;
   flex: none;
-  white-space: nowrap;
 }
 
 /* ---------------- 统计卡 ---------------- */
@@ -1653,6 +1670,11 @@ textarea.input {
   position: absolute;
   z-index: var(--z-drawer);
   min-width: 168px;
+  /* 选项多的时候（日期、来源）菜单会比视口还高，底部几项就再也点不到。
+     限高并允许滚动：浮层始终留在视口内，长的部分自己滚。 */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--s-2);
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
@@ -2313,13 +2335,6 @@ textarea.input {
 }
 
 /* 行卡片（内容总览日历）上的标签：与内容卡片同规则，仅收紧密度 */
-.row-card__tags {
-  display: flex;
-  gap: var(--s-2);
-  margin-top: var(--s-2);
-  flex-wrap: wrap;
-}
-
 .row-card__tags .tag-chip {
   max-width: 160px;
   height: 22px;

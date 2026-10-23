@@ -30,6 +30,7 @@
         disabled: !!opts.disabled,
         title: opts.title || label,
         "aria-label": opts.ariaLabel || null,
+        style: opts.style || null,
         onclick: opts.onClick || null,
       },
       opts.icon ? icon(opts.icon, 15) : null,
@@ -172,9 +173,10 @@
       opts.icon ? icon(opts.icon, 14) : null,
       /* 前置节点：等级信号条等（参考页 .prow .select 把信号条放在按钮里）。 */
       opts.node || null,
-      h("span", { text: current.label }),
-      /* 「静流」§.select：箭头是按钮里的一个内联图标，不是 ::after 伪元素。 */
-      icon("chevron-down", 14)
+      h("span" + (opts.labelClass ? "." + opts.labelClass : ""), { text: current.label }),
+      /* 「静流」§.select：箭头是按钮里的一个内联图标，不是 ::after 伪元素。
+         参考页的月份 / 日期按钮只有日历图标、没有下拉箭头，arrow:false 去掉它。 */
+      opts.arrow === false ? null : icon("chevron-down", 14)
     );
     return btn;
   };
@@ -401,38 +403,32 @@
     return card;
   };
 
-  /** 紧凑行：日历右侧列表、优先级看板复用 */
+  /**
+   * 紧凑行：日历右侧「当日内容」列表（参考页 .dli）。
+   *
+   * 结构照参考页抄：缩略图 + 标题 + 一行元信息（平台 + 来源名，右端是优先级信号条）。
+   * 之前这一行还塞了头像、日期、优先级文字，外加一整行摘要——
+   * 六个元素挤在两百多像素宽的窄列里，缺口全落在来源名上，
+   * 名字被压成「Mi…」甚至一个字，看着像渲染坏了。
+   */
   ui.rowCard = function (item, opts) {
     opts = opts || {};
     var card = h(
       "button.row-card",
       { type: "button", onclick: opts.onSelect },
-      h("span.row-card__thumb", null, item.cover ? h("img", { src: item.cover, alt: "", loading: "lazy" }) : null),
+      /* 没有封面时放山形占位（参考页 .dli .thumb 就是 i-mtn）：
+         留一块空灰框会让人以为图还没加载出来。 */
+      h("span.row-card__thumb", null, item.cover ? h("img", { src: item.cover, alt: "", loading: "lazy" }) : icon("mountain", 24)),
       h(
         "span.grow",
         null,
         h("span.row-card__title", { text: item.title }),
-        item.summary ? h("span.row-card__summary", { text: item.summary }) : null,
         h(
           "span.row-card__meta",
           null,
-          ui.avatar(item.channelName, null, "sm"),
-          h("span.t-ellipsis", { text: item.channelName }),
-          h("span.content-card__dot", { text: "·" }),
-          ui.platformTag(item.platform),
-          ui.priorityTag(item.priority),
-          h("span.spacer"),
-          h("span", { text: fmt.intakeTime(item, true) })
-        ),
-        item.tags && item.tags.length
-          ? h(
-              "span.row-card__tags",
-              null,
-              item.tags.map(function (t) {
-                return tagChip(t);
-              })
-            )
-          : null
+          h("span.row-card__src", null, ui.platformTag(item.platform), h("span.t-ellipsis", { text: item.channelName })),
+          h("span.row-card__prio", null, ui.prioSig(item.priority))
+        )
       )
     );
     return card;

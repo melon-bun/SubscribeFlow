@@ -22,7 +22,11 @@ async def seed(folder):
         tags = [core.repository.create_tag('m35-tag-' + str(i), name, '', color, True, [])
                 for i, (name, color) in enumerate((('长名称的视觉检查标签', 'amber'), ('另一枚用于检索的长标签', 'cyan')))]
         for i in range(12):
-            source = Source('zhihu', 'author', 'm35-source', '长名称创作者用于检查截断',
+            # 来源名要够长：原生 <select> 的宽度由最长选项决定，
+            # 名字一长整条筛选行就会被撑爆（「重置筛选」被挤到第二行）。
+            # 隔离样本必须能复现真实库里长来源名的情形。
+            source = Source('zhihu', 'author', 'm35-source',
+                            '长名称创作者用于检查筛选行宽度是否被撑爆的超长来源名',
                             'https://example.invalid/m35-source')
             item = ContentItem('zhihu', 'feed', 'm35-' + str(i), source,
                                ('长标题与英文边界检查 ' + 'LongUnbrokenTitle' * 8) if i == 0 else '布局检查内容 ' + str(i),

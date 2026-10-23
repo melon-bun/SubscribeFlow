@@ -84,11 +84,25 @@ async function verify({window, core, root}) {
   await pause(600);
   await shoot('01-notes.png');
 
-  /* 2. 内容总览：日历模式 + 优先级模式。 */
+  /* 2. 内容总览：日历模式 + 优先级模式 + 两个筛选下拉展开。 */
   await goto('overview', null, `!!document.querySelector('.calendar-grid')`);
   await shoot('02-overview-calendar.png');
+  /* 月份筛选是无框下拉（参考页 .select 形态）：展开菜单也要看一眼，
+     选项文案与浮层位置是「照抄参考页」的一部分。 */
+  await evaluate(`document.querySelector('[aria-label="日历月份"]').click()`);
+  await until(`!!document.querySelector('.menu__item')`);
+  await pause(300);
+  await shoot('02b-overview-month-menu.png');
+  await evaluate(`SF.ui.closeMenu()`);
+  await pause(200);
   await goto('overview', {mode: 'priority'}, `!!document.querySelector('[data-view="overview"][data-mode="priority"]')`);
   await shoot('03-overview-priority.png');
+  await evaluate(`document.querySelector('[aria-label="看板日期"]').click()`);
+  await until(`!!document.querySelector('.menu__item')`);
+  await pause(300);
+  await shoot('03b-overview-date-menu.png');
+  await evaluate(`SF.ui.closeMenu()`);
+  await pause(200);
 
   /* 3. 渠道管理：渠道列表 + 优先级设置。 */
   await goto('channels', null, `!!document.querySelector('[data-view="channels"] .channels__table-wrap')`);

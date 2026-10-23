@@ -26,6 +26,23 @@ async function verify({window, root}) {
     await ev('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))');
     fs.writeFileSync(path.join(output, name + '.png'), (await window.webContents.capturePage()).toPNG());
   };
+  /* 筛选条形态（对照参考页 .select）：每个下拉都是**带 1px 内描边**的按钮，
+     宽度只由按钮文字决定；原生 <select> 的宽度由最长选项决定，
+     真实来源名一长就把整行撑爆、「重置筛选」被挤到第二行。
+     断言量的是几何与形态，不是「看起来还行」。 */
+  const filterRowShape = rowSelector => `(() => {
+    const row = document.querySelector(${JSON.stringify(rowSelector)});
+    if (!row) return {ok:false, reason:'缺少筛选条'};
+    const native = row.querySelectorAll('select');
+    const btns = [...row.querySelectorAll('.select--btn')];
+    const noRing = btns.filter(b => !/inset/.test(getComputedStyle(b).boxShadow)).length;
+    const wide = btns.filter(b => b.getBoundingClientRect().width > 230).map(b => Math.round(b.getBoundingClientRect().width));
+    const reset = [...row.querySelectorAll('button')].find(b => b.textContent.indexOf('重置筛选') >= 0);
+    const first = btns[0];
+    const sameLine = reset && first ? Math.abs(reset.getBoundingClientRect().top - first.getBoundingClientRect().top) < 4 : false;
+    return {ok: native.length === 0 && btns.length >= 5 && noRing === 0 && wide.length === 0 && sameLine,
+      native: native.length, buttons: btns.length, noRing, wide, sameLine};
+  })()`;
   const go = async (route, params = {}) => {
     await ev(`SF.app.navigate(${JSON.stringify(route)},${JSON.stringify(params)})`);
     await until(`!!document.querySelector('[data-view="${route}"]')`);
@@ -50,19 +67,61 @@ async function verify({window, root}) {
   await check('detail-hud', `(() => {const e=document.querySelector('.detail__hud');return {ok:!!e&&getComputedStyle(e).display!=='none',display:e&&getComputedStyle(e).display};})()`);
   await check('online-dot', `(() => {const r=document.querySelector('.fx-online').getBoundingClientRect();return {ok:r.width>=5&&r.height>=5,width:r.width,height:r.height};})()`);
   await check('footnote-size', `(() => {const size=parseFloat(getComputedStyle(document.querySelector('.content-card__method')).fontSize);return {ok:size<=12.5,size};})()`);
+  /* 平台色块里的字不能超出方块：小红书原来用「RED」三个字母，
+     塞进 15px 的方块里会顶出边框（参考页用的是「红」一个字）。 */
+  await check('platform-mark-fits', `(() => {
+    const bad=[];
+    for (const e of document.querySelectorAll('.plat')) {
+      const box=e.getBoundingClientRect();
+      for (const n of e.childNodes) {
+        if (n.nodeType!==3 || !n.textContent.trim()) continue;
+        const r=document.createRange(); r.selectNodeContents(n);
+        const t=r.getBoundingClientRect();
+        if (t.width>box.width+0.5 || t.height>box.height+0.5) bad.push({cls:e.className,text:n.textContent.trim(),textWidth:Math.round(t.width*10)/10,boxWidth:Math.round(box.width*10)/10});
+      }
+    }
+    return {ok:!bad.length,bad};
+  })()`);
   await shot('01-inbox-light');
   await go('overview');
   await ev(`SF.app.state.calendarMonth='2026-10';SF.app.state.selectedDate='2026-10-18';SF.app.renderContent()`);
   await until(`!!document.querySelector('.cal-pill__dot')`);
   await check('single-calendar-dot', `(() => {const e=document.querySelector('.cal-pill:has(.cal-pill__dot)'),s=getComputedStyle(e,'::before'),d=e.querySelector('.cal-pill__dot');const pseudo=!(s.content==='none'||s.content==='normal')&&parseFloat(s.width)>0,child=getComputedStyle(d).display!=='none';return {ok:Number(pseudo)+Number(child)===1,pseudo,child};})()`);
   await check('calendar-heading', `(() => {const e=document.querySelector('.cal-day__heading:has(.cal-day__count)'),r=e.getBoundingClientRect(),c=e.querySelector('.cal-day__count').getBoundingClientRect();return {ok:r.right-c.right<2,gap:r.right-c.right};})()`);
+  await check('calendar-filter-row', filterRowShape('.calendar-filters'));
   await shot('02-calendar');
+  /* 当日列表的元信息行：来源名不能被挤没。
+     同一行里头像、平台标签、优先级标签、日期都不压缩，缺口全落在名字上，
+     名字会被压成「长」甚至「Mi…」——看着像渲染坏了。 */
+  await ev(`(() => { const cells=[...document.querySelectorAll('.cal-day')].filter(c=>!c.classList.contains('is-outside')); const withItems=cells.find(c=>c.querySelector('.cal-pill')); if (withItems) withItems.click(); })()`);
+  await until(`!!document.querySelector('.row-card')`);
+  await check('day-card-meta-width', `(() => {
+    const card = document.querySelector('.row-card');
+    if (!card) return {ok:false, reason:'没有当日列表条目'};
+    const meta = card.querySelector('.row-card__meta');
+    const name = meta && meta.querySelector('.t-ellipsis');
+    if (!name) return {ok:false, reason:'没有来源名'};
+    const kids = [...meta.children].map(c => ({cls:c.className||c.tagName, w:Math.round(c.getBoundingClientRect().width)}));
+    const nr = name.getBoundingClientRect();
+    return {ok:nr.width>=48, nameWidth:Math.round(nr.width), nameText:name.textContent, kids};
+  })()`);
+  /* 选中那个超长来源名之后，按钮必须封顶并用省略号收尾——
+     原生 <select> 会按最长选项撑宽，整条筛选行随之失控。 */
+  await ev(`document.querySelector('[aria-label="日历来源"]').click()`);
+  await until(`!!document.querySelector('.menu__item')`);
+  await ev(`(() => { const items=[...document.querySelectorAll('.menu__item')].filter(b=>b.getAttribute('data-value')); items.sort((a,b)=>b.textContent.length-a.textContent.length); if (items[0]) items[0].click(); })()`);
+  await until(`document.querySelector('[aria-label="日历来源"]')?.getAttribute('data-value')`);
+  await check('long-source-truncated', `(() => {const b=document.querySelector('[aria-label="日历来源"]'),r=b.getBoundingClientRect(),lab=b.querySelector('.select__label');const truncated=lab.scrollWidth>lab.clientWidth+1;return {ok:r.width<=230&&truncated,width:r.width,text:lab.textContent,scroll:lab.scrollWidth,client:lab.clientWidth};})()`);
+  await ev(`document.querySelector('[aria-label="日历来源"]').click()`);
+  await until(`!!document.querySelector('.menu__item')`);
+  await ev(`(() => { const items=[...document.querySelectorAll('.menu__item')]; const s=items.find(b=>b.getAttribute('data-value')===''); if (s) s.click(); })()`);
+  await until(`document.querySelector('[aria-label="日历来源"]')?.getAttribute('data-value')===''`);
   await go('overview', {mode:'priority'});
   await until(`!!document.querySelector('.kanban__item')`);
   await check('kanban-reading-order', `(() => {const e=document.querySelector('.kanban__item'),t=e.querySelector('.kanban__item-title').getBoundingClientRect(),a=e.querySelector('.kanban__item-author').getBoundingClientRect();return {ok:t.bottom<=a.top+2,titleBottom:t.bottom,authorTop:a.top};})()`);
   await check('kanban-rule-size', `(() => {const e=document.querySelector('.kanban__item-rule'),r=e.getBoundingClientRect();return {ok:r.height<22&&r.width<70,width:r.width,height:r.height};})()`);
-  await shot('03-priority');
-  await go('notes');
+  await check('priority-filter-row', filterRowShape('.priority-filters'));
+  await shot('03-priority');  await go('notes');
   await until(`!!document.querySelector('.notes-toc__item')`);
   await ev(`document.querySelector('.notes-toc__item').click()`);
   await until(`!!document.querySelector('[data-note-editor] textarea')`);

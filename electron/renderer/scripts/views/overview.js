@@ -15,6 +15,10 @@
 
   var cache = {}, queryKey = '', dayCache = {}, dayKey = '';
   var pending = new Set();
+  /* 来源目录独立于日历缓存：缓存每改一次筛选就会被清空，
+     来源列表跟着清空会让「来源」下拉在重新渲染时闪回「全部来源」——
+     明明选着某个来源，按钮上却写着「全部来源」。 */
+  var sourceState = {};
 
   function needsLoad(state) { return !state.loading && (!state.loaded || state.stale); }
   function markStale(state) { state.stale=true; state.revision=(state.revision || 0)+1; }
@@ -57,14 +61,43 @@
     }
     return page();
   }
-  function loadSources(app,owner,current,mode) {
-    var state=owner.sourceState || (owner.sourceState={});
+  function loadSources(app,mode) {
+    var state=sourceState;
     if(!needsLoad(state)) return;
     request(state,function() { return app.client.listContentSources({}); },function(result) { state.items=result.items; },function() {
-      redraw(app,mode,current);
+      if(visible(app,mode)) SF.app.renderView('overview');
     });
   }
   function monthDate(app) { return new Date(app.calendarMonth + '-01T00:00:00'); }
+
+  /* 「静流」§内容总览：参考页的月份与日期筛选是 .select 按钮（图标 + 文字），
+     不是原生 input——原生控件在 macOS 上会露出系统外观，还把筛选条撑到换行。
+     月份以「今天」所在月为基准回溯 12 个月；当前选中的月份若不在表里，插到最前。 */
+  function monthOptions(app) {
+    var base = new Date(app.now || Date.now());
+    var out = [];
+    for (var i = 0; i <= 12; i++) {
+      var d = new Date(base.getFullYear(), base.getMonth() - i, 1);
+      out.push({ value: fmt.ymd(d).slice(0,7), label: d.getFullYear() + ' 年 ' + (d.getMonth()+1) + ' 月' });
+    }
+    if (app.calendarMonth && !out.some(function (o) { return o.value === app.calendarMonth; })) {
+      var sel = new Date(app.calendarMonth + '-01T00:00:00');
+      out.unshift({ value: app.calendarMonth, label: sel.getFullYear() + ' 年 ' + (sel.getMonth()+1) + ' 月' });
+    }
+    return out;
+  }
+
+  /* 日期筛选：参考页是「📅 任意日期」。这里给「任意日期」+ 最近 14 天
+     （菜单放得下，不需要滚动就能看全）。 */
+  function dateOptions(app) {
+    var base = new Date(app.now || Date.now());
+    var out = [{ value: '', label: '任意日期' }];
+    for (var i = 0; i < 14; i++) {
+      var d = new Date(base.getFullYear(), base.getMonth(), base.getDate() - i);
+      out.push({ value: fmt.ymd(d), label: fmt.monthDay(d) + ' · ' + fmt.weekdayShort(d) });
+    }
+    return out;
+  }
   function calendarQuery(app) {
     var query={month:app.calendarMonth};
     if(app.filters.priority) query.priority=app.filters.priority;
@@ -133,18 +166,38 @@
       h('span',{text:'未设置 · '}),h('span.n',{text:n}));
   }
 
+  /* 「静流」§内容总览：筛选条上的下拉一律用 .select 按钮（参考页形态）——
+     1px 内描边、宽度只由按钮文字决定、箭头紧贴文字。
+     原生 <select> 的宽度由**最长选项**决定：真实来源名一长（知乎 · 深杯酒满），
+     「全部来源」就被撑成巨幅，整条筛选行随之失控、「重置筛选」被挤到第二行。 */
+  function filterSelect(options, value, onChange, ariaLabel) {
+    return ui.dropdown(options, value, onChange, { ariaLabel: ariaLabel, labelClass: 'select__label' });
+  }
+
+  /* 来源下拉：选项来自异步查询，就绪前菜单里只有「全部来源」。
+     把已加载的来源数挂在按钮上（data-sources），自动化脚本据此判断「菜单已就绪」——
+     否则会在列表到位前点开菜单，拿到一个缺选项的菜单却看不出问题。 */
+  function sourceSelect(app, sources, onChange, ariaLabel) {
+    var btn = filterSelect(
+      [{value:'',label:'全部来源'}].concat((sources.items||[]).map(function(c) {
+        return {value:c.id,label:catalog.platform(c.platform).name+" · "+c.name};
+      })),
+      app.filters.sourceId||'', onChange, ariaLabel);
+    if (btn) btn.setAttribute('data-sources', String((sources.items||[]).length));
+    return btn;
+  }
+
   function calendarFilters(app) {
-    var owner=cache;
-    loadSources(app,owner,function() { return cache===owner; },'calendar');
-    var sources=cache.sourceState;
+    loadSources(app,'calendar');
+    var sources=sourceState;
     var counts=cache.summary && cache.summary.priorities;
     return h('div.inbox__toolbar.calendar-filters',null,
-      ui.select([{value:'',label:'全部平台'}].concat(app.platforms.map(function(p) { return {value:p.id,label:catalog.platform(p.id).name}; })),app.filters.platform||'',function(v) { app.filters.platform=v||null; SF.app.render(); },{ariaLabel:'日历平台'}),
-      ui.select([{value:'',label:'全部来源'}].concat((sources.items||[]).map(function(c) { return {value:c.id,label:catalog.platform(c.platform).name+" · "+c.name}; })),app.filters.sourceId||'',function(v) { app.filters.sourceId=v||null; app.filters.channelId=null; SF.app.renderContent(); },{ariaLabel:'日历来源'}),
-      ui.select([{value:'',label:'全部优先级'}].concat(['high','medium','low','none'].map(function(id) { return {value:id,label:catalog.priority(id).name}; })),app.filters.priority||'',function(v) { app.filters.priority=v||null; SF.app.render(); },{ariaLabel:'日历优先级'}),
-      ui.select([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},{ariaLabel:'日历收录方式'}),
-      ui.select([{value:'all',label:'全部处理状态'},{value:'unread',label:'未处理'},{value:'read',label:'已读'},{value:'deferred',label:'稍后处理'},{value:'archived',label:'已归档'}],app.filters.quick,function(v) { app.filters.quick=v; SF.app.render(); },{ariaLabel:'日历处理状态'}),
-      h('label.priority-date',null,h('span',{text:'月份'}),h('input.input',{type:'month','aria-label':'日历月份',value:app.calendarMonth,onchange:function(e) { if(!e.target.value) return; app.calendarMonth=e.target.value; app.selectedDate=e.target.value+'-01'; SF.app.renderContent(); }})),
+      filterSelect([{value:'',label:'全部平台'}].concat(app.platforms.map(function(p) { return {value:p.id,label:catalog.platform(p.id).name}; })),app.filters.platform||'',function(v) { app.filters.platform=v||null; SF.app.render(); },'日历平台'),
+      sourceSelect(app, sources, function(v) { app.filters.sourceId=v||null; app.filters.channelId=null; SF.app.renderContent(); },'日历来源'),
+      filterSelect([{value:'',label:'全部优先级'}].concat(['high','medium','low','none'].map(function(id) { return {value:id,label:catalog.priority(id).name}; })),app.filters.priority||'',function(v) { app.filters.priority=v||null; SF.app.render(); },'日历优先级'),
+      filterSelect([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},'日历收录方式'),
+      filterSelect([{value:'all',label:'全部处理状态'},{value:'unread',label:'未处理'},{value:'read',label:'已读'},{value:'deferred',label:'稍后处理'},{value:'archived',label:'已归档'}],app.filters.quick,function(v) { app.filters.quick=v; SF.app.render(); },'日历处理状态'),
+      ui.dropdown(monthOptions(app),app.calendarMonth,function(v) { if(!v||v===app.calendarMonth) return; app.calendarMonth=v; app.selectedDate=v+'-01'; SF.app.renderContent(); },{icon:'calendar',arrow:false,labelClass:'num',ariaLabel:'日历月份'}),
       noneChip(app, counts),
       ui.btn('重置筛选',{onClick:function() { app.filters={quick:'all',platform:null,channelId:null}; app.search=''; SF.app.render(); }}),
       sources.error ? ui.btn('重试来源筛选',{onClick:function() { markStale(sources); SF.app.renderContent(); }}) : null);
@@ -244,9 +297,8 @@
     var key=JSON.stringify(boardQuery(app));
     if(key!==boardKey) { boardKey=key; board={}; }
     levels.forEach(function(id) { if(!board[id] || needsLoad(board[id])) loadGroup(app,id,false); });
-    var owner=board;
-    loadSources(app,owner,function() { return board===owner; },'priority');
-    var sources=board.sourceState;
+    loadSources(app,'priority');
+    var sources=sourceState;
     var shown=app.filters.priority ? [app.filters.priority] : catalog.PRIORITY_ORDER;
     var stats=h('div.overview__filters',null,h('div.stat-row.grow',null,levels.map(function(id) {
       var group=board[id], meta=catalog.priority(id);
@@ -264,14 +316,15 @@
       });
     })));
     var filters=h('div.inbox__toolbar.priority-filters',null,
-      ui.select([{value:'',label:'全部平台'}].concat(app.platforms.map(function(p) { return {value:p.id,label:catalog.platform(p.id).name}; })),app.filters.platform||'',function(v) { app.filters.platform=v||null; SF.app.render(); },{ariaLabel:'看板平台'}),
-      ui.select([{value:'',label:'全部来源'}].concat((sources.items||[]).map(function(c) { return {value:c.id,label:catalog.platform(c.platform).name+" · "+c.name}; })),app.filters.sourceId||'',function(v) { app.filters.sourceId=v||null; app.filters.channelId=null; SF.app.renderContent(); },{ariaLabel:'看板来源'}),
-      ui.select([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},{ariaLabel:'看板收录方式'}),
-      ui.select([{value:'all',label:'全部处理状态'},{value:'unread',label:'未处理'},{value:'read',label:'已读'},{value:'deferred',label:'稍后处理'},{value:'archived',label:'已归档'}],app.filters.quick,function(v) { app.filters.quick=v; SF.app.render(); },{ariaLabel:'看板处理状态'}),
-      h('label.priority-date',null,h('span',{text:'日历日期'}),h('input.input',{type:'date','aria-label':'看板日期',value:app.filters.day||'',onchange:function(e) { app.filters.day=e.target.value || null; SF.app.renderContent(); }})),
-      ui.select([{value:'',label:'全部优先级'}].concat(levels.map(function(id) { return {value:id,label:catalog.priority(id).name}; })),app.filters.priority||'',function(v) { app.filters.priority=v||null; SF.app.render(); },{ariaLabel:'看板优先级'}),
+      filterSelect([{value:'',label:'全部平台'}].concat(app.platforms.map(function(p) { return {value:p.id,label:catalog.platform(p.id).name}; })),app.filters.platform||'',function(v) { app.filters.platform=v||null; SF.app.render(); },'看板平台'),
+      sourceSelect(app, sources, function(v) { app.filters.sourceId=v||null; app.filters.channelId=null; SF.app.renderContent(); },'看板来源'),
+      filterSelect([{value:'',label:'全部收录方式'},{value:'subscription',label:'自动采集'},{value:'manual',label:'手动收录'}],app.filters.intakeMethod||'',function(v) {app.filters.intakeMethod=v||null;SF.app.render();},'看板收录方式'),
+      filterSelect([{value:'all',label:'全部处理状态'},{value:'unread',label:'未处理'},{value:'read',label:'已读'},{value:'deferred',label:'稍后处理'},{value:'archived',label:'已归档'}],app.filters.quick,function(v) { app.filters.quick=v; SF.app.render(); },'看板处理状态'),
+      ui.dropdown(dateOptions(app),app.filters.day||'',function(v) { app.filters.day=v||null; SF.app.renderContent(); },{icon:'calendar',arrow:false,ariaLabel:'看板日期'}),
+      filterSelect([{value:'',label:'全部优先级'}].concat(levels.map(function(id) { return {value:id,label:catalog.priority(id).name}; })),app.filters.priority||'',function(v) { app.filters.priority=v||null; SF.app.render(); },'看板优先级'),
       ui.btn('重置筛选',{onClick:function() { app.filters={quick:'all',platform:null,channelId:null}; app.search=''; SF.app.render(); }}),
-      ui.btn('设置来源优先级',{onClick:function() { SF.app.navigate('channels',{tab:'priorities'}); }}));
+      /* 参考页把「设置来源优先级」顶到筛选条最右（同一条行内，不换行）。 */
+      ui.btn('设置来源优先级',{style:{'margin-left':'auto'},onClick:function() { SF.app.navigate('channels',{tab:'priorities'}); }}));
     var unknown=board.none;
     return h('div.view',{'data-view':'overview','data-mode':'priority'},buildHead(app),stats,filters,
       sources.error ? h('div.inbox__toolbar',null,h('p.field__error',{role:'alert',text:'来源筛选读取失败：'+sources.error.message}),ui.btn('重试来源筛选',{onClick:function() { markStale(sources); SF.app.renderContent(); }})) : null,
@@ -502,8 +555,7 @@
       markStale(cache); markStale(dayCache);
       levels.forEach(function(id) { if(board[id]) markStale(board[id]); });
       if(reasons.has('content') || reasons.has('channels') || reasons.has('all')) {
-        if(cache.sourceState) markStale(cache.sourceState);
-        if(board.sourceState) markStale(board.sourceState);
+        markStale(sourceState);
       }
     },
     whenIdle:whenIdle,

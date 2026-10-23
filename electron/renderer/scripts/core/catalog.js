@@ -8,7 +8,7 @@
   var SF = (global.SF = global.SF || {});
 
   var PLATFORMS = {
-    xiaohongshu: { id: "xiaohongshu", name: "小红书", short: "小红书", mark: "RED" },
+    xiaohongshu: { id: "xiaohongshu", name: "小红书", short: "小红书", mark: "红" },
     bilibili: { id: "bilibili", name: "B站", short: "B站", mark: "B" },
     wechat: { id: "wechat", name: "微信公众号", short: "公众号", mark: "微" },
     weibo: { id: "weibo", name: "微博", short: "微博", mark: "博" },

@@ -71,12 +71,13 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   }
   await until(`document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===24`);
   assert.equal(await evaluate(`new Set(Array.from(document.querySelectorAll('[data-priority-item]')).map(e=>e.dataset.priorityItem)).size`),25);
-  await change('看板处理状态','read');
+  await setFilter('看板处理状态','read');
   await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='0' && document.querySelector('[data-priority-column="low"] .count-pill')?.textContent==='1'`);
-  await change('看板处理状态','all');
+  await setFilter('看板处理状态','all');
   await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='24'`);
   // Unknown timestamps remain visible on the board; a day filter excludes them.
-  await evaluate(`const day=document.querySelector('[aria-label="看板日期"]'); day.value=SF.fmt.ymd(Date.now()); day.dispatchEvent(new Event('change',{bubbles:true}));`);
+  // 日期筛选是无框下拉按钮（不是原生 input）：点开菜单按值点选项。
+  await setFilter('看板日期', await evaluate('SF.fmt.ymd(Date.now())'));
   await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='23'`);
   await click('重置筛选');
   await until(`document.querySelector('[data-priority-column="medium"] .count-pill')?.textContent==='24'`);
@@ -122,7 +123,7 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   await until(`SF.app.state.counts.none===23 && SF.app.state.counts.low===1`);
   await evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
   await until(`!!document.querySelector('[aria-label="看板优先级"]')`);
-  await change('看板优先级','none');
+  await setFilter('看板优先级','none');
   await until(`document.querySelector('[data-priority-column="none"] .count-pill')?.textContent==='23'`);
   await screenshot('m8-unset-priority.png');
   await evaluate(`document.querySelector('[data-priority-column="none"] .priority-column-foot button').click()`);
