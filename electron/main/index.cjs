@@ -467,6 +467,7 @@ async function start() {
       else if (rendererSmoke === 'm35') await require('../../scripts/m35-zhiliu-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'm35style') await require('../../scripts/m35-style-probe.cjs').verify({window,core,root});
       else if (rendererSmoke === 'm35details') await require('../../scripts/m35-details-renderer.cjs').verify({window,core,root});
+      else if (rendererSmoke === 'segglide') await require('../../scripts/seg-glide-renderer.cjs').verify({window,core,root});
       else await require('../../scripts/renderer-smoke.cjs').verify({window, core, root, mode:rendererSmoke});
       // 验收同样走 M17 的统一退出流程，否则关窗仍会被拦截为隐藏到托盘。
       await lifecycle.quit();
