@@ -2941,11 +2941,18 @@
 }
 
 /* 已设置的来源：下拉框左边一条等级信号条 */
+/* 「静流」§.prow .select：230px 宽、贴右、内容靠左 */
 .source-priority-row__ctl {
   display: flex;
   align-items: center;
   gap: var(--s-3);
+  margin-left: auto;
   flex: none;
+}
+
+.source-priority-row__ctl .select--btn {
+  width: 230px;
+  justify-content: flex-start;
 }
 
 /* 标签 AI 页：后台队列条与图例 */

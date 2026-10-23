@@ -39,25 +39,34 @@ function rendererActions({evaluate, until}) {
    * 原生 select 直接赋值；无框按钮则点开菜单再按值点选项。
    */
   const setFilter = async (ariaLabel, value) => {
-    const label = JSON.stringify(ariaLabel);
+    /* 选择器在**页面里**拼：用 JSON.stringify 显式加引号。
+       之前在 Node 侧拼好再插值，插进去的引号会丢，
+       变成 [aria-label=来源优先级 UID 946974] —— 这不是合法选择器，
+       querySelector 直接抛 SyntaxError，脚本只报「执行失败」，看不出是引号问题。 */
+    const raw = JSON.stringify(ariaLabel);
     const wanted = JSON.stringify(String(value));
-    await until(`(() => {
-      const el = document.querySelector('[aria-label=' + ${label} + ']');
-      if (!el) return false;
-      if (el.tagName === 'SELECT') {
+    const found = await evaluate(`(() => {
+      const sel = '[aria-label=' + JSON.stringify(${raw}) + ']';
+      const el = document.querySelector(sel);
+      return el ? el.tagName : 'MISSING';
+    })()`);
+    if (found === 'MISSING') throw new Error('[setFilter] 找不到筛选控件：' + ariaLabel);
+    if (found === 'SELECT') {
+      await evaluate(`(() => {
+        const sel = '[aria-label=' + JSON.stringify(${raw}) + ']';
+        const el = document.querySelector(sel);
         el.value = ${wanted};
         el.dispatchEvent(new Event('change', {bubbles: true}));
         return true;
-      }
-      el.click();
+      })()`);
+      return;
+    }
+    /* 无框下拉按钮：点开菜单，再按值点选项。 */
+    await evaluate(`(() => {
+      const sel = '[aria-label=' + JSON.stringify(${raw}) + ']';
+      document.querySelector(sel).click();
       return true;
     })()`);
-    // 原生 select 已经生效，不用等菜单。
-    const isNative = await evaluate(`(() => {
-      const el = document.querySelector('[aria-label=' + ${label} + ']');
-      return !!el && el.tagName === 'SELECT';
-    })()`);
-    if (isNative) return;
     await until(`(() => {
       const item = Array.from(document.querySelectorAll('.menu__item'))
         .find(b => b.getAttribute('data-value') === ${wanted});

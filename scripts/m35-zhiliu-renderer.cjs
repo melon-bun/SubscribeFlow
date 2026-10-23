@@ -235,6 +235,62 @@ async function verify({window, core, root}) {
   assert.ok(/999|100%/.test(shell.syncRadius || ''), '顶栏同步状态应是胶囊形，实际：' + shell.syncRadius);
   await shoot('03-shell.png');
 
+  /* ================= 5.5 布局级检查（样式对拍兜不住的那一类） =================
+     样式对拍比的是「声明值」，抓不到「这条规则用错了地方」。
+     下面四件事样式对拍全都看不出来，只能在真实布局里量：
+       1. 页面不能有横向溢出；
+       2. 没有详情面板时，主区必须占满纸面——不能预留一条空列；
+       3. 顶部任务条与页面标题不能叠在一起；
+       4. 页面标题与操作行要左对齐。
+     这几条正是「整页视图被挤到左边、标题贴住任务条」两个回归的现场。 */
+
+  const layoutOf = async () => evaluate(`(() => {
+    const box = el => { if (!el) return null; const r = el.getBoundingClientRect();
+      return {l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom), w: Math.round(r.width)}; };
+    const ws = document.querySelector('.workspace');
+    const main = document.querySelector('.workspace > .main');
+    const detail = document.querySelector('.workspace > .detail');
+    const task = document.querySelector('.task');
+    const head = document.querySelector('.view__head');
+    /* 标题行下面那块内容（筛选条 / 页面主体）——它才该和标题左边缘对齐。
+       .view__actions 在标题行的**右边**（参考页 .page-actions { margin-left:auto }），
+       拿它比左边缘是比错了。 */
+    const row = document.querySelector('.inbox__toolbar') || document.querySelector('.view__body > *');
+    return {
+      innerWidth: innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      ws: box(ws), main: box(main), detail: box(detail),
+      task: box(task), head: box(head), row: box(row),
+    };
+  })()`);
+
+  const checkLayout = async (label) => {
+    const L = await layoutOf();
+    assert.ok(L.scrollWidth <= L.innerWidth,
+      label + '：出现横向溢出（scrollWidth ' + L.scrollWidth + ' > innerWidth ' + L.innerWidth + '）');
+    if (L.ws && L.main && !L.detail) {
+      const gap = L.ws.r - L.main.r;
+      assert.ok(gap <= 1,
+        label + '：没有详情面板却给主区留了 ' + gap + 'px 空列（右边缘没贴住纸面）');
+    }
+    if (L.task && L.head) {
+      assert.ok(L.head.t >= L.task.b,
+        label + '：页面标题顶到顶部任务条了（标题顶 ' + L.head.t + ' < 任务条底 ' + L.task.b + '）');
+    }
+    if (L.head && L.row) {
+      assert.ok(Math.abs(L.head.l - L.row.l) <= 1,
+        label + '：页面标题与操作行左边缘没对齐（' + L.head.l + ' vs ' + L.row.l + '）');
+    }
+  };
+
+  for (const width of [1440, 900]) {
+    window.setSize(width, 1000);
+    await pause(500);
+    await checkLayout('收件箱 @' + width);
+  }
+  window.setSize(1440, 1000);
+  await pause(400);
+
   /* ================= 6. 其它页面 ================= */
 
   const goto = async (route, params, ready) => {
@@ -244,6 +300,8 @@ async function verify({window, core, root}) {
     await until(`!!document.querySelector('[data-view="${route}"]')`);
     if (ready) await until(ready);
     await pause(1000);
+    /* 每个页面都要过布局检查——样式对拍抓不到「规则用错地方」这一类。 */
+    await checkLayout('页面 ' + route + (params ? '/' + Object.values(params)[0] : ''));
   };
 
   await goto('overview', null, `!!document.querySelector('.calendar-grid')`);

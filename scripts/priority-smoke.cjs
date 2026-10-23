@@ -5,6 +5,10 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   assert.equal((await core.call('content.list',{priority:'none'})).total,25);
   assert.equal(await evaluate(`SubscribeFlow.call('priority.set_source',{subscription_id:${JSON.stringify(sub.id)},priority:null}).then(s=>s.id)`),sub.id);
   assert.equal(await evaluate(`SubscribeFlow.call('os.system',{}).then(()=>false,()=>true)`),true);
+  /* 来源默认优先级现在是「静流」的无框下拉按钮（不是原生 select）。
+     用共享的 setFilter：原生 select 直接赋值，无框按钮点开菜单按值点选项。 */
+  const {setFilter}=require('./renderer-actions.cjs').rendererActions({evaluate,until});
+  /* 原生 <select>（看板处理状态等）仍按老办法赋值。 */
   const change=async (label,value) => evaluate(`(() => {
     const el=document.querySelector('select[aria-label='+${JSON.stringify(JSON.stringify(label))}+']');
     if(!el || el.disabled) throw new Error('Missing enabled select');
@@ -13,11 +17,11 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   const sourceLabel='来源优先级 '+sub.name;
   const sourceSettings=async () => {
     await evaluate(`SF.app.navigate('channels',{tab:'priorities'})`);
-    await until(`!!document.querySelector('[data-priority-source] select')`);
+    await until(`!!document.querySelector('[data-priority-source] .select--btn')`);
   };
   await sourceSettings();
-  await change(sourceLabel,'high');
-  await until(`SF.app.state.counts.high===25 && document.querySelector('[data-priority-source] select')?.value==='high'`);
+  await setFilter(sourceLabel,'high');
+  await until(`SF.app.state.counts.high===25 && document.querySelector('[data-priority-source] .select--btn')?.getAttribute('data-value')==='high'`);
   assert.equal((await core.call('subscription.list'))[0].version,sub.version);
   await screenshot('m8-source-priorities.png');
   await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
@@ -44,8 +48,8 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   })()`), '中优先级的信号条应当点亮两格并保留第三格');
   await screenshot('m8-content-priority.png');
   await sourceSettings();
-  await change(sourceLabel,'medium');
-  await until(`SF.app.state.counts.medium===24 && !!document.querySelector('[data-priority-source] select')`);
+  await setFilter(sourceLabel,'medium');
+  await until(`SF.app.state.counts.medium===24 && document.querySelector('[data-priority-source] .select--btn')?.getAttribute('data-value')==='medium'`);
   assert.equal((await core.call('content.get',{item_id:firstId})).priority,'low');
   await evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
   await until(`document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===20`);
@@ -87,7 +91,7 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   await until(`!!document.querySelectorAll('.content-card')[1] && !document.querySelector('[aria-label="批量设置优先级"]')`);
   assert.equal((await core.call('content.get',{item_id:second})).priority_override,'medium');
   await sourceSettings();
-  await change(sourceLabel,'high');
+  await setFilter(sourceLabel,'high');
   await until(`SF.app.state.counts.high===23 && SF.app.state.counts.medium===1`);
   await evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
   await until(`document.querySelectorAll('[data-priority-column="high"] [data-priority-item]').length===20 && document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===1`);
@@ -114,7 +118,7 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   await until(`document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===1`);
   // Removing a source default preserves explicit content choices.
   await sourceSettings();
-  await change(sourceLabel,'');
+  await setFilter(sourceLabel,'');
   await until(`SF.app.state.counts.none===23 && SF.app.state.counts.low===1`);
   await evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
   await until(`!!document.querySelector('[aria-label="看板优先级"]')`);

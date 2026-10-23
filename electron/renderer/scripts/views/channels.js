@@ -160,17 +160,17 @@
       keyword ? ui.btn('显示全部来源',{onClick:function() { keyword=''; reload(); }}) : null,
       cache.items.length ? cache.items.map(function(c) {
         var saving=false;
-        var select=ui.select([{value:'',label:'未设置'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), c.defaultPriority || '',async function(value) {
-          if(saving) return; saving=true; select._input.disabled=true;
+        /* 「静流」§.prow .select：230px 宽的无框按钮，左边带一条等级信号条，
+           不用点开就知道这一行设的是哪一档。原生 <select> 换成 ui.dropdown。 */
+        var options=[{value:'',label:'未设置'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; }));
+        var select=ui.dropdown(options, c.defaultPriority || '', async function(value) {
+          if(saving) return; saving=true;
           try { await app.client.savePrioritySettings({id:c.id,priority:value || null}); ui.toast('来源优先级已保存'); await SF.app.refreshData(true); }
-          catch(err) { select._input.value=c.defaultPriority || ''; ui.toast(err.message,'danger'); }
-          finally { saving=false; select._input.disabled=false; }
-        },{ariaLabel:'来源优先级 '+c.name});
-        /* 已设置的来源：下拉框左边带一条等级信号条，
-           不用点开下拉就知道这一行设的是哪一档。 */
+          catch(err) { ui.toast(err.message,'danger'); }
+          finally { saving=false; }
+        },{ariaLabel:'来源优先级 '+c.name, node: c.defaultPriority ? ui.prioSig(c.defaultPriority) : null});
         return h('div.source-priority-row',{'data-priority-source':c.id,'data-refresh-key':'source-priority:' + c.id,
-          'data-refresh-boundary':true,'data-refresh-preserve':JSON.stringify(c)},ui.avatar(c.name),h('div.grow',null,h('strong',{text:c.name}),h('div.muted',{text:SF.catalog.platform(c.platform).name+' · '+(c.enabled?'追踪中':'已暂停')})),h('div.source-priority-row__ctl',null,
-            c.defaultPriority ? ui.prioSig(c.defaultPriority) : null, select));
+          'data-refresh-boundary':true,'data-refresh-preserve':JSON.stringify(c)},ui.avatar(c.name),h('div.grow',null,h('strong',{text:c.name}),h('div.muted',{text:SF.catalog.platform(c.platform).name+' · '+(c.enabled?'追踪中':'已暂停')})),h('div.source-priority-row__ctl',null, select));
       }) : ui.state({icon:'folder-open',title:'还没有可设置的来源',desc:'添加来源后可在这里设置默认优先级。'}));
   }
   function channelList(app) {
@@ -186,7 +186,9 @@
         var cov = cache.coverage[i];
         return h('tr',{'data-channel-id':c.id,'data-refresh-key':'channel:' + c.id,'data-refresh-boundary':true,
           'data-refresh-preserve':JSON.stringify([c,cov])},
-          h('td',null,h('div.channel-cell',null,ui.platformIcon(c.platform),ui.avatar(c.name),h('div.channel-cell__text',null,h('div.channel-cell__name',{text:c.name}),h('div.channel-cell__desc',null,h('span',{text:'UID '}),h('span.mono',{text:c.externalId}))))),
+          /* 「静流」§.who：头像在左，平台方块跟着名字走（名字行里），
+             整列都扫得见的只有头像 + 名字 + UID。 */
+          h('td',null,h('div.channel-cell',null,ui.avatar(c.name),h('div.channel-cell__text',null,h('div.channel-cell__name',null,ui.platformIcon(c.platform),h('span',{text:c.name})),h('div.channel-cell__desc',null,h('span',{text:'UID '}),h('span.mono',{text:c.externalId}))))),
           h('td',null,ui.btn('打开主页',{size:'sm',icon:'external',onClick:function () { SF.app.act('source:' + c.id,function () { return app.client.openChannel(c.id); }); }})),
           h('td',null,h('div.cadence',null,
             h('b',null,ui.btn(c.frequency,{size:'sm',onClick:function () { scheduleDialog(app,c); },ariaLabel:'设置同步方式 ' + c.name})),

@@ -297,7 +297,9 @@
   box-shadow: var(--sh-card);
 }
 
-.select::after {
+/* 原生 <select> 用伪元素画箭头；按钮形态（.select--btn）的箭头是内联图标，
+   两者都画会出现两个箭头。 */
+.select:not(.select--btn)::after {
   content: "";
   position: absolute;
   right: var(--s-4);

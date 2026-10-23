@@ -155,6 +155,8 @@
         title: opts.title || current.label,
         "aria-label": opts.ariaLabel || current.label,
         "aria-haspopup": "menu",
+        /* 当前值挂在按钮上：验收脚本与外部自动化按值定位用 */
+        "data-value": String(value),
         onclick: function (e) {
           e.stopPropagation();
           ui.menu(options.map(function (o) {
@@ -168,6 +170,8 @@
         },
       },
       opts.icon ? icon(opts.icon, 14) : null,
+      /* 前置节点：等级信号条等（参考页 .prow .select 把信号条放在按钮里）。 */
+      opts.node || null,
       h("span", { text: current.label }),
       /* 「静流」§.select：箭头是按钮里的一个内联图标，不是 ::after 伪元素。 */
       icon("chevron-down", 14)
