@@ -5,6 +5,10 @@
 分支：`feature/seg-slide`（worktree `.worktrees/seg-slide`）
 提交：`d1b8d41` feat(ui): 分段控件选中滑块动画
 
+2026-10-24 集成补记：本分支实现与文档已通过 `8d99120` 合入本地 main。
+与当前视觉修整共同复验：专项 21/21、M35 细节 38/38、Node 142/142、
+完整离线 Renderer 回归通过，见 [集成记录](verification/phase51/main-integration-20261024/REPORT.md)。
+
 ## 1. 做了什么
 
 所有分段控件（`.seg` / `.segment`）切换选中项时，选中底色（浮起滑块）从旧项滑到新项。
