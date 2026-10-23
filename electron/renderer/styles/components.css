@@ -447,6 +447,29 @@
   justify-content: center;
 }
 
+/* 切换时的滑块（scripts/ui/seg-glide.js）：画在分组的 ::before 上，
+   静止时透明，只在动画期间由 Web Animations 给出位置和外观。
+   contain: layout 让分组成为 ::before 的包含块和层叠上下文，
+   z-index: -1 把滑块压在凹槽底色之上、按钮文字之下；
+   不改 position / z-index，参考页对拍的计算样式保持不变。 */
+.seg,
+.segment {
+  contain: layout;
+}
+
+.seg::before,
+.segment::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: -1;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* ---------------- 输入框 ----------------
    「静流」§输入框：静止时细线，聚焦时青色描边 + 4px 光环。 */
 
