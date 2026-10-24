@@ -76,6 +76,15 @@
     return priorityNames();
   }
 
+  /* M43：最终优先级的来源说法。Core 算好来源（manual／smart／source／none），
+     界面照实显示，不自己猜「有没有开 AI」。 */
+  var PRIORITY_ORIGIN_TEXT = {manual: "单独设置", smart: "智能判断", source: "跟随来源", none: "未设置"};
+
+  /** 来源说法的显示文案；未知来源按「未设置」处理。 */
+  function priorityOriginText(origin) {
+    return PRIORITY_ORIGIN_TEXT[origin] || PRIORITY_ORIGIN_TEXT.none;
+  }
+
   /** 当前生效的三级显示名。 */
   function priorityNames() {
     var names = {};
@@ -107,9 +116,11 @@
     PRIORITY_DEFAULT_NAMES: PRIORITY_DEFAULT_NAMES,
     PRIORITY_NONE_NAME: PRIORITY_NONE_NAME,
     PRIORITY_NAME_MAX: PRIORITY_NAME_MAX,
+    PRIORITY_ORIGIN_TEXT: PRIORITY_ORIGIN_TEXT,
     platform: platform,
     priority: priority,
     priorityNames: priorityNames,
+    priorityOriginText: priorityOriginText,
     setPriorityNames: setPriorityNames,
     normalizePlatform: normalizePlatform,
     normalizePriority: normalizePriority,

@@ -39,6 +39,33 @@ async function verify({window, core, root}) {
   };
   const pause = ms => new Promise((resolve) => setTimeout(resolve, ms));
 
+  /* M43：页头到第一个工作区的距离。四个页面（总览／渠道／标签／笔记）都该是 16px，
+     而且只能有一个来源给出这个距离——两处都给会叠成 32／36px。
+     这里量真实渲染结果，不是量样式表。 */
+  const spacing = {};
+  const measureSpacing = async (name) => {
+    spacing[name] = await evaluate(`(() => {
+      const view = document.querySelector('[data-view=${JSON.stringify(name)}]');
+      if (!view) return null;
+      const children = Array.from(view.children);
+      const index = children.findIndex(c => c.classList.contains('view__head'));
+      if (index < 0) return null;
+      const head = children[index].getBoundingClientRect();
+      const next = children[index + 1];
+      if (!next) return null;
+      const target = next.getBoundingClientRect();
+      const style = getComputedStyle(next);
+      return {
+        headBottom: Math.round(head.bottom),
+        firstTop: Math.round(target.top),
+        distance: Math.round(target.top - head.bottom),
+        firstElement: next.className || next.tagName,
+        marginTop: style.marginTop,
+        viewGap: getComputedStyle(view).gap,
+      };
+    })()`);
+  };
+
   const shotDir = process.env.SUBSCRIBE_FLOW_VERIFY_OUTPUT ||
     '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/docs/verification/phase5-minimax/ui-shot';
   fs.mkdirSync(shotDir, {recursive: true});
@@ -83,10 +110,12 @@ async function verify({window, core, root}) {
   await until(`!!document.querySelector('.notes-reader')`);
   await pause(600);
   await shoot('01-notes.png');
+  await measureSpacing('notes');
 
   /* 2. 内容总览：日历模式 + 优先级模式 + 两个筛选下拉展开。 */
   await goto('overview', null, `!!document.querySelector('.calendar-grid')`);
   await shoot('02-overview-calendar.png');
+  await measureSpacing('overview');
   /* 月份筛选是无框下拉（参考页 .select 形态）：展开菜单也要看一眼，
      选项文案与浮层位置是「照抄参考页」的一部分。 */
   await evaluate(`document.querySelector('[aria-label="日历月份"]').click()`);
@@ -104,20 +133,30 @@ async function verify({window, core, root}) {
   await evaluate(`SF.ui.closeMenu()`);
   await pause(200);
 
-  /* 3. 渠道管理：渠道列表 + 优先级设置。 */
+  /* 3. 渠道管理：只剩渠道列表（M42：来源默认优先级搬进了设置页）。 */
   await goto('channels', null, `!!document.querySelector('[data-view="channels"] .channels__table-wrap')`);
   await shoot('04-channels-list.png');
-  await goto('channels', {tab: 'priorities'}, `!!document.querySelector('.source-priorities')`);
-  await shoot('05-channels-priorities.png');
+  await measureSpacing('channels');
+
+  /* 3b. 设置页「优先级设置」：智能判断、来源默认优先级与三个名称合成一页。 */
+  await evaluate(`SF.app.navigate('settings',{section:'priority'})`);
+  await until(`SF.app.state.route.name === 'settings'`);
+  await until(`!!document.querySelector('.settings')`);
+  await until(`document.querySelector('.settings__title')?.textContent === '优先级设置'`);
+  await pause(1500);
+  await shoot('05-settings-priority.png');
 
   /* 4. 标签：标签列表 + AI 自动识别。 */
   await goto('tags', null, `!!document.querySelector('[data-view="tags"] .tags-list')`);
   await shoot('06-tags-list.png');
+  await measureSpacing('tags');
   await goto('tags', {tab: 'ai'}, `!!document.querySelector('[data-view="tags"]')`);
   await pause(800);
   await shoot('07-tags-ai.png');
 
+  fs.writeFileSync(path.join(shotDir, 'spacing.json'), JSON.stringify(spacing, null, 2));
   console.log('[uishot] 截图完成：' + shotDir);
+  console.log('[uishot] 页头间距：' + JSON.stringify(spacing));
 }
 
 module.exports = {verify};

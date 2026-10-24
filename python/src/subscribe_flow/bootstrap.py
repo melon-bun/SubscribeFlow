@@ -88,7 +88,7 @@ class Core:
         self.tags = TagService(self.repository, self.emit, recognition_provider)
         self.queries = QueryService(self.repository, self.gateway)
         # M15：配置只存引用；Main 私有桥推送的明文只在 credentials 内存容器中使用。
-        self.settings = SettingsService(SettingsStore(self.database))
+        self.settings = SettingsService(SettingsStore(self.database), repository=self.repository)
         self.credentials = CredentialBroker()
         # M25：公共 AI 层。连接解析、凭据组装与协议探针都在这里，
         # 打标、总结与将来的服务都从它出入，不各自造连接。

@@ -241,10 +241,13 @@ def _recognition_fingerprint(payload):
 
 
 class SettingsService:
-    def __init__(self, store, on_change=None):
+    def __init__(self, store, on_change=None, repository=None):
         self.store = store
         # 保存后的回调（M40：智能判断策略要立刻生效）。可选，测试里不传。
         self.on_change = on_change
+        # 来源默认优先级在 subscriptions 表里。统一保存（M42）要靠它把
+        # 来源默认值和设置写进同一个事务；不给就只保存设置本身。
+        self.repository = repository
 
     # ------------------------------------------------------------ 读取
 
@@ -386,6 +389,9 @@ class SettingsService:
             _fail("没有需要保存的修改")
         _, _, payload = self._current()
         fingerprint = _recognition_fingerprint(payload)
+        # 来源默认优先级（M42）：只有「优先级设置」分区会带上来源默认值，
+        # 它和设置在同一个事务里落库。
+        source_priorities = None
         if section == "ai":
             # 凭据引用要在完整性校验之前落进草稿：一次提交里同时给出地址、模型和
             # 新密钥是正常流程，先校验再合并会把这次提交误判成「缺 API Key」。
@@ -406,6 +412,9 @@ class SettingsService:
             if credential_refs:
                 _fail("优先级设置不接受凭据引用")
             merged = self._merge_priority(payload["priority"], patch, payload["ai"]["providers"])
+            # 来源默认优先级不进设置存档：它的真身是 subscriptions 表。
+            # 这里单独取出来，和设置一起在同一个事务里落库。
+            source_priorities = merged.pop("sources", None)
             # 智能判断的有效策略版本：只有策略真的变了才前进。
             # 改三级显示名称不改变判断语义，不得因此作废所有在途结果。
             if _smart_fingerprint(merged.get("smart") or {}) != _smart_fingerprint(
@@ -422,7 +431,7 @@ class SettingsService:
         if _recognition_fingerprint(payload) != fingerprint:
             payload["tagging"]["revision"] = int(payload["tagging"].get("revision") or 1) + 1
         # 设置的 version 是保存计数：每次保存都前进，供并发保存检查用。
-        record = self.store.save(payload)
+        record = self._save(payload, source_priorities)
         if self.on_change is not None:
             try:
                 self.on_change()
@@ -496,18 +505,57 @@ class SettingsService:
         return merged
 
     def _merge_priority(self, current, patch, providers):
-        """优先级分区有两件事：三级显示名与智能判断策略。
+        """优先级分区有三件事：三级显示名、智能判断策略与来源默认优先级。
 
-        显示名只改显示，策略决定判断语义。两者分开合并，改名不碰策略。
+        显示名只改显示，策略决定判断语义，来源默认值决定未单独设置的内容
+        跟随哪一档。三者分开合并，改名不碰策略，来源默认值不碰策略。
         """
-        if set(patch) - {"names", "smart"}:
+        if set(patch) - {"names", "smart", "sources"}:
             _fail("包含不支持的优先级字段")
         merged = copy.deepcopy(current)
         if "names" in patch:
             merged["names"] = self._merge_priority_names(merged.get("names") or {}, patch["names"])
         if "smart" in patch:
             merged["smart"] = self._merge_priority_smart(merged.get("smart") or {}, patch["smart"], providers)
+        if "sources" in patch:
+            merged["sources"] = self._merge_priority_sources(patch["sources"])
         return merged
+
+    def _merge_priority_sources(self, sources):
+        """来源默认优先级：整份一起校验。
+
+        来源在草稿期间被取消订阅时，保存要明确失败：静默跳过会让用户以为
+        保存成功，实际那一行没设上。
+        """
+        if not isinstance(sources, dict) or not sources:
+            _fail("来源默认优先级格式无效", "field", "sources")
+        merged = {}
+        for sub_id, priority in sources.items():
+            if not isinstance(sub_id, str) or not sub_id:
+                _fail("来源 ID 无效", "field", "sources")
+            if priority is None:
+                # 明确的「不设置」：这一路来源的内容回到跟随来源。
+                merged[sub_id] = None
+                continue
+            if priority not in PRIORITY_LEVELS:
+                _fail("来源默认优先级无效", "field", "sources." + sub_id)
+            merged[sub_id] = priority
+        return merged
+
+    def _save(self, payload, source_priorities=None):
+        """一次事务保存设置与来源默认优先级（M42）。
+
+        名称、策略和来源默认值是同一个保存动作：要么一起生效，要么都不生效。
+        逐条写来源会留下「名称已保存、只保存了一半来源」的坏状态——那正是
+        用户最难自己查出来的一种。
+        """
+        if not source_priorities:
+            return self.store.save(payload)
+        if self.repository is None:
+            _fail("来源默认优先级无法保存：当前核心没有来源仓储。", "field", "sources")
+        items = dict(source_priorities)
+        return self.store.save(
+            payload, apply=lambda db: self.repository.write_source_priorities(db, items))
 
     def _merge_priority_names(self, current, names):
         """三级名称只能改显示名：等级本身固定，缺失的沿用当前值。"""

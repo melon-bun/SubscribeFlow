@@ -24,7 +24,14 @@ class SettingsStore:
             return {"version": 0, "payload": None, "updatedAt": None}
         return {"version": row["version"], "payload": json.loads(row["payload"]), "updatedAt": row["updated_at"]}
 
-    def save(self, payload, version=None):
+    def save(self, payload, version=None, apply=None):
+        """保存设置。
+
+        ``apply`` 是在同一个事务里执行的其他写入。M42 的「优先级设置」要把
+        三级名称、智能判断策略和来源默认优先级放在一次保存里生效：来源
+        默认值在 subscriptions 表里，设置在 app_settings 表里，两处必须同一
+        个事务，否则失败时会留下「名称已保存、来源只保存了一半」的坏状态。
+        """
         current = self.load()
         # 单进程写入且保存时递增版本，读到的版本号足以判断自己是否过期。
         next_version = current["version"] + 1 if version is None else version
@@ -35,4 +42,6 @@ class SettingsStore:
                        "ON CONFLICT(id) DO UPDATE SET version=excluded.version,"
                        "payload=excluded.payload,updated_at=excluded.updated_at",
                        (next_version, encoded, stamp))
+            if apply is not None:
+                apply(db)
         return {"version": next_version, "payload": payload, "updatedAt": stamp}

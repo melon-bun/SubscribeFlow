@@ -1021,6 +1021,13 @@ font-style: normal; color: var(--c-low);
 min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* 筛选/分区切换行直接挂在页面容器下时（如渠道页、标签页的那一行）：
+   页面容器的 16px gap 已经给出这一段距离，行本身不再自带外边距——
+   两处都给会叠成 36px，节奏就散了。 */
+.view > .inbox__toolbar {
+margin: 0;
+}
+
 .btn--sm {
 height: 28px; padding: 0 10px; font-size: 12.5px; gap: 5px;
 }

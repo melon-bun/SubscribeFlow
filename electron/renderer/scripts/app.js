@@ -58,7 +58,6 @@
     selectedId: null,
     selectedDate: null,
     overviewMode: "calendar",
-    channelTab: "list",
     tagTab: "list",
     // 标签总数由标签视图读到后回填；null 表示还没读过，不显示 0 冒充「没有标签」
     tagCount: null,
@@ -644,7 +643,7 @@
     var result = view.render(app);
     var main = result && result.main || result;
     if (main) main.dataset.scrollScope = JSON.stringify([app.route.name, app.filters, app.search,
-      app.overviewMode, app.calendarMonth, app.channelTab, app.tagTab]);
+      app.overviewMode, app.calendarMonth, app.tagTab]);
     /* 「静流」：纸面里是「主区 + 详情」两列，主区自带内边距 26px 26px 0。
        产品原来直接把这个视图当主区，纸面里就没有 .main 这一层，
        内边距只好挂在视图自己身上——与参考页的结构对不上。
@@ -959,7 +958,12 @@
       app.overviewMode = app.route.params.mode === "priority" ? "priority" : "calendar";
     }
     if (app.route.name === "channels" && app.route.params.tab) {
-      app.channelTab = app.route.params.tab;
+      /* M42：来源默认优先级已经并进设置页的「优先级设置」。
+         旧的书签与旧入口照旧可用：直接改哈希跳到统一设置，不留死路由。 */
+      if (app.route.params.tab === "priorities") {
+        global.location.hash = "#/settings?section=priority";
+        return Promise.resolve();
+      }
     }
     // 页签值只认白名单里的两个：哈希是用户可改的，未知值静默回落到列表页
     if (app.route.name === "tags") {

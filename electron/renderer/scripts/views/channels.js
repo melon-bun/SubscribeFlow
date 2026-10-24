@@ -120,58 +120,16 @@
     refreshCoverage(app);
     var body;
     if (cache.error) body = ui.state({icon:'alert',title:'渠道读取失败',desc:cache.error.message,actions:[{label:'重试',onClick:reload}]});
-    else body = h('div.col.grow.channels-content.scroll-y', {style:{gap:'20px'},'data-refresh-key':'channel-content:' + app.channelTab},
+    /* M42：来源默认优先级已经搬进设置页的「优先级设置」。
+       这里只剩渠道本身，不再挂一个空的切换栏。 */
+    else body = h('div.col.grow.channels-content.scroll-y', {style:{gap:'20px'},'data-refresh-key':'channel-content'},
       cache.refreshError ? h('p.field__error',{role:'status','data-refresh-key':'channel-refresh-error',text:'更新失败，正在显示已加载内容：' + cache.refreshError.message}) : null,
-      app.channelTab==='priorities' ? cache.loaded ? prioritySettings(app) : ui.state({icon:'clock',title:'正在载入渠道…'}) : channelList(app),
-      app.channelTab==='priorities' || !cache.loaded ? null : bottomPanels(app));
-    return h('div.view', {'data-view':'channels','data-refresh-key':'channels:' + app.channelTab}, h('div.view__head', null,
+      channelList(app),
+      !cache.loaded ? null : bottomPanels(app));
+    return h('div.view', {'data-view':'channels','data-refresh-key':'channels'}, h('div.view__head', null,
       h('div.view__head-text', null, h('h1.t-h1',{text:'渠道管理'}), h('p.view__desc',{text:'管理关注的创作者，选择手动或自动刷新，并查看采集状态。'})),
       h('div.view__actions', null, ui.btn('添加渠道或创作者',{variant:'primary',icon:'plus',disabled:!app.session.capabilities.canManageChannels,onClick:function () { addDialog(app); }}))),
-      /* 「静流」§渠道管理：视图切换做成分段控件（渠道列表 / 优先级设置）。 */
-      h('div.inbox__toolbar',null,ui.seg(
-        [{value:'list',label:'渠道列表'},{value:'priorities',label:'优先级设置'}],
-        app.channelTab,
-        function (value) { app.channelTab=value; SF.app.navigate('channels',{tab:value}); renderView(); },
-        {ariaLabel:'渠道视图'})),
       h('div.view__body', null, body));
-  }
-  function prioritySettings(app) {
-    /* 「静流」§渠道管理：优先级设置页顶部加一条分布条，
-       一眼看出多少来源还没设默认优先级。 */
-    var total = cache.items.length;
-    var counts = {high:0, medium:0, low:0};
-    cache.items.forEach(function (c) {
-      var p = c.defaultPriority;
-      if (p && counts[p] != null) counts[p]++;
-    });
-    var setCount = counts.high + counts.medium + counts.low;
-    var dist = h('div.source-priorities__dist', null,
-      h('div.dist', null, ['high','medium','low'].map(function (id) {
-        return counts[id] ? h('i', {style:{width:(total ? counts[id] / total * 100 : 0) + '%',
-          background:'var(--c-' + (id === 'medium' ? 'mid' : id) + ')'}}) : null;
-      })),
-      h('span.mono', {text:'已设置 ' + setCount + ' / ' + total + ' · 未设置 ' + (total - setCount)}));
-    return h('section.panel.source-priorities',{'aria-label':'来源优先级设置'},
-      h('div.source-priorities__head', null,
-        h('div', null,
-          h('h2.t-h2',{text:'来源默认优先级'}),
-          h('p.view__desc',{text:'未单独设置的历史和新内容都会跟随来源；单条内容的手动设置会保留。'})),
-        dist),
-      keyword ? ui.btn('显示全部来源',{onClick:function() { keyword=''; reload(); }}) : null,
-      cache.items.length ? cache.items.map(function(c) {
-        var saving=false;
-        /* 「静流」§.prow .select：230px 宽的无框按钮，左边带一条等级信号条，
-           不用点开就知道这一行设的是哪一档。原生 <select> 换成 ui.dropdown。 */
-        var options=[{value:'',label:'未设置'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; }));
-        var select=ui.dropdown(options, c.defaultPriority || '', async function(value) {
-          if(saving) return; saving=true;
-          try { await app.client.savePrioritySettings({id:c.id,priority:value || null}); ui.toast('来源优先级已保存'); await SF.app.refreshData(true); }
-          catch(err) { ui.toast(err.message,'danger'); }
-          finally { saving=false; }
-        },{ariaLabel:'来源优先级 '+c.name, node: c.defaultPriority ? ui.prioSig(c.defaultPriority) : null});
-        return h('div.source-priority-row',{'data-priority-source':c.id,'data-refresh-key':'source-priority:' + c.id,
-          'data-refresh-boundary':true,'data-refresh-preserve':JSON.stringify(c)},ui.avatar(c.name),h('div.grow',null,h('strong',{text:c.name}),h('div.muted',{text:SF.catalog.platform(c.platform).name+' · '+(c.enabled?'追踪中':'已暂停')})),h('div.source-priority-row__ctl',null, select));
-      }) : ui.state({icon:'folder-open',title:'还没有可设置的来源',desc:'添加来源后可在这里设置默认优先级。'}));
   }
   function channelList(app) {
     var toolbar = h('div.channels__toolbar', {'data-refresh-key':'channel-toolbar'}, h('h2.t-h2',{text:'全部渠道（' + (cache.items ? cache.items.length : '—') + '）'}), h('div.spacer'),

@@ -84,7 +84,8 @@ async function verify({window, core, root}) {
   const navLabels = await evaluate(`Array.from(document.querySelectorAll('.settings-nav__label')).map(n => n.textContent)`);
   // M29 增加了独立的「AI 总结」分区：总结策略不与 AI API 配置混在一起。
   // M32 增加了「外观」分区：轻科幻层开关，是纯前端设置。
-  assert.deepEqual(navLabels, ['AI API 配置', '提醒设置', '优先级名称', 'AI 总结', '外观']);
+  // M42：来源默认优先级并进设置页后，这一分区改名「优先级设置」。
+  assert.deepEqual(navLabels, ['AI API 配置', '提醒设置', '优先级设置', 'AI 总结', '外观']);
   assert.equal(await evaluate(`!!document.querySelector('.settings__foot')`), true, '底部操作区必须存在');
   assert.ok(await evaluate(`document.querySelector('[aria-label="关闭设置"]')`), '必须有可聚焦的关闭入口');
   await screenshot('m15-settings-tagging.png');
@@ -372,6 +373,41 @@ async function verify({window, core, root}) {
   await until(`document.querySelector('.settings__title').textContent === 'AI API 配置'`);
   await new Promise(resolve => setTimeout(resolve, 400));
   assert.ok(await evaluate(`document.body.innerText.includes('已保存（不回显）')`), '重启后仍应显示密钥已保存');
+
+  /* ---------- M42 优先级设置：智能判断、来源默认值、名称合成一页 ---------- */
+  await evaluate(`SF.app.openSettings('priority')`);
+  await until(`document.querySelector('.settings__title').textContent === '优先级设置'`);
+  const priorityBlocks = await evaluate(`Array.from(document.querySelectorAll('.setting-block__title')).map(n => n.textContent)`);
+  assert.ok(priorityBlocks.includes('智能判断'), '优先级设置要有智能判断');
+  assert.ok(priorityBlocks.includes('来源默认优先级'), '优先级设置要有来源默认优先级');
+  assert.ok(priorityBlocks.includes('三个优先级的名称'), '优先级设置要有三个优先级的名称');
+  // 名称：先改草稿，取消不写入，保存才生效。
+  const setPriorityName = async (value) => evaluate(`(() => {
+    const input = Array.from(document.querySelectorAll('.setting-fields input')).find(i => i.placeholder === '高优先级');
+    if (!input) throw new Error('找不到高优先级的名称输入框');
+    input.value = ${JSON.stringify(value)};
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    return true;
+  })()`);
+  await setPriorityName('今天看');
+  await until(`document.querySelector('.settings__foot-hint')?.textContent === '有未保存的修改'`);
+  await click('取消');
+  assert.equal((await core.call('settings.get')).priority.names.high, '高优先级', '取消不能写入名称');
+  await setPriorityName('今天看');
+  await click('保存设置');
+  await until(`document.querySelector('.settings__foot-hint')?.textContent !== '正在保存…'`);
+  assert.equal((await core.call('settings.get')).priority.names.high, '今天看', '保存后名称生效');
+  assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '保存后不应还有草稿');
+  // 开启智能判断但没有可用连接：保存要明确拒绝，不能存下跑不起来的状态。
+  await evaluate(`(() => {
+    const t = Array.from(document.querySelectorAll('.switch')).find(s => s.getAttribute('aria-label') === '启用智能判断');
+    if (!t) throw new Error('找不到智能判断开关');
+    t.click();
+  })()`);
+  await click('保存设置');
+  await until(`!!document.querySelector('.field__error')`);
+  assert.equal((await core.call('settings.get')).priority.smart.enabled, false, '没有连接时不能保存开着的智能判断');
+  await click('取消');
 
   /* ---------- 深色主题 ---------- */
   await evaluate(`SF.app.state.theme = 'dark'; document.documentElement.setAttribute('data-theme','dark'); SF.app.renderContent()`);

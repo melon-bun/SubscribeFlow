@@ -15,16 +15,24 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
     el.value=${JSON.stringify(value)}; el.dispatchEvent(new Event('change',{bubbles:true}));
   })()`);
   const sourceLabel='来源优先级 '+sub.name;
+  /* M42：来源默认优先级已经并进设置页的「优先级设置」。
+     它和其它设置一样是草稿＋一次保存，不再是改一条存一条。 */
   const sourceSettings=async () => {
-    await evaluate(`SF.app.navigate('channels',{tab:'priorities'})`);
+    await evaluate(`SF.app.navigate('settings',{section:'priority'})`);
     await until(`!!document.querySelector('[data-priority-source] .select--btn')`);
+  };
+  const saveSettings=async () => {
+    await evaluate(`Array.from(document.querySelectorAll('.settings__foot button')).find(b=>b.textContent.trim()==='保存设置').click()`);
+    await until(`!document.querySelector('.settings__body[disabled]')`);
   };
   await sourceSettings();
   await setFilter(sourceLabel,'high');
+  await saveSettings();
   await until(`SF.app.state.counts.high===25 && document.querySelector('[data-priority-source] .select--btn')?.getAttribute('data-value')==='high'`);
   assert.equal((await core.call('subscription.list'))[0].version,sub.version);
   await screenshot('m8-source-priorities.png');
-  await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
+  // 设置页是整页大面板，没有侧栏：按侧栏进「收件箱」的同一套语义改路由并复位筛选。
+  await evaluate(`SF.app.state.filters={quick:'unread',platform:null,channelId:null}; SF.app.navigate('inbox')`);
   await until(`!!document.querySelector('[data-view="inbox"]') && SF.app.state.filters.quick==='unread'`);
   await evaluate(`document.querySelector('[data-quick="all"]').click()`);
   await until(`document.querySelectorAll('.content-card').length===20`);
@@ -32,6 +40,13 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   await evaluate(`document.querySelector('.detail .priority-opt--low').click()`);
   await until(`SF.app.state.counts.low===1 && document.querySelector('.detail .priority-opt--low[aria-pressed="true"]')`);
   assert.equal((await core.call('content.get',{item_id:firstId})).state.read,true);
+  // M43：详情里的优先级控件是「自动判断｜高｜中｜低」；小字按真实来源说。
+  assert.equal(await evaluate(`document.querySelector('.detail .priority-opt--inherit .priority-opt__name')?.textContent`), '自动判断');
+  await until(`document.querySelector('.detail .priority-grid')?.closest('.detail__section')?.querySelector('.detail__section-hint')?.textContent.includes('单独设置')`);
+  // 智能判断没开时不显示「重新判断」：点了也不会有结果。
+  assert.equal(await evaluate(`!!document.querySelector('.detail .priority-grid')?.closest('.detail__section')?.querySelector('.detail__section-actions')`), false);
+  // 四种来源的说法与 Core 的 priority_origin 对应。
+  assert.deepEqual(await evaluate(`['manual','smart','source','none'].map(o => SF.catalog.priorityOriginText(o))`), ['单独设置','智能判断','跟随来源','未设置']);
   // 5.1 期（M31）：优先级等级改由信号条表达（颜色只在图形上），
   // 不再是彩色实心图标方块。这里验证信号条存在且真的带上了等级色，
   // 而不是简单删掉这条断言——「等级要一眼可辨」这个要求本身没有变。
@@ -49,6 +64,7 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   await screenshot('m8-content-priority.png');
   await sourceSettings();
   await setFilter(sourceLabel,'medium');
+  await saveSettings();
   await until(`SF.app.state.counts.medium===24 && document.querySelector('[data-priority-source] .select--btn')?.getAttribute('data-value')==='medium'`);
   assert.equal((await core.call('content.get',{item_id:firstId})).priority,'low');
   await evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
@@ -93,6 +109,7 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   assert.equal((await core.call('content.get',{item_id:second})).priority_override,'medium');
   await sourceSettings();
   await setFilter(sourceLabel,'high');
+  await saveSettings();
   await until(`SF.app.state.counts.high===23 && SF.app.state.counts.medium===1`);
   await evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
   await until(`document.querySelectorAll('[data-priority-column="high"] [data-priority-item]').length===20 && document.querySelectorAll('[data-priority-column="medium"] [data-priority-item]').length===1`);
@@ -120,6 +137,7 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   // Removing a source default preserves explicit content choices.
   await sourceSettings();
   await setFilter(sourceLabel,'');
+  await saveSettings();
   await until(`SF.app.state.counts.none===23 && SF.app.state.counts.low===1`);
   await evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
   await until(`!!document.querySelector('[aria-label="看板优先级"]')`);
@@ -129,7 +147,7 @@ async function verifyPriorities({evaluate, until, click, screenshot, core, windo
   await evaluate(`document.querySelector('[data-priority-column="none"] .priority-column-foot button').click()`);
   await until(`document.querySelectorAll('.content-card').length===20 && SF.app.state.filters.priority==='none'`);
   // Keep the remaining baseline renderer checks on their original route/scope.
-  await evaluate(`SF.app.state.filters={quick:'all',platform:null,channelId:null}; SF.app.state.channelTab='list'; SF.app.navigate('overview',{mode:'calendar'})`);
+  await evaluate(`SF.app.state.filters={quick:'all',platform:null,channelId:null}; SF.app.navigate('overview',{mode:'calendar'})`);
   await until(`!!document.querySelector('.calendar-grid')`);
   console.log(JSON.stringify({prioritySmoke:'passed',sourceInheritance:true,manualOverride:true,bulk:true,fullCounts:true,pagination:true,unknownDates:true}));
 }

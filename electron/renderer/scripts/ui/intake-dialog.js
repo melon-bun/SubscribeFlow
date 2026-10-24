@@ -445,7 +445,7 @@
         )
       );
 
-      var priorities = [{ id: null, name: subscribed === false ? "未设置" : "跟随来源", icon: "minus" }].concat(
+      var priorities = [{ id: null, name: subscribed === false ? "未设置" : "自动判断", icon: "minus" }].concat(
         catalog.PRIORITY_ORDER.map(function (id) {
           // M20：这里显示当前优先级名称，用户改名后收录表单跟着变。
           return { id: id, name: catalog.priority(id).name, icon: catalog.priority(id).icon };

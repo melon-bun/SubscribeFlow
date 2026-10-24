@@ -70,6 +70,9 @@ const CLASS_MAP = {
 
   // ---------------- 筛选条 ----------------
   '.filters': '.inbox__toolbar',
+  // 页面容器下的筛选/分区切换行：外边距交回页面容器的 16px gap，
+  // 不让「容器 gap + 行自带 margin」两处间距叠加。
+  '.filters.page-row': '.view > .inbox__toolbar',
   '.seg': '.seg',
   '.seg button': '.seg button',
   '.seg button.on': '.seg button.is-active',

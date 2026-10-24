@@ -155,6 +155,9 @@
 
   function render(app) {
     var key = identity(app);
+    /* M43：详情里的「重新判断」按钮要知道智能判断开没开。
+       状态很轻，只在详情开着时读一次。 */
+    if (app.selectedId) loadJudgmentStatus(app);
     if (key !== queryKey) {
       queryKey = key; offset = 0;
       // 显示快照与新请求分开：回执前保留原列表和详情，回执后一次落定。
@@ -321,7 +324,7 @@
       ['已读', '稍后处理', '归档'].map(function (label, i) { return ui.btn(label, {onClick:function () {
         var ids = Array.from(selected), state = {}; state[['read','deferred','archived'][i]] = true;
         SF.app.act('bulk', async function () { await app.client.bulkUpdate(ids, {state:state}); selected.clear(); await SF.app.refreshData(true); });
-      }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复跟随来源'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true); }); },{ariaLabel:'批量设置优先级'}), bulkTagControl(app), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
+      }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复自动判断'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true); }); },{ariaLabel:'批量设置优先级'}), bulkTagControl(app), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
     var pager = cache.loaded && !cache.error ? h('div.pager', {'data-refresh-key':'inbox-pager'},
       h('span.pager__count', {role:cache.switching ? 'status' : null}, cache.switching ? (cache.loading ? '筛选中…' : '未切换，显示上次结果') : ['共 ', h('span.num', {text:String(cache.total)}), ' 条 · 第 ', h('span.num', {text:String(Math.floor(offset / 20) + 1)}), ' 页']),
       ui.btn('上一页', {variant:'ghost', size:'sm', disabled:cache.switching || offset === 0, onClick:function () { offset = Math.max(0, offset - 20); cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }}),
@@ -450,8 +453,24 @@
     );
   }
 
+  /* 智能判断开没开：没开时不显示「重新判断」——点了也不会有结果。 */
+  var judgmentStatus = { loaded: false, loading: false, enabled: false };
+
+  function loadJudgmentStatus(app) {
+    if (judgmentStatus.loaded || judgmentStatus.loading) return;
+    judgmentStatus.loading = true;
+    app.client.getPriorityStatus().then(function (status) {
+      judgmentStatus.enabled = !!(status && status.enabled);
+      judgmentStatus.loaded = true;
+      judgmentStatus.loading = false;
+      renderView();
+    }, function () {
+      judgmentStatus.loading = false;
+    });
+  }
+
   function priorityControls(app,item,repaint) {
-    /* 「静流」§5：优先级三张卡片 + 「跟随来源」合并为一个四段控件。
+    /* 「静流」§5：优先级三张卡片 + 「自动判断」合并为一个四段控件。
        段里只放固定等级字（高 / 中 / 低）——用户自定义的显示名可能很长
        （例如「开箱即用的项目_教程」），直接放进分段会把控件挤爆；
        完整名字放到标题行的提示里，悬停分段也能看到全名。 */
@@ -460,22 +479,35 @@
       var meta = SF.catalog.priority(id);
       return {id:id, short:meta.short, name:meta.name};
     });
-    options.unshift({id:'inherit', short:'跟随来源', name:'跟随来源'});
+    options.unshift({id:'auto', short:'自动判断', name:'自动判断'});
+    var origin = item.priorityOrigin || 'none';
+    var originText = SF.catalog.priorityOriginText(origin);
+    var auto = !item.priorityOverride;
     return h('div.detail__section',{'data-refresh-key':'priority:' + item.id,'data-refresh-boundary':true,
-      'data-refresh-preserve':JSON.stringify([item.priority, item.priorityOverride, contentPending(item.id)])},
+      /* 来源也算进刷新依据：等级没变、来源变了（小字要跟着变）也要重画。 */
+      'data-refresh-preserve':JSON.stringify([item.priority, item.priorityOverride, origin, contentPending(item.id)])},
       h('div.detail__section-title', null,
         h('span', {text:'优先级'}),
         /* 提示里用完整显示名：用户改过名（「开箱即用的项目_教程」）时，
            这里能看出当前到底是哪一档；太长由 CSS 省略。 */
-        h('span.detail__section-hint', {text:(item.priorityOverride ? '已单独设置' : '跟随来源') + ' · 当前为' + current.name})),
+        h('span.detail__section-hint', {text:originText + ' · 当前为' + current.name})),
       h('div.seg.priority-grid',{'aria-label':'内容优先级'}, options.map(function(opt) {
-        var active = opt.id==='inherit' ? !item.priorityOverride : item.priorityOverride===opt.id;
-        var disabled = contentPending(item.id) || (opt.id==='inherit' && !item.priorityOverride);
-        return h('button.priority-opt.priority-opt--'+(opt.id==='inherit'?'inherit':opt.id)+(active?'.is-active':''),
-          {type:'button',disabled:disabled,'aria-pressed':String(active),title:opt.name,onclick:function() { save(opt.id==='inherit'?null:opt.id); }},
-          opt.id==='inherit' ? null : ui.prioSig(opt.id),
+        var active = opt.id==='auto' ? auto : item.priorityOverride===opt.id;
+        var disabled = contentPending(item.id) || (opt.id==='auto' && auto);
+        return h('button.priority-opt.priority-opt--'+(opt.id==='auto'?'inherit':opt.id)+(active?'.is-active':''),
+          {type:'button',disabled:disabled,'aria-pressed':String(active),title:opt.name,onclick:function() { save(opt.id==='auto'?null:opt.id); }},
+          opt.id==='auto' ? null : ui.prioSig(opt.id),
           h('span.priority-opt__name',{text:opt.short}));
-      })));
+      })),
+      /* 选中「自动判断」时仍能明确再请求一次。
+         「自动」是兜底语义，不承诺每次都调用模型——所以给一个明确的动作。 */
+      auto && judgmentStatus.enabled ? h('div.detail__section-actions', null,
+        ui.btn('重新判断',{size:'sm',icon:'zap',disabled:contentPending(item.id),onClick:function () {
+          SF.app.act('judge:' + item.id, async function () {
+            await app.client.judgePriority(item.id);
+            await SF.app.refreshData(true);
+          });
+        }})) : null);
     function save(priority) {
       saveContent(app, item, {priority:priority}, repaint);
     }

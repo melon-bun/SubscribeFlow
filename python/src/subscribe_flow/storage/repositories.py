@@ -152,6 +152,22 @@ class Repository:
                        (priority, now(), sub_id))
         return self.get_subscription(sub_id)
 
+    def write_source_priorities(self, db, items):
+        """在给定事务里写来源默认优先级（M42）。
+
+        来源在设置草稿期间被取消订阅时，这里直接失败，整个保存一起回滚：
+        静默跳过会让用户以为保存成功，实际那一行没设上。
+        """
+        stamp = now()
+        for sub_id, priority in items.items():
+            row = db.execute("SELECT id,status FROM subscriptions WHERE id=?", (sub_id,)).fetchone()
+            if row is None or row["status"] == "cancelled":
+                raise ChannelError("INVALID_INPUT", "settings.update",
+                                   "这个来源已被取消订阅，请刷新后重新保存。",
+                                   scope="field", scope_key="sources." + sub_id)
+            db.execute('UPDATE subscriptions SET default_priority=?,updated_at=? WHERE id=?',
+                       (priority, stamp, sub_id))
+
     def snapshot(self, sub_id, progress_version="1"):
         sub = self.get_subscription(sub_id)
         conn = self.get_connection(sub["connection_id"])

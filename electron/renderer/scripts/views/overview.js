@@ -324,7 +324,7 @@
       filterSelect([{value:'',label:'全部优先级'}].concat(levels.map(function(id) { return {value:id,label:catalog.priority(id).name}; })),app.filters.priority||'',function(v) { app.filters.priority=v||null; SF.app.renderView('overview'); },'看板优先级'),
       ui.btn('重置筛选',{onClick:function() { app.filters={quick:'all',platform:null,channelId:null}; SF.app.clearSearch(); SF.app.renderView('overview'); }}),
       /* 参考页把「设置来源优先级」顶到筛选条最右（同一条行内，不换行）。 */
-      ui.btn('设置来源优先级',{style:{'margin-left':'auto'},onClick:function() { SF.app.navigate('channels',{tab:'priorities'}); }}));
+      ui.btn('设置来源优先级',{style:{'margin-left':'auto'},onClick:function() { SF.app.openSettings('priority'); }}));
     var unknown=board.none;
     return h('div.view',{'data-view':'overview','data-mode':'priority'},buildHead(app),stats,filters,
       sources.error ? h('div.inbox__toolbar',null,h('p.field__error',{role:'alert',text:'来源筛选读取失败：'+sources.error.message}),ui.btn('重试来源筛选',{onClick:function() { markStale(sources); SF.app.renderContent(); }})) : null,
@@ -343,7 +343,7 @@
         h('div.kanban__item-meta',null,
           h('span.kanban__item-author',null,ui.platformTag(item.platform),h('span.t-ellipsis',{text:item.channelName,title:item.channelName})),
           h('span.kanban__item-date',{text:fmt.publication(item,true)}),
-          h('span.kanban__item-rule'+(item.priorityOverride?'.is-own':''),{text:item.priorityOverride?'单独设置':'跟随来源'}))); }) : emptyColumn(app,id,meta),
+          h('span.kanban__item-rule'+(item.priorityOrigin==='manual'?'.is-own':''),{text:SF.catalog.priorityOriginText(item.priorityOrigin||'none')}))); }) : emptyColumn(app,id,meta),
       group.error ? h('div',null,h('p.field__error',{role:'alert',text:group.error.message}),!group.requestMore ? ui.btn('重试更新本栏',{onClick:function() { loadGroup(app,id,false); SF.app.renderContent(); }}) : null) : null,
       group.next_offset!=null ? ui.btn(group.loading?'正在加载…':group.error && group.requestMore?'重试加载':'加载更多',{disabled:group.loading,onClick:function() { loadGroup(app,id,true); SF.app.renderContent(); }}):null);
     return h('section.kanban__col.kanban__col--'+tone,{'aria-label':meta.name,'data-priority-column':id,'data-refresh-key':'priority-column:'+boardKey+':'+id},
@@ -372,7 +372,7 @@
       } });
     }
     if (id === 'none') {
-      steps.push({ label: '设置来源优先级', onClick: function () { SF.app.navigate('channels', { tab: 'priorities' }); } });
+      steps.push({ label: '设置来源优先级', onClick: function () { SF.app.openSettings('priority'); } });
     }
     steps.push({ label: '查看全部内容', onClick: function () { SF.app.navigate('inbox'); } });
     return h('div.kanban__empty', null,

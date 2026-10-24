@@ -48,10 +48,10 @@
     },
     {
       id: "priority",
-      label: "优先级名称",
+      label: "优先级设置",
       icon: "priority-set",
-      title: "优先级名称",
-      desc: "为固定的三个优先级分别起名。等级与顺序不变，只改显示名称。",
+      title: "优先级设置",
+      desc: "智能判断、来源默认优先级与三个优先级的名称，都在这一页保存。",
     },
     {
       id: "summarization",
@@ -129,12 +129,60 @@
   var generation = 0;
   var savePromise = null;
 
+  /* M42：来源默认优先级不在设置存档里，它在 subscriptions 表里。
+     这一页单独读一次来源列表：既用来填默认值，也当作「已保存」的基线。 */
+  var sourceCache = { loaded: false, loading: false, error: null, items: [] };
+  var sourceBaseline = {};
+
+  function copySources(source) {
+    var out = {};
+    Object.keys(source || {}).forEach(function (id) { out[id] = source[id]; });
+    return out;
+  }
+
+  function loadSources(app, opts) {
+    opts = opts || {};
+    if (sourceCache.loading && !opts.force) return Promise.resolve();
+    if ((sourceCache.loaded || sourceCache.error) && !opts.force) return Promise.resolve();
+    sourceCache.loading = true;
+    sourceCache.error = null;
+    return app.client
+      .listChannels()
+      .then(function (result) {
+        var items = (result && result.items) || [];
+        sourceCache.items = items;
+        sourceCache.loaded = true;
+        var baseline = {};
+        sourceCache.items.forEach(function (item) {
+          baseline[item.id] = item.defaultPriority || null;
+        });
+        sourceBaseline = baseline;
+        // 草稿只在还没有来源内容时铺一次：用户正在编辑的值不能被刷新吃掉。
+        if (cache.draft && !Object.keys(cache.draft.priority.sources || {}).length) {
+          cache.draft.priority.sources = copySources(sourceBaseline);
+        }
+      })
+      .catch(function (err) {
+        sourceCache.error = err.message;
+      })
+      .then(function () {
+        sourceCache.loading = false;
+        paint(app);
+      });
+  }
+
   function emptyDraft() {
     return {
       // M25：连接按稳定 ID 组织，页面按 ID 遍历。识别策略在标签管理页，不在这里。
       ai: { providers: {}, removed: [] },
       reminder: { enabled: false, preset: "60", interval: 60 },
-      priority: { names: { high: "", medium: "", low: "" } },
+      // M42：优先级设置是一页一件事：智能判断策略、来源默认优先级、三个名称
+      // 合成同一个草稿、同一个保存动作。
+      priority: {
+        names: { high: "", medium: "", low: "" },
+        smart: { enabled: false, providerId: null },
+        sources: {},
+      },
       // M29：总结策略。默认开着但不选连接——没有连接就只是不生成，不打扰用户。
       summarization: { enabled: true, providerId: null, length: "brief", language: "zh-CN" },
     };
@@ -168,6 +216,14 @@
       var value = typeof names[level] === "string" ? names[level] : "";
       draft.priority.names[level] = value || SF.catalog.PRIORITY_DEFAULT_NAMES[level];
     });
+    // M42：智能判断策略与名称在同一份设置里，一起进草稿。
+    var smart = (settings.priority && settings.priority.smart) || {};
+    draft.priority.smart.enabled = smart.enabled === true;
+    draft.priority.smart.providerId = smart.providerId || null;
+    // 来源默认值不在设置存档里：从基线铺进草稿。
+    // 来源可能先于设置读回来，因此这里也要铺一次，
+    // 否则草稿里的来源是空的，会被误判成「有未保存的修改」。
+    draft.priority.sources = copySources(sourceBaseline);
     // M29：总结策略。解除引用是明确的 null，不会被默认连接复活。
     var summary = settings.summarization || {};
     draft.summarization.enabled = summary.enabled !== false;
@@ -194,6 +250,8 @@
     cache.notification = null;
     cache.notificationLoading = false;
     savePromise = null;
+    sourceCache = { loaded: false, loading: false, error: null, items: [] };
+    sourceBaseline = {};
   }
 
   function load(app, opts) {
@@ -254,9 +312,18 @@
     if (target === "priority") {
       var names = cache.draft.priority.names;
       var savedNames = (cache.saved.priority && cache.saved.priority.names) || {};
-      return PRIORITY_LEVELS.some(function (level) {
+      var namesDirty = PRIORITY_LEVELS.some(function (level) {
         var saved = typeof savedNames[level] === "string" ? savedNames[level] : SF.catalog.PRIORITY_DEFAULT_NAMES[level];
         return (names[level] || "").trim() !== saved.trim();
+      });
+      if (namesDirty) return true;
+      var smart = cache.draft.priority.smart;
+      var savedSmart = (cache.saved.priority && cache.saved.priority.smart) || {};
+      if (!!smart.enabled !== (savedSmart.enabled === true)) return true;
+      if ((smart.providerId || null) !== (savedSmart.providerId || null)) return true;
+      var draftSources = cache.draft.priority.sources || {};
+      return Object.keys(sourceBaseline).some(function (id) {
+        return (draftSources[id] || null) !== (sourceBaseline[id] || null);
       });
     }
     if (target === "summarization") {
@@ -311,7 +378,18 @@
     if (section === "priority") {
       var names = {};
       PRIORITY_LEVELS.forEach(function (level) { names[level] = cache.draft.priority.names[level]; });
-      return { section: "priority", patch: { names: names } };
+      var smart = cache.draft.priority.smart;
+      var sources = {};
+      Object.keys(cache.draft.priority.sources || {}).forEach(function (id) {
+        sources[id] = cache.draft.priority.sources[id] || null;
+      });
+      var patch = {
+        names: names,
+        smart: { enabled: !!smart.enabled, providerId: smart.providerId || null },
+      };
+      // 来源还没读到时不带这一项：空表会被当成「格式无效」。
+      if (Object.keys(sources).length) patch.sources = sources;
+      return { section: "priority", patch: patch };
     }
     if (section === "summarization") {
       var sum = cache.draft.summarization;
@@ -374,10 +452,15 @@
     var epoch = generation;
     if (section === "priority") {
       var errors = validatePriorityNames(cache.draft.priority.names);
+      var smart = cache.draft.priority.smart;
+      // 开启智能判断必须有所选连接：没有连接就判断不了，不能存下跑不起来的状态。
+      if (!Object.keys(errors).length && smart.enabled && !smart.providerId) {
+        errors["smart.providerId"] = "开启智能判断前需要先选择一条 AI 连接";
+      }
       if (Object.keys(errors).length) {
         // 不合法的名称不提交：输入原样保留，原因落到对应输入框下面。
         cache.errors = errors;
-        cache.notice = { tone: "danger", text: "优先级名称不合法，请按提示修改后再保存。" };
+        cache.notice = { tone: "danger", text: "优先级设置还不完整，请按提示修改后再保存。" };
         paint(app);
         return Promise.resolve(false);
       }
@@ -393,11 +476,18 @@
         if (epoch !== generation) return false;
         cache.saved = settings;
         cache.loaded = true;
+        // 来源默认值在草稿之外：先记下刚写进去的值，丢弃草稿时才有基线可铺。
+        var savedSources = section === "priority" ? copySources(cache.draft.priority.sources) : null;
         // 只重建刚提交的分区，清除其中的密钥明文，并使用服务端规范化后的值。
         discardSection(section);
         if (section === "priority") {
           // 立即生效：公共目录换名后，看板／卡片／筛选／提醒文案一起变。
           SF.app.applyPriorityNames(settings.priority && settings.priority.names);
+          // 来源默认值改了：列表、计数与看板要按新的最终优先级重算。
+          sourceBaseline = savedSources || {};
+          cache.draft.priority.sources = copySources(sourceBaseline);
+          loadSources(app, { force: true });
+          SF.app.refreshData(true);
         }
         if (section === "summarization" && SF.noteUi && SF.noteUi.invalidateConfig) {
           // 总结策略变了：编辑区下次打开时重新读，不再拿旧的判断来决定要不要显示入口。
@@ -429,6 +519,10 @@
 
   function discardSection(section) {
     cache.draft[section] = draftFrom(cache.saved)[section];
+    if (section === "priority") {
+      // 来源默认值不在设置存档里：从基线铺回草稿。
+      cache.draft.priority.sources = copySources(sourceBaseline);
+    }
     if (section === "ai") {
       // 丢弃的是整页草稿：编辑态与清除标记都要复位。
       Object.keys(cache.draft.ai.providers).forEach(function (providerId) {
@@ -1245,6 +1339,164 @@
     paint(app);
   }
 
+  /**
+   * 能用来做智能判断的连接：已经配好且启用的都列出来。
+   * 当前选中的那条即使停用或没配完也列出来，并写清真实原因——
+   * 不偷偷换成别的连接，也不让用户以为换个名字就好了。
+   */
+  function priorityProviderOptions() {
+    var providers = (cache.saved.ai && cache.saved.ai.providers) || {};
+    var selected = cache.draft.priority.smart.providerId;
+    var options = [];
+    Object.keys(providers).forEach(function (providerId) {
+      var provider = providers[providerId] || {};
+      var isSelected = providerId === selected;
+      var notes = [];
+      if (provider.enabled === false) notes.push("已停用");
+      if (provider.missing && provider.missing.length) notes.push("还缺" + provider.missing.join("、"));
+      if (!notes.length && !isSelected) {
+        options.push({ value: providerId, label: provider.name || providerId });
+        return;
+      }
+      if (!isSelected) return;
+      options.push({
+        value: providerId,
+        label: (provider.name || providerId) + (notes.length ? "（" + notes.join("、") + "）" : ""),
+      });
+    });
+    return options;
+  }
+
+  /* ---------------- 智能判断 ---------------- */
+
+  function buildSmartPriority(app) {
+    var draft = cache.draft.priority.smart;
+    var options = [{ value: "", label: "不选择连接" }].concat(priorityProviderOptions());
+    var picked = draft.providerId
+      ? (cache.saved.ai && cache.saved.ai.providers || {})[draft.providerId]
+      : null;
+    var note = null;
+    if (draft.providerId && picked) {
+      var reasons = [];
+      if (picked.enabled === false) reasons.push("这条连接已停用");
+      if (picked.missing && picked.missing.length) reasons.push("还缺" + picked.missing.join("、"));
+      if (reasons.length) note = reasons.join("；") + "。判断会停在那儿，不会换成别的连接。";
+    }
+    return h(
+      "section.setting-block",
+      null,
+      h(
+        "div.setting-block__head",
+        null,
+        h(
+          "div",
+          null,
+          h("h3.setting-block__title", { text: "智能判断" }),
+          h("p.setting-block__desc", { text: "打开后，新收录的内容会按统一上下文交给模型判断优先级。手动设置过的内容以手动为准；判断失败时回到来源默认值。" })
+        )
+      ),
+      h(
+        "div.setting-fields",
+        null,
+        field(
+          "启用智能判断",
+          ui.toggle(draft.enabled, function (on) { draft.enabled = on; paint(app); },
+            { label: "启用智能判断" }),
+          { hint: "关掉后不再发起判断，已经判断过的内容回到来源默认值。" }
+        ),
+        field(
+          "用哪条连接",
+          ui.select(options, draft.providerId || "", function (value) {
+            draft.providerId = value || null;
+            clearFieldError("smart.providerId");
+            clearFieldError("providerId");
+            paint(app);
+          }, { ariaLabel: "智能判断使用的连接" }),
+          {
+            hint: "Jev 与 OpenAI 兼容连接都可以。连接参数在「AI API 配置」里改。",
+            error: cache.errors["smart.providerId"] || cache.errors["providerId"],
+            errorKey: "smart.providerId",
+          }
+        )
+      )
+    );
+  }
+
+  /* ---------------- 来源默认优先级 ---------------- */
+
+  function buildSourcePriorities(app) {
+    var draft = cache.draft.priority.sources || {};
+    var items = sourceCache.items || [];
+    var counts = { high: 0, medium: 0, low: 0 };
+    items.forEach(function (item) {
+      var value = draft[item.id] || null;
+      if (value && counts[value] != null) counts[value]++;
+    });
+    var total = items.length;
+    var setCount = counts.high + counts.medium + counts.low;
+    var dist = h(
+      "div.source-priorities__dist",
+      null,
+      h("div.dist", null, ["high", "medium", "low"].map(function (id) {
+        return counts[id] ? h("i", { style: { width: (total ? counts[id] / total * 100 : 0) + "%",
+          background: "var(--c-" + (id === "medium" ? "mid" : id) + ")" } }) : null;
+      })),
+      h("span.mono", { text: "已设置 " + setCount + " / " + total + " · 未设置 " + (total - setCount) })
+    );
+    var body;
+    if (sourceCache.loading && !sourceCache.loaded) {
+      body = ui.state({ icon: "clock", title: "正在读取来源…" });
+    } else if (sourceCache.error) {
+      body = ui.state({
+        icon: "alert",
+        tone: "danger",
+        title: "来源读取失败",
+        desc: sourceCache.error,
+        actions: [{ label: "重新读取", onClick: function () { loadSources(app, { force: true }); } }],
+      });
+    } else if (!items.length) {
+      body = ui.state({ icon: "folder-open", title: "还没有可设置的来源", desc: "添加来源后可在这里设置默认优先级。" });
+    } else {
+      body = h("div", null, items.map(function (item) {
+        var value = draft[item.id] || "";
+        var options = [{ value: "", label: "未设置" }].concat(
+          SF.catalog.PRIORITY_ORDER.map(function (id) { return { value: id, label: SF.catalog.priority(id).name }; }));
+        return h(
+          "div.source-priority-row",
+          { "data-priority-source": item.id },
+          ui.avatar(item.name),
+          h("div.grow", null,
+            h("strong", { text: item.name }),
+            h("div.muted", { text: SF.catalog.platform(item.platform).name + " · " + (item.enabled ? "追踪中" : "已暂停") })),
+          h("div.source-priority-row__ctl", null,
+            ui.dropdown(options, value, function (next) {
+              draft[item.id] = next || null;
+              paint(app);
+            }, {
+              ariaLabel: "来源优先级 " + item.name,
+              node: value ? ui.prioSig(value) : null,
+            }))
+        );
+      }));
+    }
+    return h(
+      "section.setting-block",
+      null,
+      h(
+        "div.setting-block__head",
+        null,
+        h(
+          "div",
+          null,
+          h("h3.setting-block__title", { text: "来源默认优先级" }),
+          h("p.setting-block__desc", { text: "未单独设置的历史和新内容都会跟随来源；单条内容的手动设置会保留。" })
+        ),
+        dist
+      ),
+      body
+    );
+  }
+
   function buildPriority(app) {
     var draft = cache.draft.priority.names;
     var rows = PRIORITY_LEVELS.map(function (level, index) {
@@ -1265,26 +1517,32 @@
       );
     });
     return h(
-      "section.setting-block",
+      "div",
       null,
+      buildSmartPriority(app),
+      buildSourcePriorities(app),
       h(
-        "div.setting-block__head",
+        "section.setting-block",
         null,
         h(
-          "div",
+          "div.setting-block__head",
           null,
-          h("h3.setting-block__title", { text: "三个优先级的名称" }),
-          h("p.setting-block__desc", { text: "名称只影响显示：统计、筛选与提醒仍按固定等级计算，不会改动任何内容的优先级。" })
+          h(
+            "div",
+            null,
+            h("h3.setting-block__title", { text: "三个优先级的名称" }),
+            h("p.setting-block__desc", { text: "名称只影响显示：统计、筛选与提醒仍按固定等级计算，不会改动任何内容的优先级。" })
+          )
+        ),
+        h("div.setting-fields", null, rows),
+        h(
+          "div.setting-block__foot",
+          null,
+          ui.btn("恢复默认名称", {
+            size: "sm",
+            onClick: function () { restoreDefaultPriorityNames(app); },
+          })
         )
-      ),
-      h("div.setting-fields", null, rows),
-      h(
-        "div.setting-block__foot",
-        null,
-        ui.btn("恢复默认名称", {
-          size: "sm",
-          onClick: function () { restoreDefaultPriorityNames(app); },
-        })
       )
     );
   }
@@ -1468,6 +1726,8 @@
   function render(app) {
     load(app);
     if (currentSection() === "reminder") loadNotificationStatus(app);
+    // M42：来源默认优先级要单独读一次来源列表。
+    if (currentSection() === "priority") loadSources(app);
     return h(
       "div.settings",
       null,

@@ -1599,37 +1599,13 @@
 
 /* ---------------- 页签栏 ---------------- */
 
+/* 「静流」§标签：分区切换控件随页头右侧动作区一起排（参考页把它放在 .page-actions 里），
+   不再单独占一行，也不再带那条分隔线——行内间距由 .view__actions 的 gap 给出。 */
 .tags-tabbar {
   display: flex;
   align-items: center;
   gap: var(--s-3);
   flex: none;
-  padding-bottom: var(--s-1);
-  border-bottom: 1px solid var(--c-border);
-}
-
-.tags-tab {
-  display: inline-flex;
-  align-items: center;
-  height: 36px;
-  padding: 0 var(--s-6);
-  border-radius: var(--r-md);
-  color: var(--c-text-2);
-  font-size: var(--fs-base);
-  white-space: nowrap;
-  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
-}
-
-.tags-tab:hover {
-  background: var(--c-surface-3);
-  color: var(--c-text);
-}
-
-.tags-tab.is-active {
-  background: var(--c-brand-weak);
-  color: var(--c-brand);
-  font-weight: 500;
-  box-shadow: 0 0 0 1px var(--c-brand-border) inset;
 }
 
 /* ---------------- 两栏布局 ---------------- */
@@ -2393,11 +2369,12 @@
 
 /* 笔记页：外壳固定，目录与阅读区各自滚动。
    之前这一层没有高度约束，内容超出就被外层的 overflow:hidden 裁掉——
-   页面因此既不能滚，也到不了底部的保存与删除。 */
+   页面因此既不能滚，也到不了底部的保存与删除。
+
+   列宽与列间距由参考页移植层给出（zhiliu.css 的 .notes-layout），
+   这里只保留结构属性，不再写第二份取值，避免两处打架。 */
 .notes-layout {
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
-  gap: var(--s-7);
   align-items: stretch;
   /* 占满视图剩余高度，并把滚动交给两列内部。 */
   flex: 1;

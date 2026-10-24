@@ -319,7 +319,6 @@
       "div.view.view--tags",
       { "data-view": "tags" },
       buildHead(app),
-      buildTabs(app),
       h("div.view__body", null, buildBody(app))
     );
   }
@@ -337,7 +336,10 @@
         null,
         h("h1.t-h1", { text: "标签管理" }),
         h("p.view__desc", { text: descs[app.tagTab] || descs.list })
-      )
+      ),
+      /* 「静流」§标签：分区切换做成分段控件，放在页头右侧的动作区里
+         （参考页同一位置就是 .page-actions），不再单独占一行。 */
+      h("div.view__actions", null, buildTabs(app))
     );
   }
 
