@@ -96,10 +96,19 @@ class ResolveJevPriorityTests(unittest.TestCase):
             ('unknown', 'model_unknown'))
 
     def test_margin_boundary_is_not_rejected_by_float_error(self):
-        # 0.8 - 0.6 恰好差 0.2，二进制浮点里是 0.19999999999999996。
+        # 0.7 - 0.5 恰好差 0.2，二进制浮点里是 0.19999999999999996。
         self.assertEqual(
-            resolve_jev_priority({'high': 0.8, 'medium': 0.6, 'low': 0.1, 'unknown': 0.1}),
+            resolve_jev_priority({'high': 0.7, 'medium': 0.5, 'low': 0.1, 'unknown': 0.1}),
             ('high', 'ok'))
+
+    def test_new_threshold_applies_to_all_three_levels(self):
+        for level in ('high', 'medium', 'low'):
+            for score, expected in ((0.7, (level, 'ok')),
+                                    (0.699, ('unknown', 'model_unknown'))):
+                with self.subTest(level=level, score=score):
+                    scores = {'high': 0.1, 'medium': 0.1, 'low': 0.1, 'unknown': 0.1}
+                    scores[level] = score
+                    self.assertEqual(resolve_jev_priority(scores), expected)
 
     def test_below_threshold_falls_back_to_unknown(self):
         self.assertEqual(

@@ -45,12 +45,12 @@ from .prompts import PROMPT_VERSION, jev_questions, llm_system_message
 JEV_OPTIONS = ('high', 'medium', 'low', 'unknown')
 
 #: 采纳某一档所需的最低分值。
-JEV_ACCEPT_THRESHOLD = 0.8
+JEV_ACCEPT_THRESHOLD = 0.7
 #: 采纳某一档所需的与次高选项的最小差距。
 JEV_MIN_MARGIN = 0.2
 #: unknown 分值达到这个值就直接判为无法判断。
 JEV_UNKNOWN_FLOOR = 0.5
-#: 浮点余量：0.8 - 0.6 这类差值在二进制浮点里不精确，边界要留一点。
+#: 浮点余量：0.7 - 0.5 这类差值在二进制浮点里不精确，边界要留一点。
 BOUNDARY_EPSILON = 1e-9
 
 #: 单次回答的 token 预算。计划里的示意值是 64，但推理型模型会把预算先花在
@@ -134,7 +134,7 @@ def resolve_jev_priority(probabilities) -> tuple[str, str]:
     1. 四个答案必须齐全且无额外答案，值必须为有限的 0～1 数值，布尔值不算；
     2. 任一答案不合法 → ``invalid_response``，业务结果 unknown；
     3. ``unknown`` 分值不低于 0.5 → unknown；
-    4. high／medium／low 中最高分不低于 0.8，且比其余选项中的最高分至少高 0.2；
+    4. high／medium／low 中最高分不低于 0.7，且比其余选项中的最高分至少高 0.2；
     5. 其余情况（同分、最高分不足、多档同时高分）→ unknown。
     """
     if not isinstance(probabilities, dict) or set(probabilities) != set(JEV_OPTIONS):

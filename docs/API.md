@@ -497,7 +497,7 @@ M21 之前连接参数放在 `tagging.providers`。读取时两个位置都认�
 
 - `priority_engine.inference`：严格解析 LLM 的单字段 JSON（重复键、额外字段、
   错误类型、非法枚举、非 JSON、截断输出一律 `invalid_response`），
-  以及 Jev 四问的收敛（阈值 0.8、差距 0.2、`unknown` 底线 0.5，
+  以及 Jev 四问的收敛（阈值 0.7、差距 0.2、`unknown` 底线 0.5，
   布尔值不算合法数值，边界留浮点余量）。常量集中在这里。
 - `subscribe_flow.application.priority_intelligence`：后台服务。资格检查、
   排队执行、在途核对与结果落库。适配器在事件循环线程里组装，网络请求进执行器。
