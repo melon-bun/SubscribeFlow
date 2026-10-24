@@ -156,8 +156,12 @@
   function render(app) {
     var key = identity(app);
     /* M43：详情里的「重新判断」按钮要知道智能判断开没开。
-       状态很轻，只在详情开着时读一次。 */
-    if (app.selectedId) loadJudgmentStatus(app);
+       状态很轻：路由换过（离开收件箱又回来）时重读一次。 */
+    if (app.selectedId) {
+      var routeChanged = judgmentStatus.routeRef !== app.route;
+      judgmentStatus.routeRef = app.route;
+      loadJudgmentStatus(app, { force: routeChanged });
+    }
     if (key !== queryKey) {
       queryKey = key; offset = 0;
       // 显示快照与新请求分开：回执前保留原列表和详情，回执后一次落定。
@@ -454,10 +458,14 @@
   }
 
   /* 智能判断开没开：没开时不显示「重新判断」——点了也不会有结果。 */
-  var judgmentStatus = { loaded: false, loading: false, enabled: false };
+  var judgmentStatus = { loaded: false, loading: false, enabled: false, routeRef: null };
 
-  function loadJudgmentStatus(app) {
-    if (judgmentStatus.loaded || judgmentStatus.loading) return;
+  function loadJudgmentStatus(app, opts) {
+    opts = opts || {};
+    /* 开关可能在设置里刚被改过。路由对象每次导航都是新的：拿它当「是否离开了
+       收件箱」的凭据，离开再回来时重读一次；视图内部的普通重绘不重复读。 */
+    if (judgmentStatus.loading) return;
+    if (judgmentStatus.loaded && !opts.force) return;
     judgmentStatus.loading = true;
     app.client.getPriorityStatus().then(function (status) {
       judgmentStatus.enabled = !!(status && status.enabled);
@@ -465,6 +473,7 @@
       judgmentStatus.loading = false;
       renderView();
     }, function () {
+      /* 读不到就按「没开」处理：不能因为这一次失败把整个详情面板拖垮。 */
       judgmentStatus.loading = false;
     });
   }
@@ -484,8 +493,9 @@
     var originText = SF.catalog.priorityOriginText(origin);
     var auto = !item.priorityOverride;
     return h('div.detail__section',{'data-refresh-key':'priority:' + item.id,'data-refresh-boundary':true,
-      /* 来源也算进刷新依据：等级没变、来源变了（小字要跟着变）也要重画。 */
-      'data-refresh-preserve':JSON.stringify([item.priority, item.priorityOverride, origin, contentPending(item.id)])},
+      /* 来源也算进刷新依据：等级没变、来源变了（小字要跟着变）也要重画。
+         智能判断开关也进来：开关刚在设置里改过时，这一段的按钮要跟着出现或消失。 */
+      'data-refresh-preserve':JSON.stringify([item.priority, item.priorityOverride, origin, judgmentStatus.enabled, contentPending(item.id)])},
       h('div.detail__section-title', null,
         h('span', {text:'优先级'}),
         /* 提示里用完整显示名：用户改过名（「开箱即用的项目_教程」）时，

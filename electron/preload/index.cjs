@@ -13,6 +13,9 @@ const allowed = new Set([
   'schedule.list', 'schedule.status',
   // M15 设置：密钥明文只在提交这一刻经过 Preload，任何读取都拿不到密钥。
   'getSettings', 'saveSettings', 'getNotificationStatus', 'sendTestNotification',
+  // M40 智能优先级：状态与用户明确触发的判断请求。走主进程 UI_METHODS 转发，
+  // 不开放任意 RPC：只放这三个受限调用。
+  'getPriorityStatus', 'judgePriority', 'judgePriorityBulk',
   // M16 自动打标：状态、连接测试、重试与补打。渲染层拿不到密钥，只能看到结果。
   'tagging.status', 'tagging.test', 'tagging.tasks', 'tagging.retry',
   'tagging.backfill_preview', 'tagging.backfill',

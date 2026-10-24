@@ -99,6 +99,36 @@ test('M11 methods reach Main and preload from the real Renderer AppClient factor
     error=>error.message==='expired' && error.code==='PREVIEW_EXPIRED' && error.scope==='operation' && error.retryable===false);
 });
 
+test('M40 智能优先级方法从渲染进程走到主进程与 preload，且不开放任意 RPC', async () => {
+  const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+  const names=['getPriorityStatus','judgePriority','judgePriorityBulk'];
+  const calls=[];
+  const window={SubscribeFlow:{call:async(name,args)=>{calls.push([name,args]);},on:()=>()=>{}}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../electron/renderer/scripts/core/app-client.js'),'utf8'),{window});
+  const client=window.SF.AppClient.createClient({mode:'real'}).client;
+  const {UI_METHODS}=require('../electron/main/app-client.cjs');
+  const preload=fs.readFileSync(path.join(__dirname,'../electron/preload/index.cjs'),'utf8');
+  const allowed=preload.match(/allowed = new Set\(\[([\s\S]*?)\]\)/)[1];
+  for(const name of names) {
+    assert.ok(UI_METHODS.has(name),`主进程缺少 ${name}`);
+    assert.ok(allowed.includes(`'${name}'`),`preload 未开放 ${name}`);
+    assert.equal(typeof client[name],'function',`渲染端缺少 ${name}`);
+    await client[name]('id');
+  }
+  assert.deepEqual(calls.map(([name])=>name),names);
+  // 三个方法在主进程落到哪几个 RPC：参数不能错位。
+  const seen=[];
+  const core={call:async(name,params)=>{seen.push([name,params]);return {enabled:true};}};
+  await callUI(core,'getPriorityStatus',[]);
+  await callUI(core,'judgePriority',['item-1']);
+  await callUI(core,'judgePriorityBulk',[['a','b']]);
+  assert.deepEqual(seen,[['priority.status',{}],['priority.judge',{item_id:'item-1'}],['priority.judge_bulk',{item_ids:['a','b']}]]);
+  // 不能开放任意 RPC：原始 RPC 名不能直接出现在渲染进程的白名单里。
+  for(const method of ['priority.status','priority.judge','priority.judge_bulk']) {
+    assert.ok(!allowed.includes(`'${method}'`),`原始 RPC ${method} 不应直接对渲染进程开放`);
+  }
+});
+
 test('calendar and inbox pagination map to bounded Core queries', async () => {
   let received;
   const core={call:async (name,params)=>{

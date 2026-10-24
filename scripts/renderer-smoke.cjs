@@ -325,6 +325,7 @@ async function verify({window, core, root, mode}) {
   await click('今天');
   await until(`!!document.querySelector('.calendar-grid') && SF.app.state.calendarMonth === ${JSON.stringify(month)}`);
   if(mode==='offline') await require('./priority-smoke.cjs').verifyPriorities({evaluate,until,click,screenshot,core,window,firstId});
+  if(mode==='offline') await require('./priority-bridge-smoke.cjs').verifyPriorityBridge({evaluate,until,click,core,window,firstId});
   if(mode==='offline') await require('./calendar-smoke.cjs').verifyCalendar({evaluate,until,click,screenshot,core,window,firstId});
   if(mode==='offline') await require('./tags-smoke.cjs').verifyTags({evaluate,until,click,screenshot,core,window,firstId});
   // An actual sidecar crash must show the recovery action without fabricating empty data.

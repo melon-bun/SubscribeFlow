@@ -45,6 +45,9 @@
      saveSettings(request)      → Settings                    按页保存 {section,patch,credentials}
      getNotificationStatus() → NotificationStatus          通知支持情况（M15）
      sendTestNotification()  → NotificationStatus          测试通知（M15）
+     getPriorityStatus()     → PriorityStatus              智能判断开关与在途统计（M40）
+     judgePriority(id)       → { queued }                  明确请求判断一条内容（M40）
+     judgePriorityBulk(ids)  → { queued }                  明确请求批量判断（M40）
      getNote(id)             → Note | null                 内容笔记（M26）
      saveNote(id, note)      → Note | null                 全量替换，冲突时抛错
      deleteNote(id, version) → { ok }                      删除笔记（不删内容）
@@ -99,6 +102,8 @@
     "getSettings", "saveSettings", "getNotificationStatus", "sendTestNotification",
     // M25 公共 AI 层：连接列表与协议最小探针。
     "listAiProviders", "testAiProvider",
+    // M40 智能优先级：状态与用户明确触发的判断请求（主进程 UI_METHODS 转发）。
+    "getPriorityStatus", "judgePriority", "judgePriorityBulk",
     // M26 笔记：一条内容一条笔记，写入是全量替换。
     "getNote", "saveNote", "deleteNote", "listNotes", "noteFacets",
     // M29 总结草稿：受限调用，只给内容 ID 与请求 ID。

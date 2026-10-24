@@ -2203,3 +2203,37 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 - 原因：Main/Python已添加新方法，但Renderer AppClient契约/工厂与Preload受限白名单遗漏。
 - 预期：最小接通status/judge/bulk及正式开关生效后的重新判断入口；保留受限桥接，不增加任意RPC访问。
 - 证据：[batch-03审查](verification/priority-minimax/batch-03/CODEX_REVIEW.md)、[正式界面输出](verification/priority-minimax/batch-03/codex-rejudge-probe.json)。修复后再联合验收，不以现有111/148项通过代替真实链路。
+
+## BUG-124：智能优先级的受限桥接没接全，正式界面选中内容就整块报错
+
+- 状态：**已修复**（batch-04）；2026-10-24 Codex 正式 Electron 复现。
+- 现象：正式界面里 `typeof SF.app.state.client.getPriorityStatus` 与 `judgePriority` 都是
+  `undefined`；`SubscribeFlow.request('getPriorityStatus')` 返回 `FORBIDDEN_METHOD`。
+  收件箱选中内容时 `inbox.render` 同步调用缺失方法，界面直接报
+  「核心服务读取失败 app.client.getPriorityStatus is not a function」，详情面板消失。
+- 范围：M40 的受限调用链。Python RPC（`priority.status`／`judge`／`judge_bulk`）、
+  主进程 `UI_METHODS` 与 `callUI` 都在，缺的是最后两段：
+  `electron/renderer/scripts/core/app-client.js` 的契约与真实客户端、
+  `electron/preload/index.cjs` 的白名单。
+- 修复：只按既有受限链路补齐这三个调用，不开放任意 RPC：
+  - `core/app-client.js`：`CONTRACT` 增加 `getPriorityStatus`／`judgePriority`／
+    `judgePriorityBulk`（契约注释同步）。
+  - `preload/index.cjs`：`allowed` 集合增加同样三个名字。主进程 `UI_METHODS` 已覆盖，
+    `CORE_METHODS` **不需要也不应该**新增原始 RPC 名。
+- 顺带修一处入口状态不更新：详情里的「重新判断」只在智能判断开启时出现，
+  但开关状态原先只读一次、且不在分段的刷新依据里。现在进入收件箱（路由对象换过）
+  重读一次状态，并把开关状态纳入该分段的 `data-refresh-preserve`：
+  等级没变、来源变了、或开关刚改过，这一段都会重画。
+- 验证：
+  - Node：`tests/app-client.test.cjs` 新增「M40 智能优先级方法从渲染进程走到主进程与
+    preload，且不开放任意 RPC」——三个方法都要在 `UI_METHODS`、preload 白名单与真实
+    客户端里存在；`callUI` 落到 `priority.status`／`priority.judge`／`priority.judge_bulk`
+    且参数不错位；原始 RPC 名不得出现在渲染进程白名单里。
+  - 正式 Renderer：新增 `scripts/priority-bridge-smoke.cjs`（接入
+    `scripts/renderer-smoke.cjs`）。默认关闭时选中内容不报错、入口不出现；
+    走**正式设置页**（选连接 → 打开开关 → 保存）→ 回收件箱、仍选同一条内容、
+    不重载 → 「重新判断」出现；`judgePriority` 能落到 Core；收尾把开关与档位还原。
+  - Codex 原探针（batch-03/codex-rejudge-probe.cjs）等价复跑见
+    [batch-04 交付说明](verification/priority-minimax/batch-04/DELIVERY.md)。
+- 最小范围：没有改 Python 侧 RPC 形状、没有动主进程转发白名单以外的东西、
+  没有做缓存层重构。
