@@ -15,7 +15,7 @@ from priority_engine.prompts import PRIORITY_RULES_V1
 from subscribe_flow.ai.contracts import AiError
 from subscribe_flow.application.settings import SettingsService
 from subscribe_flow.bootstrap import Core
-from subscribe_flow.contracts import ChannelError, ContentItem, Source
+from subscribe_flow.contracts import ChannelError, Connection, ContentItem, Source
 from subscribe_flow.contracts.models import PublishedTime
 from subscribe_flow.storage.database import Database
 from subscribe_flow.storage.settings import SettingsStore
@@ -387,11 +387,11 @@ class UnifiedPriorityTests(unittest.TestCase):
         self.assertEqual(self.repo.get_content(manual)['priority_origin'], 'manual')
         self.assertEqual(self.repo.get_content(plain)['priority_origin'], 'none')
 
-    async def test_source_default_is_the_fallback_and_keeps_the_multi_source_max_rule(self):
+    def test_source_default_is_the_fallback_and_keeps_the_multi_source_max_rule(self):
         # 一条内容关联两个来源，来源默认值取最高等级。
         source = Source(channel='zhihu', kind='author', external_id='author-1',
                         name='作者', url='https://example.invalid/author')
-        self.repo.add_connection(subscribe_flow.contracts.Connection('c', 'zhihu', 'test', 'test'))
+        self.repo.add_connection(Connection('c', 'zhihu', 'test', 'test'))
         sub = self.repo.subscribe(source, 'c')
         self.repo.set_source_priority(sub['id'], 'medium')
         item_id = self.repo.save_manual(make_item('x', '内容'))['item_id']
@@ -402,13 +402,15 @@ class UnifiedPriorityTests(unittest.TestCase):
         self.assertEqual(content['priority'], 'medium')
         self.assertEqual(content['priority_origin'], 'source')
 
-    async def test_the_smart_value_is_used_by_list_filter_and_calendar(self):
+    def test_the_smart_value_is_used_by_list_filter_and_calendar(self):
         # 直接写一条有效智能结果：策略开启且版本对得上。
-        from priority_engine.contracts import PriorityDecision
+        from priority_engine.contracts import PriorityContextSnapshot, PriorityDecision
         self.repo.priority_intelligence.save_policy(enabled=True, provider_id='provider-llm',
                                                     policy_version='1', provider_version='provider-llm:1')
         item_id = self._content('smart', '自动判断的内容')
-        decision = PriorityDecision('high', 'ok', provider_id='provider-llm')
+        decision = PriorityDecision('high', 'ok', provider_id='provider-llm',
+                                    snapshot=PriorityContextSnapshot(policy_version='1',
+                                                                    provider_version='provider-llm:1'))
         self.repo.priority_intelligence.save_decision(item_id, decision)
 
         content = self.repo.get_content(item_id)
@@ -420,14 +422,16 @@ class UnifiedPriorityTests(unittest.TestCase):
         counts = self.repo.query_contents(limit=1)
         self.assertEqual(counts['total'], 1)
 
-    async def test_a_stale_smart_result_is_not_used(self):
-        from priority_engine.contracts import PriorityDecision
+    def test_a_stale_smart_result_is_not_used(self):
+        from priority_engine.contracts import PriorityContextSnapshot, PriorityDecision
         # 策略版本对不上：旧结果退出生效范围。
         self.repo.priority_intelligence.save_policy(enabled=True, provider_id='provider-llm',
                                                     policy_version='2', provider_version='provider-llm:1')
         item_id = self._content('smart', '自动判断的内容')
         self.repo.priority_intelligence.save_decision(
-            item_id, PriorityDecision('high', 'ok', provider_id='provider-llm'))
+            item_id, PriorityDecision('high', 'ok', provider_id='provider-llm',
+                                      snapshot=PriorityContextSnapshot(policy_version='1',
+                                                                      provider_version='provider-llm:1')))
         content = self.repo.get_content(item_id)
         self.assertIsNone(content['priority'])
         self.assertEqual(content['priority_origin'], 'none')

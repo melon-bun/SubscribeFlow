@@ -1,0 +1,93 @@
+batch-02 聚焦与全量测试记录
+时间：2026-10-24（Asia/Tokyo）
+解释器：Subscribe_Flow/python/.venv/bin/python (CPython 3.14.4, macOS x86_64)
+
+$ cd Subscribe_Flow/python
+$ .venv/bin/python -m unittest discover -s tests -t . -p "test_priority_*.py"
+.......................................................................................................
+----------------------------------------------------------------------
+Ran 103 tests in 2.135s
+
+OK
+
+$ .venv/bin/python -m unittest discover -s tests -t . -p "test_*.py"
+...................................Executing <Task finished name='Task-48' coro=<ApplicationTests.asyncTearDown() done, defined at /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/tests/test_application.py:24> result=None created at /Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/asyncio/runners.py:109> took 0.103 seconds
+........................................................../Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 403: 'boom'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 429: 'boom'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 404: 'boom'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 500: 'boom'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+............................./Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/tests/test_m16_tagging.py:105: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  asyncio.get_event_loop_policy()
+............................................/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/traceback.py:295: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c0a7a0>
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/traceback.py:295: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c0af20>
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/traceback.py:295: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c0ab60>
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/traceback.py:295: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c0a890>
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/traceback.py:295: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c0b100>
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/traceback.py:295: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c0bb50>
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/traceback.py:295: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c0ba60>
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/traceback.py:295: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c0b880>
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/traceback.py:295: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c0b790>
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/traceback.py:295: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109ceb1f0>
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+...........................................................................................................................................Executing <Task finished name='Task-552' coro=<PriorityServiceTests.asyncTearDown() done, defined at /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/tests/test_priority_service.py:70> result=None created at /Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/asyncio/runners.py:109> took 0.120 seconds
+............................................................................................../Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109cea980>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109cea7a0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109cea6b0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109ce9f30>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109ce9c60>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109cea3e0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109ce9e40>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109cea4d0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109cea110>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109ce95d0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109cea020>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c088b0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c085e0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109c086d0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109b3f6a0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109b3fb50>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109b3fd30>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1097d1b70>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1097d0f40>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1097d0e50>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1097d06d0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1097516c0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1097d0a90>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1097d05e0>
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1097522f0>
+...................F............................................................................................................................
+======================================================================
+FAIL: test_the_call_runs_off_the_event_loop (tests.test_summary.SummaryDraftTests.test_the_call_runs_off_the_event_loop)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/asyncio/runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/asyncio/base_events.py", line 719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/tests/test_summary.py", line 365, in test_the_call_runs_off_the_event_loop
+    self.assertFalse(task.done(), '请求还在路上时事件循环仍然可以调度')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false : 请求还在路上时事件循环仍然可以调度
+
+----------------------------------------------------------------------
+Ran 543 tests in 24.238s
+
+FAILED (failures=1)
+
+注：全量唯一失败为 test_summary.SummaryDraftTests.test_the_call_runs_off_the_event_loop，
+    是既有事件循环时序抖动用例（基线 b5fc2f5 上同样失败），与本批无关，不返修。
