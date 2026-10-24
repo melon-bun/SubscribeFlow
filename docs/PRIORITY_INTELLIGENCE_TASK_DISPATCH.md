@@ -21,7 +21,7 @@
 | batch-01 | M36 契约／迁移设计、M37 偏好统计仓储、M38 共用上下文与提示词 | 379c0a4／d30990b 已由 Codex 验收 |
 | batch-02 | M39 LLM／Jev、M40 后台调度、M41 统一优先级及传递；真实 LLM 产品调用 | d46d65b＋9da3815 已验收，BUG-122／123关闭 |
 | batch-03 | M42 统一设置／事务、M43 控件与四页间距 | M42与两修复已验收；M43正式桥接BUG-124待修 |
-| batch-04 | M44 联合验收与交接、真实 LLM 端到端复验 | 已分发：BUG-124最小修复＋M44联合验收 |
+| batch-04 | M44 联合验收与交接、真实 LLM 端到端复验 | 已交付：BUG-124最小修复（`e2a3381`）＋M44联合验收，待 Codex 最终复验 |
 
 全部完成并通过必要验收后暂停定时任务；保留真实结果与非致命限制，不提前把模块标记完成。
 
@@ -46,3 +46,18 @@ batch-03 启动确认：2026-10-24 21:32 JST，原 session 三项开始事件齐
 2026-10-24：Codex 原失败场景确认 BUG-122／123关闭，111项优先级、148项Node、正式设置Renderer及设置部分写入失败的整体回滚探针通过。独立正式Electron发现新调用遗漏Renderer AppClient与Preload白名单，选内容报getPriorityStatus不是函数（BUG-124）。只将该主链路最小补接并入M44；M39–M42已验收，M43待修后联合验收。证据 [审查](verification/priority-minimax/batch-03/CODEX_REVIEW.md)。
 
 batch-04 已于 2026-10-24 23:00 JST 确认三项开始事件，run_id `exec_turn_mvmgth66_updvoa`，mcode PID 77716；20分钟跟进已更新，新批计数0。Codex完整renderer-smoke亦已通过；专门探针暴露的BUG-124仍须独立复验。
+
+## batch-04 交付与最终复验请求
+
+2026-10-24：BUG-124 已按既有受限链路最小补齐（Renderer AppClient 契约＋preload 白名单，未开放任意 RPC），
+修复单独提交 `e2a3381`。M44 联合验收已交付：计划 §5.1 的 14 条边界与 §3.8 的 10 条专项逐项对应到
+113 项优先级用例、正式 Renderer／设置／提醒回归与两条新增的异步事件屏障回归；
+真实模型最终一轮证据单列（离线正确性与模型效果分开记录）；
+四页页头到第一个工作区实测均为 16px。
+
+Python 全量 553 项唯一失败仍是既有的 `test_summary` 事件循环时序用例（不返修、不阻塞）；
+Node 149/149；正式 renderer／settings／reminder 冒烟全部 passed。
+
+逐项验收矩阵、实际命令与输出、真实 API 证据与非致命限制见
+[batch-04 交付说明](verification/priority-minimax/batch-04/DELIVERY.md)。
+**最终验收结论与 BUG-124 是否关闭由 Codex 独立复验给出**，本记录不代替该结论。

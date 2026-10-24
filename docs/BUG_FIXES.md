@@ -2174,6 +2174,27 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 - 状态：本次链接越界已修复并验证，0.5.2 本地正式包验收通过；产品提交 `c2f7f78`，构建源 `b9892a8`，未推送。详见 [0.5.2 记录](RELEASE_0.5.2.md)。
 - 同次截图确认 1024px 下收件箱页头仍有旧的标题／动作挤压，修复前后均存在，记录待后续处理；本轮验证结论仅覆盖所报原文链接，不将该旧问题写成已修复。
 
+### BUG-121 续修：四页页头到第一个工作区的间距统一（智能优先级 M43／M44，2026-10-24）
+
+- 现象：页面容器已有统一 gap，但参考样式中筛选栏的上下 margin 又叠加了一次；
+  标签／渠道的分区切换还可能增加独立行，使工作区起点不一致。
+- 预期：以参考稿分页面的 16px 节奏为准，由页面容器统一控制抬头至第一块工作区的距离；
+  移除重复叠加的 margin，不靠各页面单独塞空白补偿。
+- 修复：参考页新增 `.filters.page-row { margin: 0; }`（规格源在工作区根目录，不在版本控制内，
+  仓库内可审的是类名映射 `scripts/zhiliu-map.cjs` 与生成产物 `electron/renderer/styles/zhiliu.css`）；
+  `views/tags.js` 把分区切换控件移进页头右侧动作区；`styles/views.css` 清掉与生成层重复的死规则。
+- 验证：正式 Renderer 1440×1000 实测，总览／渠道／标签／笔记四页的页头到第一个工作区**均为 16px**
+  （此前叠加成 36px／32px）；测量数据见
+  [batch-04 spacing.json](verification/priority-minimax/batch-04/spacing.json)。
+  浅深主题都成立；紧凑窗口 900×620 无横向越界，设置页「保存设置」按钮在视口内可达。
+  11 张实机截图见同一证据目录。
+- 未做：收件箱的筛选条仍在 `.view__body` 内，页头到筛选条是 36px（参考页收件箱为 20px）——
+  收件箱不在本次四页范围，它的网格用 -10px 负外边距与页头对齐，改全局 margin 会压到筛选条上，故未动。
+  另发现参考页 `.tags-wrap` 映射到产品 `.tags-wrap`、而产品 DOM 用的是 `.tags-layout`，
+  参考页的标签页两栏规格没落到产品上；修它会明显改动标签页布局，超出本次间距范围，只记录不动手。
+- 状态：四页间距修复与验收结果已补入 BUG-121，不新增编号；详见
+  [batch-04 交付说明](verification/priority-minimax/batch-04/DELIVERY.md)。
+
 
 ## BUG-122：智能优先级自动重试耗尽后普通事件仍发额外请求
 
@@ -2196,25 +2217,19 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 - 证据与最小范围：[batch-02 独立审查](verification/priority-minimax/batch-02/CODEX_REVIEW.md)、[batch-03 交付说明](verification/priority-minimax/batch-03/DELIVERY.md)。未另做全库测试形式整改。
 
 
-## BUG-124：优先级状态／重新判断未接 Renderer 与 Preload，内容详情读取失败
-
-- 状态：修复中（batch-04/M44）；2026-10-24 Codex 正式 Electron＋Core 隔离实测。
-- 现象：选择内容后客户端getPriorityStatus不是函数，界面显示核心读取失败；新判断按钮不可用，原内容详情可能消失。
-- 原因：Main/Python已添加新方法，但Renderer AppClient契约/工厂与Preload受限白名单遗漏。
-- 预期：最小接通status/judge/bulk及正式开关生效后的重新判断入口；保留受限桥接，不增加任意RPC访问。
-- 证据：[batch-03审查](verification/priority-minimax/batch-03/CODEX_REVIEW.md)、[正式界面输出](verification/priority-minimax/batch-03/codex-rejudge-probe.json)。修复后再联合验收，不以现有111/148项通过代替真实链路。
-
 ## BUG-124：智能优先级的受限桥接没接全，正式界面选中内容就整块报错
 
-- 状态：**已修复**（batch-04）；2026-10-24 Codex 正式 Electron 复现。
+- 状态：**已修复**（batch-04，提交 `e2a3381`）；2026-10-24 Codex 正式 Electron 复现。
 - 现象：正式界面里 `typeof SF.app.state.client.getPriorityStatus` 与 `judgePriority` 都是
   `undefined`；`SubscribeFlow.request('getPriorityStatus')` 返回 `FORBIDDEN_METHOD`。
   收件箱选中内容时 `inbox.render` 同步调用缺失方法，界面直接报
   「核心服务读取失败 app.client.getPriorityStatus is not a function」，详情面板消失。
+- 原因：Main/Python 已添加新方法，但 Renderer AppClient 契约与 Preload 受限白名单遗漏。
 - 范围：M40 的受限调用链。Python RPC（`priority.status`／`judge`／`judge_bulk`）、
   主进程 `UI_METHODS` 与 `callUI` 都在，缺的是最后两段：
   `electron/renderer/scripts/core/app-client.js` 的契约与真实客户端、
   `electron/preload/index.cjs` 的白名单。
+- 预期：最小接通 status/judge/bulk 及正式开关生效后的重新判断入口；保留受限桥接，不增加任意 RPC 访问。
 - 修复：只按既有受限链路补齐这三个调用，不开放任意 RPC：
   - `core/app-client.js`：`CONTRACT` 增加 `getPriorityStatus`／`judgePriority`／
     `judgePriorityBulk`（契约注释同步）。
@@ -2233,7 +2248,15 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
     `scripts/renderer-smoke.cjs`）。默认关闭时选中内容不报错、入口不出现；
     走**正式设置页**（选连接 → 打开开关 → 保存）→ 回收件箱、仍选同一条内容、
     不重载 → 「重新判断」出现；`judgePriority` 能落到 Core；收尾把开关与档位还原。
-  - Codex 原探针（batch-03/codex-rejudge-probe.cjs）等价复跑见
-    [batch-04 交付说明](verification/priority-minimax/batch-04/DELIVERY.md)。
+  - Codex 原探针（batch-03/codex-rejudge-probe.cjs）的等价复跑：探针改放到仓库内
+    `scripts/priority-rejudge-probe.cjs`（原脚本用 node 直接 require 主进程入口，
+    主进程需要 Electron 运行时，跑不起来），输出仍写回
+    [batch-04 证据目录](verification/priority-minimax/batch-04/)。复跑结果：
+    三个方法都是 `function`、`SubscribeFlow.request('getPriorityStatus',[])` 返回
+    `ok:true`（修复前是 `FORBIDDEN_METHOD`）、详情面板保持可见、默认关闭时入口不出现、
+    开启智能判断后（不重载页面）入口出现。原始输出见
+    [rejudge-probe-batch04.json](verification/priority-minimax/batch-04/rejudge-probe-batch04.json)。
 - 最小范围：没有改 Python 侧 RPC 形状、没有动主进程转发白名单以外的东西、
   没有做缓存层重构。
+- 证据与最小范围：[batch-03 独立审查](verification/priority-minimax/batch-03/CODEX_REVIEW.md)、
+  [batch-04 交付说明](verification/priority-minimax/batch-04/DELIVERY.md)。

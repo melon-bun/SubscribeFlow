@@ -206,3 +206,33 @@ M12 不增加迁移，继续 schema v8。Source 使用平台稳定作者 ID，ur
 `stats_version` 判断要不要做一次本地聚合（只读人工优先级与标签关联，不调用模型）。
 聚合过一次就不再来第二次，不在每次启动时扫历史。
 完整说明见 [M39–M41 智能优先级判断、调度与统一口径](M39_PRIORITY_INTELLIGENCE.md)。
+
+## M42–M44 优先级设置统一保存与重试预算（2026-10-24）
+
+**没有新增迁移**：本批沿用既有表，只改了写入方式。
+
+**一次保存跨两张表**（`app_settings` 与 `subscriptions`）：
+
+| 内容 | 落点 |
+| --- | --- |
+| 三级显示名 | `app_settings` 的 `priority` 分区 |
+| 智能判断开关与所选连接 | `app_settings` 的 `priority` 分区（`priority.smart.revision`） |
+| 来源默认优先级 | `subscriptions.default_priority`（**不进设置存档**） |
+
+- 名称与策略在 `app_settings`，来源默认值在 `subscriptions`，两者在**同一个 SQLite 事务**里写：
+  要么都生效，要么都不生效，不会出现「名称已保存、只保存了一半来源」。
+- 整份先校验再写：名称非法、来源优先级非法、开启智能判断却没有连接，都直接拒绝，此时**一条都不写**。
+- 来源在草稿期间被取消订阅（`status=cancelled`）时，保存**明确失败**，不静默跳过；
+  检查与写入在同一事务内完成。
+- 改三级显示名**不推进** `priority.smart.revision`：改名只改显示，不得作废在途结果。
+
+**重试预算落库**（BUG-122）：`priority_tasks.attempts` 现在在任务的终态路径上一并写回。
+同一输入的自动重试耗尽（`attempts` 达到上限）后，普通内容事件不再排它、不再付费调用；
+只有用户明确「重新判断」（`force=True`）才把次数清零重开。耗尽的判断记为
+`state=failed`、`attempts=3`，不会产生无限任务记录。
+
+**在途请求的最新输入**（BUG-123）：旧响应因输入指纹或版本变化被取消后，服务会续排**当前仍然有效**
+的输入（复用既有的资格检查），因此人工最终值仍不调用模型、重试预算耗尽的条目不会被普通事件重开、
+旧响应仍不落库。
+完整说明见 [M42 优先级设置](M42_PRIORITY_SETTINGS.md) 与
+[batch-04 交付说明](verification/priority-minimax/batch-04/DELIVERY.md)。

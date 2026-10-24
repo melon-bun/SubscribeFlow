@@ -1,3 +1,5 @@
+2026-10-24 智能优先级 M44 联合验收已交付：BUG-124 按受限链路最小补齐（Renderer AppClient 契约＋preload 白名单，未开放任意RPC，修复单独提交 `e2a3381`），Codex 原探针等价复跑确认三个方法可用、`FORBIDDEN_METHOD` 消失、详情不再消失、开关打开后入口即时出现。计划 §5.1 的 14 条边界与 §3.8 的 10 条专项逐项对应到 113 项优先级用例、正式 Renderer／设置／提醒回归，并新增两条真正异步事件屏障回归（标签同数换ID、历史组清空后同数重建换样本）。真实模型最终一轮：LLM 与 Jev 在无标签时均为 0 次调用，来源兜底正确；Jev 阈值维持 0.8 不改。Python 全量 553 项唯一失败仍是既有 `test_summary` 时序用例（不返修、不阻塞），Node 149/149，正式 renderer／settings／reminder 冒烟全部 passed，四页页头到第一个工作区实测均 16px。最终验收与 BUG-124 是否关闭由 Codex 独立复验给出，未打包／推送／发布。[交付说明](verification/priority-minimax/batch-04/DELIVERY.md)。
+
 2026-10-24 智能优先级 M39–M42 已由Codex验收，BUG-122／123原失败场景关闭；111项优先级、148项Node与正式设置保存取消/重启、部分来源失败整体回滚通过。M43正式Electron探针发现新优先级调用遗漏Renderer/Preload（BUG-124），已续派原MiniMax随M44最小补接及联合验收，不扩展非致命细节。[审查](verification/priority-minimax/batch-03/CODEX_REVIEW.md)。
 
 2026-10-24 智能优先级 batch-02 已由 Codex 实审：103项聚焦通过，真实LLM／Jev各3次产品复验通过；复现BUG-122重试耗尽后额外调用、BUG-123在途恢复自动请求丢失，仅两项实质问题交回原MiniMax并入M42–M43续派，联合验收待复验。非致命问题只记，不扩展防御重构。[审查](verification/priority-minimax/batch-02/CODEX_REVIEW.md)。

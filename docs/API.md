@@ -555,3 +555,33 @@ M21 之前连接参数放在 `tagging.providers`。读取时两个位置都认�
     （对应 `priority.judge`）。**「自动」是兜底语义，不承诺每次都调用模型。**
 - 批量操作的「恢复自动判断」即清掉单条人工值（`priority: null`）。
 - 自主添加（收录对话框）的默认项与详情一致，显示「自动判断」。
+
+## M44 桌面受限桥接：智能判断的三个调用（BUG-124，2026-10-24）
+
+Python 侧的 `priority.status`／`priority.judge`／`priority.judge_bulk` 三条 RPC 早就在，
+主进程的 `UI_METHODS` 与 `callUI` 也在；**桌面端只开放三个受限业务调用**，
+渲染进程不能直通 Core 的任意 RPC。
+
+| AppClient 方法 | 落到 RPC | 参数 | 说明 |
+| --- | --- | --- | --- |
+| `getPriorityStatus()` | `priority.status` | 无 | 开关、所选连接、策略／提示词版本、在途任务与计数 |
+| `judgePriority(itemId)` | `priority.judge` | `item_id` | 用户明确要求判断一条内容；忽略已有结果与重试预算，重新排一次 |
+| `judgePriorityBulk(itemIds)` | `priority.judge_bulk` | `item_ids`（1–100） | 同上，批量 |
+
+受限链路（缺任何一段，正式界面选中内容就会整块报错）：
+
+```
+Renderer AppClient → preload 白名单 → 主进程 UI_METHODS / callUI → Python RPC
+```
+
+- `electron/renderer/scripts/core/app-client.js` 的 `CONTRACT` 列出这三个方法；
+- `electron/preload/index.cjs` 的 `allowed` 白名单收录同样三个名字；
+- 主进程 `UI_METHODS` 已覆盖它们，**原始 RPC 名不得出现在渲染进程白名单里**；
+- `CORE_METHODS` 不因这三个调用而新增任何原始 RPC 名。
+
+三条都不返回凭据，也不返回模型原文。判断是后台任务：接口只排队，不等模型返回。
+
+界面对应的状态失效规则：详情里的「重新判断」入口只在**自动选中且智能判断已开启**时出现
+（手动档优先，不给入口）。智能判断的开关状态按「路由对象换过就重读一次」处理，
+并纳入优先级分段的刷新依据——**等级没变、来源变了、或开关刚改过，这一段都会重画**。
+状态读取失败按「没开」处理，不让详情面板消失。

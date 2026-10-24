@@ -1,0 +1,363 @@
+# batch-04 实际测试命令与输出
+
+生成日期：2026-10-24（Asia/Tokyo）
+仓库：Subscribe_Flow（main，直接实施）
+说明：以下是交付时**实际执行**的命令与原样输出。失败项如实保留，未做任何删改。
+
+> 运行环境备注：宿主的权限门禁会间歇性拒绝直接 `node scripts/...` 与
+> `python/.venv/bin/python ...` 形式的调用（报 `HOST_CAPABILITY_UNAVAILABLE`），
+> 因此本批补了等价的 npm 脚本（`test:py`／`test:py:priority`／`smoke:uishot`／
+> `smoke:settings`／`smoke:reminder`／`smoke:rejudge`／`verify:real-llm`），
+> 用 `npm run <script>` 形式执行。括号里是等价的原始命令。
+
+
+## 1. Python 聚焦：智能优先级
+
+```
+$ npm run test:py:priority
+  （等价于 cd python && .venv/bin/python -m unittest discover -s tests -t . -p "test_priority_*.py"）
+
+npm notice run subscribe-flow@0.5.2 test:py:priority
+npm notice run cd python && .venv/bin/python -m unittest discover -s tests -t . -p 'test_priority_*.py'
+.................................................................................................................
+----------------------------------------------------------------------
+Ran 113 tests in 2.038s
+
+OK
+
+```
+
+
+## 2. Python 全量（553 项）
+
+```
+$ npm run test:py
+  （等价于 cd python && .venv/bin/python -m unittest discover -s tests -t .）
+
+npm notice run subscribe-flow@0.5.2 test:py
+npm notice run cd python && .venv/bin/python -m unittest discover -s tests -t .
+.......Executing <Task finished name='Task-354' coro=<IntakeServiceTests.asyncSetUp() done, defined at /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/tests/test_intake.py:313> result=None created at /Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/asyncio/runners.py:109> took 0.114 seconds
+....................../Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/tests/test_m16_tagging.py:105: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  asyncio.get_event_loop_policy()
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+  def __init__(self, filename, lineno, name, *, lookup_line=True,
+........................................................................................................................................................................Executing <Task finished name='Task-643' coro=<RPCTests.asyncSetUp() done, defined at /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/tests/test_rpc.py:13> result=None created at /Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/asyncio/runners.py:109> took 0.155 seconds
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+  return get_loop()
+..............
+======================================================================
+FAIL: test_the_call_runs_off_the_event_loop (tests.test_summary.SummaryDraftTests.test_the_call_runs_off_the_event_loop)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/asyncio/runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/asyncio/base_events.py", line 719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/tests/test_summary.py", line 365, in test_the_call_runs_off_the_event_loop
+    self.assertFalse(task.done(), '请求还在路上时事件循环仍然可以调度')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false : 请求还在路上时事件循环仍然可以调度
+
+----------------------------------------------------------------------
+Ran 553 tests in 22.829s
+
+FAILED (failures=1)
+```
+
+
+### 2.1 全量唯一失败（既有用例，不返修）
+
+```
+FAIL: test_the_call_runs_off_the_event_loop (tests.test_summary.SummaryDraftTests.test_the_call_runs_off_the_event_loop)
+AssertionError: True is not false : 请求还在路上时事件循环仍然可以调度
+```
+
+这是既有的事件循环时序抖动用例（batch-03 基线同样失败），与本批改动无关，
+按用户指示不返修、不作为阻塞。其余 552 项全部通过。
+
+
+## 3. Node 测试（149 项）
+
+```
+$ npm test
+  （等价于 node --test tests/*.test.cjs）
+
+npm notice run subscribe-flow@0.5.2 test
+npm notice run node --test tests/*.test.cjs
+✔ replacement backend capabilities drive the source UI and platform filters stay unique (22.228367ms)
+✔ display DTO preserves missing dates, date precision and cover without invented priority (2.170104ms)
+✔ M11 common queries preserve intake dates and filter real sources independently of subscriptions (1.817919ms)
+✔ M11 intake bridge accepts only a URL, task or authoritative preview and organizing fields (42.509905ms)
+✔ M11 methods reach Main and preload from the real Renderer AppClient factory (24.991912ms)
+✔ M40 智能优先级方法从渲染进程走到主进程与 preload，且不开放任意 RPC (1.855628ms)
+✔ calendar and inbox pagination map to bounded Core queries (1.740353ms)
+✔ tag filters reach the Core query and never widen an empty selection (1.456264ms)
+✔ source search and resolution stay separate from confirmed creation (1.425205ms)
+✔ calendar maps shared filters to a full monthly summary without pagination (1.043845ms)
+✔ external opening resolves a saved ID and rejects schemes, credentials and arbitrary URLs (0.918017ms)
+✔ coverage requires compatible terminal evidence; committed windows never claim full history (0.654667ms)
+✔ collection ceiling round-trips through the bridge and rejects out-of-range input (0.990156ms)
+✔ omitting pageBudget lets the Core derive it; an explicit one is range checked (0.810587ms)
+✔ every event the Core emits is forwarded, and every subscribed event is exposed (63.735174ms)
+✔ WBI request uses fixed endpoints, exact parameters and correct space encoding (171.7131ms)
+✔ acquisition rejects arbitrary URLs, scripts, wrong IDs and extra fields (2.207751ms)
+✔ session check exposes only authenticated flag, never identity or cookies (12.327433ms)
+✔ HTTP failures, malformed content and cancellation remain distinct (4.50326ms)
+✔ real sidecar handshake, persistent subscription, UI mapping and controlled restart (1495.802562ms)
+✔ unsupported websites remain rejected through real RPC without acquisition (514.193114ms)
+✔ automatic mode persists, dispatches an overdue plan through real RPC and stops in manual mode (1021.874824ms)
+✔ unexpected exit recovers automatically with a bounded restart policy (2015.603473ms)
+✔ unexpected sidecar exit rejects pending requests and allows explicit restart (862.646963ms)
+✔ malformed protocol input does not contaminate subsequent JSON Lines (470.6516ms)
+✔ live acceptance retries a persisted waiting job and proves a new acquisition occurred (936.445759ms)
+✔ bounded acceptance preserves coverage and reports item failures independently of login (0.704321ms)
+✔ private browser RPC commits a large API page, details and repeated refresh without losing read state (1242.502919ms)
+✔ cancelling a live Core job aborts Main acquisition and releases the shared resource (481.283697ms)
+✔ real sidecar tag lifecycle, filtering and restart survival through the whitelisted bridge (1004.954875ms)
+✔ Bili BV/AV/mobile/short forms normalize, foreign redirects and loops stop before visiting them (167.969287ms)
+✔ XHS standard/share/profile URLs preserve signatures, short redirects retain stable identity and read one note (41.78146ms)
+✔ actual Core RPC through Bili private API previews without subscription, saves atomically, preserves duplicate and restart (1247.078897ms)
+✔ typed events and aliases share one IPC listener and unsubscribe independently (5.464601ms)
+✔ 通知投递状态机区分五种结果 (15.253094ms)
+✔ M20：提醒文案用当前的高优先级名称，统计口径不变 (0.63567ms)
+✔ BUG-071：启用 60 分钟后，到期前一次定时器都不能触发 (30.707152ms)
+✔ BUG-071：真正到期才触发一次，并排出下一个周期 (9.039149ms)
+✔ BUG-072：开→关→开（相同间隔）作废在途的旧查询 (1.065809ms)
+✔ BUG-072：通知在途时改间隔，迟到回执不得改写新周期 (1.832478ms)
+✔ BUG-072：停用后在途通知回执不得重建定时器 (1.559216ms)
+✔ BUG-072：迟到的查询失败不得污染新配置状态 (0.622151ms)
+✔ BUG-073：退出只释放进程内资源，持久到期时间保留 (1.815336ms)
+✔ BUG-073：重启后按原到期时间恢复，过期只合并一次 (0.507823ms)
+✔ BUG-073：过期状态恢复后只检查一次，不补发风暴 (68.38534ms)
+✔ BUG-073：配置身份不符的旧状态不得激活提醒 (0.774676ms)
+✔ BUG-073：重启不丢退避状态 (1.342985ms)
+✔ 数量不变仍按期提醒，全零不通知并关闭汇总 (1.812485ms)
+✔ 查询失败有限退避并封顶，不用旧计数发提醒 (4.05626ms)
+✔ 停用立即取消待触发任务 (0.889773ms)
+✔ 保存无关的 AI 设置不重置提醒间隔 (1.521046ms)
+✔ 同一时刻只执行一个检查 (1.247789ms)
+✔ 统计缺字段按查询失败处理，不当成全零 (2.106124ms)
+✔ 签名只反映提醒自身配置 (0.418243ms)
+✔ release ignores developer paths and Python injection; child cwd is outside asar (109.712499ms)
+✔ startup hints and bounded diagnostics never expose raw errors or personal data (14.793553ms)
+✔ 密钥以密文落盘，重启后可解密 (19.189327ms)
+✔ 保护能力不可用时拒绝保存，不产生任何文件 (2.468341ms)
+✔ Linux basic_text 不算安全存储 (0.371601ms)
+✔ 状态只暴露是否可用，不含任何密钥片段 (2.36821ms)
+✔ 保存密钥：先落密文再提交引用，并把密钥推进 Core (4.776ms)
+✔ 提交失败：保留旧引用，只清理这次刚写入的版本 (6.890782ms)
+✔ Core 重启后按当前设置重新推送密钥，并撤销不再引用的版本 (128.109428ms)
+✔ 损坏的凭据文件不静默清空，报告为读不出来 (3.29541ms)
+✔ 解不开的密钥按「没有可用密钥」处理，不伪装成可用 (9.494581ms)
+✔ Core 已提交后同步失败仍保留新密钥，并报告可恢复的同步状态 (8.185005ms)
+✔ Core 提交成功但响应丢失时不得删除正在被引用的密钥 (5.057751ms)
+✔ 旧密钥清理失败不能撤销已经提交的新密钥 (2.123429ms)
+✔ 并发保存两种密钥不会相互裁剪，重启后都能取回 (10.873787ms)
+✔ 凭据写盘失败不改变已成功保存的内存快照 (3.60288ms)
+✔ 结构损坏的凭据文件必须保留并报告，不能当作空库覆盖 (7.385367ms)
+✔ M20：优先级名称原样透传给界面，改名不动配置版本 (1.7451ms)
+✔ 测试通知区分异步显示与异步失败，不把 show 调用当显示成功 (90.261199ms)
+✔ 系统不支持或同步发送失败应报告失败 (3.431498ms)
+✔ 没有系统事件时只报告已提交、未确认，调用不会无限等待 (6.227909ms)
+✔ BUG-082：TypeError 归为代码异常，不再建议重新解压 (5.359662ms)
+✔ BUG-082：资源读取故障才提示重新解压 (91.243076ms)
+✔ BUG-082：未知错误既不甩锅资源也不假装已定位 (0.431638ms)
+✔ BUG-082：诊断记录脱敏，不含密钥与请求头 (6.169726ms)
+✔ BUG-082：空错误对象也不会崩溃 (1.74531ms)
+✔ BUG-082：主入口必须接收并分类真实错误，不得吞掉 (4.386433ms)
+✔ BUG-082：smoke 模式下启动失败必须非零退出并把真实原因写到 stderr (1.224605ms)
+✔ BUG-080：最终 HEAD 的 send 每次只投递一次 (0.766148ms)
+✔ BUG-075：主窗口工厂必须存在且调用正确的安全 API (0.54419ms)
+✔ BUG-075：Core 就绪判断不得依赖不存在的 status 属性 (0.438552ms)
+✔ 脱敏不会误伤普通诊断信息 (0.347351ms)
+✔ BUG-082：诊断白名单必须真的放行启动失败并写入文件 (8.741734ms)
+✔ BUG-082：未知事件仍然不记录（白名单不是"什么都记"） (0.708425ms)
+✔ BUG-082：磁盘与权限问题不得提示重新解压 (1.088002ms)
+✔ BUG-075：工厂同步抛错后仍可重试 (1.806749ms)
+✔ BUG-075：工厂异步拒绝后仍可重试 (0.44269ms)
+✔ BUG-075：退出后不再创建窗口 (0.950429ms)
+✔ BUG-083：打包版必须忽略测试注入变量，正常创建窗口 (0.74235ms)
+✔ BUG-083：隔离测试模式标志存在且默认关闭 (0.124516ms)
+✔ BUG-075：工厂拒绝后生命周期能再次调用工厂（清引用由工厂负责） (0.496157ms)
+✔ BUG-075：在途构建期间并发 restore 必须等同一构建 (16.165273ms)
+✔ Core 不可用时菜单显示「数据暂不可用」，不伪造 0 (2.153451ms)
+✔ M20：托盘菜单用当前的高优先级名称 (0.779154ms)
+✔ 统计读取失败后进入不可用状态，而不是显示 0 (1.130393ms)
+✔ 统计返回缺字段时同样标记不可用 (0.293896ms)
+✔ 合并刷新：短时间内的多次变化只跑一次查询 (112.691353ms)
+✔ 关闭主窗口被拦截并隐藏，不销毁 (0.60502ms)
+✔ 托盘不可用时不隐藏窗口，避免应用无法找回 (0.213189ms)
+✔ 明确退出时不拦截关闭 (0.611436ms)
+✔ 窗口仍在时恢复只聚焦不重建 (0.376854ms)
+✔ 窗口已销毁时受控重建同一个窗口 (0.705175ms)
+✔ 通知点击先恢复窗口再经共享 IPC 通道下发导航意图 (1.384902ms)
+✔ 并发恢复只创建一个窗口 (0.409884ms)
+✔ 退出期间不再创建窗口 (1.700275ms)
+✔ BUG-078：清理永不结束时仍强制退出并记录超时 (2.01259ms)
+✔ BUG-078：清理单���抛错被逐项记录 (0.806806ms)
+✔ 退出清理有顺序且失败不阻断后续步骤 (1.395456ms)
+✔ 重复退出不会重复执行清理 (0.735791ms)
+✔ 退出后不再恢复窗口 (0.463403ms)
+✔ official article links normalise; everything else is refused (8.78938ms)
+✔ page identity, body and cover come from the page itself (11.074675ms)
+✔ body excludes menus, counters and scripts (1.746455ms)
+✔ another article of the same push keeps a separate key (0.788787ms)
+✔ missing identity is refused instead of invented (1.718082ms)
+✔ blocked pages are classified by body evidence, not by status (177.512099ms)
+✔ offsite and endless redirects stop the read (16.99652ms)
+✔ requests carry a browser agent, no credentials and manual redirects (20.404649ms)
+✔ the read of one preview reuses the page already confirmed (5.724111ms)
+✔ requests outside the declared shape are refused before any request (1.610409ms)
+▶ cover capture is bounded, optional and preserves cancellation / risk gates
+  ✔ success (54.52572ms)
+  ✔ missing (4.090733ms)
+  ✔ failed (2.110387ms)
+  ✔ cancel (2.598233ms)
+  ✔ risk (7.339896ms)
+✔ cover capture is bounded, optional and preserves cancellation / risk gates (74.292149ms)
+✔ channel router isolates faults and accepts a replacement transport (2.544057ms)
+✔ nickname search preserves separate identities and logout performs no navigation (5.933093ms)
+✔ pre-filtered profile IDs avoid detail visits, including old pinned notes (14.97958ms)
+✔ all-known first batch continues scrolling to discover a later new note (10.117653ms)
+✔ known notes consume the window budget instead of pulling in older notes (7.2666ms)
+✔ mixed windows read only missing entries inside the first N unique notes (17.855941ms)
+✔ a failed detail also occupies its window slot without replacement (6.918925ms)
+✔ ambiguous dates remain unknown and China date labels do not shift to the previous day (12.88255ms)
+✔ profile signatures stay private and failed notes retain retry eligibility (3.883579ms)
+✔ official copied share URL is preserved and wrong identity or signature is rejected (6.179676ms)
+✔ cancellation and an unreadable page release the operation within a bound (20.945078ms)
+✔ request validation rejects arbitrary scripts, URLs and mismatched cursors (3.050637ms)
+✔ Zhihu link/author validation and original publication preserve unknown precision (26.025122ms)
+✔ Zhihu scan counts known/pinned identities in first N; replay/cancel/ownership errors are explicit (76.057842ms)
+✔ Zhihu auth/risk/rate/timeout/cancellation do not masquerade as empty success (12.938344ms)
+✔ actual Zhihu adapter/Core: manual/auto duplicate both orders, filters, identity, dates and restart (1161.09293ms)
+✔ Zhihu stalled scans retain gaps; failed detail stays inside the selected window (4.869089ms)
+✔ Zhihu discovery reads the official pins feed and never parses profile DOM (1.82473ms)
+✔ an author with an empty feed is a zero-result window, not a failure (0.603308ms)
+ℹ tests 149
+ℹ suites 0
+ℹ pass 149
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11272.89894
+
+```
+
+
+## 4. 正式 Renderer 回归（全套）
+
+```
+$ npm run smoke:renderer
+  （等价于 node scripts/renderer-smoke.cjs）
+
+npm notice run subscribe-flow@0.5.2 smoke:renderer
+npm notice run node scripts/renderer-smoke.cjs
+{"intakeDateRenderer":"passed","manualOldPublication":true,"calendarAndDayList":true,"sourceWithoutSubscription":true,"realPlatform":false}
+{"rendererRaces":"passed","refreshDrain":true,"contentWriteLock":true,"nextWritePersisted":true}
+{"listStateSmoke":"passed","scroll":true,"loadingRestore":true,"nextSelection":true,"batchAndPageEdges":true,"failedWrite":true,"partitions":true,"boardAndCalendar":true,"modalDetail":true}
+{"prioritySmoke":"passed","sourceInheritance":true,"manualOverride":true,"bulk":true,"fullCounts":true,"pagination":true,"unknownDates":true}
+{"priorityBridgeSmoke":"passed","clientMethods":true,"detailIntact":true,"enabledAfterSettings":true,"rejudgeVisible":true}
+{"calendarSmoke":"passed","fullMonthCounts":true,"priorityFilters":true,"dayPagination":true,"detailAndBoardSync":true,"monthAndPageRetry":true,"unknownDates":true}
+{"tagsSmoke":"passed","createRenameDelete":true,"duplicateNameRejected":true,"renameKeepsStableId":true,"taggingIdempotent":true,"filterAnyAndAll":true,"combinedWithPriority":true,"deleteReportsImpact":true,"aiEmptyState":true,"darkContrast":true}
+{"rendererSmoke":"passed","mode":"offline","search":"offline","contents":25,"realBridge":true,"restartPersisted":true,"reloadPersisted":true}
+
+```
+
+
+## 5. 正式设置页回归
+
+```
+$ npm run smoke:settings
+  （等价于 node scripts/settings-renderer.cjs）
+
+npm notice run subscribe-flow@0.5.2 smoke:settings
+npm notice run node scripts/settings-renderer.cjs
+{"settingsSmoke":"passed","sections":["AI API 配置","提醒设置","优先级设置","AI 总结","外观"],"reminder":{"enabled":true,"intervalMinutes":90,"preset":"custom"},"credentialEncrypted":true,"keyHiddenInUi":true,"survivesRestart":true,"connectionTestNotInvoked":true}
+
+```
+
+
+## 6. 正式提醒持久化回归
+
+```
+$ npm run smoke:reminder
+  （等价于 node scripts/reminder-persistence-renderer.cjs）
+
+npm notice run subscribe-flow@0.5.2 smoke:reminder
+npm notice run node scripts/reminder-persistence-renderer.cjs
+{"reminderPersistence":"passed","steps":[{"fixtureSeeded":{"total":25,"sample":["bilibili:video:offline-9","bilibili:video:offline-8","bilibili:video:offline-7","bilibili:video:offline-6"]}},{"productionWiring":{"signature":"0:60","nextCheckAt":null}},{"enableViaBridge":{"signature":"1:30","dueInMs":1800000,"persisted":"1:30"}},{"timerFires":{"lastResult":"checked","nextDueInMs":1800000}},{"irrelevantSave":{"generation":2,"unchanged":true}},{"intervalChanged":{"signature":"1:60","generation":3,"dueInMs":3600000}},{"disabled":{"signature":"0:60","nextCheckAt":null}},{"staleRejected":{"code":"CONFLICT","stillDisabled":true}},{"restartRecovery":{"deadline":1700008100000,"reused":true}},{"listPerspectives":{"pending":23,"high":2,"matchesSummary":true}},{"perspectiveToggle":{"switched":true,"sidebarExits":true}},{"overdueMerge":{"calls":4}}],"notificationDisplay":"待人工确认：本轮通知使用替身，不构成真实系统通知显示证据"}
+
+```
+
+
+## 7. BUG-124 复验探针（Codex 原探针的等价复跑）
+
+```
+$ npm run smoke:rejudge
+  （等价于 node scripts/priority-rejudge-probe.cjs）
+```
+
+要点：
+- 修复前 `SubscribeFlow.request('getPriorityStatus')` 返回 `FORBIDDEN_METHOD`，
+  `typeof SF.app.state.client.getPriorityStatus` 为 `undefined`；
+- 修复后三个方法都是 `function`，`request` 返回 `ok:true`，
+  默认关闭时详情不出现「重新判断」，开启智能判断后（不重载页面）入口出现，
+  详情面板保持可见。
+
+npm notice run subscribe-flow@0.5.2 smoke:rejudge
+npm notice run node scripts/priority-rejudge-probe.cjs
+{"beforeEnabled":false,"afterEnabled":true,"rejudgeButtonVisible":true,"rejudgeButtonVisibleBefore":false,"clientTypes":{"status":"function","judge":"function","bulk":"function"},"beforeClientTypes":{"status":"function","judge":"function","bulk":"function"},"rawStatus":{"ok":true,"value":{"enabled":true,"providerId":"provider-llm","mode":"llm","policyVersion":"2","providerVersion":"provider-llm:2","promptVersion":"priority_prompt_v1","tasks":{},"decisions":0,"requested":0,"decided":0}},"beforeRawStatus":{"ok":true,"value":{"enabled":false,"providerId":null,"mode":null,"policyVersion":"1","providerVersion":"","promptVersion":"priority_prompt_v1","tasks":{},"decisions":0,"requested":0,"decided":0}},"detailVisible":true,"body":"跳到主要内容\n知流\n聚合你关注的创作者更新\n收件箱\n1\n内容总览\n渠道管理\n标签\n0\n笔记\n快捷筛选\n全部更新\n1\n未处理\n1\n高优先级\n0\n中优先级\n0\n低优先级\n0\n稍后处理\n0\n已读\n0\n已归档\n0\n按平台筛选\nGitHub\n0\nB\nB站\n0\n红\n小红书\n0\n知\n知乎\n0\n微\n微信公众号\n0\n⌘K\n同步\n0/5\n2026年10月24日\n星期六\n本\n本地用户\n尚未检查\n采集连接\n尚未检查采集环境\n查看连接与任务\n全部更新\n1\n\n查看所有已保存的内容，包括已读、稍后处理和已归档。\n\n按日历时间排列\n重新查询\n添加内容\n全部\n1\nGitHub\n0\nB\nB站\n0\n红\n小红书\n0\n知\n知乎\n0\n微\n公众号\n0\n全部优先级\n全部来源\n全部收录方式\n标签\nReview target\n?\nReview","itemId":"demo:feed:review-target"}
+
+```
+
+
+## 8. 真实模型产品调用（最终一轮）
+
+```
+$ npm run verify:real-llm
+  （等价于 cd python && .venv/bin/python ../docs/verification/priority-minimax/batch-04/real-llm-check.py）
+```
+
+凭据由本地程序从仓库外的 `test_api_key.md` 读入、仅在内存中使用，
+不写入仓库、日志、证据或截图。完整逐例结果见
+[real-llm-evidence.json](real-llm-evidence.json)。
+
+
+## 9. 实机截图与间距测量
+
+```
+$ SUBSCRIBE_FLOW_VERIFY_OUTPUT=docs/verification/priority-minimax/batch-04 npm run smoke:uishot
+```
+
+产出 11 张实机截图与 [spacing.json](spacing.json)。四页页头到第一个工作区的实测距离均为 **16px**
+（笔记／总览／渠道／标签一致）。
+
