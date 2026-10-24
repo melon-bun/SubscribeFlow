@@ -12,7 +12,8 @@
 
 ## 当前状态
 
-源码修复与必要验证通过，准备本地打包；基线 `0154da8`（main，0.5.1）。
+**0.5.2 已完成本地打包和正式安装包验收。未推送远端、未创建远端标签、未上传 Release。**
+源码基线为 `0154da8`（0.5.1），产品修改 `c2f7f78`，最终构建基线 `b9892a833d89b45d17f80776d45c07edcb58238e`；后续仅更新文档和证据。远端 main 经只读核对仍为 `0154da8`。
 
 ## 已完成的验证
 
@@ -32,3 +33,17 @@
 
 
 打包前检测到旧版 `dist/Subscribe Flow-darwin-x64/Subscribe Flow.app` 正在运行。因此构建目录按版本隔离为 `dist/0.5.2/`，根目录下载 ZIP 的文件名仍含 0.5.2。保持旧版应用和用户数据原样运行，不结束其进程；正式包验收继续使用独立临时目录。
+
+
+## 本地安装包
+
+- 安装包：`/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe-Flow-0.5.2-mac-x64.zip`（3096 字节）。
+- 校验文件：`/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe-Flow-0.5.2-mac-x64.zip.sha256`。
+- SHA-256：`5ddd550d40a6654eed5f777b92426111edcb11d62422b3731a17d9f906703e82`。
+- 应用目录：`/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.2/Subscribe Flow-darwin-x64/Subscribe Flow.app`。
+
+macOS Intel（x64），内置 Electron 44.5.1 与 Python 3.12.5，本机 ad-hoc 签名。退出旧版后再打开新版；本轮未安装或替换用户正在运行的旧版。
+
+最终安装包的 61 个 Main／Preload／Renderer 文件逐字节匹配构建源码，原始 logo、应用图标与打包白名单通过；签名、ZIP 和 SHA 校验通过。包移到项目目录外，用最小 PATH 启动，确认内置 Core、开发验收标志忽略、v2→v12 升级与备份、笔记／总结设置／优先级／标签持久化、Core 自动恢复与缺失提示均通过。另以冻结 Core 验证小红书本地 JPEG 入库及重启后保持。
+
+证据：[本地构建收据](verification/v0.5.2-local/local-build-receipt.json)、[正式包结果](verification/v0.5.2-local/packaged/result.json)、[包内文件核对](verification/v0.5.2-local/package-content.json)、[构建日志](verification/v0.5.2-local/build.log)。

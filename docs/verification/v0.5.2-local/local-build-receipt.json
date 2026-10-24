@@ -1,0 +1,18 @@
+{
+  "status": "local-build-verified",
+  "version": "0.5.2",
+  "baseRevision": "b9892a833d89b45d17f80776d45c07edcb58238e",
+  "bundle": "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.2/Subscribe Flow-darwin-x64/Subscribe Flow.app",
+  "archive": "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe-Flow-0.5.2-mac-x64.zip",
+  "bytes": 146007930,
+  "sha256": "5ddd550d40a6654eed5f777b92426111edcb11d62422b3731a17d9f906703e82",
+  "signature": "local-ad-hoc",
+  "codesignVerify": true,
+  "zipIntegrity": true,
+  "sha256Check": true,
+  "remotePush": false,
+  "releaseUploaded": false,
+  "remoteMain": "0154da86fe8a5522991e707ac465fe28e225310a",
+  "packagedSmoke": "passed",
+  "shippedRuntimeFilesMatched": 61
+}
