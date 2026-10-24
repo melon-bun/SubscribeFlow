@@ -124,3 +124,46 @@ M12 不增加迁移，继续 schema v8。Source 使用平台稳定作者 ID，ur
 继续 schema v12。小红书 thumbnail 可保存由 Main 离屏截图生成的有界 `data:image/jpeg;base64,` 字符串；图像为 192×144，原始 JPEG 最大 36KiB。适配器校验类型、Base64、大小和 JPEG 签名后写入既有 ContentItem／ContentPatch，复用标准内容事务与 JSON 字段，不新增图片目录或孤儿文件。
 
 内容列表和详情直接读取该值，重启与离线时均可显示。普通重复采集保留既有记录；主动补充详情可写入新截图，人工状态、标签、优先级与笔记沿用原规则。0.5.2 冻结 Core 入库／重启验证通过；见 [本地构建记录](RELEASE_0.5.2.md)。
+
+## M36–M37 智能优先级 · schema v13（2026-10-24）
+
+013_priority_intelligence.sql 只**新增**表与一列，不改动任何既有列的含义：人工优先级
+（`content_states.priority_override`）、来源默认优先级（`subscriptions.default_priority`）、
+标签与归档状态原样保留。
+
+**偏好统计**（隐藏数据，只在本地）：
+
+| 表 | 内容 |
+| --- | --- |
+| `priority_preference_groups` | 唯一键「优先级 × 标签 ID」；`content_count` 是全量去重条数，`revision` 是统计版本 |
+| `priority_preference_samples` | 每组最近两条内容引用：内容 ID、首次采集时间、标题缓存；没有正文与链接 |
+| `priority_preference_dirty` | 失效队列。短时间内的多次失效合并成一条，按需重建 |
+
+**最新智能结果**：`content_priority_decisions` 每条内容一行，保存业务决策（四选一）、
+执行状态（`ok`／`model_unknown`／`invalid_response`／`not_configured`／`timeout`／
+`network_failed`／`cancelled`／`input_budget_exceeded`／`no_title`／`no_tags`／
+`no_evidence`／`inconsistent`）与版本元数据（上下文指纹、内容／标签版本、人工版本、
+偏好版本、策略版本、连接版本、提示词版本）。人工设置、智能结果、来源默认值三者分开保存，
+不共用覆盖字段。
+
+**人工改档版本**：`content_states` 新增 `manual_priority_version`（默认 0）。它只随人工
+改档递增；已读、归档等状态切换不影响它，因此不会作废与处理状态无关的判断结果。
+
+**失效判定在数据库触发器里**（`priority_stats_*`）：人工改档、标签关联增删、标签停用／恢复、
+标题更新都只做一件事——把受影响的「优先级 × 标签」标脏。重建只有一份实现，按真实关系重算，
+因此可重复执行而不累加重复计数。人工收录、批量操作与自动打标写入因此走同一条路，
+不会因为漏掉某个入口而留下过期统计。
+
+统计口径：学习信号只有用户明确设置的单条优先级；来源默认值与模型自动结果不计入；
+统计包含已归档、已读、稍后处理与未处理内容；没有标签的人工优先级保留在原内容上，
+但不进入任何分组；计数是全量去重条数，最近两条标题只是语义参考。「最近」按
+`contents.first_seen_at DESC`、同刻按稳定内容 ID 排序。
+
+统计更新在独立事务里进行，失败只回滚统计本身；脏标记保留，下次重试——统计更新失败
+不能破坏人工优先级、标签、采集与来源兜底。统计可以由原始关系重建
+（`PriorityIntelligenceRepository.rebuild_all`），它永远不反过来影响人工值与标签。
+
+升级沿用既有机制：升级前用 SQLite backup 生成 `.before-v13.backup`，同名备份不覆盖，
+整次升级在一个事务里做、失败整体回滚。本批只在合成旧库与隔离副本上验证升级，
+**没有在用户真实数据库上执行过升级**。
+完整说明见 [M36–M38 智能优先级契约、统计与上下文](M36_PRIORITY_INTELLIGENCE.md)。

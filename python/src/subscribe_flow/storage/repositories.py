@@ -46,6 +46,10 @@ class Repository:
         # M26：笔记仓储。它借用本仓储的内容筛选谓词，所以延迟导入避免成环。
         from .notes import NoteRepository
         self.notes = NoteRepository(database, self)
+        # M37：隐藏的优先级偏好统计仓储。哪些分组失效由数据库触发器判定，
+        # 这里只提供统计与最新智能结果的存取，因此不改动任何既有写入路径。
+        from .priority_intelligence import PriorityIntelligenceRepository
+        self.priority_intelligence = PriorityIntelligenceRepository(database)
 
     def add_connection(self, connection: Connection):
         with self.database.transaction() as db:

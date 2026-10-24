@@ -271,6 +271,10 @@ class IntakeStorageTests(unittest.TestCase):
                 if table == 'contents':
                     self.assertEqual(rows[0][-2:], ('subscription', None))
                     rows = [row[:-2] for row in rows]
+                if table == 'content_states':
+                    # M36 起 content_states 多了一列人工改档版本；旧列必须一字不变。
+                    self.assertEqual(rows[0][-1], 0)
+                    rows = [row[:-1] for row in rows]
                 self.assertEqual(rows, original[table])
             self.assertEqual(repo.calendar_summary('2020-01')['total'], 1)
             with sqlite3.connect(path.with_suffix(f'.before-v{self.latest_schema_version()}.backup')) as backup:

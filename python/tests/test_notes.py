@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -31,6 +32,11 @@ def make_item(channel, external_id, title, summary='一段摘要', source_id='fi
                        source=source, title=title, url=f'https://example.invalid/{external_id}',
                        kind='video', summary=summary,
                        published=PublishedTime(value='2026-10-18T00:00:00+00:00'))
+
+
+def latest_schema_version():
+    """当前最新 schema 版本：备份文件名与 user_version 断言都跟它走。"""
+    return max(int(p.name.split('_')[0]) for p in MIGRATIONS.glob('[0-9]*.sql'))
 
 
 def legacy_v11(path):
@@ -60,7 +66,8 @@ class NoteMigrationTests(unittest.TestCase):
         legacy_path = legacy_v11(Path(self.temp.name) / 'legacy-v11.sqlite3')
         migrated = Database(legacy_path)
         try:
-            self.assertEqual(migrated.connection.execute('PRAGMA user_version').fetchone()[0], 12)
+            self.assertEqual(migrated.connection.execute('PRAGMA user_version').fetchone()[0],
+                             latest_schema_version())
             tables = {row['name'] for row in migrated.connection.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertIn('content_notes', tables)
@@ -70,7 +77,7 @@ class NoteMigrationTests(unittest.TestCase):
             # 旧内容还在。
             self.assertEqual(migrated.connection.execute(
                 'SELECT count(*) FROM contents').fetchone()[0], 1)
-            backup = legacy_path.with_suffix('.before-v12.backup')
+            backup = legacy_path.with_suffix(f'.before-v{latest_schema_version()}.backup')
             self.assertTrue(backup.exists(), '升级前要有一次性备份')
             with sqlite3.connect(backup) as copy:
                 self.assertEqual(copy.execute('PRAGMA user_version').fetchone()[0], 11)
@@ -82,16 +89,21 @@ class NoteMigrationTests(unittest.TestCase):
         legacy_path = legacy_v11(Path(self.temp.name) / 'legacy-twice.sqlite3')
         migrated = Database(legacy_path)
         migrated.close()
-        first = legacy_path.with_suffix('.before-v12.backup')
+        first = legacy_path.with_suffix(f'.before-v{latest_schema_version()}.backup')
         self.assertTrue(first.exists())
         # 再来一次升级（模拟重试）：首份备份不被覆盖。
-        with sqlite3.connect(legacy_path) as db:
-            db.execute('PRAGMA user_version=11')
-            db.execute('DROP TABLE content_notes')
+        # 回退到升级前的样子：首份备份正是那一刻的库，所以拿它还原最贴近
+        # 真实的中断状态，也不必猜哪些迁移建了哪些表。
+        shutil.copyfile(first, legacy_path)
+        for suffix in ('-wal', '-shm'):
+            sidecar = legacy_path.with_name(legacy_path.name + suffix)
+            if sidecar.exists():
+                sidecar.unlink()
         again = Database(legacy_path)
         try:
             self.assertTrue(first.exists())
-            self.assertEqual(len(list(legacy_path.parent.glob('*.before-v12.*.backup'))), 1)
+            self.assertEqual(len(list(legacy_path.parent.glob(
+                f'*.before-v{latest_schema_version()}.*.backup'))), 1)
             with sqlite3.connect(first) as copy:
                 self.assertEqual(copy.execute('PRAGMA user_version').fetchone()[0], 11)
         finally:
@@ -115,7 +127,7 @@ class NoteMigrationTests(unittest.TestCase):
                 "SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertNotIn('content_notes', tables)
             self.assertEqual(db.execute('SELECT count(*) FROM contents').fetchone()[0], 1)
-        self.assertTrue(legacy_path.with_suffix('.before-v12.backup').exists())
+        self.assertTrue(legacy_path.with_suffix(f'.before-v{latest_schema_version()}.backup').exists())
 
     def test_a_newer_schema_is_refused(self):
         path = Path(self.temp.name) / 'future.sqlite3'
