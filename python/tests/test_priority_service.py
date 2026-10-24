@@ -8,6 +8,7 @@
 import asyncio
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from subscribe_flow.bootstrap import Core
 from subscribe_flow.contracts import ChannelError, Connection, ContentItem, Source
 from subscribe_flow.contracts.models import PublishedTime
 from subscribe_flow.storage.database import Database
+from subscribe_flow.storage.priority_intelligence import MAX_ATTEMPTS
 from subscribe_flow.storage.settings import SettingsStore
 
 
@@ -94,6 +96,19 @@ class PriorityServiceTests(unittest.IsolatedAsyncioTestCase):
         """跑几轮 worker：队列里的任务会被认领并执行。"""
         for _ in range(rounds):
             await self.core.priority._run_once()
+
+    async def stop_workers(self):
+        """停掉自动 worker，改由测试自己逐轮驱动。
+
+        这样「谁认领了任务」是确定的：在途竞态的回归必须由测试自己
+        控制时钟与顺序，不能和 2 秒轮询的后台 worker 抢。
+        """
+        workers = list(self.core.priority.workers)
+        self.core.priority.workers = []
+        for worker in workers:
+            worker.cancel()
+        if workers:
+            await asyncio.gather(*workers, return_exceptions=True)
 
     # ------------------------------------------------------------ 基本流程
 
@@ -239,26 +254,67 @@ class PriorityServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.repo.priority_intelligence.get_decision(target))
 
     async def test_a_manual_change_during_the_request_does_not_get_overwritten(self):
+        """在途请求期间改档再恢复自动。
+
+        旧结果不得覆盖当前决定；最新的一次有效请求也不能因为「已经在跑」
+        被丢掉——不需要用户再点一次。
+
+        网络线程只做阻塞与应答，数据库操作全部留在事件循环线程。
+        """
         self.configure()
         self.add_content('hist-1', '慢查询排查：从执行计划到索引调整', priority='high')
         target = self.add_content('target', '如何用执行计划定位数据库慢查询')
+        await self.stop_workers()
+
+        class BlockingTransport(FakeTransport):
+            """挂起响应，等主线程放开；不碰数据库。"""
+
+            def __init__(self):
+                super().__init__({})
+                self.entered = threading.Event()
+                self.released = threading.Event()
+                self.replies = ['{"priority":"low"}', '{"priority":"high"}']
+                self.count = 0
+
+            def post_json(self, url, payload, headers=None, timeout=None):
+                self.count += 1
+                self.entered.set()
+                self.released.wait(10)
+                text = self.replies.pop(0) if self.replies else '{"priority":"high"}'
+                return 200, {'model': 'demo-model', 'choices': [{'message': {'content': text}}]}
+
+        blocking = BlockingTransport()
+        self.core.ai.transport = blocking
         self.core.priority.request([target])
 
-        class SlowTransport(FakeTransport):
-            def post_json(self, url, payload, headers=None, timeout=None):
-                # 请求发出后，用户改档并恢复自动：旧结果不得覆盖当前决定。
-                self.repo.update_content_state([target], {'priority': 'low'})
-                self.repo.update_content_state([target], {'priority': None})
-                return super().post_json(url, payload, headers, timeout)
+        first = asyncio.create_task(self.core.priority._run_once())
+        for _ in range(1000):
+            if blocking.entered.is_set():
+                break
+            await asyncio.sleep(0.01)
+        self.assertTrue(blocking.entered.is_set(), '请求没有进入网络线程')
 
-        slow = SlowTransport({'/chat/completions': chat_response()})
-        self.core.ai.transport = slow
-        await self.drain()
+        # 事件循环线程里改档再恢复自动：两次都是真实内容变更事件。
+        self.core.content.update(target, {'priority': 'low'})
+        self.core.content.update(target, {'priority': None})
+        blocking.released.set()
+        await first
 
+        # 旧响应没有落库。
         self.assertIsNone(self.repo.priority_intelligence.get_decision(target))
         content = self.repo.get_content(target)
         self.assertIsNone(content['priority_override'])
         self.assertNotEqual(content['priority_origin'], 'smart')
+
+        # 最新请求被续排：再跑一轮就有结果了，用的是第二次响应。
+        await self.drain()
+        self.assertEqual(blocking.count, 2)
+        decision = self.repo.priority_intelligence.get_decision(target)
+        self.assertEqual(decision['priority'], 'high')
+        content = self.repo.get_content(target)
+        self.assertEqual(content['priority'], 'high')
+        self.assertEqual(content['priority_origin'], 'smart')
+        self.assertEqual(self.repo.priority_tasks.get(target)['state'], 'succeeded')
 
     async def test_renaming_a_tag_invalidates_the_related_results(self):
         self.configure()
@@ -285,6 +341,42 @@ class PriorityServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(task['state'], 'pending')
         self.assertEqual(task['attempts'], 1)
         self.assertIsNotNone(task['next_attempt_at'])
+
+    async def test_the_retry_budget_is_finite_and_only_an_explicit_request_resets_it(self):
+        """BUG-122：同一输入的重试预算有限。
+
+        预算耗尽后普通内容事件不再调用模型；用户明确「重新判断」才重置。
+        """
+        self.configure()
+        self.transport.error = AiError('network_failed', '网络不通')
+        self.add_content('hist-1', '慢查询排查：从执行计划到索引调整', priority='high')
+        target = self.add_content('target', '如何用执行计划定位数据库慢查询')
+        self.core.priority.request([target])
+
+        for _ in range(MAX_ATTEMPTS):
+            await self.core.priority._run_once()
+            # 让退避到期：只动测试时钟，不改产品逻辑。
+            self.repo.db.execute("UPDATE priority_tasks SET next_attempt_at=? WHERE content_id=?",
+                                 ('2000-01-01T00:00:00.000Z', target))
+
+        task = self.repo.priority_tasks.get(target)
+        self.assertEqual(task['state'], 'failed')
+        self.assertEqual(task['attempts'], MAX_ATTEMPTS)
+        calls = len(self.transport.calls)
+        self.assertEqual(calls, MAX_ATTEMPTS)
+
+        # 普通事件不再调用模型。
+        result = self.core.priority.request([target], reason='event')
+        self.assertEqual(result['queued'], 0)
+        await self.drain()
+        self.assertEqual(len(self.transport.calls), calls)
+
+        # 用户明确重新判断：预算重置，可以再试。
+        result = self.core.priority.request([target], reason='manual', force=True)
+        self.assertEqual(result['queued'], 1)
+        await self.core.priority._run_once()
+        self.assertEqual(len(self.transport.calls), calls + 1)
+        self.assertEqual(self.repo.priority_tasks.get(target)['attempts'], 1)
 
     async def test_running_tasks_are_recovered_after_a_restart(self):
         item_id = self.add_content('recover', '崩溃前在跑的内容')

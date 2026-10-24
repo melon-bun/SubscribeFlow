@@ -2177,15 +2177,20 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 
 ## BUG-122：智能优先级自动重试耗尽后普通事件仍发额外请求
 
-- 状态：修复中（batch-03）；2026-10-24 Codex 独立复现。
+- 状态：**已修复**（batch-03）；2026-10-24 Codex 独立复现。
 - 范围：M40 自动重试；同一输入第三次失败后 attempts 仍为2，普通内容事件可再次排队并付费调用，有限预算未生效。
 - 预期：耗尽后普通事件不发请求；用户明确重新判断可重置预算。
 - 原因：_defer 的终态路径未持久化最终 attempts，enqueue 的 attempts>=MAX_ATTEMPTS 判断永远不成立。
-- 证据与最小范围：[batch-02 独立审查](verification/priority-minimax/batch-02/CODEX_REVIEW.md)。禁止扩大为无关队列重构。
+- 修复：`PriorityTaskRepository.finish` 增加可选 `attempts` 参数并落库；`_defer` 在预算耗尽时把最终次数（3）一起写回。队列据此拒绝普通事件再次排同一条输入；只有用户明确「重新判断」（`force=True`）才把次数清零重开。**只改计数语义，没有动队列结构。**
+- 验证：新增回归 `test_the_retry_budget_is_finite_and_only_an_explicit_request_resets_it`：隔离 Core＋假传输（网络失败），逐轮手动驱动并只改测试时钟让退避到期；三次后 `state=failed`、`attempts=3`、实际调用 3 次；随后普通 `request(reason='event')` 返回 queued=0 且不再调用；`request(reason='manual', force=True)` 返回 queued=1 并重新产生一次调用、attempts 归 1。
+- 证据与最小范围：[batch-02 独立审查](verification/priority-minimax/batch-02/CODEX_REVIEW.md)、[batch-03 交付说明](verification/priority-minimax/batch-03/DELIVERY.md)。未扩大为无关队列重构。
 
 ## BUG-123：智能优先级在途请求期间恢复自动后，新判断请求丢失
 
-- 状态：修复中（batch-03）；2026-10-24 Codex 独立复现。
+- 状态：**已修复**（batch-03）；2026-10-24 Codex 独立复现。
 - 复现：用线程屏障挂起模型响应，在事件循环线程通过正式 ContentService 改为手动low再恢复自动；返回后旧响应被取消，但最新请求也被running去重丢弃，任务cancelled、pending=0，自动判断未执行。
 - 预期：阻止旧响应，同时保留/续排当前有效请求，不需要用户二次点击；有限并发和人工优先保持。
-- 证据与最小范围：[batch-02 独立审查](verification/priority-minimax/batch-02/CODEX_REVIEW.md)。回归使用真实事件与线程屏障，不在网络线程直接写SQLite。
+- 原因：enqueue 对 running 一律返回False，不保留新请求；_execute 检测输入变更只取消旧任务，未续排最新有效输入。
+- 修复：`PriorityIntelligenceService._execute` 在因指纹或版本不一致取消旧请求后调用新增的 `_recheck`：它复用既有的资格检查与排队逻辑（`request(..., reason='event')`），因此人工最终值仍然不调用模型、重试预算耗尽的条目也不会被普通事件重开、旧请求的响应仍然不落库。取消与续排的顺序是「先落终态再续排」，避免再次撞上 running 去重。
+- 验证：重写回归 `test_a_manual_change_during_the_request_does_not_get_overwritten`：用 `threading.Event` 屏障挂起网络响应，**数据库操作全部在事件循环线程**（网络线程只阻塞与应答，不碰 SQLite）；断言旧响应没有落库、最新请求被续排（实际发出 2 次调用）、最终落库的是第二次响应（high）、来源为 smart、任务终态 succeeded。测试自己停掉 2 秒轮询的后台 worker 并逐轮手动驱动，避免与后台 worker 抢任务。
+- 证据与最小范围：[batch-02 独立审查](verification/priority-minimax/batch-02/CODEX_REVIEW.md)、[batch-03 交付说明](verification/priority-minimax/batch-03/DELIVERY.md)。未另做全库测试形式整改。

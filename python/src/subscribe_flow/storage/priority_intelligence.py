@@ -485,13 +485,23 @@ class PriorityTaskRepository:
             task['state'] = 'running'
             return task
 
-    def finish(self, content_id, state, *, error_code=None, reason=None, stamp=None):
-        """把任务落到终态。"""
+    def finish(self, content_id, state, *, error_code=None, reason=None, attempts=None, stamp=None):
+        """把任务落到终态。
+
+        ``attempts`` 给出时一并写回：重试预算耗尽的那一次必须把最终次数
+        落库，否则队列里永远看见旧次数，耗尽判断不会成立，普通事件会
+        反复把同一输入重新排队。
+        """
         stamp = stamp or now()
         with self.database.transaction() as db:
-            db.execute("UPDATE priority_tasks SET state=?, error_code=?, reason=?, next_attempt_at=NULL, "
-                       "updated_at=? WHERE content_id=?",
-                       (state, error_code, reason, stamp, content_id))
+            if attempts is None:
+                db.execute("UPDATE priority_tasks SET state=?, error_code=?, reason=?, next_attempt_at=NULL, "
+                           "updated_at=? WHERE content_id=?",
+                           (state, error_code, reason, stamp, content_id))
+            else:
+                db.execute("UPDATE priority_tasks SET state=?, attempts=?, error_code=?, reason=?, "
+                           "next_attempt_at=NULL, updated_at=? WHERE content_id=?",
+                           (state, int(attempts), error_code, reason, stamp, content_id))
 
     def defer(self, content_id, attempts, next_attempt_at, *, error_code=None, reason=None, stamp=None):
         """有限退避：可重试的失败退到下一次尝试时间。"""

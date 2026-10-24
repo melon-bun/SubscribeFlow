@@ -362,9 +362,11 @@ class PriorityIntelligenceService:
         current_result = build_context(current)
         if current_result.fingerprint != result.fingerprint:
             self.tasks.finish(content_id, 'cancelled', reason='判断期间内容或标签已变化')
+            self._recheck(content_id)
             return
         if current_result.snapshot.to_dict() != result.snapshot.to_dict():
             self.tasks.finish(content_id, 'cancelled', reason='判断期间配置或输入已变化')
+            self._recheck(content_id)
             return
 
         if decision.status in RETRYABLE_STATUSES:
@@ -386,11 +388,29 @@ class PriorityIntelligenceService:
         # 既有内容变更通知：列表、计数与提醒一起刷新。
         self.emit('content.changed', {'ids': [content_id]})
 
+    def _recheck(self, content_id):
+        """旧请求作废后，把当前仍然有效的请求续排上去。
+
+        用户在请求期间改过档又恢复自动时，最新的有效请求不能因为
+        「已经在跑」被丢掉：这里重新做一次资格检查，符合就再排一次，
+        不需要用户再点一次。人工最终值仍然不调用模型；重试预算已经
+        耗尽的那一条，普通事件也不会把它重新打开。
+        """
+        try:
+            self.request([content_id], reason='event')
+        except Exception:
+            LOG.exception('续排智能优先级请求失败：%s', content_id)
+
     def _defer(self, task, error_code, reason):
-        """有限退避。可重试的失败退到下一次尝试时间。"""
+        """有限退避。可重试的失败退到下一次尝试时间。
+
+        预算用完时把最终次数一起写回：队列据此拒绝普通事件再次排同一条，
+        只有用户明确「重新判断」才重置。
+        """
         attempts = int(task.get('attempts') or 0) + 1
         if attempts >= MAX_ATTEMPTS:
-            self.tasks.finish(task['content_id'], 'failed', error_code=error_code, reason=reason)
+            self.tasks.finish(task['content_id'], 'failed', error_code=error_code, reason=reason,
+                              attempts=attempts)
             return
         delay = BACKOFF_SECONDS[min(attempts - 1, len(BACKOFF_SECONDS) - 1)]
         self.tasks.defer(task['content_id'], attempts, _after(delay), error_code=error_code, reason=reason)
