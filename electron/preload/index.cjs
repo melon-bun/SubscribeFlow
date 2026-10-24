@@ -16,6 +16,8 @@ const allowed = new Set([
   // M40 智能优先级：状态与用户明确触发的判断请求。走主进程 UI_METHODS 转发，
   // 不开放任意 RPC：只放这三个受限调用。
   'getPriorityStatus', 'judgePriority', 'judgePriorityBulk',
+  // 公共 AI 连接的读取与协议测试；Renderer 使用这些固定 RPC 名调用。
+  'ai.provider.list', 'ai.provider.test',
   // M16 自动打标：状态、连接测试、重试与补打。渲染层拿不到密钥，只能看到结果。
   'tagging.status', 'tagging.test', 'tagging.tasks', 'tagging.retry',
   'tagging.backfill_preview', 'tagging.backfill',

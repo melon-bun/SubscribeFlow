@@ -1,0 +1,14 @@
+{
+  "calls": 1,
+  "result": {
+    "ok": true,
+    "provider": "openai_chat",
+    "model": "MiniMax-M3",
+    "message": "连接正常，协议可用。"
+  },
+  "error": null,
+  "text": "连接正常：MiniMax-M3。连接正常，协议可用。",
+  "host": "api.minimax.cn",
+  "configuredModel": "MiniMax-M3",
+  "generatedAt": "2026-10-24T15:22:31.974Z"
+}

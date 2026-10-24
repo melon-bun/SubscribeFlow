@@ -2262,3 +2262,12 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
   [batch-04 交付说明](verification/priority-minimax/batch-04/DELIVERY.md)。
 
 - 最终复验：[Codex报告](verification/priority-minimax/batch-04/CODEX_FINAL_REVIEW.md)；方法存在、受限调用成功、设置开启后原内容无需重载出现重新判断、详情保持可见，完整Renderer通过。
+
+
+## BUG-125：设置页AI连接测试返回“不允许调用此方法”
+
+- 状态：已修复（2026-10-25，Codex最小修复与真实LLM按钮验证通过）。
+- 原因：Renderer调用ai.provider.test，Main/Python已支持，Preload白名单漏ai.provider.test/list，请求在应用内被拒绝，尚未发至API。
+- 修复：仅补两个固定方法，任意RPC和原始settings.update继续被拒绝。
+- 验证：原失败回归先失败后通过；Node150/150；正式Electron设置页实际点击测试连接，真实MiniMax-M3返回ok=true、界面显示连接正常。
+- [详细证据](verification/ai-provider-test-20261025/REPORT.md)。两项间距另交MiniMax，不合并为接口修复。
