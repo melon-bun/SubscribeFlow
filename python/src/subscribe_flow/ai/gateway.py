@@ -29,6 +29,9 @@ ADAPTERS = {
 # 最小探针：只验证协议通不通，不带任何业务内容。
 PROBE_TEXT = '连接测试。'
 PROBE_QUESTION = '这是一次连接测试，请只回答是否可用。'
+# 推理模型会把思考与最终回答计入同一个输出预算。16 token 可能在
+# 最终正文产生前耗尽；探针只做一次固定请求，仍保留有界的输出上限。
+PROBE_MAX_TOKENS = 1024
 
 
 class AiGateway:
@@ -153,7 +156,7 @@ class AiGateway:
             return {'ok': False, 'code': error.code, 'message': error.message, 'retryable': False}
         try:
             if provider.supports(CAPABILITY_TEXT_GENERATION):
-                result = adapter.chat([('user', PROBE_TEXT)], max_tokens=16)
+                result = adapter.chat([('user', PROBE_TEXT)], max_tokens=PROBE_MAX_TOKENS)
                 return {'ok': True, 'provider': provider.protocol, 'model': result.model,
                         'message': '连接正常，协议可用。'}
             result = adapter.classify(PROBE_TEXT, {'probe': PROBE_QUESTION})

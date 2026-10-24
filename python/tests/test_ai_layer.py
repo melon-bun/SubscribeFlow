@@ -299,6 +299,42 @@ class GatewayTests(unittest.TestCase):
         self.assertFalse(outcome['ok'])
         self.assertEqual(outcome['code'], 'invalid_response')
 
+    def test_probe_leaves_room_for_reasoning_before_the_final_answer(self):
+        self.configure(
+            {'provider-text': {'protocol': PROTOCOL_OPENAI_CHAT, 'endpoint': 'https://api/v1', 'model': 'reasoner'}},
+            {'provider-text': 'key'})
+        self.credentials.provide('key', 'secret')
+
+        class ReasoningTransport(FakeTransport):
+            def post_json(self, url, payload, headers=None, timeout=None):
+                self.calls.append({'payload': payload})
+                # Some services separate reasoning from the final content. A tiny
+                # shared output budget can expire before any final text exists.
+                if payload['max_tokens'] < 256:
+                    return 200, {'choices': [{'finish_reason': 'length', 'message': {
+                        'reasoning_content': 'Checking the request', 'content': None}}]}
+                return 200, {'model': 'reasoner', 'choices': [
+                    {'finish_reason': 'stop', 'message': {'content': 'OK'}}]}
+
+        transport = ReasoningTransport({})
+        gateway = AiGateway(settings=self.settings, credentials=self.credentials, transport=transport)
+        outcome = gateway.test_connection('provider-text')
+        self.assertTrue(outcome['ok'], outcome)
+        self.assertEqual(len(transport.calls), 1, 'a connection test must not keep retrying')
+
+    def test_probe_still_rejects_a_genuinely_empty_response(self):
+        self.configure(
+            {'provider-text': {'protocol': PROTOCOL_OPENAI_CHAT, 'endpoint': 'https://api/v1', 'model': 'm'}},
+            {'provider-text': 'key'})
+        self.credentials.provide('key', 'secret')
+        transport = FakeTransport({'/chat/completions': {'choices': [
+            {'message': {'content': None, 'reasoning_content': 'Only reasoning'}}]}})
+        gateway = AiGateway(settings=self.settings, credentials=self.credentials, transport=transport)
+        outcome = gateway.test_connection('provider-text')
+        self.assertFalse(outcome['ok'])
+        self.assertEqual(outcome['code'], 'invalid_response')
+        self.assertEqual(len(transport.calls), 1)
+
 
 class DisabledProviderTests(unittest.TestCase):
     """BUG-106：停用的连接在调用边界就要被拒绝，不发出请求。"""

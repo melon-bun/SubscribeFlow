@@ -1,0 +1,54 @@
+{
+  "low_budget_probe": {
+    "ok": true,
+    "provider": "openai_chat",
+    "model": "MiniMax-M3",
+    "message": "连接正常，协议可用。"
+  },
+  "higher_budget_probe": {
+    "ok": true,
+    "model": "MiniMax-M3"
+  },
+  "responses": [
+    {
+      "budget": 16,
+      "http_status": 200,
+      "model": "MiniMax-M3",
+      "finish_reason": "length",
+      "content_chars": 87,
+      "reasoning_chars": 0,
+      "usage": {
+        "total_tokens": 217,
+        "total_characters": 0,
+        "prompt_tokens": 201,
+        "completion_tokens": 16,
+        "completion_tokens_details": {
+          "reasoning_tokens": 15
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 200
+        }
+      }
+    },
+    {
+      "budget": 1024,
+      "http_status": 200,
+      "model": "MiniMax-M3",
+      "finish_reason": "stop",
+      "content_chars": 131,
+      "reasoning_chars": 0,
+      "usage": {
+        "total_tokens": 233,
+        "total_characters": 0,
+        "prompt_tokens": 201,
+        "completion_tokens": 32,
+        "completion_tokens_details": {
+          "reasoning_tokens": 22
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 200
+        }
+      }
+    }
+  ]
+}

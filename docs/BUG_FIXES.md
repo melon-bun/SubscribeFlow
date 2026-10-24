@@ -2271,3 +2271,12 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 - 修复：仅补两个固定方法，任意RPC和原始settings.update继续被拒绝。
 - 验证：原失败回归先失败后通过；Node150/150；正式Electron设置页实际点击测试连接，真实MiniMax-M3返回ok=true、界面显示连接正常。
 - [详细证据](verification/ai-provider-test-20261025/REPORT.md)。两项间距另交MiniMax，不合并为接口修复。
+
+
+## BUG-126：连接探针仅16个输出token，推理可能耗尽预算而无最终正文
+
+- 状态：已修复（2026-10-25，Codex调查与真实按钮复验）。
+- 现象：用户在白名单修复后反馈LLM测试返回模型服务空内容；原探针固定max_tokens=16。
+- 证据：真实MiniMax-M3在16预算时finish_reason=length、推理15/输出16；1024时正常stop。该次真实样本仍有思考文本，未声称复现其空正文；分离reasoning_content的回归修复前复现同一空内容错误。
+- 最小修复：连接测试预算改为1024，仍单次有界请求，真正空正文继续报错，不改业务推理预算。
+- 验证：AI层28项通过，正式Electron设置页真实MiniMax-M3测试成功。[证据](verification/ai-probe-output-20261025/REPORT.md)。
