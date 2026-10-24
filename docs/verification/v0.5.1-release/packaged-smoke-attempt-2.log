@@ -1,0 +1,4 @@
+Error: Packaged acceptance timed out: Debug timeout: Runtime.evaluate
+    at until (/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/scripts/packaged-smoke.cjs:12:9)
+    at async launch (/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/scripts/packaged-smoke.cjs:54:5)
+    at async main (/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/scripts/packaged-smoke.cjs:130:9)
