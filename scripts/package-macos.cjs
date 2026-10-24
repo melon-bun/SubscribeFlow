@@ -56,7 +56,7 @@ async function main() {
   const {packager} = await import('@electron/packager');
   const [output] = await packager({dir:stage,name:'Subscribe Flow',platform:'darwin',arch:'x64',
     appBundleId:'local.subscribeflow.desktop',appVersion:pkg.version,buildVersion:pkg.version,icon,
-    electronVersion:pkg.devDependencies.electron,out:path.join(root,'dist'),overwrite:true,prune:false,
+    electronVersion:pkg.devDependencies.electron,out:path.join(root,'dist',pkg.version),overwrite:true,prune:false,
     asar:true,osxSign:false,osxNotarize:false});
   const bundle = path.join(output,'Subscribe Flow.app');
   // Packager's extraResource copy resolves these links to absolute staging paths.
