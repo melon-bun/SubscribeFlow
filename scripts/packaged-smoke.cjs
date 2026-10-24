@@ -123,6 +123,7 @@ DROP TABLE tagging_tasks;
 DROP TABLE content_events;
 DROP TABLE reminder_run_state;
 DROP TABLE app_settings;
+DROP TABLE content_notes;
 PRAGMA user_version=2;
 ''');db.execute('UPDATE content_states SET read=1,archived=1 WHERE content_id=?',(sys.argv[2],));db.commit();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id],{encoding:'utf8'});
     assert.equal(legacy.status,0,legacy.stderr);
@@ -134,6 +135,12 @@ PRAGMA user_version=2;
     assert.deepEqual((await call('content.get',{item_id:items[0].id})).state,{read:false,archived:true,deferred:false});
     assert.ok(fs.existsSync(path.join(dataDir,`subscribe-flow.before-v${schema}.backup`)));
     await until(()=>app.evaluate('document.querySelectorAll(".content-card").length===2'));
+    for(const theme of ['light','dark']) {
+      const logo=await app.evaluate(`(() => {document.documentElement.dataset.theme=${JSON.stringify(theme)};const m=document.querySelector('.brand__mark'),i=m.querySelector('img');return {background:getComputedStyle(m).backgroundColor,width:i.getBoundingClientRect().width};})()`);
+      assert.equal(logo.background,'rgb(255, 255, 255)');assert.equal(logo.width,34);
+    }
+    await app.evaluate(`document.documentElement.dataset.theme='light'`);
+    result.whiteBrandLogo=true;
     const selected=await app.evaluate('SF.app.state.selectedId');
     await app.evaluate(`Array.from(document.querySelectorAll('.detail .state-btn')).find(b=>b.textContent.trim()==='稍后').click()`);
     await until(()=>app.evaluate('SF.app.state.counts.unread===1 && document.querySelectorAll(".content-card").length===1'));
@@ -158,6 +165,15 @@ PRAGMA user_version=2;
     const tag=await call('tag.create',{name:'0.2.0 安装包验收',color:'blue'});
     await call('content.set_tags',{item_id:selected,tag_ids:[tag.id]});
     assert.equal((await call('content.list',{tags:[tag.id]})).total,1);
+    const note=await call('note.save',{item_id:selected,template:'project',summary:'离线发布验收笔记',
+      takeaway:'保留个人判断与原内容',verdict:'using',summary_origin:'manual',expected_version:null});
+    assert.equal((await call('note.get',{item_id:selected})).summary,note.summary);
+    assert.equal((await call('note.list',{sort:'updated'})).total,1);
+    const settingsBefore=await call('settings.get');
+    await call('settings.update',{section:'summarization',patch:{enabled:false,length:'detailed',language:'zh-CN'}});
+    assert.deepEqual((await call('settings.get')).tagging,settingsBefore.tagging);
+    assert.deepEqual((await call('settings.get')).ai,settingsBefore.ai);
+    result.notes=true;result.summarySettingsSeparate=true;
     const xhs=(await call('channel.list')).find(channel=>channel.channel==='xiaohongshu');
     assert.ok(xhs);assert.equal(xhs.backend,'electron-session');
     result.tags=true;result.xiaohongshuChannel=true;
@@ -179,6 +195,9 @@ PRAGMA user_version=2;
     assert.equal((await call('subscription.list'))[0].default_priority,'high');
     assert.equal((await call('content.list',{tags:[tag.id]})).total,1);
     assert.equal((await call('tag.list')).items[0].name,tag.name);
+    assert.equal((await call('note.get',{item_id:selected})).verdict,'using');
+    assert.equal((await call('settings.get')).summarization.length,'detailed');
+    result.notesRestart=true;
     result.priorityRestart=true;result.appRestart=true;
     await app.close();app=null;
     // Fault injection only alters this disposable copy of the package.

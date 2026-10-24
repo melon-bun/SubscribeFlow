@@ -43,6 +43,11 @@ function rename(selector) {
 // 产品把顶栏和纸面包在同一个 shell；侧栏只占根网格的第一行。
 // 参考页直接把二者放在根网格，照搬跨两行会生成随内容伸缩的空行（BUG-102）。
 function adaptWindow(selector, body) {
+  // 知流使用原始白底品牌图，不沿用参考页橙底 + 20px SVG 的演示 logo。
+  if (/\.brand__mark\s*$/.test(selector)) body = body
+    .replace(/background:\s*var\(--c-orange\);/, 'background: #fff;')
+    .replace(/box-shadow:[^;]+;/, 'box-shadow: var(--sh-card);');
+  if (/\.brand__mark img\s*$/.test(selector)) body = 'width: 100%; height: 100%; object-fit: contain; border-radius: inherit;';
   if (/\.sidebar\s*$/.test(selector)) body = body.replace(/grid-row:\s*1\s*\/\s*3/g, 'grid-row: 1');
   // 参考页是固定高度样张；真实窗口由滚动容器分配剩余空间。
   return /\.notes-layout\s*$/.test(selector) ? body.replace(/min-height:\s*640px/g, 'min-height: 0') : body;
