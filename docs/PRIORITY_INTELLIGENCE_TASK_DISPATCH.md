@@ -44,3 +44,5 @@ batch-03 启动确认：2026-10-24 21:32 JST，原 session 三项开始事件齐
 ## batch-03 复验与 M44 续派
 
 2026-10-24：Codex 原失败场景确认 BUG-122／123关闭，111项优先级、148项Node、正式设置Renderer及设置部分写入失败的整体回滚探针通过。独立正式Electron发现新调用遗漏Renderer AppClient与Preload白名单，选内容报getPriorityStatus不是函数（BUG-124）。只将该主链路最小补接并入M44；M39–M42已验收，M43待修后联合验收。证据 [审查](verification/priority-minimax/batch-03/CODEX_REVIEW.md)。
+
+batch-04 已于 2026-10-24 23:00 JST 确认三项开始事件，run_id `exec_turn_mvmgth66_updvoa`，mcode PID 77716；20分钟跟进已更新，新批计数0。Codex完整renderer-smoke亦已通过；专门探针暴露的BUG-124仍须独立复验。
