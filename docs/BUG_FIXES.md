@@ -2260,3 +2260,5 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
   没有做缓存层重构。
 - 证据与最小范围：[batch-03 独立审查](verification/priority-minimax/batch-03/CODEX_REVIEW.md)、
   [batch-04 交付说明](verification/priority-minimax/batch-04/DELIVERY.md)。
+
+- 最终复验：[Codex报告](verification/priority-minimax/batch-04/CODEX_FINAL_REVIEW.md)；方法存在、受限调用成功、设置开启后原内容无需重载出现重新判断、详情保持可见，完整Renderer通过。

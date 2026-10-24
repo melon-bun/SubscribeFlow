@@ -360,4 +360,3 @@ $ SUBSCRIBE_FLOW_VERIFY_OUTPUT=docs/verification/priority-minimax/batch-04 npm r
 
 产出 11 张实机截图与 [spacing.json](spacing.json)。四页页头到第一个工作区的实测距离均为 **16px**
 （笔记／总览／渠道／标签一致）。
-

@@ -1,0 +1,27 @@
+{
+  "beforeEnabled": false,
+  "afterEnabled": true,
+  "rejudgeButtonVisible": true,
+  "clientTypes": {
+    "status": "function",
+    "judge": "function"
+  },
+  "rawStatus": {
+    "ok": true,
+    "value": {
+      "enabled": true,
+      "providerId": "provider-llm",
+      "mode": "llm",
+      "policyVersion": "2",
+      "providerVersion": "provider-llm:2",
+      "promptVersion": "priority_prompt_v1",
+      "tasks": {},
+      "decisions": 0,
+      "requested": 0,
+      "decided": 0
+    }
+  },
+  "detailVisible": true,
+  "body": "跳到主要内容\n知流\n聚合你关注的创作者更新\n收件箱\n1\n内容总览\n渠道管理\n标签\n0\n笔记\n快捷筛选\n全部更新\n1\n未处理\n1\n高优先级\n0\n中优先级\n0\n低优先级\n0\n稍后处理\n0\n已读\n0\n已归档\n0\n按平台筛选\nGitHub\n0\nB\nB站\n0\n红\n小红书\n0\n知\n知乎\n0\n微\n微信公众号\n0\n⌘K\n同步\n0/5\n2026年10月25日\n星期日\n本\n本地用户\n尚未检查\n采集连接\n尚未检查采集环境\n查看连接与任务\n全部更新\n1\n\n查看所有已保存的内容，包括已读、稍后处理和已归档。\n\n按日历时间排列\n重新查询\n添加内容\n全部\n1\nGitHub\n0\nB\nB站\n0\n红\n小红书\n0\n知\n知乎\n0\n微\n公众号\n0\n全部优先级\n全部来源\n全部收录方式\n标签\nReview target\n?\nReview",
+  "itemId": "demo:feed:review-target"
+}

@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | batch-01 | M36 契约／迁移设计、M37 偏好统计仓储、M38 共用上下文与提示词 | 379c0a4／d30990b 已由 Codex 验收 |
 | batch-02 | M39 LLM／Jev、M40 后台调度、M41 统一优先级及传递；真实 LLM 产品调用 | d46d65b＋9da3815 已验收，BUG-122／123关闭 |
-| batch-03 | M42 统一设置／事务、M43 控件与四页间距 | M42与两修复已验收；M43正式桥接BUG-124待修 |
+| batch-03 | M42 统一设置／事务、M43 控件与四页间距 | M42／M43与两修复已验收，BUG-124亦关闭 |
 | batch-04 | M44 联合验收与交接、真实 LLM 端到端复验 | 已交付：BUG-124最小修复（`e2a3381`）＋M44联合验收，待 Codex 最终复验 |
 
 全部完成并通过必要验收后暂停定时任务；保留真实结果与非致命限制，不提前把模块标记完成。
@@ -61,3 +61,7 @@ Node 149/149；正式 renderer／settings／reminder 冒烟全部 passed。
 逐项验收矩阵、实际命令与输出、真实 API 证据与非致命限制见
 [batch-04 交付说明](verification/priority-minimax/batch-04/DELIVERY.md)。
 **最终验收结论与 BUG-124 是否关闭由 Codex 独立复验给出**，本记录不代替该结论。
+
+## 2026-10-25 最终验收与停止跟进
+
+M36–M44全部完成，BUG-122／123／124均关闭。Codex最终113项优先级、149项Node、正式Renderer（含新priorityBridgeSmoke）、原失败正式Electron探针均通过；此前设置回滚与真实LLM/Jev复验有效。最后真实LLM用例正常、Jev一次超时及既有总结时序用例等非致命/真实环境限制只记。最终代码f545adf，后续仅验收文档；未打包/推送/发布。20分钟跟进结束，不再派新任务。[最终报告](verification/priority-minimax/batch-04/CODEX_FINAL_REVIEW.md)。
