@@ -1,0 +1,34 @@
+{
+  "notes": {
+    "headBottom": 191,
+    "firstTop": 207,
+    "distance": 16,
+    "firstElement": "notes-layout",
+    "marginTop": "0px",
+    "viewGap": "16px"
+  },
+  "overview": {
+    "headBottom": 191,
+    "firstTop": 207,
+    "distance": 16,
+    "firstElement": "overview__filters",
+    "marginTop": "0px",
+    "viewGap": "16px"
+  },
+  "channels": {
+    "headBottom": 191,
+    "firstTop": 207,
+    "distance": 16,
+    "firstElement": "view__body",
+    "marginTop": "0px",
+    "viewGap": "16px"
+  },
+  "tags": {
+    "headBottom": 191,
+    "firstTop": 207,
+    "distance": 16,
+    "firstElement": "view__body",
+    "marginTop": "0px",
+    "viewGap": "16px"
+  }
+}
