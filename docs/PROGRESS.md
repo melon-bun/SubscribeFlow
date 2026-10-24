@@ -1,3 +1,5 @@
+2026-10-24 智能优先级 M39–M42 已由Codex验收，BUG-122／123原失败场景关闭；111项优先级、148项Node与正式设置保存取消/重启、部分来源失败整体回滚通过。M43正式Electron探针发现新优先级调用遗漏Renderer/Preload（BUG-124），已续派原MiniMax随M44最小补接及联合验收，不扩展非致命细节。[审查](verification/priority-minimax/batch-03/CODEX_REVIEW.md)。
+
 2026-10-24 智能优先级 batch-02 已由 Codex 实审：103项聚焦通过，真实LLM／Jev各3次产品复验通过；复现BUG-122重试耗尽后额外调用、BUG-123在途恢复自动请求丢失，仅两项实质问题交回原MiniMax并入M42–M43续派，联合验收待复验。非致命问题只记，不扩展防御重构。[审查](verification/priority-minimax/batch-02/CODEX_REVIEW.md)。
 
 2026-10-24 智能优先级 M36–M38 已由 Codex 独立验收（379c0a4／d30990b）：54 项聚焦与真实仓储组合探针通过，494 项全量仅既有总结时序用例失败，非致命只记。已续派原 MiniMax session 做 M39–M41 与真实 LLM 产品调用；20 分钟跟进继续，新批计数归零，无时限，不打包／推送／发布。[验收](verification/priority-minimax/batch-01/CODEX_REVIEW.md)。

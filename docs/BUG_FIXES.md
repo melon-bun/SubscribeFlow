@@ -2194,3 +2194,12 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 - 修复：`PriorityIntelligenceService._execute` 在因指纹或版本不一致取消旧请求后调用新增的 `_recheck`：它复用既有的资格检查与排队逻辑（`request(..., reason='event')`），因此人工最终值仍然不调用模型、重试预算耗尽的条目也不会被普通事件重开、旧请求的响应仍然不落库。取消与续排的顺序是「先落终态再续排」，避免再次撞上 running 去重。
 - 验证：重写回归 `test_a_manual_change_during_the_request_does_not_get_overwritten`：用 `threading.Event` 屏障挂起网络响应，**数据库操作全部在事件循环线程**（网络线程只阻塞与应答，不碰 SQLite）；断言旧响应没有落库、最新请求被续排（实际发出 2 次调用）、最终落库的是第二次响应（high）、来源为 smart、任务终态 succeeded。测试自己停掉 2 秒轮询的后台 worker 并逐轮手动驱动，避免与后台 worker 抢任务。
 - 证据与最小范围：[batch-02 独立审查](verification/priority-minimax/batch-02/CODEX_REVIEW.md)、[batch-03 交付说明](verification/priority-minimax/batch-03/DELIVERY.md)。未另做全库测试形式整改。
+
+
+## BUG-124：优先级状态／重新判断未接 Renderer 与 Preload，内容详情读取失败
+
+- 状态：修复中（batch-04/M44）；2026-10-24 Codex 正式 Electron＋Core 隔离实测。
+- 现象：选择内容后客户端getPriorityStatus不是函数，界面显示核心读取失败；新判断按钮不可用，原内容详情可能消失。
+- 原因：Main/Python已添加新方法，但Renderer AppClient契约/工厂与Preload受限白名单遗漏。
+- 预期：最小接通status/judge/bulk及正式开关生效后的重新判断入口；保留受限桥接，不增加任意RPC访问。
+- 证据：[batch-03审查](verification/priority-minimax/batch-03/CODEX_REVIEW.md)、[正式界面输出](verification/priority-minimax/batch-03/codex-rejudge-probe.json)。修复后再联合验收，不以现有111/148项通过代替真实链路。
