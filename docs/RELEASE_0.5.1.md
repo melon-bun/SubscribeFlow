@@ -17,3 +17,8 @@
 
 发布说明：[RELEASE_NOTES_0.5.1.md](RELEASE_NOTES_0.5.1.md)。
 证据目录：[verification/v0.5.1-release](verification/v0.5.1-release/)。
+
+
+## 验收入口维护
+
+首次安装包检查已通过旧库迁移、深浅色 logo、优先级、标签与笔记读写；新增设置检查误调用未向 Renderer 开放的 `settings.get/update`，被白名单正确拒绝。验收脚本改用正式界面的 `getSettings/saveSettings`，不扩大权限、不改产品接口；随后重新执行正式包验收。
