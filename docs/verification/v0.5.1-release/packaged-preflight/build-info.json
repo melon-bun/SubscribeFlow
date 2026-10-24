@@ -1,0 +1,14 @@
+{
+  "version": "0.5.1",
+  "platform": "darwin",
+  "arch": "x64",
+  "electron": "44.5.1",
+  "python": "Python 3.12.5",
+  "pyinstaller": "6.22.3",
+  "baseRevision": "69c63f5dfb1d4e60613d5b9243e890a775c69f83",
+  "builtAt": "2026-10-24T01:28:36.780Z",
+  "signing": "local-ad-hoc",
+  "bundle": "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe Flow-darwin-x64/Subscribe Flow.app",
+  "archive": "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe-Flow-0.5.1-mac-x64.zip",
+  "sha256": "1f4cd6d0323553cbc871ba47aedabf17db843f0526aa513506db87bffbb8250b"
+}

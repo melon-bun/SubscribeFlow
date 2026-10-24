@@ -1,0 +1,27 @@
+{
+  "status": "published-and-verified",
+  "releaseId": 422448065,
+  "tag": "v0.5.1",
+  "release": "https://github.com/melon-bun/SubscribeFlow/releases/tag/v0.5.1",
+  "publishedAt": "2026-10-24T01:38:33Z",
+  "publishedAtTokyo": "2026-10-24T10:38:33+09:00",
+  "latest": true,
+  "baseRevision": "824b5270187ccddf9d3964fa8ac35e589bc75102",
+  "tagCommit": "824b5270187ccddf9d3964fa8ac35e589bc75102",
+  "assets": [
+    {
+      "name": "Subscribe-Flow-0.5.1-mac-x64.zip",
+      "state": "uploaded",
+      "bytes": 146005747,
+      "sha256": "40920f29f6a6c78a4355ed3492eab531fb9d21ec0bc9c9fa271e5cc4c67780e2",
+      "url": "https://github.com/melon-bun/SubscribeFlow/releases/download/v0.5.1/Subscribe-Flow-0.5.1-mac-x64.zip"
+    },
+    {
+      "name": "Subscribe-Flow-0.5.1-mac-x64.zip.sha256",
+      "state": "uploaded",
+      "bytes": 99,
+      "sha256": "afbcc7f26dc3f5fe350400077aee9eaa5a16b45403733bbae4dd534c893840a9",
+      "url": "https://github.com/melon-bun/SubscribeFlow/releases/download/v0.5.1/Subscribe-Flow-0.5.1-mac-x64.zip.sha256"
+    }
+  ]
+}

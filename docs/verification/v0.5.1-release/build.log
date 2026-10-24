@@ -1,0 +1,87 @@
+npm notice run subscribe-flow@0.5.1 package:mac
+npm notice run node scripts/package-macos.cjs
+Using Python 3.12.5 environment at: build/packaging-venv
+Resolved 6 packages in 43ms
+Checked 6 packages in 0.86ms
+234 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.8
+235 INFO: Python: 3.12.5
+262 INFO: Platform: macOS-26.4.1-x86_64-i386-64bit
+262 INFO: Python environment: /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv
+263 INFO: wrote /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/subscribe-flow-core.spec
+270 INFO: Removing temporary files and cleaning cache in /Users/xor/Library/Application Support/pyinstaller
+298 INFO: Module search paths (PYTHONPATH):
+['/Users/xor/Documents/Subscribe_Call/Subscribe_Flow',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python312.zip',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/lib-dynload',
+ '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages',
+ '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/packaging',
+ '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/src']
+830 INFO: Appending 'datas' from .spec
+831 INFO: checking Analysis
+831 INFO: Building Analysis because Analysis-00.toc is non existent
+831 INFO: Looking for Python shared library...
+842 INFO: Using Python shared library: /Library/Frameworks/Python.framework/Versions/3.12/Python
+842 INFO: Running Analysis Analysis-00.toc
+843 INFO: Target bytecode optimization level: 0
+843 INFO: Initializing module dependency graph...
+844 INFO: Initializing module graph hook caches...
+871 INFO: Analyzing modules for base_library.zip ...
+3593 INFO: Processing standard module hook 'hook-encodings.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+7546 INFO: Processing standard module hook 'hook-math.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+8333 INFO: Processing standard module hook 'hook-pickle.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+12461 INFO: Processing standard module hook 'hook-heapq.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+13615 INFO: Caching module dependency graph...
+13696 INFO: Analyzing /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/packaging/core-entry.py
+13990 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+14333 INFO: Processing standard module hook 'hook-xml.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+15573 INFO: Processing standard module hook 'hook-_ctypes.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+17819 INFO: Processing standard module hook 'hook-platform.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+18004 INFO: Processing standard module hook 'hook-sqlite3.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+18497 INFO: Processing standard module hook 'hook-zoneinfo.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+18568 INFO: Processing standard module hook 'hook-sysconfig.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+18604 INFO: Processing standard module hook 'hook-_osx_support.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+19215 INFO: Processing module hooks (post-graph stage)...
+19412 INFO: Performing binary vs. data reclassification (14 entries)
+19435 INFO: Looking for ctypes DLLs
+19449 INFO: Analyzing run-time hooks ...
+19454 INFO: Including run-time hook 'pyi_rth_inspect.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+19460 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+19465 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+19486 INFO: Creating base_library.zip...
+19542 INFO: Looking for dynamic libraries
+20227 INFO: Warnings written to /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/pyinstaller/subscribe-flow-core/warn-subscribe-flow-core.txt
+20276 INFO: Graph cross-reference written to /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/pyinstaller/subscribe-flow-core/xref-subscribe-flow-core.html
+20586 INFO: checking PYZ
+20587 INFO: Building PYZ because PYZ-00.toc is non existent
+20587 INFO: Building PYZ (ZlibArchive) /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/pyinstaller/subscribe-flow-core/PYZ-00.pyz
+21043 INFO: Building PYZ (ZlibArchive) /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/pyinstaller/subscribe-flow-core/PYZ-00.pyz completed successfully.
+21058 INFO: EXE target arch: x86_64
+21058 INFO: Code signing identity: None
+21068 INFO: checking PKG
+21068 INFO: Building PKG because PKG-00.toc is non existent
+21068 INFO: Building PKG (CArchive) subscribe-flow-core.pkg
+21087 INFO: Building PKG (CArchive) subscribe-flow-core.pkg completed successfully.
+21088 INFO: Bootloader /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/bootloader/Darwin-64bit/run
+21088 INFO: checking EXE
+21088 INFO: Building EXE because EXE-00.toc is non existent
+21089 INFO: Building EXE from EXE-00.toc
+21089 INFO: Copying bootloader EXE to /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/pyinstaller/subscribe-flow-core/subscribe-flow-core
+21092 INFO: Converting EXE to target arch (x86_64)
+21153 INFO: Removing signature(s) from EXE
+21203 INFO: Modifying Mach-O image UUID(s) in EXE
+21216 INFO: Appending PKG archive to EXE
+21220 INFO: Fixing EXE headers for code signing
+21251 INFO: Rewriting the executable's macOS SDK version (26.2.0) to match the SDK version of the Python library (12.1.0) in order to avoid inconsistent behavior and potential UI issues in the frozen application.
+21253 INFO: Re-signing the EXE
+21343 INFO: Building EXE from EXE-00.toc completed successfully.
+21349 INFO: checking COLLECT
+21349 INFO: Building COLLECT because COLLECT-00.toc is non existent
+21349 INFO: Removing dir /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/sidecar/subscribe-flow-core
+21380 INFO: Building COLLECT COLLECT-00.toc
+33805 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+33809 INFO: Build complete! The results are available in: /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/sidecar
+[64088:1024/103454.755586:ERROR:base/process/process_mac.cc:98] task_policy_set TASK_SUPPRESSION_POLICY: (os/kern) invalid argument (4)
+Packaging app for platform darwin x64 using electron v44.5.1
+WARNING: Could not find icon "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/SubscribeFlow.icns" with extension ".icon", skipping this app icon format
+{"bundle":"/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe Flow-darwin-x64/Subscribe Flow.app","archive":"/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe-Flow-0.5.1-mac-x64.zip","sha256":"40920f29f6a6c78a4355ed3492eab531fb9d21ec0bc9c9fa271e5cc4c67780e2"}
