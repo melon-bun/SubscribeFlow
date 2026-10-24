@@ -15,6 +15,7 @@
 
 import copy
 import json
+import logging
 import re
 from urllib.parse import urlparse
 
@@ -93,7 +94,11 @@ DEFAULTS = {
     "tagging": {"enabled": False, "mode": "llm", "enabledSince": None, "revision": 1,
                 "providerIds": {"llm": "provider-llm", "jev": "provider-jev"}},
     "reminder": {"enabled": False, "intervalMinutes": DEFAULT_INTERVAL},
-    "priority": {"names": dict(DEFAULT_PRIORITY_NAMES)},
+    # 优先级分区有两件事：三级显示名，以及智能判断策略。
+    # smart.revision 是智能判断的有效策略版本：只在开关或所选连接真的变了时
+    # 前进。它决定在途结果是否过期；改显示名不动它。
+    "priority": {"names": dict(DEFAULT_PRIORITY_NAMES),
+                 "smart": {"enabled": False, "providerId": None, "revision": 1}},
     # M29 接入总结时用的策略位。本批只留边界：它不是连接字段，也不影响打标。
     # revision 的确切语义（总结策略、Provider revision 与 prompt 版本的合成）
     # 留给 M29 定义；此处只占位，保证结构与计划 §4.3 的形状一致。
@@ -202,6 +207,15 @@ def _summary_fingerprint(section: dict) -> str:
                       ensure_ascii=False, sort_keys=True)
 
 
+def _smart_fingerprint(section: dict) -> str:
+    """智能判断策略的指纹：开关与用哪条连接。
+
+    三级显示名不在里面：改名不改变判断语义，不得因此作废在途结果。
+    """
+    return json.dumps({key: section.get(key) for key in ("enabled", "providerId")},
+                      ensure_ascii=False, sort_keys=True)
+
+
 def _recognition_fingerprint(payload):
     """当前生效的识别配置指纹。
 
@@ -227,8 +241,10 @@ def _recognition_fingerprint(payload):
 
 
 class SettingsService:
-    def __init__(self, store):
+    def __init__(self, store, on_change=None):
         self.store = store
+        # 保存后的回调（M40：智能判断策略要立刻生效）。可选，测试里不传。
+        self.on_change = on_change
 
     # ------------------------------------------------------------ 读取
 
@@ -241,7 +257,7 @@ class SettingsService:
             if not isinstance(stored_section, dict):
                 continue
             for key, value in stored_section.items():
-                if key not in payload[section] or key in ("providers", "names", "providerIds"):
+                if key not in payload[section] or key in ("providers", "names", "providerIds", "smart"):
                     continue
                 payload[section][key] = value
             if section == "priority":
@@ -255,6 +271,23 @@ class SettingsService:
         # tagging.providers）在这里转换，地址、模型与同一个凭据引用都保留。
         payload["ai"]["providers"] = self._read_providers(stored)
         payload["ai"]["formatVersion"] = AI_FORMAT_VERSION
+        # M40：智能判断策略。逐键回落：旧存档没有这一项时按关闭处理，
+        # 坏值不拖垮整个设置。引用了不存在的连接时留空，不留悬空引用。
+        stored_priority = stored.get("priority")
+        smart = stored_priority.get("smart") if isinstance(stored_priority, dict) else None
+        if isinstance(smart, dict):
+            if isinstance(smart.get("enabled"), bool):
+                payload["priority"]["smart"]["enabled"] = smart["enabled"]
+            provider_id = smart.get("providerId")
+            if provider_id is None:
+                payload["priority"]["smart"]["providerId"] = None
+            elif isinstance(provider_id, str) and provider_id in payload["ai"]["providers"]:
+                payload["priority"]["smart"]["providerId"] = provider_id
+            else:
+                payload["priority"]["smart"]["providerId"] = None
+            revision = smart.get("revision")
+            if isinstance(revision, int) and revision >= 1:
+                payload["priority"]["smart"]["revision"] = revision
         # 打标策略引用哪条连接。
         # 存档里显式写了的值优先——哪怕是 null：那是用户解除引用，不能被默认复活。
         # 存档里没写的那一项才用默认补上；默认指向的连接不存在时留空，不留悬空引用。
@@ -336,7 +369,11 @@ class SettingsService:
                         "revision": int(payload["tagging"]["revision"])},
             "reminder": {"enabled": payload["reminder"]["enabled"], "intervalMinutes": interval,
                          "preset": str(interval) if interval in INTERVAL_PRESETS else "custom"},
-            "priority": {"names": dict(payload["priority"]["names"])},
+            "priority": {"names": dict(payload["priority"]["names"]),
+                         # M40：智能判断策略。界面（M42）据此显示开关与所选连接。
+                         "smart": {"enabled": bool(payload["priority"]["smart"]["enabled"]),
+                                   "providerId": payload["priority"]["smart"]["providerId"],
+                                   "revision": int(payload["priority"]["smart"]["revision"])}},
             "summarization": dict(payload["summarization"]),
         }
 
@@ -367,8 +404,13 @@ class SettingsService:
                 merged["revision"] = int(merged.get("revision") or 1) + 1
         elif section == "priority":
             if credential_refs:
-                _fail("优先级名称不接受凭据引用")
-            merged = self._merge_priority(payload["priority"], patch)
+                _fail("优先级设置不接受凭据引用")
+            merged = self._merge_priority(payload["priority"], patch, payload["ai"]["providers"])
+            # 智能判断的有效策略版本：只有策略真的变了才前进。
+            # 改三级显示名称不改变判断语义，不得因此作废所有在途结果。
+            if _smart_fingerprint(merged.get("smart") or {}) != _smart_fingerprint(
+                    payload["priority"].get("smart") or {}):
+                merged["smart"]["revision"] = int(merged["smart"].get("revision") or 1) + 1
         else:
             if credential_refs:
                 _fail("提醒设置不接受凭据引用")
@@ -381,6 +423,11 @@ class SettingsService:
             payload["tagging"]["revision"] = int(payload["tagging"].get("revision") or 1) + 1
         # 设置的 version 是保存计数：每次保存都前进，供并发保存检查用。
         record = self.store.save(payload)
+        if self.on_change is not None:
+            try:
+                self.on_change()
+            except Exception:
+                logging.getLogger(__name__).exception('设置变更回调失败')
         result = self.snapshot()
         result["savedVersion"] = record["version"]
         return result
@@ -448,11 +495,22 @@ class SettingsService:
                 merged["providers"][provider_id]["revision"] = int(new.get("revision") or 1) + 1
         return merged
 
-    def _merge_priority(self, current, patch):
+    def _merge_priority(self, current, patch, providers):
+        """优先级分区有两件事：三级显示名与智能判断策略。
+
+        显示名只改显示，策略决定判断语义。两者分开合并，改名不碰策略。
+        """
+        if set(patch) - {"names", "smart"}:
+            _fail("包含不支持的优先级字段")
+        merged = copy.deepcopy(current)
+        if "names" in patch:
+            merged["names"] = self._merge_priority_names(merged.get("names") or {}, patch["names"])
+        if "smart" in patch:
+            merged["smart"] = self._merge_priority_smart(merged.get("smart") or {}, patch["smart"], providers)
+        return merged
+
+    def _merge_priority_names(self, current, names):
         """三级名称只能改显示名：等级本身固定，缺失的沿用当前值。"""
-        if set(patch) - {"names"}:
-            _fail("包含不支持的优先级名称字段")
-        names = patch.get("names")
         if not isinstance(names, dict):
             _fail("优先级名称格式无效", "field", "names")
         if set(names) - set(PRIORITY_LEVELS):
@@ -460,14 +518,44 @@ class SettingsService:
         merged = copy.deepcopy(current)
         for level in PRIORITY_LEVELS:
             if level in names:
-                merged["names"][level] = _validate_priority_name(names[level], "names." + level)
+                merged[level] = _validate_priority_name(names[level], "names." + level)
         # 整体校验：不重名，也不占用「未设置」。
         seen = {}
         for level in PRIORITY_LEVELS:
-            value = merged["names"][level]
+            value = merged[level]
             if value in seen:
                 _fail("三个优先级名称不能相同", "field", "names." + level)
             seen[value] = level
+        return merged
+
+    def _merge_priority_smart(self, current, patch, providers):
+        """智能判断策略：开关与所选连接。
+
+        连接参数不在这里改。开启时必须有所选连接：没有连接就没法判断，
+        不能存下一个跑不起来的状态。
+        """
+        if not isinstance(patch, dict) or not patch:
+            _fail("智能判断设置格式无效", "field", "smart")
+        if set(patch) - {"enabled", "providerId"}:
+            _fail("包含不支持的智能判断字段")
+        merged = copy.deepcopy(current)
+        merged.setdefault("enabled", False)
+        merged.setdefault("providerId", None)
+        if "enabled" in patch:
+            if not isinstance(patch["enabled"], bool):
+                _fail("智能判断开关无效", "field", "enabled")
+            merged["enabled"] = patch["enabled"]
+        if "providerId" in patch:
+            provider_id = patch["providerId"]
+            if provider_id is None:
+                # 明确的「不选这条连接」：解除引用。
+                merged["providerId"] = None
+            elif not isinstance(provider_id, str) or provider_id not in providers:
+                _fail("所选连接不存在", "field", "providerId")
+            else:
+                merged["providerId"] = provider_id
+        if merged["enabled"] and not merged.get("providerId"):
+            _fail("开启智能判断前需要先选择一条 AI 连接", "field", "providerId")
         return merged
 
     def _merge_tagging(self, current, patch, providers):

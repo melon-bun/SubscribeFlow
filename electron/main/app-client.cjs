@@ -10,6 +10,8 @@ const UI_METHODS = new Set([
   'updateRule', 'removeRule', 'getSyncCoverage', 'resolveSource', 'searchSources', 'listConnections', 'checkConnection', 'retryRun', 'fetchDetail',
   'startIntake', 'getIntake', 'cancelIntake', 'saveIntake', 'listContentSources',
   'getSettings', 'saveSettings', 'getNotificationStatus', 'sendTestNotification',
+  // M40 智能优先级：状态与用户明确触发的判断请求。界面改动在 M42／M43。
+  'getPriorityStatus', 'judgePriority', 'judgePriorityBulk',
   // M26 笔记：读取、保存、删除与范围查询。
   'getNote', 'saveNote', 'deleteNote', 'listNotes', 'noteFacets',
 ]);
@@ -52,6 +54,9 @@ function contentDTO(item, subscriptions) {
     publishedAt: item.published.value, publishedPrecision: item.published.precision,
     publishedTimezone: item.published.timezone, publishedLabel:item.published.raw_label || null, url: item.url, thumb: item.thumbnail, cover: item.thumbnail, publishedProvenance: item.published.provenance,
     state: item.state, priority: item.priority ?? null, priorityOverride: item.priority_override ?? null, sourcePriority: item.source_priority ?? null,
+    // M41：最终优先级是从哪来的——manual／smart／source／none。
+    // 界面照着它显示来源，不由前端按是否开启 AI 猜。
+    priorityOrigin: item.priority_origin ?? null,
     tags: (item.tags || []).map(tag => ({id: tag.id, name: tag.name, color: tag.color, origin: tag.origin})),
     updatedAt: item.updated_at ?? null, contentHash: null,
     sourceId: sourceKey, intakeMethod: item.intake_method ?? null,
@@ -379,6 +384,10 @@ async function callUI(core, name, args, context) {
     }
     case 'getNotificationStatus':
       return require('./notifications.cjs').notificationStatus();
+    // M40 智能优先级。判断是后台任务：这里只负责排队，不等模型返回。
+    case 'getPriorityStatus': return call('priority.status');
+    case 'judgePriority': return call('priority.judge', {item_id: first});
+    case 'judgePriorityBulk': return call('priority.judge_bulk', {item_ids: first});
     case 'sendTestNotification':
       return require('./notifications.cjs').sendTestNotification();
     case 'checkConnection': {

@@ -167,3 +167,42 @@ M12 不增加迁移，继续 schema v8。Source 使用平台稳定作者 ID，ur
 整次升级在一个事务里做、失败整体回滚。本批只在合成旧库与隔离副本上验证升级，
 **没有在用户真实数据库上执行过升级**。
 完整说明见 [M36–M38 智能优先级契约、统计与上下文](M36_PRIORITY_INTELLIGENCE.md)。
+
+## M39–M41 智能优先级 · schema v14（2026-10-24）
+
+014_priority_policy.sql 只新增表与触发器，不改动任何既有列的含义。
+
+**当前策略**（`priority_policy`，只有一行）：
+
+| 列 | 含义 |
+| --- | --- |
+| `enabled` | 智能判断总开关。关闭时读取立即回退人工值／来源值 |
+| `provider_id` | 所选连接 ID；LLM 还是 Jev 由它的协议决定 |
+| `policy_version` | 策略版本：开关或所选连接变了就前进 |
+| `provider_version` | 连接调用版本：连接的调用参数变了就前进 |
+| `stats_version` | 偏好统计已按哪一版口径聚合过 |
+
+读取最终优先级时，结果行里的 `policy_version` 与 `provider_version` 要和这里对得上
+才算有效：功能关闭、换连接或改策略之后，旧结果立刻退出生效范围，读取马上回退，
+不等下次模型完成。
+
+**任务队列**（`priority_tasks`）：一条内容同时只有一个任务（主键即去重），
+状态 `pending`／`running`／`succeeded`／`failed`／`cancelled`，
+`attempts` 与 `next_attempt_at` 负责有限退避重试。退出时在途任务退回队列，
+重启时崩溃残留的 `running` 任务被收回。
+
+**结果失效触发器**（`priority_decision_drop_on_*`）：判断输入一变，旧结果立刻删除——
+标签关联增删、人工改档（含恢复自动）、标题修改、标签改名／改描述／别名／停用。
+删掉而不是标脏，是因为「有效智能值」要能在一条 SQL 里读出来，读路径没有机会
+先做一次复杂的重新判定。
+
+**最终优先级口径**（`Repository.EFFECTIVE_PRIORITY`，只有这一段）：
+`COALESCE(人工值, 有效智能值, 来源默认值)`；来源默认值沿用既有的多来源取最高规则。
+`Repository.PRIORITY_ORIGIN` 给出同一口径的来源标识 `manual`／`smart`／`source`／`none`。
+列表、筛选、看板计数、日历、提醒与托盘都复用它——智能结果不会改写
+`priority_override`，也不会改写来源默认值。
+
+**首次启用或升级后的本地聚合**：旧迁移不会给历史数据标脏，因此服务启动时按
+`stats_version` 判断要不要做一次本地聚合（只读人工优先级与标签关联，不调用模型）。
+聚合过一次就不再来第二次，不在每次启动时扫历史。
+完整说明见 [M39–M41 智能优先级判断、调度与统一口径](M39_PRIORITY_INTELLIGENCE.md)。

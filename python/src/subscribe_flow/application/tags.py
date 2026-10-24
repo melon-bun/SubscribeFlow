@@ -67,9 +67,12 @@ class TagService:
         return draft
 
     def remove(self, tag_id):
+        # 先取关联的内容：标签删掉后关联会被级联清掉，那时再查就查不到了。
+        # 这些条目的判断输入变了，需要各自重新检查一次资格。
+        affected = self.repository.tag_content_ids(tag_id)
         result = self.repository.delete_tag(tag_id)
         self.emit("tags.changed", {"id": tag_id})
-        self.emit("content.changed", {"ids": []})
+        self.emit("content.changed", {"ids": affected})
         return result
 
     def contents(self, tag_id, limit=50, offset=0, **filters):

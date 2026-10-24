@@ -137,6 +137,11 @@ class Dispatcher:
             "tagging.retry": (c.tagging.retry, {"task_id": str}, {}),
             "tagging.backfill_preview": (c.tagging.backfill_preview, {}, {"limit": int}),
             "tagging.backfill": (c.tagging.backfill, {}, {"limit": int}),
+            # M40 智能优先级：状态与用户明确触发的判断请求。
+            # 判断是后台任务：这里只排队，不等模型返回，也不返回任何凭据。
+            "priority.status": (c.priority.status, {}, {}),
+            "priority.judge": (c.priority.judge, {"item_id": str}, {}),
+            "priority.judge_bulk": (c.priority.judge_bulk, {"item_ids": list}, {}),
             "settings.get": (c.settings.snapshot, {}, {}),
             "settings.update": (c.settings.update, {"section": str, "patch": dict}, {"credential_refs": dict}),
             # 私有凭据桥接：只由主进程调用，不在 Renderer 方法白名单内。

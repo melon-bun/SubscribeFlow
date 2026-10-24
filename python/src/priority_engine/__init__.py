@@ -31,6 +31,11 @@ from .contracts import (
     TagCatalogEntry,
     resolve_priority,
 )
+from .inference import (
+    PriorityInference,
+    parse_priority_json,
+    resolve_jev_priority,
+)
 from .prompts import (
     JEV_QUESTION_ORDER,
     JEV_QUESTION_SUFFIXES_V1,
@@ -48,6 +53,7 @@ __all__ = [
     'PriorityContextSnapshot', 'PriorityContextV1', 'PriorityDecision', 'ResolvedPriority',
     'TagCatalogEntry', 'resolve_priority',
     'PriorityContextBuilder', 'build_context',
+    'PriorityInference', 'parse_priority_json', 'resolve_jev_priority',
     'PROMPT_VERSION', 'PRIORITY_RULES_V1', 'LLM_OUTPUT_RULES_V1',
     'JEV_QUESTION_SUFFIXES_V1', 'JEV_QUESTION_ORDER', 'llm_system_message', 'jev_questions',
 ]

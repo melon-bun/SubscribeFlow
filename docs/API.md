@@ -446,3 +446,62 @@ M21 之前连接参数放在 `tagging.providers`。读取时两个位置都认�
 
 写路径不变：人工改档、批量操作、标签增删停启与标题更新由数据库触发器标脏，
 统计仓储只负责重建，因此既有写入路径不需要改动。
+
+## M39–M41 智能优先级判断、调度与统一口径（2026-10-24）
+
+本批新增三条 RPC 方法与一个设置分区，其余接口不变。
+
+### 设置分区：优先级 · 智能判断
+
+`settings.update` 的 `section` 仍是 `priority`，`patch` 现在多认一个 `smart`：
+
+```json
+{"section": "priority", "patch": {"smart": {"enabled": true, "providerId": "provider-llm"}}}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `enabled` | 智能判断总开关。关闭时读取立即回退人工值／来源值 |
+| `providerId` | 所选 AI 连接 ID。LLM 还是 Jev 由它的协议决定，不需要另选 |
+
+约束：开启时必须有所选连接；引用不存在的连接会被拒绝。
+`priority.smart.revision` 是智能判断的有效策略版本：只在开关或所选连接真的变了时
+前进。**改三级显示名称不动它**，因此改名不会作废在途结果，也不会重跑任务。
+旧存档没有 `smart` 时按关闭处理，坏值不拖垮整个设置。
+
+### RPC 方法
+
+| 方法 | 参数 | 返回 |
+| --- | --- | --- |
+| `priority.status` | — | `{enabled, providerId, mode, policyVersion, providerVersion, promptVersion, tasks, decisions, requested, decided}` |
+| `priority.judge` | `item_id` | `{queued, reason}` |
+| `priority.judge_bulk` | `item_ids`（1–100） | `{queued, reason}` |
+
+三条都不返回凭据，也不返回模型原文。判断是后台任务：接口只排队，不等模型返回。
+`priority.judge` 与 `priority.judge_bulk` 是**用户明确要求**：它们忽略已有结果与
+重试预算，重新排一次。
+
+### 内容 DTO 的新字段
+
+内容列表、详情、筛选、日历、看板计数、提醒与托盘用的都是同一个内容 DTO，
+现在多一个字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `priority_origin` | 最终优先级是从哪来的：`manual`／`smart`／`source`／`none` |
+
+`priority` 仍是最终等级（`high`／`medium`／`low`／`null`）。
+界面照着 `priority_origin` 显示来源，**不由前端按是否开启 AI 猜测**。
+
+### 内部契约
+
+- `priority_engine.inference`：严格解析 LLM 的单字段 JSON（重复键、额外字段、
+  错误类型、非法枚举、非 JSON、截断输出一律 `invalid_response`），
+  以及 Jev 四问的收敛（阈值 0.8、差距 0.2、`unknown` 底线 0.5，
+  布尔值不算合法数值，边界留浮点余量）。常量集中在这里。
+- `subscribe_flow.application.priority_intelligence`：后台服务。资格检查、
+  排队执行、在途核对与结果落库。适配器在事件循环线程里组装，网络请求进执行器。
+- 在途核对比对的是**真实上下文指纹**与各个版本（内容／标签／人工操作／策略／
+  连接调用／提示词），不是可能相同的时间戳。用户改过优先级、改过标签、
+  关闭功能或换过连接之后，旧结果不写。
+- 偏好统计重建失败时不拿旧分布去请求模型：这一条内容回退人工值／来源值。

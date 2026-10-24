@@ -18,6 +18,7 @@ from subscribe_flow.application.tags import TagService
 from subscribe_flow.application.tagging import TaggingService
 from subscribe_flow.application.notes import NoteService
 from subscribe_flow.application.summary import SummaryService
+from subscribe_flow.application.priority_intelligence import PriorityIntelligenceService
 from subscribe_flow.application.settings import SettingsService
 from subscribe_flow.application.credentials import CredentialBroker
 from subscribe_flow.ai.gateway import AiGateway
@@ -107,6 +108,14 @@ class Core:
         # M29：总结服务。只调用公共 AI 层生成草稿，不写库、不进打标队列。
         self.summary = SummaryService(repository=self.repository, settings=self.settings,
                                       gateway=self.ai)
+        # M40：智能优先级后台服务。独立装配、独立启动与关闭：它只写自己的
+        # 结果表，不参与采集、打标与总结，也不改人工值与来源默认值。
+        self.priority = PriorityIntelligenceService(repository=self.repository, settings=self.settings,
+                                                     gateway=self.ai, emit=self.emit)
+        # 内容或标签变化后做一次资格检查：新内容、标签后到、恢复自动都靠它。
+        self.listeners.append(self.priority.observe)
+        # 设置保存后策略立刻生效：功能关闭或换连接时，读取马上回退来源值。
+        self.settings.on_change = self.priority.on_settings_changed
         for descriptor in self.gateway.describe():
             resource = resource_key(descriptor)
             self.repository.add_connection(Connection(f"{descriptor.channel}:default", descriptor.channel, descriptor.backend, resource))
@@ -125,6 +134,9 @@ class Core:
         self.scheduler.start()
         # M16：后台打标任务。事件表是恢复依据，因此这里只是唤醒，崩溃重启也能续上。
         self.tagging.start()
+        # M40：智能优先级后台判断。首次启用或升级后在这里做一次本地聚合，
+        # 让已有人工优先级与标签关系的内容也能参与偏好统计。
+        self.priority.start()
 
     async def check_connection(self, connection_id, operation='list_items'):
         readiness = await self.subscriptions.check_connection(connection_id, operation)
@@ -153,6 +165,8 @@ class Core:
             # M16：先停打标后台任务再关库——在途任务需要把租约退回队列，
             # 关库之后就写不回去了（重启时会被当成假运行状态）。
             await self.tagging.close()
+            # M40：同理，在途判断也要先退回队列再关库。
+            await self.priority.close()
             self.database.close()
             self.lease.close()
             self.closed = True

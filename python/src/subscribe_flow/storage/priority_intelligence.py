@@ -39,6 +39,21 @@ PRIORITIES = (PRIORITY_HIGH, PRIORITY_MEDIUM, PRIORITY_LOW)
 #: 每个分组最多保留两条历史标题。
 MAX_SAMPLES = 2
 
+#: 偏好统计的口径版本。统计结构或口径变了就升版本，
+#: 下次启动会按新口径做一次本地聚合。
+PREFERENCE_STATS_VERSION = '1'
+
+#: 单条内容最多重试几次。超过就不再自动重排，只有用户明确要求才再来。
+MAX_ATTEMPTS = 3
+
+
+class PriorityStatsError(RuntimeError):
+    """偏好统计没能重建。
+
+    统计是缓存，重建失败时它可能停在旧值上。这时候不能拿旧分布去请求模型：
+    宁可这一条内容不判断，也不要用错的证据问模型。
+    """
+
 
 class PriorityIntelligenceRepository:
     """偏好统计 + 最新智能结果的存取。构造时绑定已建好 schema 的 Database。"""
@@ -226,7 +241,11 @@ class PriorityIntelligenceRepository:
                  'description': tag_row['description'],
                  'synonyms': _synonyms(tag_row['synonyms'])} for tag_row in tag_rows]
 
-        self.flush_dirty()
+        flushed = self.flush_dirty()
+        if flushed.get('error'):
+            # 统计没能重建：它可能停在旧值上。拿旧分布去请求模型等于用错的
+            # 证据问模型，因此这里明确失败，由调用方兜底。
+            raise PriorityStatsError(flushed['error'])
         groups = self._read_groups(tag_ids)
         history = {}
         sample_ids = []
@@ -265,6 +284,91 @@ class PriorityIntelligenceRepository:
         return {'content_id': content_id, 'title': row['title'], 'tag_ids': tag_ids,
                 'tags': tags, 'history': history, 'sample_titles': sample_titles,
                 'versions': versions}
+
+    # ---------------------------------------------------------- 输入版本
+
+    def input_versions(self, content_id):
+        """当前判断输入的版本。不构建上下文，成本低。
+
+        用来判断缓存里的结果是否还对得上当前输入：内容版本、标签版本与
+        单条人工操作版本。相关偏好版本要读统计分组，代价更高，
+        只在真正发请求前核对。
+        """
+        row = self.db.execute(
+            "SELECT c.updated_at AS content_version, s.manual_priority_version, s.priority_override "
+            "FROM contents c JOIN content_states s ON s.content_id = c.id WHERE c.id = ?",
+            (content_id,)).fetchone()
+        if row is None:
+            return None
+        tag_rows = self.db.execute(
+            "SELECT ct.tag_id, ct.created_at AS linked_at, t.updated_at "
+            "FROM content_tags ct JOIN tags t ON t.id = ct.tag_id "
+            "WHERE ct.content_id = ? AND t.enabled = 1 ORDER BY ct.tag_id", (content_id,)).fetchall()
+        return {
+            'content_version': row['content_version'],
+            'tag_version': _tag_version(tag_rows),
+            'manual_version': int(row['manual_priority_version'] or 0),
+            'manual_priority': row['priority_override'],
+            'tag_ids': [tag_row['tag_id'] for tag_row in tag_rows],
+        }
+
+    # ---------------------------------------------------------- 当前策略
+
+    def policy(self):
+        """当前生效的智能策略。
+
+        读取最终优先级时会拿它和结果行比对：功能关闭、换连接或改策略之后，
+        旧结果立刻退出生效范围，读取马上回退人工值／来源值。
+        """
+        row = self.db.execute(
+            "SELECT enabled, provider_id, policy_version, provider_version, stats_version "
+            "FROM priority_policy WHERE id=1").fetchone()
+        if row is None:
+            return {'enabled': False, 'provider_id': None, 'policy_version': '',
+                    'provider_version': '', 'stats_version': ''}
+        return {'enabled': bool(row['enabled']), 'provider_id': row['provider_id'],
+                'policy_version': row['policy_version'],
+                'provider_version': row['provider_version'],
+                'stats_version': row['stats_version']}
+
+    def save_policy(self, *, enabled, provider_id=None, policy_version='', provider_version='',
+                    stats_version=None, stamp=None):
+        """写入当前策略。策略变了，读取口径立刻跟着变。"""
+        stamp = stamp or now()
+        current = self.policy()
+        merged = {
+            'enabled': bool(enabled),
+            'provider_id': provider_id or None,
+            'policy_version': str(policy_version or ''),
+            'provider_version': str(provider_version or ''),
+            'stats_version': current['stats_version'] if stats_version is None else str(stats_version),
+        }
+        with self.database.transaction() as db:
+            db.execute(
+                "INSERT INTO priority_policy(id,enabled,provider_id,policy_version,provider_version,"
+                "stats_version,updated_at) VALUES(1,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                "enabled=excluded.enabled, provider_id=excluded.provider_id, "
+                "policy_version=excluded.policy_version, provider_version=excluded.provider_version, "
+                "stats_version=excluded.stats_version, updated_at=excluded.updated_at",
+                (1 if merged['enabled'] else 0, merged['provider_id'], merged['policy_version'],
+                 merged['provider_version'], merged['stats_version'], stamp))
+        return merged
+
+    def stats_version(self):
+        """偏好统计已经按哪一版口径聚合过。
+
+        旧迁移不会给历史数据标脏，所以首次启用或升级后要按这一版做一次
+        本地聚合；聚合过就不再来第二次，避免每次启动都扫历史。
+        """
+        return self.policy()['stats_version']
+
+    def mark_stats_built(self, version, *, stamp=None):
+        stamp = stamp or now()
+        with self.database.transaction() as db:
+            db.execute("INSERT INTO priority_policy(id,enabled,provider_id,policy_version,"
+                       "provider_version,stats_version,updated_at) VALUES(1,0,NULL,'','',?,?) "
+                       "ON CONFLICT(id) DO UPDATE SET stats_version=excluded.stats_version, "
+                       "updated_at=excluded.updated_at", (str(version), stamp))
 
     # ---------------------------------------------------------- 最新决策
 
@@ -325,6 +429,104 @@ class PriorityIntelligenceRepository:
         }
 
 
+class PriorityTaskRepository:
+    """智能判断的任务队列。
+
+    一条内容同时只有一个任务，因此「请求去重」是这张表的主键自带的：
+    已经在跑或已经排队的任务不会被重复排一次。有限退避靠
+    ``attempts`` 与 ``next_attempt_at``，退出与重启靠 running 任务收回队列。
+    """
+
+    def __init__(self, database):
+        self.database = database
+        self.db = database.connection
+
+    def enqueue(self, content_id, reason='auto', *, force=False, stamp=None):
+        """把一条内容排进队列。返回是否真的排上了。
+
+        ``force=True`` 是用户明确要求重新判断：它重置重试次数。
+        自动触发不重置——重试预算按内容累计，不能被反复事件刷掉。
+        """
+        stamp = stamp or now()
+        with self.database.transaction() as db:
+            row = db.execute("SELECT state, attempts FROM priority_tasks WHERE content_id=?",
+                             (content_id,)).fetchone()
+            if row is None:
+                db.execute("INSERT INTO priority_tasks(content_id,state,attempts,next_attempt_at,reason,"
+                           "created_at,updated_at) VALUES(?,'pending',0,?,?,?,?)",
+                           (content_id, stamp, reason, stamp, stamp))
+                return True
+            if row['state'] == 'running':
+                # 已经在跑：不重复排。
+                return False
+            if not force and row['state'] == 'failed' and int(row['attempts']) >= MAX_ATTEMPTS:
+                # 重试预算用完了：不再自动重排，只有用户明确要求才再来。
+                return False
+            attempts = 0 if force else int(row['attempts'])
+            db.execute("UPDATE priority_tasks SET state='pending', attempts=?, next_attempt_at=?, "
+                       "reason=?, error_code=NULL, updated_at=? WHERE content_id=?",
+                       (attempts, stamp, reason, stamp, content_id))
+            return True
+
+    def next_task(self, *, stamp=None):
+        """认领一个到期任务。队列空时返回 None。"""
+        stamp = stamp or now()
+        with self.database.transaction() as db:
+            row = db.execute(
+                "SELECT * FROM priority_tasks WHERE state='pending' "
+                "AND (next_attempt_at IS NULL OR next_attempt_at<=?) "
+                "ORDER BY COALESCE(next_attempt_at, created_at), created_at LIMIT 1",
+                (stamp,)).fetchone()
+            if row is None:
+                return None
+            db.execute("UPDATE priority_tasks SET state='running', updated_at=? WHERE content_id=?",
+                       (stamp, row['content_id']))
+            task = dict(row)
+            task['state'] = 'running'
+            return task
+
+    def finish(self, content_id, state, *, error_code=None, reason=None, stamp=None):
+        """把任务落到终态。"""
+        stamp = stamp or now()
+        with self.database.transaction() as db:
+            db.execute("UPDATE priority_tasks SET state=?, error_code=?, reason=?, next_attempt_at=NULL, "
+                       "updated_at=? WHERE content_id=?",
+                       (state, error_code, reason, stamp, content_id))
+
+    def defer(self, content_id, attempts, next_attempt_at, *, error_code=None, reason=None, stamp=None):
+        """有限退避：可重试的失败退到下一次尝试时间。"""
+        stamp = stamp or now()
+        with self.database.transaction() as db:
+            db.execute("UPDATE priority_tasks SET state='pending', attempts=?, next_attempt_at=?, "
+                       "error_code=?, reason=?, updated_at=? WHERE content_id=?",
+                       (int(attempts), next_attempt_at, error_code, reason, stamp, content_id))
+
+    def recover(self, *, stamp=None):
+        """把崩溃残留的 running 任务收回队列。重启恢复用。"""
+        stamp = stamp or now()
+        with self.database.transaction() as db:
+            cursor = db.execute("UPDATE priority_tasks SET state='pending', next_attempt_at=?, "
+                                "updated_at=? WHERE state='running'", (stamp, stamp))
+            return cursor.rowcount
+
+    def release_running(self, *, stamp=None):
+        """退出这一刻把在途任务退回队列：它们的租约还没到期，
+        只回收「已过期」的话，重启后既认领不了也等不到过期。"""
+        stamp = stamp or now()
+        with self.database.transaction() as db:
+            cursor = db.execute("UPDATE priority_tasks SET state='pending', next_attempt_at=?, "
+                                "updated_at=? WHERE state='running'", (stamp, stamp))
+            return cursor.rowcount
+
+    def get(self, content_id):
+        row = self.db.execute("SELECT * FROM priority_tasks WHERE content_id=?", (content_id,)).fetchone()
+        return dict(row) if row else None
+
+    def summary(self):
+        rows = self.db.execute("SELECT state, count(*) AS total FROM priority_tasks GROUP BY state").fetchall()
+        return {row['state']: int(row['total']) for row in rows}
+
+
 def _synonyms(raw):
     """标签别名。存量值本来就是 JSON 数组，坏值就当没有。"""
     try:
@@ -348,4 +550,5 @@ def _tag_version(tag_rows):
     return f"{len(tag_rows)}:{linked}:{updated}"
 
 
-__all__ = ['PriorityIntelligenceRepository', 'PRIORITIES', 'MAX_SAMPLES']
+__all__ = ['PriorityIntelligenceRepository', 'PriorityTaskRepository', 'PRIORITIES', 'MAX_SAMPLES',
+           'PREFERENCE_STATS_VERSION', 'MAX_ATTEMPTS']

@@ -50,6 +50,9 @@ class Repository:
         # 这里只提供统计与最新智能结果的存取，因此不改动任何既有写入路径。
         from .priority_intelligence import PriorityIntelligenceRepository
         self.priority_intelligence = PriorityIntelligenceRepository(database)
+        # M40：智能判断的任务队列。一条内容同时只有一个任务，请求去重靠它。
+        from .priority_intelligence import PriorityTaskRepository
+        self.priority_tasks = PriorityTaskRepository(database)
 
     def add_connection(self, connection: Connection):
         with self.database.transaction() as db:
@@ -399,6 +402,9 @@ class Repository:
                 "state": {field: bool(row[field]) for field in ("read", "archived", "deferred")},
                 "priority": row["effective_priority"], "priority_override": row["priority_override"],
                 "source_priority": row["source_priority"],
+                # 最终优先级是从哪来的：manual／smart／source／none。
+                # 界面照着它显示，不由前端按是否开启 AI 猜。
+                "priority_origin": row["priority_origin"],
                 # 这条内容有没有笔记（M26）：内容列表与详情都带着它，
                 # 界面据此显示「已留下点什么」，不必为每条内容再查一次。
                 "has_note": bool(row["has_note"]) if "has_note" in row.keys() else False}
@@ -409,9 +415,24 @@ class Repository:
         JOIN subscriptions sub ON sub.source_id=cs.source_id
         WHERE cs.content_id=c.id AND sub.default_priority IS NOT NULL
         ORDER BY CASE sub.default_priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,sub.id LIMIT 1)"""
-    EFFECTIVE_PRIORITY = f"COALESCE(s.priority_override,{SOURCE_PRIORITY})"
+    # M41：有效智能值。只认与当前策略、当前连接调用版本对得上的结果：
+    # 功能关闭、换连接或改策略之后，旧结果立刻退出生效范围，读取马上
+    # 回退人工值／来源值，不等下次模型完成。
+    SMART_PRIORITY = """(SELECT d.priority FROM content_priority_decisions d
+        JOIN priority_policy pol ON pol.id=1 AND pol.enabled=1
+          AND pol.policy_version=d.policy_version AND pol.provider_version=d.provider_version
+        WHERE d.content_id=c.id AND d.priority IN ('high','medium','low'))"""
+    # 最终优先级只有这一段口径：人工 → 有效智能值 → 来源默认值 → 未设置。
+    # 列表、筛选、看板计数、日历、提醒与托盘都复用它。
+    EFFECTIVE_PRIORITY = f"COALESCE(s.priority_override,{SMART_PRIORITY},{SOURCE_PRIORITY})"
+    # 来源标识：界面据此显示「已单独设置／自动判断／跟随来源」，
+    # 不由前端按是否开启 AI 猜测。
+    PRIORITY_ORIGIN = (f"CASE WHEN s.priority_override IS NOT NULL THEN 'manual' "
+                       f"WHEN {SMART_PRIORITY} IS NOT NULL THEN 'smart' "
+                       f"WHEN {SOURCE_PRIORITY} IS NOT NULL THEN 'source' ELSE 'none' END")
     CONTENT_COLUMNS = (f"c.*,s.read,s.archived,s.deferred,s.priority_override,{SOURCE_PRIORITY} AS source_priority,"
                        f"{EFFECTIVE_PRIORITY} AS effective_priority,"
+                       f"{PRIORITY_ORIGIN} AS priority_origin,"
                        "EXISTS(SELECT 1 FROM content_notes n WHERE n.content_id=c.id) AS has_note")
 
     def get_content(self, key, timezone='UTC'):
@@ -767,6 +788,13 @@ class Repository:
                                     (item_id, tag_id, stamp))
                 added += cursor.rowcount if cursor.rowcount > 0 else 0
         return added, blocked
+
+    def tag_content_ids(self, tag_id):
+        """这个标签关联了哪些内容。删除标签前先取出来：
+        关联被级联删掉之后就再也查不到了，而受影响的条目需要知道自己的
+        判断输入变了。"""
+        return [row['content_id'] for row in self.db.execute(
+            "SELECT content_id FROM content_tags WHERE tag_id=? ORDER BY content_id", (tag_id,))]
 
     def tag_contents(self, tag_id, limit=50, offset=0, **filters):
         self.get_tag(tag_id)
