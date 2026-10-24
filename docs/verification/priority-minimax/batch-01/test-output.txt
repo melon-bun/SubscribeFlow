@@ -1,0 +1,52 @@
+# 本批测试执行记录（2026-10-24，隔离数据库，未触碰用户数据／登录态／AI 配置）
+
+## 1. 本批新增用例
+
+```
+$ cd Subscribe_Flow/python && .venv/bin/python -m unittest discover -s tests -t . -p "test_priority_*.py"
+----------------------------------------------------------------------
+Ran 54 tests in 2.084s
+
+OK
+```
+
+（`test_priority_intelligence.py` 28 项 + `test_priority_context.py` 26 项）
+
+## 2. 全量回归
+
+```
+$ cd Subscribe_Flow/python && .venv/bin/python -m unittest discover -s tests -t . -p "test_*.py"
+...
+FAIL: test_the_call_runs_off_the_event_loop (tests.test_summary.SummaryDraftTests.test_the_call_runs_off_the_event_loop)
+AssertionError: True is not false : 请求还在路上时事件循环仍然可以调度
+
+----------------------------------------------------------------------
+Ran 494 tests in 26.576s
+
+FAILED (failures=1)
+```
+
+唯一失败是既有的时序抖动用例，与本批无关：
+
+- 单跑通过（连续 3 次 `OK`）。
+- 在**基线 b5fc2f5**（用 `git archive HEAD` 取出的干净副本，`PYTHONPATH` 指向副本的 `src`）
+  上跑全量，同样是这一条失败、其余 440 项通过。
+
+该用例断言「发起请求后一个事件循环 tick 内任务仍未完成」，属于依赖机器负载的时序假设。
+
+## 3. 上下文样本
+
+`make-context-sample.py` 在临时目录里造隔离库，输出真实会发给模型的上下文：
+
+```
+$ cd Subscribe_Flow/python && .venv/bin/python ../docs/verification/priority-minimax/batch-01/make-context-sample.py
+```
+
+完整输出见 [context-sample.txt](context-sample.txt)。要点：
+
+- 已归档的人工高优先级内容（`test:video:7`）确实计入高档计数（3 条）。
+- 三档齐全，`content_count` 为 3／2／2，每组两个最近样本。
+- 样本键 `s1`–`s6` 按内容 ID 去重，标题回查内容本身。
+- 本地兜底：无有效标签 → `no_tags`；没有历史证据 → `no_evidence`，两者都不发请求。
+
+本批**没有发起任何真实 API 请求**：M39 才接入推理。

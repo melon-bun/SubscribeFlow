@@ -1,0 +1,151 @@
+=== 1. 上下文快照（统计、标签目录与版本） ===
+{
+  "content_id": "test:video:9",
+  "history": {
+    "high": {
+      "tag-db": {
+        "content_count": 3,
+        "sample_ids": [
+          "test:video:7",
+          "test:video:2"
+        ]
+      }
+    },
+    "low": {
+      "tag-db": {
+        "content_count": 2,
+        "sample_ids": [
+          "test:video:6",
+          "test:video:5"
+        ]
+      }
+    },
+    "medium": {
+      "tag-db": {
+        "content_count": 2,
+        "sample_ids": [
+          "test:video:4",
+          "test:video:3"
+        ]
+      }
+    }
+  },
+  "sample_titles": {
+    "test:video:2": "数据库索引设计实战",
+    "test:video:3": "数据库产品更新速览",
+    "test:video:4": "常见数据库工具介绍",
+    "test:video:5": "本周数据库行业新闻汇总",
+    "test:video:6": "数据库厂商融资动态",
+    "test:video:7": "索引设计的常见误区"
+  },
+  "tag_ids": [
+    "tag-db"
+  ],
+  "tags": [
+    {
+      "description": "数据库原理、SQL 查询与性能优化",
+      "id": "tag-db",
+      "name": "数据库",
+      "synonyms": [
+        "SQL",
+        "数据库优化"
+      ]
+    }
+  ],
+  "title": "如何用执行计划定位数据库慢查询",
+  "versions": {
+    "content_version": "2026-10-24T11:12:40.478+00:00",
+    "manual_version": 0,
+    "policy_version": "policy-1",
+    "preference_version": "c65ed1a52cf3d3ecf8c45a2a68b89bef8970dfafd459aa48b6b17ec9d3c40b85",
+    "prompt_version": "priority_prompt_v1",
+    "provider_version": "provider-llm:3",
+    "tag_version": "1:2026-10-24T11:12:40.479+00:00:2026-10-24T11:12:40.456+00:00"
+  }
+}
+
+=== 2. 真正会发给模型的上下文（payload） ===
+{"schema_version":"priority_context_v1","target":{"title":"如何用执行计划定位数据库慢查询","tag_ids":["tag-db"]},"tag_catalog":[{"id":"tag-db","name":"数据库","description":"数据库原理、SQL 查询与性能优化","synonyms":["SQL","数据库优化"]}],"history":{"high":[{"tag_id":"tag-db","content_count":3,"recent_sample_ids":["s1","s2"]}],"medium":[{"tag_id":"tag-db","content_count":2,"recent_sample_ids":["s3","s4"]}],"low":[{"tag_id":"tag-db","content_count":2,"recent_sample_ids":["s5","s6"]}]},"samples":[{"id":"s1","title":"索引设计的常见误区"},{"id":"s2","title":"数据库索引设计实战"},{"id":"s3","title":"常见数据库工具介绍"},{"id":"s4","title":"数据库产品更新速览"},{"id":"s5","title":"数据库厂商融资动态"},{"id":"s6","title":"本周数据库行业新闻汇总"}],"input_limits":{"titles_truncated":false}}
+
+=== 3. 上下文指纹与本地执行快照 ===
+{
+  "status": "ok",
+  "fingerprint": "77c1d290e2645e5a0a06b48a83d65b09fcb9c3b95cad71f0dca74aacee5234d2",
+  "versions": {
+    "contentVersion": "2026-10-24T11:12:40.478+00:00",
+    "tagVersion": "1:2026-10-24T11:12:40.479+00:00:2026-10-24T11:12:40.456+00:00",
+    "manualVersion": 0,
+    "preferenceVersion": "c65ed1a52cf3d3ecf8c45a2a68b89bef8970dfafd459aa48b6b17ec9d3c40b85",
+    "policyVersion": "policy-1",
+    "providerVersion": "provider-llm:3",
+    "promptVersion": "priority_prompt_v1"
+  }
+}
+
+=== 4. LLM 消息形态（system 开头 + user 开头） ===
+[
+  {
+    "role": "system",
+    "content": "你负责根据这位用户过去亲自设置的优先级，为一条当前内容判断阅读优先级。\n只使用输入 JSON 提供的个人偏好证据，不使用通用的“什么内容更重要”来替代用户偏好。\n\n可选结果只有：\n- high：高优先级。\n- medium：中优先级。\n-  …"
+  },
+  {
+    "role": "user",
+    "content": "{\"schema_version\":\"priority_context_v1\",\"target\":{\"title\":\"如何用执行计划定位数据库慢查询\",\"tag_ids\":[\"tag-db\"]},\"tag_catalog\":[{\"id\":\" …"
+  }
+]
+
+=== 5. Jev 提问形态（state 与四问都基于同一份上下文） ===
+{
+  "state": "{\"schema_version\":\"priority_context_v1\",\"target\":{\"title\":\"如何用执行计划定位数据库慢查询\",\"tag_ids\":[\"tag-db\"]},\"tag_catalog\":[{\"id\":\" …",
+  "questions": {
+    "high": "你负责根据这位用户过去亲自设置的优先级，为一条当前内容判断阅读优先级。\n只使用输入 JSON 提供的个人偏好证据，不使用通用的“什么内容更重要”来替代用户偏好。 …",
+    "medium": "你负责根据这位用户过去亲自设置的优先级，为一条当前内容判断阅读优先级。\n只使用输入 JSON 提供的个人偏好证据，不使用通用的“什么内容更重要”来替代用户偏好。 …",
+    "low": "你负责根据这位用户过去亲自设置的优先级，为一条当前内容判断阅读优先级。\n只使用输入 JSON 提供的个人偏好证据，不使用通用的“什么内容更重要”来替代用户偏好。 …",
+    "unknown": "你负责根据这位用户过去亲自设置的优先级，为一条当前内容判断阅读优先级。\n只使用输入 JSON 提供的个人偏好证据，不使用通用的“什么内容更重要”来替代用户偏好。 …"
+  }
+}
+
+=== 6. 本地兜底：这些情况不发起请求 ===
+无有效标签 → no_tags
+没有历史证据 → no_evidence
+
+=== 7. 统计分布（人工信号，含已归档） ===
+{
+  "high": {
+    "tag-db": {
+      "content_count": 3,
+      "revision": 1,
+      "sample_ids": [
+        "test:video:7",
+        "test:video:2"
+      ]
+    }
+  },
+  "medium": {
+    "tag-db": {
+      "content_count": 2,
+      "revision": 1,
+      "sample_ids": [
+        "test:video:4",
+        "test:video:3"
+      ]
+    }
+  },
+  "low": {
+    "tag-db": {
+      "content_count": 2,
+      "revision": 1,
+      "sample_ids": [
+        "test:video:6",
+        "test:video:5"
+      ]
+    },
+    "tag-news": {
+      "content_count": 1,
+      "revision": 1,
+      "sample_ids": [
+        "test:video:5"
+      ]
+    }
+  }
+}
