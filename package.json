@@ -30,7 +30,14 @@
     "package:mac": "node scripts/package-macos.cjs",
     "smoke:packaged": "node scripts/packaged-smoke.cjs",
     "smoke:refresh:ui": "electron scripts/refresh-ui-smoke.cjs",
-    "smoke:refresh:views": "node scripts/refresh-inbox-channels-smoke.cjs && electron scripts/overview-refresh-ui-smoke.cjs && electron scripts/tags-refresh-ui-smoke.cjs"
+    "smoke:refresh:views": "node scripts/refresh-inbox-channels-smoke.cjs && electron scripts/overview-refresh-ui-smoke.cjs && electron scripts/tags-refresh-ui-smoke.cjs",
+    "test:py": "cd python && .venv/bin/python -m unittest discover -s tests -t .",
+    "test:py:priority": "cd python && .venv/bin/python -m unittest discover -s tests -t . -p 'test_priority_*.py'",
+    "verify:real-llm": "cd python && .venv/bin/python ../docs/verification/priority-minimax/batch-04/real-llm-check.py",
+    "smoke:uishot": "node scripts/ui-shot-renderer.cjs",
+    "smoke:settings": "node scripts/settings-renderer.cjs",
+    "smoke:reminder": "node scripts/reminder-persistence-renderer.cjs",
+    "smoke:rejudge": "node scripts/priority-rejudge-probe.cjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

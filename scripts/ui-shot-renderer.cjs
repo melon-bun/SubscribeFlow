@@ -1,6 +1,7 @@
 const {spawn} = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const assert = require('node:assert/strict');
 
 /**
  * 多页实机截图：笔记 / 内容总览 / 渠道管理 / 标签。
@@ -145,6 +146,19 @@ async function verify({window, core, root}) {
   await until(`document.querySelector('.settings__title')?.textContent === '优先级设置'`);
   await pause(1500);
   await shoot('05-settings-priority.png');
+  /* 紧凑窗口：来源行不能把设置页撑出横向滚动，保存按钮也要在视口内。 */
+  window.setSize(900, 620);
+  await pause(900);
+  await shoot('05b-settings-priority-compact.png');
+  assert.ok(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), '设置页不应出现横向越界');
+  assert.ok(await evaluate(`(() => {
+    const btn = Array.from(document.querySelectorAll('.settings__foot button')).find(b => b.textContent.trim() === '保存设置');
+    if (!btn) return false;
+    const r = btn.getBoundingClientRect();
+    return r.top >= 0 && r.bottom <= innerHeight + 1;
+  })()`), '紧凑窗口下保存按钮应当可达');
+  window.setSize(1440, 1000);
+  await pause(600);
 
   /* 4. 标签：标签列表 + AI 自动识别。 */
   await goto('tags', null, `!!document.querySelector('[data-view="tags"] .tags-list')`);

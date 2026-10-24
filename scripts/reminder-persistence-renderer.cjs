@@ -168,8 +168,10 @@ async function verify({window, core, root}) {
 
   /* ---------- 5. 无关 AI 设置保存不得重置周期 ---------- */
   const beforeIrrelevant = scheduler.snapshot();
-  await evaluate(`location.hash = '#/settings?section=tagging'`);
-  await until(`document.querySelector('.settings__title').textContent === 'AI 模型配置'`);
+  /* 「标签 → AI 自动识别」搬到标签页后，AI 分区只剩连接配置：
+     这里要验证的仍是「无关的 AI 设置保存不得重置提醒周期」。 */
+  await evaluate(`location.hash = '#/settings?section=ai'`);
+  await until(`document.querySelector('.settings__title').textContent === 'AI API 配置'`);
   const genBefore = beforeIrrelevant.generation;
   const dueBefore = beforeIrrelevant.nextCheckAt;
   // 合法的 AI 配置变更：只改模型标识文本，不开启自动打标、不需要任何模型凭据，

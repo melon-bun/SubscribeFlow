@@ -342,6 +342,72 @@ class PriorityServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(task['attempts'], 1)
         self.assertIsNotNone(task['next_attempt_at'])
 
+    async def test_changing_the_tag_with_the_same_count_invalidates_the_in_flight_result(self):
+        """标签同数换 ID：旧响应不能生效，新输入可以继续判断。
+
+        标签数量没变（还是 1 个），但换成了另一个标签：上下文指纹必须跟着变。
+        只比「同数」是不够的——同一个数量下换了证据来源，结果就不能用。
+        """
+        self.configure()
+        await self.stop_workers()
+        self.repo.create_tag('tag-ops', '运维', '运维与自动化实践', 'green', True, ['SRE'])
+        # 两个标签各有自己的高优先级历史。
+        self.add_content('db-1', '数据库索引设计实战', tags=('tag-db',), priority='high')
+        self.add_content('ops-1', '生产事故复盘与自动化', tags=('tag-ops',), priority='high')
+        target = self.add_content('target', '如何用执行计划定位数据库慢查询', tags=('tag-db',))
+
+        blocking = _BlockingTransport(['{"priority":"low"}', '{"priority":"high"}'])
+        self.core.ai.transport = blocking
+        self.core.priority.request([target])
+
+        first = asyncio.create_task(self.core.priority._run_once())
+        await _wait_event(blocking.entered)
+        # 在途换标签：数量相同，ID 不同。
+        self.repo.set_content_tags([target], ['tag-ops'])
+        blocking.released.set()
+        await first
+
+        # 旧响应没有落库。
+        self.assertIsNone(self.repo.priority_intelligence.get_decision(target))
+        # 新输入可以继续判断：换成新标签的证据后又发了一次请求。
+        await self.drain()
+        self.assertEqual(blocking.count, 2)
+        decision = self.repo.priority_intelligence.get_decision(target)
+        self.assertEqual(decision['priority'], 'high')
+        self.assertEqual(self.repo.get_content(target)['priority_origin'], 'smart')
+
+    async def test_rebuilding_the_history_with_the_same_count_invalidates_the_in_flight_result(self):
+        """历史组清空后同数重建换样本：旧响应不能生效，新输入可以继续判断。
+
+        重建后各档计数与之前完全一样，只有样本换了：不能因为「数量没变」
+        就沿用旧结果。
+        """
+        self.configure()
+        await self.stop_workers()
+        hist_a = self.add_content('hist-a', '慢查询排查：从执行计划到索引调整', priority='high')
+        hist_b = self.add_content('hist-b', '数据库索引设计实战', priority='high')
+        target = self.add_content('target', '如何用执行计划定位数据库慢查询')
+
+        blocking = _BlockingTransport(['{"priority":"low"}', '{"priority":"high"}'])
+        self.core.ai.transport = blocking
+        self.core.priority.request([target])
+
+        first = asyncio.create_task(self.core.priority._run_once())
+        await _wait_event(blocking.entered)
+        # 清空历史组，再用同样数量、同样档位但不同的内容重建。
+        self.repo.update_content_state([hist_a, hist_b], {'priority': None})
+        self.add_content('hist-c', '分库分表实践', priority='high')
+        self.add_content('hist-d', '慢 SQL 治理清单', priority='high')
+        blocking.released.set()
+        await first
+
+        self.assertIsNone(self.repo.priority_intelligence.get_decision(target))
+        await self.drain()
+        self.assertEqual(blocking.count, 2)
+        decision = self.repo.priority_intelligence.get_decision(target)
+        self.assertEqual(decision['priority'], 'high')
+        self.assertEqual(self.repo.get_content(target)['priority_origin'], 'smart')
+
     async def test_the_retry_budget_is_finite_and_only_an_explicit_request_resets_it(self):
         """BUG-122：同一输入的重试预算有限。
 
@@ -531,3 +597,34 @@ class UnifiedPriorityTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class _BlockingTransport(FakeTransport):
+    """按次序返回不同答案的传输，并允许在网络线程上挂起。
+
+    网络线程只做阻塞与应答，不碰数据库：所有 SQLite 操作留在事件循环线程。
+    """
+
+    def __init__(self, replies):
+        super().__init__({})
+        self.entered = threading.Event()
+        self.released = threading.Event()
+        self.replies = list(replies)
+        self.count = 0
+
+    def post_json(self, url, payload, headers=None, timeout=None):
+        self.count += 1
+        self.entered.set()
+        self.released.wait(10)
+        text = self.replies.pop(0) if self.replies else '{"priority":"high"}'
+        return 200, {'model': 'demo-model', 'choices': [{'message': {'content': text}}]}
+
+
+async def _wait_event(event, timeout=10.0):
+    """等网络线程进入阻塞点。"""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not event.is_set():
+        if loop.time() > deadline:
+            raise AssertionError('等待网络线程超时')
+        await asyncio.sleep(0.01)
