@@ -1,0 +1,27 @@
+{
+  "renderer": "passed",
+  "transport": "A",
+  "hidden": true,
+  "candidates": 2,
+  "items": 3,
+  "repeatDetailVisits": 0,
+  "boundedKnownWindow": true,
+  "olderUncollectedNoteNotVisited": true,
+  "shareLinks": true,
+  "localCoverSnapshots": true,
+  "coverPixels": [
+    192,
+    144
+  ],
+  "coverPersists": true,
+  "longLinkBounds": "passed",
+  "platformButtons": true,
+  "allSearchControlsDisabled": true,
+  "searchTimeoutSeconds": 60,
+  "lateResponseIgnored": true,
+  "manualMetadataPreserved": true,
+  "coreRestart": true,
+  "rendererReload": true,
+  "expiredSession": true,
+  "realPlatform": false
+}

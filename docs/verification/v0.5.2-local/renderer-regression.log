@@ -1,0 +1,7 @@
+{"intakeDateRenderer":"passed","manualOldPublication":true,"calendarAndDayList":true,"sourceWithoutSubscription":true,"realPlatform":false}
+{"rendererRaces":"passed","refreshDrain":true,"contentWriteLock":true,"nextWritePersisted":true}
+{"listStateSmoke":"passed","scroll":true,"loadingRestore":true,"nextSelection":true,"batchAndPageEdges":true,"failedWrite":true,"partitions":true,"boardAndCalendar":true,"modalDetail":true}
+{"prioritySmoke":"passed","sourceInheritance":true,"manualOverride":true,"bulk":true,"fullCounts":true,"pagination":true,"unknownDates":true}
+{"calendarSmoke":"passed","fullMonthCounts":true,"priorityFilters":true,"dayPagination":true,"detailAndBoardSync":true,"monthAndPageRetry":true,"unknownDates":true}
+{"tagsSmoke":"passed","createRenameDelete":true,"duplicateNameRejected":true,"renameKeepsStableId":true,"taggingIdempotent":true,"filterAnyAndAll":true,"combinedWithPriority":true,"deleteReportsImpact":true,"aiEmptyState":true,"darkContrast":true}
+{"rendererSmoke":"passed","mode":"offline","search":"offline","contents":25,"realBridge":true,"restartPersisted":true,"reloadPersisted":true}

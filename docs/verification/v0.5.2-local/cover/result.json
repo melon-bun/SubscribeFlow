@@ -1,0 +1,11 @@
+{
+  "status": "passed",
+  "covers": 3,
+  "pixels": [
+    192,
+    144
+  ],
+  "hidden": true,
+  "windowCleanup": true,
+  "abortedCapture": true
+}

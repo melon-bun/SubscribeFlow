@@ -19,6 +19,24 @@ export function pageAction(action) {
   }
   if (action === 'status') return { ...base, title: document.title, hasState: !!window.__INITIAL_STATE__ };
   if (risk || loginWall) return base;
+  if (action === 'cover-prepare') {
+    const id = location.pathname.match(/\/(?:explore|search_result|discovery\/item)\/([\da-f]{24})/i)?.[1] || location.pathname.match(/\/user\/profile\/[\da-f]{24}\/([\da-f]{24})/i)?.[1];
+    const note = unwrap(unwrap(unwrap(state.note?.noteDetailMap)?.[id])?.note);
+    const first = note?.imageList?.[0];
+    const scope = document.querySelector('#noteContainer');
+    const img = scope?.querySelector('.swiper-slide[data-swiper-slide-index="0"] img, .swiper-slide img, .note-slider-img, .media-container img');
+    const video = scope?.querySelector('video[poster]');
+    const candidates = [first?.urlDefault, first?.url, ...(Array.isArray(first?.infoList) ? first.infoList.map(i => i.url) : []), img?.currentSrc, img?.src, video?.poster];
+    const src = candidates.map(raw => {
+      try {
+        const u = new URL(raw);
+        if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.port || u.href.length > 4096 ||
+            !(u.hostname.endsWith('.xhscdn.com') || u.hostname.endsWith('.xiaohongshu.com'))) return '';
+        u.protocol = 'https:'; return u.href;
+      } catch { return ''; }
+    }).find(Boolean);
+    return {...base, coverReady:!!src, src:src || null};
+  }
   const absolute = href => { try { const u = new URL(href, location.origin); return u.protocol === 'https:' && !u.username && !u.password && !u.port ? u.href : ''; } catch { return ''; } };
   const profileId = href => { try { return new URL(href, location.origin).pathname.match(/^\/user\/profile\/([\da-f]{24})\/?$/i)?.[1] || ''; } catch { return ''; } };
   if (action === 'share-start' || action === 'share-copy') {

@@ -99,6 +99,25 @@ async function main() {
     pendingRequest=false;
     await core.stop();core=null;
     result.frozenCore={deduplication:true,cancellation:true,contents:3};
+    // The shipped Python adapter must keep the locally captured JPEG, including
+    // across a frozen-Core restart. This profile is separate from the v2 fixture.
+    const cover='data:image/jpeg;base64,'+fs.readFileSync(path.join(root,'tests/fixtures/xhs-cover.jpg')).toString('base64');
+    const xhsId='111111111111111111111111',xhsAuthor='123456789012345678901234';
+    core=new CoreClient({...coreOptions,dataDir:path.join(folder,'cover-profile'),acquisition:async p=>{
+      if(p.operation==='check')return {authenticated:true};
+      return {items:[{id:xhsId,authorId:xhsAuthor,title:'本地封面验收',content:'隔离正文',thumbnail:cover,images:[],
+        url:`https://www.xiaohongshu.com/discovery/item/${xhsId}?source=webshare&xsec_token=fixture&xsec_source=pc_share`,
+        published:{value:null,precision:'unknown',provenance:'fixture'},acquisition_complete:true}],
+        errors:[],metrics:{profile_reads:0,discovered:0,skipped:0,detail_requests:1},cursor:null,terminal:true,end_evidence:'profile_end'};
+    }});await core.start();
+    const xhsSub=await core.call('subscription.add',{locator:xhsAuthor,connection_id:'xiaohongshu:default',confirmed:true});
+    const xhsRun=await core.call('sync.start',{subscription_id:xhsSub.id});
+    const xhsJob=await until(async()=>{const j=await core.call('sync.get',{job_id:xhsRun.job_id});return !['queued','running'].includes(j.state)&&j;});
+    assert.equal(xhsJob.state,'succeeded');assert.equal(xhsJob.new_items,1);
+    assert.equal((await core.call('content.get',{item_id:'xiaohongshu:note:'+xhsId})).thumbnail,cover);
+    await core.restart();
+    assert.equal((await core.call('content.get',{item_id:'xiaohongshu:note:'+xhsId})).thumbnail,cover);
+    await core.stop();core=null;result.xiaohongshuLocalCover=true;
     // Make a v2 database so the real installed binary, not test code, performs the upgrade.
     const runtime=JSON.parse(fs.readFileSync(path.join(root,'.runtime-paths.json'),'utf8'));
     const legacy=spawnSync(runtime.python,['-c',`import sqlite3,sys

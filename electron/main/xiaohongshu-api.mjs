@@ -159,13 +159,31 @@ export class XiaohongshuAPI {
     if (d.id?.toLowerCase() !== n.id.toLowerCase() || !ID.test(d.authorId?.toLowerCase() || '') || (uid && d.authorId.toLowerCase() !== uid)) throw new XHSError('SCHEMA_CHANGED','无法确认笔记身份与作者归属');
     const authorId=d.authorId.toLowerCase();
     const url=await this.share(n.id.toLowerCase(),signal);
+    const thumbnail=await this.cover(signal);
     const range = publicationRange(d);
     const date = range?.exact ? new Date(range.start).toISOString() : range?.source === 'date-label' ? new Date(range.start+8*3600000).toISOString().slice(0,10) : null;
     return {id:n.id.toLowerCase(),authorId,author:d.author || '',title:d.title || n.title || d.content?.slice(0,80) || '无标题笔记',
       content:d.content || '',url,type:d.type || 'normal',
-      images:(d.images || []).slice(0,30),tags:(d.tags || []).slice(0,100),
+      thumbnail,images:(d.images || []).slice(0,30),tags:(d.tags || []).slice(0,100),
       published:{value:date,precision:range?.exact ? 'second' : date ? 'date' : 'unknown',provenance:range?.source || 'unavailable',timezone:'Asia/Shanghai',raw_label:d.dateText || null},
       acquisition_complete:true};
+  }
+  async cover(signal) {
+    if (!this.page.capture) return null;
+    try {
+      const cover=await this.read('cover-prepare',signal);
+      if (!cover.coverReady) return null;
+      // The remote page cannot choose an arbitrary screen area or output size.
+      const thumbnail=await this.bounded(Promise.resolve().then(()=>{
+        signal?.throwIfAborted();
+        return this.page.capture(cover.src,signal);
+      }),signal,5000);
+      await this.read('status',signal); // Keep authentication / risk gates authoritative.
+      return typeof thumbnail==='string' && thumbnail.startsWith('data:image/jpeg;base64,') && thumbnail.length<=48*1024+23 ? thumbnail : null;
+    } catch(error) {
+      if (signal?.aborted || ['AUTH_REQUIRED','INTERACTION_REQUIRED','CANCELLED'].includes(error.code)) throw error;
+      return null; // A missing/failed cover must not discard readable note content.
+    }
   }
   async share(id,signal) {
     try {

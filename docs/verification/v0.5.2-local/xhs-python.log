@@ -1,0 +1,14 @@
+test_auth_failure_after_commit_retains_results_and_marks_connection (tests.test_xiaohongshu.XHSTests.test_auth_failure_after_commit_retains_results_and_marks_connection) ... ok
+test_automatic_refresh_uses_channel_default_budget (tests.test_xiaohongshu.XHSTests.test_automatic_refresh_uses_channel_default_budget) ... ok
+test_candidate_confirmation_and_stable_author_identity (tests.test_xiaohongshu.XHSTests.test_candidate_confirmation_and_stable_author_identity) ... ok
+test_detail_uses_shared_source_context_and_completion_marker (tests.test_xiaohongshu.XHSTests.test_detail_uses_shared_source_context_and_completion_marker) ... ok
+test_incomplete_record_is_not_pre_filtered_and_channel_uses_exact_item_ceiling (tests.test_xiaohongshu.XHSTests.test_incomplete_record_is_not_pre_filtered_and_channel_uses_exact_item_ceiling) ... ok
+test_incremental_scan_persists_and_repeat_skips_complete_ids_without_losing_manual_data (tests.test_xiaohongshu.XHSTests.test_incremental_scan_persists_and_repeat_skips_complete_ids_without_losing_manual_data) ... ok
+test_known_entries_consume_budget_in_mixed_and_repeated_windows (tests.test_xiaohongshu.XHSTests.test_known_entries_consume_budget_in_mixed_and_repeated_windows) ... ok
+test_local_cover_snapshot_is_preferred_and_unsafe_or_oversized_data_is_rejected (tests.test_xiaohongshu.XHSTests.test_local_cover_snapshot_is_preferred_and_unsafe_or_oversized_data_is_rejected) ... ok
+test_replacement_adapter_reuses_persisted_subscriptions_and_views (tests.test_xiaohongshu.XHSTests.test_replacement_adapter_reuses_persisted_subscriptions_and_views) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.452s
+
+OK

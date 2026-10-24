@@ -48,6 +48,8 @@ function adaptWindow(selector, body) {
     .replace(/background:\s*var\(--c-orange\);/, 'background: #fff;')
     .replace(/box-shadow:[^;]+;/, 'box-shadow: var(--sh-card);');
   if (/\.brand__mark img\s*$/.test(selector)) body = 'width: 100%; height: 100%; object-fit: contain; border-radius: inherit;';
+  // 产品使用 button；浏览器的固有宽度不能随带签名的长分享链接扩展。
+  if (/\.detail__link-row\s*$/.test(selector)) body = body.trimEnd() + '\nwidth: 100%; max-width: 100%; min-width: 0; text-align: left;';
   if (/\.sidebar\s*$/.test(selector)) body = body.replace(/grid-row:\s*1\s*\/\s*3/g, 'grid-row: 1');
   // 参考页是固定高度样张；真实窗口由滚动容器分配剩余空间。
   return /\.notes-layout\s*$/.test(selector) ? body.replace(/min-height:\s*640px/g, 'min-height: 0') : body;

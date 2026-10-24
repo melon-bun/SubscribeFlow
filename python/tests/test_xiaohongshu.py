@@ -5,7 +5,7 @@ from pathlib import Path
 
 from subscribe_flow.bootstrap import Core
 from subscribe_flow.channels.gateway import ChannelGateway
-from subscribe_flow.channels.xiaohongshu.adapter import XiaohongshuAdapter, source_from_locator
+from subscribe_flow.channels.xiaohongshu.adapter import XiaohongshuAdapter, source_from_locator, item_from_row, cover_snapshot
 from subscribe_flow.contracts import ChannelError, ContentItem, FetchPage, FetchRequest, PublishedTime, Source
 
 UID = '123456789012345678901234'
@@ -76,6 +76,18 @@ class XHSTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source_from_locator(f'https://www.xiaohongshu.com/user/profile/{UID}?xsec_token=private').url,
                          f'https://www.xiaohongshu.com/user/profile/{UID}')
         self.assertFalse(hasattr(self.adapter, 'repository'))
+
+    async def test_local_cover_snapshot_is_preferred_and_unsafe_or_oversized_data_is_rejected(self):
+        import base64
+        snapshot = 'data:image/jpeg;base64,' + base64.b64encode(b'\xff\xd8\xff\xe0test\xff\xd9').decode()
+        row = {**note(IDS[0]), 'images': ['https://sns-webpic-qc.xhscdn.com/original'], 'thumbnail': snapshot}
+        source = self.core.repository.source_for(self.sub['id'])
+        self.assertEqual(item_from_row(row, source).thumbnail, snapshot)
+        for bad in ['data:image/svg+xml;base64,PHN2Zz4=', 'data:image/jpeg;base64,broken!',
+                    'data:image/jpeg;base64,' + 'A' * (49 * 1024), 'file:///private/image.jpg']:
+            self.assertIsNone(cover_snapshot(bad))
+            row['thumbnail'] = bad
+            self.assertEqual(item_from_row(row, source).thumbnail, row['images'][0])
 
     async def test_incremental_scan_persists_and_repeat_skips_complete_ids_without_losing_manual_data(self):
         job = await self.scan()

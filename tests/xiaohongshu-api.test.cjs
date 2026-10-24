@@ -28,6 +28,34 @@ async function setup(options) {
 }
 const scanParams={channel:'xiaohongshu',operation:'scan',uid:UID,job_id:'a'.repeat(32),limit:8,mode:'refresh'};
 
+test('cover capture is bounded, optional and preserves cancellation / risk gates',async t=>{
+  for(const mode of ['success','missing','failed','cancel','risk'])await t.test(mode,async()=>{
+    const f=await setup(),evaluate=f.page.evaluate;let captured=false,risk=false;
+    f.page.evaluate=async script=>{
+      const action=JSON.parse(script.slice(script.lastIndexOf(')(')+2,-1));
+      if(action==='cover-prepare')return {loggedIn:true,coverReady:mode!=='missing',src:'https://sns-webpic-qc.xhscdn.com/cover'};
+      if(action==='status' && risk)return {loggedIn:true,risk:true};
+      return evaluate(script);
+    };
+    const controller=new AbortController();
+    f.page.capture=async src=>{
+      captured=true;assert.equal(src,'https://sns-webpic-qc.xhscdn.com/cover');
+      if(mode==='failed')throw new Error('cover load failed');
+      if(mode==='cancel'){controller.abort();controller.signal.throwIfAborted();}
+      if(mode==='risk')risk=true;
+      return 'data:image/jpeg;base64,/9j/fixture';
+    };
+    const request=()=>f.api.request({channel:'xiaohongshu',operation:'read',id:IDS[0],url:`https://www.xiaohongshu.com/explore/${IDS[0]}`},controller.signal);
+    if(mode==='cancel')await assert.rejects(request(),e=>e.name==='AbortError' || e.code==='CANCELLED');
+    else if(mode==='risk')await assert.rejects(request(),e=>e.code==='INTERACTION_REQUIRED');
+    else {
+      const result=await request();assert.equal(result.note.content,'正文');
+      assert.equal(result.note.thumbnail,mode==='success'?'data:image/jpeg;base64,/9j/fixture':null);
+    }
+    assert.equal(captured,mode!=='missing');
+  });
+});
+
 test('channel router isolates faults and accepts a replacement transport',async()=>{
   let replacementClosed=false;
   const router=new ChannelSessions();router.register('broken',{request:()=>Promise.reject(new Error('bad page')),close:()=>{throw new Error('bad shutdown');}});
