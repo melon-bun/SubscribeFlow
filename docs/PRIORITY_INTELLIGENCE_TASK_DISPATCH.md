@@ -65,3 +65,7 @@ Node 149/149；正式 renderer／settings／reminder 冒烟全部 passed。
 ## 2026-10-25 最终验收与停止跟进
 
 M36–M44全部完成，BUG-122／123／124均关闭。Codex最终113项优先级、149项Node、正式Renderer（含新priorityBridgeSmoke）、原失败正式Electron探针均通过；此前设置回滚与真实LLM/Jev复验有效。最后真实LLM用例正常、Jev一次超时及既有总结时序用例等非致命/真实环境限制只记。最终代码f545adf，后续仅验收文档；未打包/推送/发布。20分钟跟进结束，不再派新任务。[最终报告](verification/priority-minimax/batch-04/CODEX_FINAL_REVIEW.md)。
+
+## 2026-10-25 用户追加两处间距验收
+
+MiniMax `07b3ad9` 完成指定的优先级三分区与渠道工具栏间距。Codex 审查差异并独立重跑正式 Electron 测量，浅色／深色／紧凑窗口均为 20px，截图目视通过；两项已接受，active-ui-followup 已完成，20 分钟任务 automation 已删除。不重开 M36–M44，不追加其他非致命修复。[验收](verification/priority-minimax/ui-followup-01/CODEX_REVIEW.md)。
