@@ -1517,7 +1517,7 @@
       );
     });
     return h(
-      "div",
+      "div.setting-group",
       null,
       buildSmartPriority(app),
       buildSourcePriorities(app),

@@ -135,9 +135,9 @@
     var toolbar = h('div.channels__toolbar', {'data-refresh-key':'channel-toolbar'}, h('h2.t-h2',{text:'全部渠道（' + (cache.items ? cache.items.length : '—') + '）'}), h('div.spacer'),
       ui.searchInput('搜索创作者或链接...', keyword, function (v) { keyword = v; clearTimeout(searchTimer); searchTimer = setTimeout(reload,240); }),
       ui.btn('重新查询',{icon:'refresh',onClick:function () { SF.app.refreshData(true); }}));
-    if (!cache.loaded) return h('div',{'data-refresh-key':'channel-list'},toolbar,ui.state({icon:'clock',title:'正在载入渠道…'}));
-    if (!cache.items.length) return h('div',{'data-refresh-key':'channel-list'},toolbar,h('div.panel',null,ui.state({icon:'folder-open',title:keyword ? '没有匹配的来源' : '还没有添加任何来源',desc:'使用作者 UID、主页链接或搜索结果添加来源，然后手动刷新。',actions:[{label:'添加来源',variant:'primary',onClick:function () { addDialog(app); }}]})));
-    return h('div',{'data-refresh-key':'channel-list'},toolbar,h('div.panel.channels__table-wrap',null,h('table.table.dt.live-channels',null,
+    if (!cache.loaded) return h('div.channels__list',{'data-refresh-key':'channel-list'},toolbar,ui.state({icon:'clock',title:'正在载入渠道…'}));
+    if (!cache.items.length) return h('div.channels__list',{'data-refresh-key':'channel-list'},toolbar,h('div.panel',null,ui.state({icon:'folder-open',title:keyword ? '没有匹配的来源' : '还没有添加任何来源',desc:'使用作者 UID、主页链接或搜索结果添加来源，然后手动刷新。',actions:[{label:'添加来源',variant:'primary',onClick:function () { addDialog(app); }}]})));
+    return h('div.channels__list',{'data-refresh-key':'channel-list'},toolbar,h('div.panel.channels__table-wrap',null,h('table.table.dt.live-channels',null,
       /* 「静流」§渠道管理：平台列并入创作者名前的平台方块，表格少一列。 */
       h('thead',null,h('tr',null,['创作者 / 频道名','主页','同步方式','状态','覆盖范围','最近任务','操作'].map(function (label) { return h('th',{text:label}); }))),
       h('tbody',null,cache.items.map(function (c,i) {

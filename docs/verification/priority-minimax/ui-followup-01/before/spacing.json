@@ -1,0 +1,145 @@
+{
+  "generatedAt": "2026-10-24T15:31:16.129Z",
+  "window": "1440x1000",
+  "settings": {
+    "blockCount": 3,
+    "titles": [
+      "智能判断",
+      "来源默认优先级",
+      "三个优先级的名称"
+    ],
+    "pairs": [
+      {
+        "from": "智能判断",
+        "to": "来源默认优先级",
+        "prevBottom": 388,
+        "nextTop": 388,
+        "distance": 0,
+        "prevMarginBottom": "0px",
+        "nextMarginTop": "0px",
+        "parentTag": "DIV.",
+        "parentDisplay": "block",
+        "parentGap": "normal"
+      },
+      {
+        "from": "来源默认优先级",
+        "to": "三个优先级的名称",
+        "prevBottom": 2263,
+        "nextTop": 2263,
+        "distance": 0,
+        "prevMarginBottom": "0px",
+        "nextMarginTop": "0px",
+        "parentTag": "DIV.",
+        "parentDisplay": "block",
+        "parentGap": "normal"
+      }
+    ]
+  },
+  "settingsDark": {
+    "blockCount": 3,
+    "titles": [
+      "智能判断",
+      "来源默认优先级",
+      "三个优先级的名称"
+    ],
+    "pairs": [
+      {
+        "from": "智能判断",
+        "to": "来源默认优先级",
+        "prevBottom": 388,
+        "nextTop": 388,
+        "distance": 0,
+        "prevMarginBottom": "0px",
+        "nextMarginTop": "0px",
+        "parentTag": "DIV.",
+        "parentDisplay": "block",
+        "parentGap": "normal"
+      },
+      {
+        "from": "来源默认优先级",
+        "to": "三个优先级的名称",
+        "prevBottom": 2263,
+        "nextTop": 2263,
+        "distance": 0,
+        "prevMarginBottom": "0px",
+        "nextMarginTop": "0px",
+        "parentTag": "DIV.",
+        "parentDisplay": "block",
+        "parentGap": "normal"
+      }
+    ]
+  },
+  "settingsCompact": {
+    "blockCount": 3,
+    "titles": [
+      "智能判断",
+      "来源默认优先级",
+      "三个优先级的名称"
+    ],
+    "pairs": [
+      {
+        "from": "智能判断",
+        "to": "来源默认优先级",
+        "prevBottom": 407,
+        "nextTop": 407,
+        "distance": 0,
+        "prevMarginBottom": "0px",
+        "nextMarginTop": "0px",
+        "parentTag": "DIV.",
+        "parentDisplay": "block",
+        "parentGap": "normal"
+      },
+      {
+        "from": "来源默认优先级",
+        "to": "三个优先级的名称",
+        "prevBottom": 2282,
+        "nextTop": 2282,
+        "distance": 0,
+        "prevMarginBottom": "0px",
+        "nextMarginTop": "0px",
+        "parentTag": "DIV.",
+        "parentDisplay": "block",
+        "parentGap": "normal"
+      }
+    ]
+  },
+  "channels": {
+    "toolbarBottom": 241,
+    "tableTop": 241,
+    "distance": 0,
+    "tableMarginTop": "0px",
+    "containerTag": "DIV.",
+    "containerDisplay": "block",
+    "containerGap": "normal",
+    "outerTag": "DIV.col grow channels-content scroll-y",
+    "outerDisplay": "block",
+    "outerGap": "20px",
+    "outerChildMarginTop": "0px"
+  },
+  "channelsDark": {
+    "toolbarBottom": 241,
+    "tableTop": 241,
+    "distance": 0,
+    "tableMarginTop": "0px",
+    "containerTag": "DIV.",
+    "containerDisplay": "block",
+    "containerGap": "normal",
+    "outerTag": "DIV.col grow channels-content scroll-y",
+    "outerDisplay": "block",
+    "outerGap": "20px",
+    "outerChildMarginTop": "0px"
+  },
+  "channelsCompact": {
+    "toolbarBottom": 257,
+    "tableTop": 257,
+    "distance": 0,
+    "tableMarginTop": "0px",
+    "containerTag": "DIV.",
+    "containerDisplay": "block",
+    "containerGap": "normal",
+    "outerTag": "DIV.col grow channels-content scroll-y",
+    "outerDisplay": "block",
+    "outerGap": "20px",
+    "outerChildMarginTop": "0px"
+  }
+}

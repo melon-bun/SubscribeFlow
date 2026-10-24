@@ -723,6 +723,14 @@
   flex: none;
 }
 
+/* 渠道列表这一组里，工具栏（搜索／重新查询）与下方表格是同组的两块。
+   外层 .channels-content 的间距管不到它们之间——两者同在一个容器内，
+   间距得由组内排布给出，否则工具栏会直接贴住表格上沿。
+   数值沿用渠道页自己的纵向节奏（20px，与该页分区间距一致）。 */
+.channels__list > * + * {
+  margin-top: var(--s-7);
+}
+
 .channels__table-wrap {
   min-height: 0;
   flex: 1;

@@ -37,7 +37,8 @@
     "smoke:uishot": "node scripts/ui-shot-renderer.cjs",
     "smoke:settings": "node scripts/settings-renderer.cjs",
     "smoke:reminder": "node scripts/reminder-persistence-renderer.cjs",
-    "smoke:rejudge": "node scripts/priority-rejudge-probe.cjs"
+    "smoke:rejudge": "node scripts/priority-rejudge-probe.cjs",
+    "smoke:spacing": "node scripts/ui-followup-spacing.cjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",
