@@ -38,3 +38,5 @@ batch-02 启动确认：2026-10-24 20:36 JST，三项开始事件齐全，run_id
 ## batch-02 实审与 batch-03 续派
 
 2026-10-24：Codex 103 项优先级测试通过，并独立以真实 LLM／Jev 各3次产品调用复验通过；但复现两项实质任务问题 BUG-122（重试预算未持久化导致普通事件额外调用）／BUG-123（在途恢复自动的最新请求丢失）。只将这两项最小修复并入 batch-03，先提交修复再继续 M42–M43；非致命问题不派修，M39–M41 联合验收待复验。详见 [审查](verification/priority-minimax/batch-02/CODEX_REVIEW.md)。
+
+batch-03 启动确认：2026-10-24 21:32 JST，原 session 三项开始事件齐全，run_id `exec_turn_mvmdowgs_ermjsl`，mcode PID 74466；20 分钟定时任务已更新，新批计数0，进入待机。
