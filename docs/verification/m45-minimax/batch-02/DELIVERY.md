@@ -67,7 +67,28 @@
 
 ## 2. 提交
 
-见本文件末尾「提交」小节（提交后补记）与 `git log`。
+| 提交 | 内容 |
+| --- | --- |
+| `badf950` | `feat(m45): 付费渠道第二批（付费分页与检查点、调度保护、正式界面）` |
+
+- 分支 `feature/m45-wxrank-paid-channel`，父提交 `3708fa1`，工作区干净。
+- 一次提交包含产品代码与本批文档（`docs/M45_WXRANK_IMPLEMENTATION.md`、
+  本文件、`docs/API.md`、`docs/STORAGE.md`、`docs/PROGRESS.md`、`docs/BUG_FIXES.md`、
+  `docs/reference/DEVELOPMENT_PLAN.md`）。
+- 仓库外的总计划 `doc/DEVELOPMENT_PLAN.md` 与本地 `docs/HANDOFF.md` 同步更新
+  （前者不在本仓库内，后者按仓库约定保持本地忽略）。
+- **未打包、未推送、未发布。**
+
+### 执行中断记录（如实登记）
+
+本批第一次运行时 mcode 进程以 **137** 退出：`result.json` 没有最终结果，`stderr` 为空，
+原因未确认。Codex 未设超时、未杀进程；当前无 mcode 进程在跑，session turn 锁已过期，
+因此这是**安全恢复**，不是并发执行。改动全部保留，未回退任何代码。
+**137 记为执行中断，不等于测试失败，也不写成 succeeded。**
+当时的产出已由 Codex 独立复验：`PYTHONPATH=src python3 -m unittest tests.test_wxrank`
+66 项通过（14.844s）、`npm run smoke:wxrank` 正式 Main/Preload/Renderer/Core 通过
+（假上游 confirmedCredits=15、calls=3、contents=10）。
+受审产品工作区指纹（不含 docs）：`c70c9420cdf9b31fd0d043431264e1453b1ae712d96face37e0250af594bfc4c`。
 
 ---
 
