@@ -53,6 +53,9 @@ class Repository:
         # M40：智能判断的任务队列。一条内容同时只有一个任务，请求去重靠它。
         from .priority_intelligence import PriorityTaskRepository
         self.priority_tasks = PriorityTaskRepository(database)
+        # M45：付费渠道的调用账本、来源解析缓存与回溯检查点。
+        from .paid_channels import PaidChannelRepository
+        self.paid_channels = PaidChannelRepository(database)
 
     def add_connection(self, connection: Connection):
         with self.database.transaction() as db:

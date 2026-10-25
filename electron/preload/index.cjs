@@ -26,6 +26,9 @@ const allowed = new Set([
   'getNote', 'saveNote', 'deleteNote', 'listNotes', 'noteFacets',
   // M29 总结草稿：受限调用，只给内容 ID 与请求 ID。
   'note.draft', 'draftNote',
+  // M45 付费渠道：用量读数与清缓存只读本地；付费测试会真的花钱，
+  // 必须由界面明确触发。
+  'wxrank.usage', 'wxrank.cache_clear', 'wxrank.test',
   'getSession', 'getCounts', 'listPlatforms', 'listPriorities', 'getCalendar', 'listContents', 'getContent',
   'updateContent', 'bulkUpdate', 'listChannels', 'createChannel', 'updateChannel',
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',

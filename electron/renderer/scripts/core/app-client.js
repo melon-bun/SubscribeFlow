@@ -108,6 +108,8 @@
     "getNote", "saveNote", "deleteNote", "listNotes", "noteFacets",
     // M29 总结草稿：受限调用，只给内容 ID 与请求 ID。
     "draftNote",
+    // M45 付费渠道：用量读数与清缓存只读本地；付费测试会真的花钱。
+    "getWxrankUsage", "clearWxrankCache", "testWxrankChannel",
     "on",
   ];
 
@@ -213,6 +215,17 @@
     // M29：生成总结草稿。requestId 由调用方给，用来认领这一次请求的返回。
     client.draftNote = function (itemId, requestId) {
       return invoke('note.draft', { item_id: itemId, request_id: requestId || null });
+    };
+    // M45 付费渠道：用量读数与清缓存只读本地，不发请求也不花钱；
+    // 付费测试会真的产生一次付费调用，界面必须先向用户确认。
+    client.getWxrankUsage = function (timezone) {
+      return invoke('wxrank.usage', timezone ? { timezone: timezone } : {});
+    };
+    client.clearWxrankCache = function (biz) {
+      return invoke('wxrank.cache_clear', biz ? { biz: biz } : {});
+    };
+    client.testWxrankChannel = function (locator, connectionId) {
+      return invoke('wxrank.test', { locator: locator, connection_id: connectionId });
     };
     // M21：可以指定要测哪一类 API。只测这一类，不改打标方式、不触发打标。
     client.testTaggingConnection = function (mode) {

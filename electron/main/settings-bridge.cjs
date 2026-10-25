@@ -61,6 +61,21 @@ class SettingsBridge {
     }
     // M21：连接参数（ai）与识别策略（tagging）分开带给界面，两页各管各的。
     const ai = { formatVersion: settings.ai.formatVersion, providers: aiProviders };
+    // M45：付费渠道。只有「配没配、能不能解开、什么时候改的」，
+    // 引用本身仍然不进界面。
+    const channels = {};
+    for (const [channelId, channel] of Object.entries(settings.channels || {})) {
+      const reference = channel.credentialRef;
+      const entry = reference ? known.get(reference) : null;
+      const { credentialRef, ...visible } = channel;
+      channels[channelId] = {
+        ...visible,
+        configured: !!entry,
+        usable: !!(entry && entry.usable),
+        updatedAt: entry ? entry.updatedAt : null,
+        unresolved: !!reference && !entry,
+      };
+    }
     return {
       version: settings.version,
       savedVersion: settings.savedVersion,
@@ -78,6 +93,7 @@ class SettingsBridge {
       priority: settings.priority,
       // M29 接入总结时用的策略位（详细程度属于业务策略，不是连接字段）。
       summarization: settings.summarization,
+      channels,
       credentials: { protection, providers },
       warnings,
     };
@@ -95,23 +111,28 @@ class SettingsBridge {
     }
     // M21／M25：密钥属于连接参数，因此只跟「AI API 配置」这一页走，
     // 并且按连接 ID 提交——不再按固定的两个业务槽位。
-    if (secrets && section !== 'ai') {
+    // M45：付费渠道的密钥跟「渠道」这一页走，按渠道 ID 提交。
+    // 两页各自独立：改渠道密钥不会碰 AI 配置，反过来也一样。
+    if (secrets && section !== 'ai' && section !== 'channels') {
       throw new Error('当前分区不接受这些密钥参数');
     }
     const staged = [];
     const refs = {};
     let saved;
     try {
-      for (const [providerId, value] of Object.entries(secrets || {})) {
+      for (const [ownerId, value] of Object.entries(secrets || {})) {
         if (value === undefined) continue; // 没提交新密钥：沿用已有引用
         if (value === null || value === '') {
-          refs[providerId] = null; // 明确清除这条连接的密钥
+          refs[ownerId] = null; // 明确清除这条连接的密钥
           continue;
         }
-        const reference = `provider-${crypto.randomBytes(12).toString('hex')}`;
+        // 引用前缀区分归属：渠道密钥不会和 AI 连接密钥混在一起。
+        const reference = section === 'channels'
+          ? `channel-${ownerId}-${crypto.randomBytes(12).toString('hex')}`
+          : `provider-${crypto.randomBytes(12).toString('hex')}`;
         await this.credentials.put(reference, value);
         staged.push(reference);
-        refs[providerId] = reference;
+        refs[ownerId] = reference;
       }
       saved = await this.core.call('settings.update', {
         section,
@@ -149,9 +170,14 @@ class SettingsBridge {
 
   /** 当前设置引用了哪些密钥：按连接 ID 汇总，数量不固定。 */
   _references(settings) {
-    return Object.values(settings.ai.providers || {})
+    const providers = Object.values(settings.ai.providers || {})
       .map((provider) => provider.credentialRef)
       .filter(Boolean);
+    // M45：付费渠道的密钥引用同样受管：换密钥后旧版本要能被清理。
+    const channels = Object.values(settings.channels || {})
+      .map((channel) => channel.credentialRef)
+      .filter(Boolean);
+    return [...providers, ...channels];
   }
 
   /**
@@ -167,8 +193,13 @@ class SettingsBridge {
 
   async _sync(current) {
     const wanted = new Set();
-    for (const provider of Object.values(current.ai.providers || {})) {
-      const reference = provider.credentialRef;
+    // AI 连接与付费渠道的密钥走同一条推送通道：Core 侧按引用取用，互不干扰。
+    const owners = [
+      ...Object.values(current.ai.providers || {}),
+      ...Object.values(current.channels || {}),
+    ];
+    for (const owner of owners) {
+      const reference = owner.credentialRef;
       if (!reference) continue;
       const secret = await this.credentials.get(reference);
       if (!secret) continue;

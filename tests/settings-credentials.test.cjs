@@ -112,6 +112,20 @@ function fakeCore(initial) {
             ...settings,
             priority: { names: { ...settings.priority.names, ...((params.patch || {}).names || {}) } },
           };
+        } else if (params.section === 'channels') {
+          // M45：付费渠道。凭据引用按渠道 ID 落到对应渠道上。
+          const channels = { ...settings.channels };
+          for (const [channelId, fields] of Object.entries((params.patch || {}))) {
+            channels[channelId] = { ...(channels[channelId] || {}), ...fields };
+          }
+          for (const [channelId, reference] of Object.entries(params.credential_refs || {})) {
+            channels[channelId] = { ...(channels[channelId] || {}), credentialRef: reference };
+          }
+          settings = {
+            ...settings,
+            savedVersion: settings.version + 1,
+            channels,
+          };
         } else {
           settings = { ...settings, savedVersion: settings.version + 1, reminder: { ...settings.reminder, ...params.patch } };
         }
@@ -138,6 +152,8 @@ const BASE_SETTINGS = {
   tagging: { enabled: false, mode: 'llm', enabledSince: null, providerIds: { jev: 'provider-jev', llm: 'provider-llm' } },
   reminder: { enabled: false, intervalMinutes: 60, preset: '60' },
   priority: { names: { high: '高优先级', medium: '中优先级', low: '低优先级' } },
+  // M45：付费渠道。渠道密钥与 AI 密钥各管各的，互不影响。
+  channels: { wxrank: { credentialRef: null, revision: 1, enabled: true } },
 };
 
 test('保存密钥：先落密文再提交引用，并把密钥推进 Core', async () => {
@@ -311,6 +327,85 @@ test('结构损坏的凭据文件必须保留并报告，不能当作空库覆�
     await assert.rejects(credentials.put('jev-new', 'new-key'), {code: 'CREDENTIAL_STORE_UNREADABLE'});
     assert.equal(await fs.readFile(file, 'utf8'), raw);
   }
+});
+
+test('M45：渠道密钥独立成链，保存后不影响 AI 配置', async () => {
+  const dir = await tempDir();
+  const credentials = new CredentialService({ dir, storage: fakeStorage() });
+  const core = fakeCore(BASE_SETTINGS);
+  const bridge = new SettingsBridge({ core, credentials });
+  const aiBefore = JSON.stringify(core.settings.ai);
+  const saved = await bridge.write({
+    section: 'channels',
+    patch: { wxrank: { enabled: true } },
+    credentials: { wxrank: 'wxrank_secret_value' },
+  });
+  const provide = core.calls.find((call) => call.method === 'credential.provide');
+  assert.ok(provide, '保存渠道密钥后应向 Core 推送');
+  assert.equal(provide.params.secret, 'wxrank_secret_value');
+  const update = core.calls.find((call) => call.method === 'settings.update');
+  assert.equal(update.params.section, 'channels');
+  assert.match(update.params.credential_refs.wxrank, /^channel-wxrank-[0-9a-f]{24}$/);
+  // 落盘的是密文，界面拿不到引用与密钥。
+  const raw = await fs.readFile(path.join(dir, 'credentials.json'), 'utf8');
+  assert.ok(!raw.includes('wxrank_secret_value'));
+  assert.equal(saved.channels.wxrank.configured, true);
+  assert.equal(saved.channels.wxrank.usable, true);
+  assert.ok(!JSON.stringify(saved).includes('wxrank_secret_value'));
+  assert.ok(!JSON.stringify(saved).includes(update.params.credential_refs.wxrank));
+  // AI 配置原封不动。
+  assert.equal(JSON.stringify(core.settings.ai), aiBefore);
+});
+
+test('M45：换渠道密钥裁掉旧版本，AI 密钥不受牵连', async () => {
+  const dir = await tempDir();
+  const credentials = new CredentialService({ dir, storage: fakeStorage() });
+  const core = fakeCore(BASE_SETTINGS);
+  const bridge = new SettingsBridge({ core, credentials });
+  await bridge.write({ section: 'ai', patch: { mode: 'jev' }, credentials: { 'provider-jev': 'ai_key_a' } });
+  const aiReference = core.settings.ai.providers['provider-jev'].credentialRef;
+  await bridge.write({ section: 'channels', patch: { wxrank: { enabled: true } }, credentials: { wxrank: 'wx_key_a' } });
+  const first = core.settings.channels.wxrank.credentialRef;
+  await bridge.write({ section: 'channels', patch: { wxrank: { enabled: true } }, credentials: { wxrank: 'wx_key_b' } });
+  const second = core.settings.channels.wxrank.credentialRef;
+  assert.notEqual(first, second, '换密钥必须换引用');
+  const references = await credentials.references();
+  assert.ok(references.includes(second));
+  assert.ok(!references.includes(first), '旧渠道密钥版本应被裁剪');
+  assert.ok(references.includes(aiReference), 'AI 密钥不得被渠道密钥的保存裁掉');
+});
+
+test('M45：清除渠道密钥会撤销推送，AI 密钥继续可用', async () => {
+  const dir = await tempDir();
+  const credentials = new CredentialService({ dir, storage: fakeStorage() });
+  const core = fakeCore(BASE_SETTINGS);
+  const bridge = new SettingsBridge({ core, credentials });
+  await bridge.write({ section: 'ai', patch: { mode: 'jev' }, credentials: { 'provider-jev': 'ai_key' } });
+  await bridge.write({ section: 'channels', patch: { wxrank: { enabled: true } }, credentials: { wxrank: 'wx_key' } });
+  const reference = core.settings.channels.wxrank.credentialRef;
+  await bridge.write({ section: 'channels', patch: { wxrank: { enabled: true } }, credentials: { wxrank: null } });
+  assert.ok(core.calls.some((call) => call.method === 'credential.revoke' && call.params.reference === reference));
+  const references = await credentials.references();
+  assert.ok(!references.includes(reference), '清除后磁盘上不应留下渠道密钥');
+  const status = await bridge.read();
+  assert.equal(status.channels.wxrank.configured, false);
+  assert.equal(status.credentials.providers['provider-jev'].configured, true);
+});
+
+test('M45：Core 重启后按当前设置重新推送渠道密钥', async () => {
+  const dir = await tempDir();
+  const credentials = new CredentialService({ dir, storage: fakeStorage() });
+  const core = fakeCore(BASE_SETTINGS);
+  const bridge = new SettingsBridge({ core, credentials });
+  await bridge.write({ section: 'channels', patch: { wxrank: { enabled: true } }, credentials: { wxrank: 'wx_key' } });
+  const reference = core.settings.channels.wxrank.credentialRef;
+  const restarted = fakeCore(core.settings);
+  const revived = new SettingsBridge({ core: restarted, credentials });
+  await revived.sync();
+  const provide = restarted.calls.find((call) => call.method === 'credential.provide');
+  assert.ok(provide, 'Core 就绪后必须重新推送渠道密钥');
+  assert.equal(provide.params.reference, reference);
+  assert.equal(provide.params.secret, 'wx_key');
 });
 
 test('M20：优先级名称原样透传给界面，改名不动配置版本', async () => {

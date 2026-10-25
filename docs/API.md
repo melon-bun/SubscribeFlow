@@ -598,3 +598,42 @@ Renderer AppClient → preload 白名单 → 主进程 UI_METHODS / callUI → P
 （手动档优先，不给入口）。智能判断的开关状态按「路由对象换过就重读一次」处理，
 并纳入优先级分段的刷新依据——**等级没变、来源变了、或开关刚改过，这一段都会重画**。
 状态读取失败按「没开」处理，不让详情面板消失。
+
+## M45 公众号付费渠道（2026-10-25，第一批）
+
+### 设置分区 `channels`
+
+`settings.get`／`settings.update` 的 `channels` 分区，目前只有 `wxrank`：
+
+```json
+{"wxrank": {"credentialRef": "channel-wxrank-…", "revision": 3, "enabled": true}}
+```
+
+- 只有**凭据引用**与**调用版本**：分区里**没有余额预算字段**（本期不做本地余额拦截）。
+- 换密钥时 `revision` 前进；付费账本按它区分「哪一次调用用的是哪一把密钥」，
+  旧密钥的余额快照不会冒充新密钥的余额。
+- 密钥明文只经 Main 的凭据桥按渠道 ID 提交（`credential_refs: {"wxrank": …}`），
+  与 AI 连接的密钥提交路径互不干扰。
+- 未知渠道、预算类字段、非法启用状态一律 `INVALID_INPUT`。
+
+### 付费渠道 RPC
+
+| RPC | 是否花钱 | 说明 |
+| --- | --- | --- |
+| `wxrank.usage` | 否 | 自然月汇总：已确认用量、结果未知次数、调用次数、最近一次观察到的余额、最近记录 |
+| `wxrank.cache_clear` | 否 | 清理来源解析缓存（`{biz?}`）；下次解析会重新付费，属明确用户动作 |
+| `wxrank.test` | **是** | 显式付费测试（`{locator, connection_id}`），绕过缓存，必定产生一次付费调用 |
+
+AppClient：`getWxrankUsage(timezone?)`、`clearWxrankCache(biz?)`、`testWxrankChannel(locator, connectionId)`。
+三个名字在 `electron/main/methods.cjs` 的 `CORE_METHODS`、preload 白名单与渲染层 `CONTRACT` 里都齐；
+它们不接受也不返回任何密钥。
+
+### 扣费口径（接口语义的一部分）
+
+| 情形 | `charge_state` | 界面含义 |
+| --- | --- | --- |
+| 上游回 `code=0` | `confirmed` | **已确认消费 5 积分**（含 data 是坏数据的情况） |
+| 上游回非 0 业务码 | `not_charged` | 服务端明确拒绝，未消费 |
+| 网络未决／进程崩溃遗留 | `unknown` | **可能已扣费**，不得写成零消费 |
+
+业务失败与网络未决都不自动重试：再打一次只会再花钱。

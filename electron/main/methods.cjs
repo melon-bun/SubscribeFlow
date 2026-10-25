@@ -20,6 +20,9 @@ const CORE_METHODS = new Set([
   // M29 总结草稿：受限接口——只给内容 ID 与请求 ID，不接受任意 prompt，
   // 不接受自定义模型，也不返回密钥；只生成草稿，不写笔记。
   'note.draft',
+  // M45 付费渠道：用量读数与清缓存只读本地，不发请求也不花钱；
+  // 付费测试是唯一会花钱的接口，必须由用户明确触发。
+  'wxrank.usage', 'wxrank.cache_clear', 'wxrank.test',
 ]);
 // settings.* 与 notification.* 刻意不在这里：它们必须经过 Main 的 UI 方法，
 // 先加密保存密钥再向 Core 提交引用。放进白名单等于让 Renderer 绕过凭据编排。

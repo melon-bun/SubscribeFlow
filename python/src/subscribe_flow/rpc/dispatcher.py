@@ -145,6 +145,11 @@ class Dispatcher:
             "priority.judge_bulk": (c.priority.judge_bulk, {"item_ids": list}, {}),
             "settings.get": (c.settings.snapshot, {}, {}),
             "settings.update": (c.settings.update, {"section": str, "patch": dict}, {"credential_refs": dict}),
+            # M45 付费渠道：用量读数与清缓存都只读本地，不发请求、不花钱。
+            # 付费测试是唯一会花钱的接口：它必须由用户明确触发。
+            "wxrank.usage": (c.paid_channels.usage, {}, {"timezone": str}),
+            "wxrank.cache_clear": (c.paid_channels.clear_cache, {}, {"biz": str}),
+            "wxrank.test": (c.paid_channels.test, {"locator": str, "connection_id": str}, {}),
             # 私有凭据桥接：只由主进程调用，不在 Renderer 方法白名单内。
             "credential.provide": (c.credentials.provide, {"reference": str, "secret": str}, {}),
             "credential.revoke": (c.credentials.revoke, {"reference": str}, {}),

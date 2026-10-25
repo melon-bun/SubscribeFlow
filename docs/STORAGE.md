@@ -236,3 +236,38 @@ M12 不增加迁移，继续 schema v8。Source 使用平台稳定作者 ID，ur
 旧响应仍不落库。
 完整说明见 [M42 优先级设置](M42_PRIORITY_SETTINGS.md) 与
 [batch-04 交付说明](verification/priority-minimax/batch-04/DELIVERY.md)。
+
+## M45 付费渠道 · schema v15（2026-10-25）
+
+迁移编号已核对：原有迁移到 `014_priority_policy.sql`，因此本批用 **015**
+（`storage/migrations/015_paid_channels.sql`）。三张表都只存非敏感信息：
+**没有密钥、没有请求体、没有响应原文**。
+
+### `paid_channel_attempts`（付费调用账本）
+
+每次付费入口（来源解析／文章列表／显式测试）写一条。**请求发出前先落「开始」**，
+进程崩了也留下痕迹，下次启动统一结算为「结果未知」。
+
+| 列 | 说明 |
+| --- | --- |
+| `charge_state` | `confirmed` 已确认消费／`not_charged` 服务端明确拒绝／`unknown` 结果未知 |
+| `confirmed_credits` | 只有 `confirmed` 时非零（本期口径：5 积分／次） |
+| `credential_version` | 调用用的密钥版本；换密钥后前进，用于区分不同密钥下的调用 |
+| `balance_credits` / `balance_observed_at` | 服务端余额的**观察值**（从业务文案读出），不是本地算出来的数 |
+| `operation` / `biz` / `wxid` | 调用用途与目标公众号；`biz` 是规范 biz，不含密钥 |
+
+索引：`paid_attempts_period(started_at)`、`paid_attempts_channel(channel, credential_version)`。
+
+### `paid_channel_sources`（来源解析缓存）
+
+规范 `biz` 为主键，存上游公众号身份（`gh_id`／名称／头像／`source_id`）与
+`credential_version`／`parser_version`／`resolved_at`。
+**命中缓存不再发付费请求**：因此「解析 → 确认添加」与「重启后再解析」都只付一次解析费。
+
+### `paid_channel_checkpoints`（回溯检查点）
+
+`UNIQUE(source_id, connection_id)`，存服务端游标与 `credential_version`／`parser_version`／
+`progress_version`。版本对不上时旧游标不再使用，避免把旧密钥下拿到的游标当成新密钥的位置。
+本批只建表，续采逻辑属 M45.4。
+
+完整说明见 [M45 实施说明](M45_WXRANK_IMPLEMENTATION.md)。

@@ -7,6 +7,8 @@ from subscribe_flow.channels.bilibili.electron import BilibiliElectronAdapter
 from subscribe_flow.channels.github.adapter import GithubTrendingAdapter
 from subscribe_flow.channels.xiaohongshu.adapter import XiaohongshuAdapter
 from subscribe_flow.channels.wechat.adapter import WechatAdapter
+from subscribe_flow.channels.wxrank.adapter import WxrankAdapter
+from subscribe_flow.channels.wxrank.service import WxrankService
 from subscribe_flow.channels.zhihu.adapter import ZhihuAdapter
 from subscribe_flow.application.subscriptions import SubscriptionService
 from subscribe_flow.application.sync import SyncService
@@ -20,6 +22,7 @@ from subscribe_flow.application.notes import NoteService
 from subscribe_flow.application.summary import SummaryService
 from subscribe_flow.application.priority_intelligence import PriorityIntelligenceService
 from subscribe_flow.application.settings import SettingsService
+from subscribe_flow.application.paid_channels import PaidChannelService
 from subscribe_flow.application.credentials import CredentialBroker
 from subscribe_flow.ai.gateway import AiGateway
 from subscribe_flow.application.scheduler import Scheduler
@@ -31,11 +34,15 @@ from subscribe_flow.storage.lease import CoreLease
 import logging
 
 
-def build_gateway(opencli_path: str = "opencli", browser_bridge=None) -> ChannelGateway:
+def build_gateway(opencli_path: str = "opencli", browser_bridge=None, *, paid_service=None) -> ChannelGateway:
     gateway = ChannelGateway()
     # 无条件注册：纯 HTTP 渠道不依赖浏览器桥接，写在 if 分支里会在
     # --backend opencli 启动时整个消失。
     gateway.register(GithubTrendingAdapter())
+    # M45 付费渠道同样是纯 HTTP，同样无条件注册。业务层由调用方注入：
+    # 它要读设置里的凭据引用，并拥有自己的计费账本与限流闸门。
+    if paid_service is not None:
+        gateway.register(WxrankAdapter(paid_service))
     if browser_bridge is not None:
         gateway.register(BilibiliElectronAdapter(browser_bridge))
         gateway.register(XiaohongshuAdapter(browser_bridge))
@@ -53,6 +60,9 @@ RESOURCE_KEYS = {
     "opencli": lambda channel: "browser:opencli-default",
     # 三张榜共用 http:github，因此天然串行，间隔沿用 policy.resource_gap（默认 3 秒）。
     "direct-http": lambda channel: f"http:{channel}",
+    # M45 付费渠道：每条付费渠道一个资源键，因此不同渠道互不阻塞，
+    # 同一条渠道的所有付费入口（解析、列表、显式测试）共用一把闸门。
+    "paid-http": lambda channel: f"http:{channel}",
 }
 
 
@@ -64,7 +74,7 @@ def resource_key(descriptor) -> str:
 
 
 class Core:
-    def __init__(self, database_path, *, opencli_path="opencli", gateway=None, browser_bridge=None, schedule_policy=None, clock=None, recognition_provider=None, ai_transport=None):
+    def __init__(self, database_path, *, opencli_path="opencli", gateway=None, browser_bridge=None, schedule_policy=None, clock=None, recognition_provider=None, ai_transport=None, paid_transport=None):
         self.lease = CoreLease(database_path)
         try:
             self.database = Database(database_path)
@@ -73,8 +83,23 @@ class Core:
             raise
         self.repository = Repository(self.database)
         self.repository.recover_interrupted()
+        # M45：上次崩溃遗留的付费调用按「结果未知」结算。
+        # 这些调用可能已经扣过费，不能当成没发生。
+        self.repository.paid_channels.recover_pending()
         self.browser_bridge = browser_bridge
-        self.gateway = gateway if gateway is not None else build_gateway(opencli_path, browser_bridge)
+        # M15：配置只存引用；Main 私有桥推送的明文只在 credentials 内存容器中使用。
+        # 必须排在网关之前：付费渠道的适配器要读设置里的凭据引用。
+        self.settings = SettingsService(SettingsStore(self.database), repository=self.repository)
+        self.credentials = CredentialBroker()
+        # M45：付费渠道业务层。计费记账、来源解析缓存、单飞合并与限流都在这里。
+        # paid_transport 只给隔离验收用：把网络换成假传输，业务代码不感知。
+        self.paid = WxrankService(settings=self.settings, credentials=self.credentials,
+                                  repository=self.repository.paid_channels,
+                                  transport=paid_transport)
+        # M45：受控入口。本地读数、清理缓存与显式付费测试。
+        self.paid_channels = PaidChannelService(self.paid, self.repository)
+        self.gateway = gateway if gateway is not None else build_gateway(
+            opencli_path, browser_bridge, paid_service=self.paid)
         self.listeners = []
         self.closed = False
         self.subscriptions = SubscriptionService(self.gateway, self.repository)
@@ -87,9 +112,6 @@ class Core:
         # 默认不注入识别提供者：人工标签完整可用，识别接口明确返回未接入。
         self.tags = TagService(self.repository, self.emit, recognition_provider)
         self.queries = QueryService(self.repository, self.gateway)
-        # M15：配置只存引用；Main 私有桥推送的明文只在 credentials 内存容器中使用。
-        self.settings = SettingsService(SettingsStore(self.database), repository=self.repository)
-        self.credentials = CredentialBroker()
         # M25：公共 AI 层。连接解析、凭据组装与协议探针都在这里，
         # 打标、总结与将来的服务都从它出入，不各自造连接。
         # ai_transport 只给隔离验收用：把网络换成假传输，业务代码不感知。

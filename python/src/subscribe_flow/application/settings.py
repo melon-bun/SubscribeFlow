@@ -32,7 +32,12 @@ from subscribe_flow.storage.repositories import now
 # 打标的两种识别方式：这是打标业务的策略，不是连接的固定槽位。
 # 同一个连接可以被多种方式之外的业务引用，连接数量不受这里限制。
 MODES = ("jev", "llm")
-SECTIONS = ("ai", "tagging", "reminder", "priority", "summarization")
+SECTIONS = ("ai", "tagging", "reminder", "priority", "summarization", "channels")
+
+# M45：付费渠道。只有 wxrank 一条；协议细节在 channels/wxrank/protocol.py，
+# 这里只管「这个渠道配置了没有、引用的是哪一把密钥、这是第几代」。
+# 刻意不放余额预算之类的字段：本期不做本地余额拦截。
+PAID_CHANNELS = ("wxrank",)
 
 # M29 总结策略的取值范围。
 SUMMARY_LENGTHS = ("brief", "detailed")
@@ -104,6 +109,10 @@ DEFAULTS = {
     # 留给 M29 定义；此处只占位，保证结构与计划 §4.3 的形状一致。
     "summarization": {"enabled": True, "providerId": None,
                       "length": DEFAULT_SUMMARY_LENGTH, "language": "zh-CN", "revision": 1},
+    # M45 付费渠道：只保存凭据引用与非敏感版本元数据。
+    # revision 是调用版本：换密钥时前进，付费账本据此区分不同密钥下的调用，
+    # 旧密钥的余额快照也不会被当成新密钥的余额。
+    "channels": {"wxrank": {"credentialRef": None, "revision": 1, "enabled": True}},
 }
 
 
@@ -260,7 +269,7 @@ class SettingsService:
             if not isinstance(stored_section, dict):
                 continue
             for key, value in stored_section.items():
-                if key not in payload[section] or key in ("providers", "names", "providerIds", "smart"):
+                if key not in payload[section] or key in ("providers", "names", "providerIds", "smart", "wxrank"):
                     continue
                 payload[section][key] = value
             if section == "priority":
@@ -313,6 +322,22 @@ class SettingsService:
             payload["tagging"]["revision"] = stored_revision
         else:
             payload["tagging"]["revision"] = max(1, int(record["version"] or 1))
+        # M45：付费渠道设置。逐键回落：只认凭据引用、调用版本与启用状态，
+        # 其余写坏的值一律忽略，不让一条坏配置拖垮整个设置。
+        stored_channels = stored.get("channels")
+        if isinstance(stored_channels, dict):
+            for channel_id, entry in stored_channels.items():
+                if channel_id not in payload["channels"] or not isinstance(entry, dict):
+                    continue
+                current = payload["channels"][channel_id]
+                reference = entry.get("credentialRef")
+                if isinstance(reference, str) and reference:
+                    current["credentialRef"] = reference
+                revision = entry.get("revision")
+                if isinstance(revision, int) and revision >= 1:
+                    current["revision"] = revision
+                if isinstance(entry.get("enabled"), bool):
+                    current["enabled"] = entry["enabled"]
         return record["version"], record["updatedAt"], payload
 
     @staticmethod
@@ -378,7 +403,27 @@ class SettingsService:
                                    "providerId": payload["priority"]["smart"]["providerId"],
                                    "revision": int(payload["priority"]["smart"]["revision"])}},
             "summarization": dict(payload["summarization"]),
+            # M45 付费渠道：只暴露「配没配」与调用版本，不暴露任何密钥材料。
+            "channels": {channel_id: {
+                "id": channel_id,
+                "credentialRef": value.get("credentialRef"),
+                "revision": int(value.get("revision") or 1),
+                "enabled": bool(value.get("enabled", True)),
+                "configured": bool(value.get("credentialRef")),
+            } for channel_id, value in payload["channels"].items()},
         }
+
+    def channel_credential(self, channel_id: str) -> dict:
+        """某个渠道的凭据引用与调用版本（非敏感）。
+
+        付费渠道用它取运行时密钥与记账用的凭据版本：
+        引用本身不是秘密，但也不需要交给界面。
+        """
+        _, _, payload = self._current()
+        entry = payload["channels"].get(channel_id) or {}
+        return {"reference": entry.get("credentialRef"),
+                "revision": int(entry.get("revision") or 1),
+                "enabled": bool(entry.get("enabled", True))}
 
     # ------------------------------------------------------------ 保存
 
@@ -420,6 +465,8 @@ class SettingsService:
             if _smart_fingerprint(merged.get("smart") or {}) != _smart_fingerprint(
                     payload["priority"].get("smart") or {}):
                 merged["smart"]["revision"] = int(merged["smart"].get("revision") or 1) + 1
+        elif section == "channels":
+            merged = self._merge_channels(payload["channels"], patch, credential_refs)
         else:
             if credential_refs:
                 _fail("提醒设置不接受凭据引用")
@@ -704,6 +751,38 @@ class SettingsService:
             if patch["language"] not in SUMMARY_LANGUAGES:
                 _fail("总结语言无效", "field", "language")
             merged["language"] = patch["language"]
+        return merged
+
+    def _merge_channels(self, current, patch, credential_refs=None):
+        """付费渠道设置：只有启用状态与凭据引用。
+
+        刻意没有余额预算之类的字段：本期不做本地余额拦截。
+        换密钥时推进调用版本，付费账本据此区分不同密钥下的调用，
+        旧密钥的余额快照也不会被当成新密钥的余额。
+        """
+        if not isinstance(patch, dict) or not patch:
+            _fail("付费渠道设置格式无效")
+        if set(patch) - set(current):
+            _fail("包含不支持的渠道设置字段")
+        merged = copy.deepcopy(current)
+        for channel_id, fields in patch.items():
+            if not isinstance(fields, dict) or set(fields) - {"enabled"}:
+                _fail("包含不支持的渠道设置字段", "field", "channels." + channel_id)
+            if "enabled" in fields:
+                if not isinstance(fields["enabled"], bool):
+                    _fail("渠道启用状态无效", "field", "channels." + channel_id + ".enabled")
+                merged[channel_id]["enabled"] = fields["enabled"]
+        # 凭据引用由 Main 在写入受保护密钥之后给出；引用缺失说明这一版不换密钥。
+        if credential_refs is not None:
+            if not isinstance(credential_refs, dict):
+                _fail("凭据引用格式无效")
+            for channel_id, reference in credential_refs.items():
+                if channel_id not in merged:
+                    _fail("凭据引用对应的渠道不存在", "field", "credentialRefs")
+                validated = _validate_reference(reference, "credentialRefs")
+                if validated != merged[channel_id].get("credentialRef"):
+                    merged[channel_id]["revision"] = int(merged[channel_id].get("revision") or 1) + 1
+                merged[channel_id]["credentialRef"] = validated
         return merged
 
     def _merge_reminder(self, current, patch):
