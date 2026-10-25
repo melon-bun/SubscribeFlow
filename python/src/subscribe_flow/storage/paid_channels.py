@@ -155,20 +155,40 @@ class PaidChannelRepository:
                               (source_id, connection_id)).fetchone()
         return dict(row) if row else None
 
+    def write_checkpoint(self, db, *, source_id: str, connection_id: str, cursor: str | None,
+                         expires_at: str | None = None, credential_version: int = 0,
+                         parser_version: str = "1", progress_version: str = "1") -> None:
+        """写检查点。传入已有的连接，**不另开事务**。
+
+        页面数据与检查点要在同一个提交边界里：否则崩溃时可能出现
+        「页数据已存、检查点没存」，下一次回溯会把同一页再买一遍。
+        """
+        db.execute("""INSERT INTO paid_channel_checkpoints
+                     (id,source_id,connection_id,cursor,obtained_at,expires_at,
+                      credential_version,parser_version,progress_version)
+                     VALUES(?,?,?,?,?,?,?,?,?)
+                     ON CONFLICT(source_id,connection_id) DO UPDATE SET
+                       cursor=excluded.cursor,obtained_at=excluded.obtained_at,
+                       expires_at=excluded.expires_at,credential_version=excluded.credential_version,
+                       parser_version=excluded.parser_version,progress_version=excluded.progress_version""",
+                   (uuid.uuid4().hex, source_id, connection_id, cursor, now(), expires_at,
+                    int(credential_version), parser_version, progress_version))
+
+    def delete_checkpoint(self, db, source_id: str, connection_id: str) -> int:
+        cursor = db.execute("""DELETE FROM paid_channel_checkpoints
+                               WHERE source_id=? AND connection_id=?""",
+                            (source_id, connection_id))
+        return cursor.rowcount
+
     def save_checkpoint(self, *, source_id: str, connection_id: str, cursor: str | None,
                         expires_at: str | None = None, credential_version: int = 0,
                         parser_version: str = "1", progress_version: str = "1") -> None:
         with self.database.transaction() as db:
-            db.execute("""INSERT INTO paid_channel_checkpoints
-                         (id,source_id,connection_id,cursor,obtained_at,expires_at,
-                          credential_version,parser_version,progress_version)
-                         VALUES(?,?,?,?,?,?,?,?,?)
-                         ON CONFLICT(source_id,connection_id) DO UPDATE SET
-                           cursor=excluded.cursor,obtained_at=excluded.obtained_at,
-                           expires_at=excluded.expires_at,credential_version=excluded.credential_version,
-                           parser_version=excluded.parser_version,progress_version=excluded.progress_version""",
-                       (uuid.uuid4().hex, source_id, connection_id, cursor, now(), expires_at,
-                        int(credential_version), parser_version, progress_version))
+            self.write_checkpoint(db, source_id=source_id, connection_id=connection_id,
+                                  cursor=cursor, expires_at=expires_at,
+                                  credential_version=credential_version,
+                                  parser_version=parser_version,
+                                  progress_version=progress_version)
 
     def clear_checkpoint(self, source_id: str, connection_id: str) -> int:
         with self.database.transaction() as db:

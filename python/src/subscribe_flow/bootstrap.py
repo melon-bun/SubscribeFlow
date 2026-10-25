@@ -96,10 +96,10 @@ class Core:
         self.paid = WxrankService(settings=self.settings, credentials=self.credentials,
                                   repository=self.repository.paid_channels,
                                   transport=paid_transport)
-        # M45：受控入口。本地读数、清理缓存与显式付费测试。
-        self.paid_channels = PaidChannelService(self.paid, self.repository)
         self.gateway = gateway if gateway is not None else build_gateway(
             opencli_path, browser_bridge, paid_service=self.paid)
+        # M45：受控入口。本地读数、清理缓存与显式付费测试。
+        self.paid_channels = PaidChannelService(self.paid, self.repository, self.gateway)
         self.listeners = []
         self.closed = False
         self.subscriptions = SubscriptionService(self.gateway, self.repository)
@@ -189,6 +189,10 @@ class Core:
             await self.tagging.close()
             # M40：同理，在途判断也要先退回队列再关库。
             await self.priority.close()
+            # M45：付费渠道的在途请求要在关库之前收束。
+            # 晚到的响应因此不会写到已关闭的库上；那条「开始」记录留在账本里，
+            # 下次启动按「结果未知」结算，费用可追溯。
+            await self.paid.close()
             self.database.close()
             self.lease.close()
             self.closed = True

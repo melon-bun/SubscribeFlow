@@ -4,15 +4,24 @@
   var SF = global.SF, h = SF.dom.h, ui = SF.ui, fmt = SF.fmt;
   var cache = {}, keyword = '', searchTimer;
   var runStates = new Map(), runScrollPositions = new Map();
+  /* M45 公众号付费渠道（wxrank）。
+     渠道状态、页数、调用次数、积分与余额全部来自 Core 的渠道状态接口：
+     界面不推算费用，也不显示本地预算上限——本期没有余额闸门，
+     余额只是服务端最近一次的观察值，读不到就是「未知」。 */
+  var wxrank = {loaded:false, loading:false, stale:false, data:null, error:null, promise:null,
+                draftKey:'', draftBiz:'', checkText:'', testText:''};
   function reload() { cache = {keyword:keyword}; renderView(); }
   function renderView() { SF.app.renderView('channels'); }
   function invalidate(reasons) {
     var relevant = ['all', 'channels'].some(function (name) { return reasons && (reasons.has ? reasons.has(name) : reasons.indexOf(name) >= 0); });
     if (!relevant) return;
     cache.stale = true; cache.revision = (cache.revision || 0) + 1;
+    /* M45：全量刷新时重读一次渠道状态，密钥与用量不会停在旧值上。
+       只读本地，不发请求也不花钱。 */
+    if (reasons && (reasons.has ? reasons.has('all') : reasons.indexOf('all') >= 0)) wxrank.stale = true;
   }
   function whenIdle() {
-    var pending = [cache.promise, cache.coveragePromise].filter(Boolean);
+    var pending = [cache.promise, cache.coveragePromise, wxrank.promise].filter(Boolean);
     return pending.length ? Promise.all(pending).then(whenIdle) : Promise.resolve();
   }
   function freshSource(previous, fresh) {
@@ -60,6 +69,9 @@
       if ((!runStates.has(run.id) || active.includes(runStates.get(run.id))) && !active.includes(run.state)) {
         cache.coverageDirty = cache.coverageDirty || new Set();
         cache.coverageDirty.add(run.channelId);
+        /* M45：付费任务结束后重读一次渠道状态，用量与余额才对得上。 */
+        var sub = (cache.items || []).filter(function (s) { return s.id === run.channelId; })[0];
+        if (sub && sub.platform === 'wxrank') wxrank.stale = true;
       }
       runStates.set(run.id, run.state);
     });
@@ -73,6 +85,7 @@
     var panel = host.querySelector('[data-runs-panel]');
     if (panel) SF.dom.reconcileWithScroll(panel, Array.from(runsPanel(app).childNodes), runScrollPositions);
     refreshCoverage(app);
+    if (wxrank.stale) ensureWxrankStatus(app);
   }
   function descriptorFor(app, connection) {
     return (app.session.channels || []).filter(function (d) { return d.channel === connection.channel && d.backend === connection.backend; })[0] || {};
@@ -86,6 +99,7 @@
   function render(app) {
     if (cache.keyword !== keyword) cache = {keyword:keyword};
     if (!runStates.size) app.runs.forEach(function (run) { runStates.set(run.id, run.state); });
+    ensureWxrankStatus(app);
     if ((!cache.loaded || cache.stale) && !cache.loading) {
       var current = cache, revision = current.revision || 0, requestKeyword = keyword;
       current.loading = true; current.stale = false;
@@ -147,7 +161,10 @@
           /* 「静流」§.who：头像在左，平台方块跟着名字走（名字行里），
              整列都扫得见的只有头像 + 名字 + UID。 */
           h('td',null,h('div.channel-cell',null,ui.avatar(c.name),h('div.channel-cell__text',null,h('div.channel-cell__name',null,ui.platformIcon(c.platform),h('span',{text:c.name})),h('div.channel-cell__desc',null,h('span',{text:'UID '}),h('span.mono',{text:c.externalId}))))),
-          h('td',null,ui.btn('打开主页',{size:'sm',icon:'external',onClick:function () { SF.app.act('source:' + c.id,function () { return app.client.openChannel(c.id); }); }})),
+          h('td',null,c.platform === 'wxrank'
+            /* M45：公众号渠道的来源地址是内部定位用的公众号地址，不是可浏览主页。 */
+            ? ui.btn('打开主页',{size:'sm',disabled:true,title:'该地址是内部定位用的公众号地址，不是可浏览主页；文章原文在内容详情里打开。'})
+            : ui.btn('打开主页',{size:'sm',icon:'external',onClick:function () { SF.app.act('source:' + c.id,function () { return app.client.openChannel(c.id); }); }})),
           h('td',null,h('div.cadence',null,
             h('b',null,ui.btn(c.frequency,{size:'sm',onClick:function () { scheduleDialog(app,c); },ariaLabel:'设置同步方式 ' + c.name})),
             h('small',{text:scheduleText(c)}))),
@@ -155,8 +172,8 @@
           h('td',null,h('button.badge.coverage-cell' + (cov.complete?'':'.coverage-cell--limited'),{type:'button',title:cov.detail,onclick:function () { ui.dialog({title:c.name + ' · 覆盖范围',body:ui.notice({tone:cov.complete?'info':'warn',text:cov.detail})}); }},SF.icon(cov.complete?'check':'clock',14),h('span',{text:cov.label}))),
           h('td',{'data-channel-run':c.id},latestRun(app,c.id)),
           h('td',null,h('div.ops.table__ops',null,
-            ui.iconBtn('refresh','刷新来源',function () { startRun(app,c,'recent'); },{disabled:!c.enabled || !c.capabilities.canRefresh}),
-            ui.iconBtn('clock','回溯历史',function () { var pages = collectPages(c,c.defaultBackfillBudget || 10); ui.confirm({title:'回溯 ' + c.name,message:c.checkedItems ? '本次按主页顺序检查前 ' + pages + ' 条' + (c.contentNoun || '内容') + '。已收录的也占一个名额，跳过详情后不向后补足；结果不代表全部历史。' : c.incrementalDetails ? '本次最多读取 ' + pages + ' 条' + (c.contentNoun || '内容') + '详情，已完整收录的会跳过；主页分页扫描有上限，结果不代表全部历史。' : '本次最多采集 ' + (c.collectItems || pages*(c.pageSize || 20)) + ' 条内容。已收录或解析失败的条目也占名额，不向后补足；回溯成功不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
+            ui.iconBtn('refresh','刷新来源',function () { if (c.platform === 'wxrank') wxrankRunDialog(app,c,'recent'); else startRun(app,c,'recent'); },{disabled:!c.enabled || !c.capabilities.canRefresh}),
+            ui.iconBtn('clock','回溯历史',function () { if (c.platform === 'wxrank') { wxrankRunDialog(app,c,'backfill'); return; } var pages = collectPages(c,c.defaultBackfillBudget || 10); ui.confirm({title:'回溯 ' + c.name,message:c.checkedItems ? '本次按主页顺序检查前 ' + pages + ' 条' + (c.contentNoun || '内容') + '。已收录的也占一个名额，跳过详情后不向后补足；结果不代表全部历史。' : c.incrementalDetails ? '本次最多读取 ' + pages + ' 条' + (c.contentNoun || '内容') + '详情，已完整收录的会跳过；主页分页扫描有上限，结果不代表全部历史。' : '本次最多采集 ' + (c.collectItems || pages*(c.pageSize || 20)) + ' 条内容。已收录或解析失败的条目也占名额，不向后补足；回溯成功不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
             ui.iconBtn('sliders',(c.collectItems ? '采集条数（当前 '+c.collectItems+' 条）' : '采集条数（默认）'),function () { collectDialog(app,c); },{disabled:!c.enabled,ariaLabel:'设置采集条数'}),
             ui.iconBtn('trash','取消追踪',function () { ui.confirm({title:'取消追踪 ' + c.name + '？',message:'已保存的历史内容会保留。再次添加相同 UID 可以恢复订阅。',confirmText:'取消追踪',danger:true}).then(function(ok) { if(ok) SF.app.act('subscription:' + c.id,async function () { await app.client.removeChannel(c.id); await SF.app.refreshData(true); }); }); },{danger:true}))));
       })))));
@@ -225,13 +242,17 @@
       h('div.field',null,h('span.field__label',{text:'同步模式'}),select),
       h('div.field',null,h('label.field__label',{htmlFor:'refresh-interval',text:'自动刷新间隔（小时）'}),interval,
         h('p.field__hint',{text:'默认 24 小时，最多 72 小时，最少 5 分钟。可输入小数，切回手动会保留此设置。'})),
+      /* M45：付费渠道的自动检查每次都要调用付费接口，必须先说清。 */
+      c.platform === 'wxrank' ? ui.notice({tone:'warn',text:'启用自动检查后，每次检查都会调用付费接口并产生费用。默认仍是手动刷新。'}) : null,
       h('p.muted',{text:'自动模式只在应用运行、电脑未休眠时检查。首次自动检查在设定间隔后执行，也可随时手动刷新。'}),error),
       footer:[ui.btn('取消',{onClick:function () { layer.close(); }}),save]});
   }
   function bottomPanels(app) {
     return h('div.channels__bottom',{'data-refresh-key':'channel-bottom'},
       h('section.panel.live-panel',null,h('h2.t-h2',{text:'渠道与连接'}),app.session.connections.map(function (c) {
-        return connectionRow(app,c);
+        /* M45：付费渠道有自己的卡片。通用连接行会把「可用」写在状态上，
+           而付费渠道的可用性只能靠真实调用证明，不能靠连接行暗示。 */
+        return c.channel === 'wxrank' ? wxrankCard(app,c) : connectionRow(app,c);
       }),h('p.field__hint',{text:'自动采集遇到登录或访问验证会暂停，处理后检查连接即可恢复。采集失败时仍可查看本地内容。'})),
       runsPanel(app));
   }
@@ -328,6 +349,250 @@
             }).finally(function () { renderView(); });
           }}))));
   }
+
+  /* ---------------- M45 公众号付费渠道（wxrank） ----------------
+     这一段的规矩只有一条：界面不替 Core 算钱。
+     页数、调用次数、积分、余额都照渠道状态接口给的显示；
+     读不到就写「未知」，绝不填 0，也绝不假装渠道可用。 */
+
+  function wxrankConnection(app) {
+    return (app.session.connections || []).filter(function (c) { return c.channel === 'wxrank'; })[0] || null;
+  }
+  function wxrankStatus() { return wxrank.data; }
+  /** 按来源找它的任务计划：页数、调用次数、积分与检查点。
+      来源标识有两种说法：来源表的 id，或来源键（wxrank:account:gh_…）。
+      两种都认，免得两边口径一改就找不到费用。 */
+  function wxrankSource(channel) {
+    var status = wxrankStatus();
+    if (!status || !status.sources || !channel) return null;
+    var list = status.sources;
+    var bySubscription = list.filter(function (s) { return s.subscriptionId && s.subscriptionId === channel.id; })[0];
+    if (bySubscription) return bySubscription;
+    var byId = list.filter(function (s) { return s.sourceId === channel.id; })[0];
+    if (byId) return byId;
+    var byExternal = list.filter(function (s) { return s.externalId && channel.externalId && s.externalId === channel.externalId; })[0];
+    return byExternal || null;
+  }
+  /** 读一次渠道状态。失败不拖垮页面：卡片显示失败与重试，其余照常渲染。 */
+  function ensureWxrankStatus(app) {
+    if (!wxrankConnection(app)) return;
+    if (wxrank.loading) return;
+    if (wxrank.loaded && !wxrank.stale) return;
+    var current = wxrank;
+    current.loading = true; current.stale = false;
+    current.promise = Promise.resolve().then(function () {
+      if (!app.client || typeof app.client.getWxrankStatus !== 'function') throw new Error('渠道状态接口尚未接通');
+      return app.client.getWxrankStatus();
+    }).then(function (data) {
+      if (wxrank !== current) return;
+      current.data = data || {}; current.loaded = true; delete current.error;
+    }).catch(function (err) {
+      if (wxrank !== current) return;
+      current.loaded = true; current.error = err;
+    }).finally(function () {
+      current.loading = false; current.promise = null;
+      renderView();
+      if (current.stale) ensureWxrankStatus(app);
+    });
+  }
+  function refreshWxrankStatus(app) {
+    wxrank.stale = true;
+    ensureWxrankStatus(app);
+  }
+  /** 一次付费任务的费用说明：次数与积分照 Core 给的实际配置显示。 */
+  function wxrankCostText(plan) {
+    if (!plan) return null;
+    var calls = plan.totalCalls == null ? plan.listCalls : plan.totalCalls;
+    var parts = [];
+    if (calls != null) parts.push('本次最多 ' + calls + ' 次调用');
+    if (plan.credits != null) parts.push('约 ' + plan.credits + ' 积分');
+    return parts.length ? parts.join(' · ') : null;
+  }
+  /** 检查点说明。过期或版本变化一律说「本次从头重扫」，不能说成续采。 */
+  function wxrankCheckpointText(cp) {
+    if (!cp) return null;
+    if (cp.state === 'expired') return '检查点已过期，本次从头重扫';
+    if (cp.state === 'version_mismatch') return '密钥或解析版本已变化，本次从头重扫';
+    return cp.note || '本次从头开始';
+  }
+
+  /** 公众号付费渠道卡片：密钥、本地检查、显式付费测试、用量与缓存。 */
+  function wxrankCard(app, c) {
+    var status = wxrankStatus();
+    var title = descriptorFor(app, c).name || '公众号 · 付费API';
+    var head = h('div.row.row-gap-3',null,
+      h('h3.t-h3',{text:title}),
+      status ? h('span.badge.badge--' + (status.configured ? 'success' : 'neutral'),{text:status.configured ? '已配置' : '未配置'}) : null,
+      h('div.spacer'),
+      status ? ui.toggle(status.enabled !== false,function (on) { setWxrankEnabled(app,on); },{label:'启用公众号付费渠道'}) : null);
+    var body;
+    if (wxrank.error) {
+      body = h('div.col',{style:{gap:'12px'}},
+        ui.notice({tone:'danger',title:'读取渠道配置失败',text:(wxrank.error && wxrank.error.message) || '渠道状态读取失败'}),
+        ui.btn('重试',{onClick:function () { refreshWxrankStatus(app); }}));
+    } else if (!status) {
+      body = h('p.muted',{text:'正在读取渠道配置…'});
+    } else {
+      body = wxrankCardBody(app,c,status);
+    }
+    return h('div.col.wxrank-card',{style:{gap:'16px'},'data-refresh-key':'wxrank-card'},head,body);
+  }
+
+  function wxrankCardBody(app, c, status) {
+    var credits = status.creditsPerCall;
+    var usage = status.usage || {};
+    var balance = status.balance;
+    var observed = status.balanceObservedAt ? fmt.absolute(status.balanceObservedAt) : null;
+    var parts = [];
+
+    if (status.enabled === false) parts.push(ui.notice({tone:'warn',text:'渠道已停用：付费调用会被核心拒绝。'}));
+
+    /* 密钥：保存后不再回显，界面只显示是否已配置。 */
+    var keyError = h('p.field__error',{role:'alert'});
+    var keyInput = h('input.input',{id:'wxrank-secret',type:'password',autocomplete:'off',spellcheck:'false',
+      placeholder:status.configured ? '输入新密钥以替换' : '粘贴渠道密钥',value:wxrank.draftKey,
+      oninput:function (e) { wxrank.draftKey = e.target.value; }});
+    parts.push(h('div.field',{'data-refresh-boundary':''},
+      h('label.field__label',{htmlFor:'wxrank-secret',text:'渠道密钥'}),
+      keyInput,
+      h('div.row.row-gap-3',null,
+        ui.btn('保存密钥',{variant:'primary',onClick:function () { saveWxrankKey(app,keyInput,keyError); }}),
+        status.configured ? ui.btn('清除密钥',{variant:'danger-soft',onClick:function () { clearWxrankKey(app); }}) : null),
+      h('p.field__hint',{text:'保存后由系统保护能力加密，界面不再回显，只显示是否已配置。'}),
+      keyError));
+
+    /* 免费本地检查：不发网络请求，也不能证明密钥可用。 */
+    parts.push(h('div.row.row-gap-3',null,
+      ui.btn('检查配置',{onClick:function () { checkWxrankConfig(app,c); }}),
+      wxrank.checkText ? h('span.muted',{text:wxrank.checkText}) : null));
+    parts.push(h('p.field__hint',{text:'只查本地是否已配置，不发网络请求，也不能证明密钥可用。'}));
+
+    /* 显式付费测试：会花钱，必须先确认。 */
+    var bizError = h('p.field__error',{role:'alert'});
+    var bizInput = h('input.input',{id:'wxrank-biz',autocomplete:'off',placeholder:'公众号 biz（Mz…）',value:wxrank.draftBiz,
+      oninput:function (e) { wxrank.draftBiz = e.target.value; }});
+    parts.push(h('div.field',{'data-refresh-boundary':''},
+      h('label.field__label',{htmlFor:'wxrank-biz',text:'付费测试'}),
+      h('div.row.row-gap-3',null,bizInput,
+        ui.btn(credits == null ? '测试接口' : '测试接口 · 预计 ' + credits + ' 积分',{onClick:function () { testWxrank(app,c,bizInput,bizError); }})),
+      h('p.field__hint',{text:'需要公众号 biz；这次调用绕过解析缓存，会真的产生一次付费调用。'}),
+      wxrank.testText ? h('p.muted',{text:wxrank.testText}) : null,
+      bizError));
+
+    /* 本地用量：只显示已确认值与未知次数，余额读不到就写未知。 */
+    parts.push(h('div.col',{style:{gap:'4px'}},
+      h('p',{text:'本月已确认用量 ' + (usage.confirmedCredits == null ? 0 : usage.confirmedCredits) + ' 积分'}),
+      h('p',{text:'扣费结果未知 ' + (usage.unknownCount == null ? 0 : usage.unknownCount) + ' 次'}),
+      h('p',{text:'最近服务端余额 ' + (balance == null ? '未知' : String(balance) + (observed ? '（观察于 ' + observed + '）' : ''))})));
+    parts.push(h('div.row.row-gap-3',null,ui.btn('清理解析缓存',{onClick:function () { clearWxrankCache(app); }})));
+
+    /* 限制说明照 Core 给的逐条显示。 */
+    (status.limits || []).forEach(function (text) { parts.push(h('p.field__hint',{text:text})); });
+    return h('div.col',{style:{gap:'16px'}},parts);
+  }
+
+  function saveWxrankKey(app, input, error) {
+    var value = String(input.value || '').trim();
+    if (!value) { error.textContent = '请输入密钥'; return; }
+    SF.app.act('wxrank-secret',async function () {
+      try {
+        await app.client.saveSettings({section:'channels',patch:{wxrank:{enabled:true}},credentials:{wxrank:value}});
+        wxrank.draftKey = ''; input.value = '';
+        ui.toast('密钥已保存');
+      } catch (err) { error.textContent = err.message; return; }
+      refreshWxrankStatus(app);
+    });
+  }
+  function clearWxrankKey(app) {
+    ui.confirm({title:'清除渠道密钥？',message:'清除后这个渠道不能再调用付费接口，需要重新输入密钥；渠道同时停用。',confirmText:'清除密钥',danger:true}).then(function (ok) {
+      if (!ok) return;
+      SF.app.act('wxrank-clear',async function () {
+        try {
+          await app.client.saveSettings({section:'channels',patch:{wxrank:{enabled:false}},credentials:{wxrank:null}});
+          wxrank.draftKey = '';
+          ui.toast('密钥已清除');
+        } catch (err) { ui.toast(err.message,'error'); return; }
+        refreshWxrankStatus(app);
+      });
+    });
+  }
+  function setWxrankEnabled(app, on) {
+    SF.app.act('wxrank-enabled',async function () {
+      try {
+        await app.client.saveSettings({section:'channels',patch:{wxrank:{enabled:on}}});
+        ui.toast(on ? '已启用公众号付费渠道' : '已停用公众号付费渠道');
+      } catch (err) { ui.toast(err.message,'error'); }
+      refreshWxrankStatus(app);
+    });
+  }
+  /** 「检查配置」只做本地检查：结果只能说已配置，不能说密钥有效。 */
+  function checkWxrankConfig(app, c) {
+    SF.app.act('wxrank-check:' + c.id,async function () {
+      try {
+        var result = await app.client.checkConnection(c.id);
+        wxrank.checkText = result && result.state === 'ready' ? '已配置，未联网验证' : ((result && result.reason) || '本地检查未通过');
+      } catch (err) {
+        wxrank.checkText = '本地检查失败：' + (err.message || '');
+      }
+      renderView();
+    });
+  }
+  /** 显式付费测试：确认之后才发请求，费用与缓存绕过都写在确认里。 */
+  function testWxrank(app, c, input, error) {
+    var biz = String(input.value || '').trim();
+    if (!biz) { error.textContent = '请填写公众号 biz'; return; }
+    var credits = wxrankStatus() ? wxrankStatus().creditsPerCall : null;
+    ui.confirm({title:'测试接口 · 会产生付费调用',
+      message:'这次会真的调用付费接口，绕过解析缓存，产生一次付费调用' + (credits == null ? '' : '（约 ' + credits + ' 积分）') + '。确认继续？',
+      confirmText:'付费测试'}).then(function (ok) {
+      if (!ok) return;
+      SF.app.act('wxrank-test:' + c.id,async function () {
+        try {
+          var result = await app.client.testWxrankChannel(biz,c.id);
+          wxrank.testText = '已解析：' + ((result && result.name) || biz) + (result && result.externalId ? '（' + result.externalId + '）' : '');
+        } catch (err) {
+          wxrank.testText = '测试失败：' + (err.message || '');
+        }
+        refreshWxrankStatus(app);
+      });
+    });
+  }
+  function clearWxrankCache(app) {
+    SF.app.act('wxrank-cache',async function () {
+      try {
+        var result = await app.client.clearWxrankCache();
+        ui.toast('已清理 ' + ((result && result.cleared) || 0) + ' 条解析缓存');
+      } catch (err) { ui.toast(err.message,'error'); return; }
+      refreshWxrankStatus(app);
+    });
+  }
+  /** 付费任务的确认框：费用按实际配置推导，空页同样收费也要说清。 */
+  async function wxrankRunDialog(app, c, kind) {
+    /* 费用必须按实际配置显示。刚添加完来源时状态还没读到它，
+       这里先补读一次再开对话框，不让用户看到「读不到费用」。 */
+    if (!wxrankSource(c)) {
+      try {
+        wxrank.data = await app.client.getWxrankStatus();
+        wxrank.loaded = true; delete wxrank.error;
+      } catch (err) { /* 读不到就按未知显示，不假装知道。 */ }
+    }
+    var backfill = kind === 'backfill';
+    var source = wxrankSource(c);
+    /* 任务种类：界面叫「刷新」，Core 的字段叫 refresh。 */
+    var planKey = backfill ? 'backfill' : 'refresh';
+    var plan = source ? source[planKey] : null;
+    var rows = [h('p',{text:wxrankCostText(plan) || '读不到本次费用（渠道状态读取失败），但本次仍可能产生费用。'})];
+    if (plan) {
+      rows.push(h('p.muted',{text:'最多 ' + (plan.pages == null ? '—' : plan.pages) + ' 页 · 解析 ' + (plan.parseCalls == null ? 0 : plan.parseCalls) + ' 次 · 取列表 ' + (plan.listCalls == null ? 0 : plan.listCalls) + ' 次'}));
+    }
+    var checkpoint = wxrankCheckpointText(plan ? plan.checkpoint : null);
+    if (checkpoint) rows.push(h('p',{text:(backfill ? '回溯起点：' : '刷新起点：') + checkpoint}));
+    rows.push(h('p.field__hint',{text:'即使本次采到 0 条新内容，也可能已经产生费用——空页同样收费。'}));
+    var layer = ui.dialog({title:(backfill ? '回溯历史 · ' : '刷新来源 · ') + c.name,
+      body:h('div.col',{style:{gap:'12px'}},rows),
+      footer:[ui.btn('取消',{onClick:function () { layer.close(); }}),
+        ui.btn(backfill ? '开始回溯' : '开始刷新',{variant:'primary',onClick:function () { layer.close(); startRun(app,c,kind); }})]});
+  }
   function runsPanel(app) {
     return h('section.panel.live-panel',{'data-runs-panel':'','data-refresh-key':'recent-runs'},h('h2.t-h2',{text:'最近任务（最多 100 条）'}),
         app.runs.length ? h('div.run-list',null,app.runs.map(function (run) {
@@ -415,9 +680,20 @@
         platform.querySelectorAll('button').forEach(function(button) {
           var active=button.dataset.connectionId===connectionId;
           button.classList.toggle('btn--primary',active);button.classList.toggle('btn--ghost',!active);button.setAttribute('aria-pressed',String(active));
-        }); setBusy(false);
+        }); setBusy(false); paintCost();
       }}); button.dataset.connectionId=c.id; button.setAttribute('aria-pressed',String(c.id===connectionId)); return button;
     }));
+    /* M45：公众号付费渠道首次添加要解析一次，先说清这次要花多少。 */
+    var cost=h('p.field__hint');
+    function paintCost() {
+      var selected=connections.filter(function(c) { return c.id===connectionId; })[0];
+      if(!selected || selected.channel!=='wxrank') { cost.textContent=''; return; }
+      var status=wxrankStatus();
+      var addCost=status ? status.addCost : null;
+      var credits=addCost && addCost.credits != null ? addCost.credits : (status ? status.creditsPerCall : null);
+      cost.textContent='首次添加要解析一次公众号' + (credits == null ? '' : '，约 ' + credits + ' 积分') + '；确认添加命中缓存，不再收费。';
+    }
+    paintCost();
     var resolve=ui.btn('解析 UID / 主页',{onClick:function () { locate(false); }});
     var search=ui.btn('搜索作者',{variant:'primary',disabled:!searchSupported(),onClick:function () { locate(true); }});
     var login=ui.btn('应用内登录',{onClick:function () { SF.app.act('login:' + connectionId,function () { return app.client.loginConnection(connectionId); }); }});
@@ -425,7 +701,7 @@
     var layer=ui.dialog({title:'添加渠道或创作者',wide:true,body:h('div.col',{style:{gap:'16px'}},
       h('div.field',null,h('span.field__label',{text:'来源平台'}),platform),
       h('div.field',null,h('label.field__label',{htmlFor:'source-input',text:'作者 UID、主页或名称'}),input),
-      h('div.row.row-gap-3',null,search,resolve,login,check),h('p.field__hint',{text:'输入昵称搜索并选择正确作者。首次使用或登录失效时，先在应用内登录，关闭登录窗口后检查连接。'}),results,error,
+      h('div.row.row-gap-3',null,search,resolve,login,check),h('p.field__hint',{text:'输入昵称搜索并选择正确作者。首次使用或登录失效时，先在应用内登录，关闭登录窗口后检查连接。'}),cost,results,error,
       h('label.row.row-gap-3',null,confirm,h('span',{text:'我已核对账号，确认追踪此作者'}))),
       footer:[h('p.field__hint',{text:'添加后手动刷新。相同 UID 不会重复订阅。'}),h('div.spacer'),ui.btn('取消',{onClick:function(){layer.close();}}),add],
       beforeClose:function(){return !searchLocked;},onClose:function(){closed=true;requestId++;}});

@@ -45,6 +45,11 @@ async function verify({window, core, root, mode}) {
   await until(readyExpression);
   assert.equal(await evaluate(`SF.app.state.source`),'real');
   assert.equal(await evaluate(`typeof require`),'undefined');
+  if (mode === 'wxrank') {
+    // M45 付费渠道：假上游跑通整条链路，不产生任何真实费用。
+    await require('./wxrank-ui-smoke.cjs').verifyWxrank({evaluate,until,click,screenshot,core,root,window});
+    return;
+  }
   if (mode === 'github') {
     // The GitHub channel uses no browser session, so it needs none of the
     // platform fixtures the other modes install. index.cjs stops the core.
@@ -370,17 +375,20 @@ module.exports={verify};
 
 if(require.main === module) {
   const root=path.resolve(__dirname,'..');
-  const mode=process.argv.includes('--zhihu')?'zhihu':process.argv.includes('--wechat')?'wechat':process.argv.includes('--intake')?'intake':process.argv.includes('--xhs')?'xhs':process.argv.includes('--github')?'github':process.argv.includes('--live')?'live':'offline';
+  const mode=process.argv.includes('--zhihu')?'zhihu':process.argv.includes('--wechat')?'wechat':process.argv.includes('--intake')?'intake':process.argv.includes('--xhs')?'xhs':process.argv.includes('--github')?'github':process.argv.includes('--wxrank')?'wxrank':process.argv.includes('--live')?'live':'offline';
   // The GitHub fixture seeds its own database before Core starts, so it needs a
   // differently named temp folder to satisfy the seed script's own guard.
-  const prefix=mode==='github'?'subscribe-flow-github-':'subscribe-flow-renderer-';
+  const prefix=mode==='github'?'subscribe-flow-github-':mode==='wxrank'?'subscribe-flow-wxrank-':'subscribe-flow-renderer-';
   const folder=fs.mkdtempSync(path.join(os.tmpdir(),prefix));
   if(mode==='github') {
     const seed=spawnSync(JSON.parse(fs.readFileSync(path.join(root,'.runtime-paths.json'),'utf8')).python,
       [path.join(root,'scripts/seed-github-renderer.py'),folder],{encoding:'utf8'});
     assert.equal(seed.status,0,seed.stderr);
   }
-  const child=spawn(require('electron'),[root],{env:{...process.env,SUBSCRIBE_FLOW_RENDERER_SMOKE:mode,SUBSCRIBE_FLOW_LIVE_SKIP_SEARCH:process.argv.includes('--uid-only')?'1':'0',SUBSCRIBE_FLOW_DATA_DIR:folder},stdio:'inherit'});
+  // M45 付费渠道：Core 用脱敏样本代替真实付费上游，正式验收不产生任何费用。
+  const env={...process.env,SUBSCRIBE_FLOW_RENDERER_SMOKE:mode,SUBSCRIBE_FLOW_LIVE_SKIP_SEARCH:process.argv.includes('--uid-only')?'1':'0',SUBSCRIBE_FLOW_DATA_DIR:folder};
+  if(mode==='wxrank') env.SUBSCRIBE_FLOW_WXRANK_FIXTURE=process.env.SUBSCRIBE_FLOW_WXRANK_FIXTURE||'default';
+  const child=spawn(require('electron'),[root],{env,stdio:'inherit'});
   const timer=setTimeout(()=>child.kill('SIGKILL'),180000);
   child.on('close',code=>{clearTimeout(timer);fs.rmSync(folder,{recursive:true,force:true});process.exitCode=code??1;});
 }

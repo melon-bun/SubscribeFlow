@@ -637,3 +637,41 @@ AppClient：`getWxrankUsage(timezone?)`、`clearWxrankCache(biz?)`、`testWxrank
 | 网络未决／进程崩溃遗留 | `unknown` | **可能已扣费**，不得写成零消费 |
 
 业务失败与网络未决都不自动重试：再打一次只会再花钱。
+
+### 付费渠道状态（M45.4～M45.5）
+
+`wxrank.status` → 渠道卡片需要的全部**只读**信息。只读本地账本，不发请求、不花钱。
+
+```json
+{
+  "channel": "wxrank", "configured": true, "enabled": true, "credentialVersion": 3,
+  "creditsPerCall": 5, "pageSize": 10, "refreshPages": 1, "backfillPages": 3,
+  "usage": {"confirmedCredits": 25, "unknownCount": 1, "calls": 6},
+  "balance": 120, "balanceObservedAt": "2026-10-25T09:00:00.000+00:00",
+  "cacheEntries": 3,
+  "limits": ["每次成功调用约消耗 5 积分（上游观察值）", "..."],
+  "sources": [{
+    "sourceId": "wxrank:account:gh_x", "subscriptionId": "sub_x",
+    "name": "示例公众号", "externalId": "gh_x", "collectItems": 0,
+    "refresh": {"pages": 1, "listCalls": 1, "parseCalls": 0, "totalCalls": 1, "credits": 5,
+                "checkpoint": {"state": "fresh", "note": "刷新从最新一页开始"}},
+    "backfill": {"pages": 3, "listCalls": 3, "parseCalls": 0, "totalCalls": 3, "credits": 15,
+                 "checkpoint": {"state": "resume", "note": "从上次已提交成功的页继续"}} }],
+  "addCost": {"parseCalls": 1, "totalCalls": 1, "credits": 5, "note": "..."}
+}
+```
+
+- 页数与费用用采集引擎的同一套规则推导（`SyncService.page_budget_for`），
+  因此界面显示的次数与真正跑出来的次数不会打架。
+- `checkpoint.state` 只有四种：`fresh`／`resume`／`expired`／`version_mismatch`。
+  后两种表示**本次从头重扫**，不得说成续采。
+- `balance` 是服务端观察值，读不到就是 `null`（界面显示「未知」，不写 0）。
+- `usage.confirmedCredits` 只统计已确认消费；`usage.unknownCount` 是扣费结果未知的次数。
+
+AppClient：`getWxrankStatus(timezone?)`、`getWxrankUsage(timezone?)`、
+`clearWxrankCache(biz?)`、`testWxrankChannel(locator, connectionId)`。
+
+### 付费渠道的检查语义
+
+`connection.check` 对付费渠道**只做本地检查**，不发网络请求：
+返回 ready 时 reason 是「已配置付费渠道密钥，未联网验证」。付费渠道的可用性只能靠真实调用证明。

@@ -22,7 +22,7 @@ const CORE_METHODS = new Set([
   'note.draft',
   // M45 付费渠道：用量读数与清缓存只读本地，不发请求也不花钱；
   // 付费测试是唯一会花钱的接口，必须由用户明确触发。
-  'wxrank.usage', 'wxrank.cache_clear', 'wxrank.test',
+  'wxrank.status', 'wxrank.usage', 'wxrank.cache_clear', 'wxrank.test',
 ]);
 // settings.* 与 notification.* 刻意不在这里：它们必须经过 Main 的 UI 方法，
 // 先加密保存密钥再向 Core 提交引用。放进白名单等于让 Renderer 绕过凭据编排。

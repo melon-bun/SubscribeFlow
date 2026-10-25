@@ -16,6 +16,7 @@
     "smoke:wechat": "node scripts/renderer-smoke.cjs --wechat",
     "smoke:wechat:live": "node scripts/wechat-live.cjs",
     "smoke:github": "node scripts/renderer-smoke.cjs --github",
+    "smoke:wxrank": "node scripts/renderer-smoke.cjs --wxrank",
     "smoke:intake": "node scripts/renderer-smoke.cjs --intake",
     "smoke:intake:ui": "electron scripts/intake-ui-smoke.cjs",
     "smoke:tags:ai:ui": "electron scripts/tags-ai-ui-smoke.cjs",

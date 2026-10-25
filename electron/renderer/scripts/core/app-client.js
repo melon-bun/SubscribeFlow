@@ -109,7 +109,7 @@
     // M29 总结草稿：受限调用，只给内容 ID 与请求 ID。
     "draftNote",
     // M45 付费渠道：用量读数与清缓存只读本地；付费测试会真的花钱。
-    "getWxrankUsage", "clearWxrankCache", "testWxrankChannel",
+    "getWxrankStatus", "getWxrankUsage", "clearWxrankCache", "testWxrankChannel",
     "on",
   ];
 
@@ -216,8 +216,11 @@
     client.draftNote = function (itemId, requestId) {
       return invoke('note.draft', { item_id: itemId, request_id: requestId || null });
     };
-    // M45 付费渠道：用量读数与清缓存只读本地，不发请求也不花钱；
-    // 付费测试会真的产生一次付费调用，界面必须先向用户确认。
+    // M45 付费渠道：渠道卡片需要的全部只读信息（配置、用量、余额观察值、
+    // 每个来源的刷新／回溯成本与检查点状态）。只读本地，不发请求也不花钱。
+    client.getWxrankStatus = function (timezone) {
+      return invoke('wxrank.status', timezone ? { timezone: timezone } : {});
+    };
     client.getWxrankUsage = function (timezone) {
       return invoke('wxrank.usage', timezone ? { timezone: timezone } : {});
     };

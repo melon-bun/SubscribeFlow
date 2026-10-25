@@ -62,8 +62,15 @@ class Scheduler:
                 if job['snapshot']['subscription_version'] != sub['version']:
                     continue
                 if job['state'] == 'interrupted':
-                    self.store.update(sub['id'], last_job_id=job['id'], last_state='interrupted', retry_job_id=job['id'],
-                                      next_due=self.clock(), reason='上次检查中断，等待恢复')
+                    if self._paid_channel(sub):
+                        # M45：付费渠道的中断任务不自动重放。
+                        # 那一次调用的扣费结果未知，重放等于再花一次钱。
+                        self.store.update(sub['id'], last_job_id=job['id'], last_state='interrupted',
+                                          retry_job_id=None, next_due=self.clock() + sub['interval_seconds'],
+                                          reason='上次检查中断且扣费结果未知，不自动重放；可手动重试或等下次周期检查')
+                    else:
+                        self.store.update(sub['id'], last_job_id=job['id'], last_state='interrupted', retry_job_id=job['id'],
+                                          next_due=self.clock(), reason='上次检查中断，等待恢复')
                 elif plan['last_job_id'] != job['id'] or plan['retry_job_id'] == job['id']:
                     self.observe('sync.changed', job)
 
@@ -118,12 +125,25 @@ class Scheduler:
                                    scope_key=block['scope_key'], retryable=error.get('retryable', False),
                                    retry_after=max(0, block['until_at'] - self.clock()) if block['until_at'] else None)
 
+    def _paid_channel(self, sub):
+        """该订阅是否走付费渠道。
+
+        付费渠道的调用要花钱：扣费结果未知的请求不得按通用重试策略自动重放，
+        否则一次超时就会变成两次消费。
+        """
+        connection = self.repository.get_connection(sub['connection_id'])
+        for descriptor in self.core.gateway.describe():
+            if descriptor.channel == sub['channel'] and descriptor.backend == connection.backend:
+                return bool(descriptor.paid)
+        return False
+
     def observe(self, event, job):
         if event != 'sync.changed':
             return
         sub = self.repository.get_subscription(job['subscription_id'])
         plan = self.store.ensure(sub, self.clock())
         operation = 'get_item_detail' if job['mode'] == 'detail' else 'list_items'
+        paid = self._paid_channel(sub)
         if job['snapshot']['subscription_version'] != sub['version']:
             return
         if plan['last_job_id'] == job['id'] and plan['last_state'] == job['state']:
@@ -147,15 +167,29 @@ class Scheduler:
             for block in self.blocked(sub):
                 self.store.clear(block)
         elif job['state'] == 'interrupted':
-            patch.update(next_due=self.clock(), retry_job_id=job['id'], reason='上次检查中断，等待恢复', failures=plan['failures'])
+            if paid:
+                # M45：付费渠道。中断的那一次调用扣费结果未知，
+                # 自动重放等于再花一次钱。改为等下一次用户明确启用的周期检查，
+                # 或由用户手动重试。
+                patch.update(next_due=self.clock() + sub['interval_seconds'], retry_job_id=None,
+                             reason='上次检查中断且扣费结果未知，不自动重放；可手动重试或等下次周期检查',
+                             failures=plan['failures'])
+            else:
+                patch.update(next_due=self.clock(), retry_job_id=job['id'], reason='上次检查中断，等待恢复', failures=plan['failures'])
         elif job['state'] in {'waiting','failed','partial'}:
             failures = plan['failures'] + 1
             patch.update(failures=failures, reason=error.get('message', '本次采集不完整，下次定时检查'))
             code = error.get('code')
             if code in {'AUTH_REQUIRED','AUTH_EXPIRED','DEPENDENCY_UNAVAILABLE','INTERACTION_REQUIRED','SCHEMA_CHANGED'}:
+                # 密钥无效、积分不足、服务不可用：连接已被停用，等用户处理后恢复。
                 patch.update(next_due=self.clock(), retry_job_id=job['id'])
             elif code == 'RATE_LIMITED' or error.get('retryable') or code in {'TIMEOUT','TRANSIENT'}:
-                if failures <= self.policy.max_retries:
+                if paid:
+                    # M45：付费渠道不自动重放未决的付费请求。
+                    # 下一次周期检查是用户自己开启的，和错误重试是两件事。
+                    patch.update(next_due=self.clock() + sub['interval_seconds'], retry_job_id=None,
+                                 reason='付费渠道：本次调用扣费结果未知，不自动重放；可手动重试或等下次周期检查')
+                elif failures <= self.policy.max_retries:
                     delay = max(error.get('retry_after') or 0, min(self.policy.retry_cap, self.policy.retry_base * 2 ** (failures-1)))
                     patch.update(next_due=self.clock()+delay, retry_job_id=job['id'])
                 else:

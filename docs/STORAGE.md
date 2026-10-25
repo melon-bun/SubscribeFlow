@@ -271,3 +271,27 @@ M12 不增加迁移，继续 schema v8。Source 使用平台稳定作者 ID，ur
 本批只建表，续采逻辑属 M45.4。
 
 完整说明见 [M45 实施说明](M45_WXRANK_IMPLEMENTATION.md)。
+
+### M45 付费渠道的回溯检查点（schema v15，2026-10-25 第二批）
+
+`paid_channel_checkpoints` 在 015 迁移里建好，第二批开始实际使用。
+
+| 列 | 说明 |
+| --- | --- |
+| `source_id` + `connection_id` | 唯一键：按来源与连接分别记检查点 |
+| `cursor` | 服务端游标（JSON 文本） |
+| `obtained_at` / `expires_at` | 取得时间与有效期（24 小时，保守取值） |
+| `credential_version` | 取得时用的密钥版本；换密钥后旧检查点不再使用 |
+| `parser_version` / `progress_version` | 解析与进展版本；不一致即判定不可用 |
+
+**提交边界**：页面数据与检查点在**同一个事务**里落库
+（`Repository.commit_page(..., checkpoint=...)`）。
+否则崩溃时会出现「页数据已存、检查点没存」，下一次回溯会把同一页再买一遍。
+
+只有「本页没有条目错误」时才推进检查点：有错误说明这一页可能没拿全，跳过就再也补不回来。
+
+四种可用状态：`fresh`（没有检查点）／`resume`（可以继续）／`expired`（过期，从头重扫）／
+`version_mismatch`（版本变了，从头重扫）。后两种**不得说成续采**。
+
+页数与条数的口径统一在 `SyncService.page_budget_for`：单页 10 条，
+采集条数 0／10／30／50 分别对应 3／1／3／5 页，界面与引擎共用同一个推导。

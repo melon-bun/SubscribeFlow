@@ -491,13 +491,16 @@
    在 5.2 期接入。
    假数据必须显式标注为「示例」，不能让用户误以为是真实采集数据。
    规则全部由 fx.css 的 [data-fx="on"] 控制，关闭效果时整条不显示。 */
-  function readoutBar() {
+  function readoutBar(item) {
     /* 「静流」§轻科幻层 4：读数条一行放得下，字段名短、取值紧。
        真实取数（contents.first_seen_at / acquisition_complete / tagging_tasks）
-       仍在 5.2 期接；在此之前这行是版式示例，必须带「示例数据」标记。 */
+       仍在 5.2 期接；在此之前这行是版式示例，必须带「示例数据」标记。
+       M45：只取列表元数据的渠道不得在这行宣称「正文已采集」——
+       同一面板里下面就写着「仅列表信息」，两处不能自相矛盾。 */
+    var listOnly = !!item && item.platform === 'wxrank';
     var rows = [
       { key: '采集', val: '09:14' },
-      { key: '详情', val: '正文已采集' },
+      { key: '详情', val: listOnly ? '仅列表信息' : '正文已采集' },
       { key: 'AI 打标', val: '3 个' },
     ];
     return h(
@@ -751,6 +754,19 @@
    * 真正被截断才显示「展开内容」，不给一个点了没反应的按钮。
    */
   function bodySection(item, whole) {
+    /* M45：公众号付费渠道只取列表元数据，不抓正文。
+       这时不能落到通用兜底文案——那句「没有文字正文」会把
+       「本来就不提供正文」说成「可能没抓到」，反而含混。 */
+    if (item.platform === 'wxrank') {
+      var listOnly = h('div.detail__section', null,
+        h('div.detail__section-title', {text:'正文'}));
+      listOnly.setAttribute('data-refresh-key', 'body:' + item.id);
+      listOnly.setAttribute('data-refresh-boundary', '');
+      listOnly.setAttribute('data-refresh-preserve', JSON.stringify([item.kind, item.summary]));
+      if (item.summary) listOnly.appendChild(h('p.detail__summary.detail__text', {text:item.summary}));
+      listOnly.appendChild(h('p.detail__summary.detail__text', {text:'仅列表信息（未获取正文）：本渠道只取列表元数据，不抓取正文。需要全文请打开原文。'}));
+      return listOnly;
+    }
     var fallback = whole ? '这条内容没有文字正文，可打开原文查看。' : '此内容尚未提供摘要，可补充详情或打开原文。';
     var text = item.summary || fallback;
     var lines = text.split('\n').filter(function (line) { return line.trim(); }).length;
@@ -842,7 +858,7 @@
         h('b.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform)),
         h('small.detail__byline-time.num', {text:publicationLine(item)+' · '+(item.intakeMethod==='manual'?'手动收录':'自动采集')}),
         item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
-      readoutBar(),
+      readoutBar(item),
       bodySection(item, whole),
       priorityControls(app,item,repaint),
       tagControls(app, item, repaint),

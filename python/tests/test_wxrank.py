@@ -10,6 +10,7 @@
 """
 
 import asyncio
+import json
 import tempfile
 import time
 import unittest
@@ -464,8 +465,324 @@ class CredentialIsolationTests(WxrankTestCase):
         self.assertGreater(after["credentialVersion"], before["credentialVersion"])
 
 
+class PagedTransport(FakeTransport):
+    """按游标分页的假传输：每页 10 条，最后一页为空（终止证据）。"""
+
+    def __init__(self, pages=3, items=10):
+        super().__init__()
+        self.pages = pages
+        self.items = items
+
+    async def post(self, path, payload, context, operation):
+        context.check(operation)
+        self.requests.append({"path": path, "payload": dict(payload), "operation": operation})
+        if self.fail is not None:
+            raise self.fail
+        if path == protocol.PATH_INFO:
+            return self.info
+        cursor = payload.get("cursor")
+        page = 1 if not cursor else int(str(cursor).split("-")[-1])
+        rows = [{
+            "url": (f"https://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng%3D%3D"
+                    f"&mid={1000000000 + page * 100 + index}&idx=1&sn=demo{page}{index}"),
+            "title": f"示例文章 {page}-{index + 1}",
+            "pub_time": "2026-10-20 09:30:00",
+        } for index in range(self.items)] if page < self.pages else []
+        next_cursor = f"page-{page + 1}" if page < self.pages else None
+        return WxrankResponse(0, "获取成功，剩余120积分",
+                              {"wxid": "gh_demo0001", "cursor": next_cursor, "list": rows})
+
+
+# ---------------------------------------------------------------------------
+# BUG-129：上游答复的身份必须与当前来源一致
+# ---------------------------------------------------------------------------
+class IdentityTests(WxrankTestCase):
+    async def test_a_response_for_another_account_is_rejected_whole(self):
+        # 上游把别的公众号（gh_other0001）的文章发了过来。
+        self.transport = PagedTransport(pages=1)
+        self.transport.info = response(fixtures.ACCOUNT_OK)
+        self.core.paid.transport = self.transport
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        subscription = await self.core.subscriptions.add(source.url, CONNECTION, confirmed=True)
+        # 让列表返回别的账号。
+        original = self.transport.post
+
+        async def mismatched(path, payload, context, operation):
+            if path == protocol.PATH_LIST:
+                self.transport.requests.append({"path": path, "payload": dict(payload), "operation": operation})
+                return WxrankResponse(0, "获取成功", {
+                    "wxid": "gh_other0001", "cursor": None,
+                    "list": [{"url": ("https://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng%3D%3D"
+                                      "&mid=1000000001&idx=1&sn=x"), "title": "串来源"}]})
+            return await original(path, payload, context, operation)
+
+        self.transport.post = mismatched
+        job = self.core.sync.start(subscription["id"], mode="refresh")
+        finished = await self.core.sync.wait(job["job_id"])
+        self.assertEqual(finished["state"], "failed")
+        self.assertEqual(finished["error"]["code"], "INVALID_RESULT")
+        # 错来源的文章一条都不能入库。
+        self.assertEqual(self.core.queries.contents()["total"], 0)
+        # 但这一次调用已经 code=0，费用照记。
+        rows = [row for row in self.attempts() if row["operation"] == "list_items"]
+        self.assertEqual(rows[0]["charge_state"], "confirmed")
+        self.assertEqual(rows[0]["confirmed_credits"], protocol.CREDITS_PER_CALL)
+
+    async def test_an_article_of_another_biz_is_rejected_whole(self):
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        subscription = await self.core.subscriptions.add(source.url, CONNECTION, confirmed=True)
+        original = self.transport.post
+
+        async def mismatched(path, payload, context, operation):
+            if path == protocol.PATH_LIST:
+                self.transport.requests.append({"path": path, "payload": dict(payload), "operation": operation})
+                return WxrankResponse(0, "获取成功", {
+                    "wxid": "gh_demo0001", "cursor": None,
+                    "list": [{"url": ("https://mp.weixin.qq.com/s?__biz=QUJDRA%3D%3D"
+                                      "&mid=2000000001&idx=1&sn=x"), "title": "别人的文章"}]})
+            return await original(path, payload, context, operation)
+
+        self.transport.post = mismatched
+        job = self.core.sync.start(subscription["id"], mode="refresh")
+        finished = await self.core.sync.wait(job["job_id"])
+        self.assertEqual(finished["state"], "failed")
+        self.assertEqual(finished["error"]["code"], "INVALID_RESULT")
+        self.assertEqual(self.core.queries.contents()["total"], 0)
+        rows = [row for row in self.attempts() if row["operation"] == "list_items"]
+        self.assertEqual(rows[0]["charge_state"], "confirmed")
+
+
+# ---------------------------------------------------------------------------
+# BUG-130：付费任务的生命周期纳入关闭
+# ---------------------------------------------------------------------------
+class CloseRaceTests(WxrankTestCase):
+    async def test_a_late_response_after_close_does_not_touch_the_closed_database(self):
+        release = asyncio.Event()
+
+        class Delayed(FakeTransport):
+            async def post(self, path, payload, context, operation):
+                context.check(operation)
+                self.requests.append({"path": path, "payload": dict(payload), "operation": operation})
+                await release.wait()
+                document = fixtures.ACCOUNT_OK if path == protocol.PATH_INFO else fixtures.LIST_OK
+                return response(document)
+
+        transport = Delayed()
+        self.core.paid.transport = transport
+        pending = asyncio.ensure_future(self.core.subscriptions.resolve(BIZ, CONNECTION))
+        await asyncio.sleep(0.05)
+        # 关闭：Core 先收束付费任务，再关数据库。
+        await self.core.close()
+        release.set()
+        with self.assertRaises(asyncio.CancelledError):
+            await pending
+        # 关库之后不得再写库：不得抛「database has been closed」。
+        await asyncio.sleep(0.05)
+        # 那次调用留在账本里，重启后按「结果未知」结算，费用可追溯。
+        restarted = self.make_core()
+        try:
+            rows = restarted.repository.paid_channels.list_attempts(
+                channel=protocol.CHANNEL, limit=10)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["charge_state"], "unknown")
+        finally:
+            await restarted.close()
+
+    async def test_no_paid_call_is_accepted_after_close(self):
+        await self.core.close()
+        with self.assertRaises(Exception):
+            await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        self.assertEqual(self.transport.calls, 0, "关闭之后不得再发起付费调用")
+
+    async def test_disabling_the_channel_stops_paid_calls(self):
+        # 停用必须真的生效：调用被拒，且不产生任何付费请求。
+        self.core.settings.update("channels", {"wxrank": {"enabled": False}})
+        with self.assertRaises(ChannelError) as raised:
+            await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        self.assertEqual(raised.exception.code, "DEPENDENCY_UNAVAILABLE")
+        self.assertEqual(self.transport.calls, 0)
+        readiness = await self.core.check_connection(CONNECTION, "list_items")
+        self.assertEqual(readiness.state, "blocked")
+        # 重新启用后恢复正常。
+        self.core.settings.update("channels", {"wxrank": {"enabled": True}})
+        await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        self.assertEqual(self.transport.calls, 1)
+
+
+# ---------------------------------------------------------------------------
+# M45.4：有界分页、持久检查点与调度策略
+# ---------------------------------------------------------------------------
+class BackfillTests(WxrankTestCase):
+    def make_transport(self):
+        return PagedTransport(pages=5)
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.core.paid.transport = self.transport
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        self.subscription = await self.core.subscriptions.add(source.url, CONNECTION, confirmed=True)
+
+    async def run_backfill(self, mode="backfill", collect_items=None):
+        if collect_items is not None:
+            self.core.subscriptions.update(self.subscription["id"], collect_items=collect_items)
+        job = self.core.sync.start(self.subscription["id"], mode=mode)
+        return await self.core.sync.wait(job["job_id"])
+
+    def checkpoint(self):
+        return self.core.repository.paid_channels.checkpoint(
+            self.subscription["source_id"], CONNECTION)
+
+    async def test_a_backfill_is_bounded_by_the_page_budget(self):
+        finished = await self.run_backfill(collect_items=30)
+        self.assertEqual(finished["state"], "succeeded", finished.get("error"))
+        self.assertEqual(finished["pages"], 3)
+        self.assertEqual(self.core.queries.contents()["total"], 30)
+        # 一次解析 + 三页列表 = 四次付费调用。
+        self.assertEqual(self.transport.calls, 4)
+
+    async def test_the_checkpoint_advances_with_the_committed_page(self):
+        await self.run_backfill(collect_items=30)
+        saved = self.checkpoint()
+        self.assertIsNotNone(saved)
+        self.assertEqual(json.loads(saved["cursor"])["cursor"], "page-4")
+
+    async def test_two_backfills_take_different_pages(self):
+        await self.run_backfill(collect_items=30)
+        first = self.core.queries.contents()["total"]
+        before = len([row for row in self.transport.requests if row["path"] == protocol.PATH_LIST])
+        await self.run_backfill(collect_items=30)
+        self.assertGreater(self.core.queries.contents()["total"], first)
+        pages = [row for row in self.transport.requests if row["path"] == protocol.PATH_LIST]
+        # 第二次回溯从上次的位置继续，不重买前三页。
+        self.assertEqual(pages[before]["payload"].get("cursor"), "page-4")
+
+    async def test_a_restart_continues_from_the_checkpoint(self):
+        await self.run_backfill(collect_items=30)
+        calls = self.transport.calls
+        await self.core.close()
+        self.core = self.make_core()
+        self.core.paid.transport = self.transport
+        self.core.credentials.provide(REFERENCE, "test-secret")
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        self.assertEqual(self.transport.calls, calls, "重启后解析必须命中缓存")
+        before = len([row for row in self.transport.requests if row["path"] == protocol.PATH_LIST])
+        job = self.core.sync.start(self.subscription["id"], mode="backfill")
+        finished = await self.core.sync.wait(job["job_id"])
+        self.assertEqual(finished["state"], "succeeded", finished.get("error"))
+        # 续采从第四页开始，不重买前三页。
+        pages = [row["payload"].get("cursor") for row in self.transport.requests
+                 if row["path"] == protocol.PATH_LIST]
+        self.assertEqual(pages[before], "page-4")
+
+    async def test_a_new_key_invalidates_the_checkpoint(self):
+        await self.run_backfill(collect_items=30)
+        self.core.settings.update("channels", {"wxrank": {"enabled": True}},
+                                  credential_refs={"wxrank": "channel-wxrank-new"})
+        self.core.credentials.provide("channel-wxrank-new", "test-secret")
+        state = self.core.paid.checkpoint_state(self.subscription["source_id"], CONNECTION)
+        self.assertEqual(state["state"], "version_mismatch")
+        self.assertIn("从头重扫", state["note"])
+
+    async def test_an_expired_checkpoint_falls_back_to_a_rescan(self):
+        await self.run_backfill(collect_items=30)
+        with self.core.repository.database.transaction() as db:
+            db.execute("UPDATE paid_channel_checkpoints SET expires_at='2020-01-01T00:00:00.000+00:00'")
+        state = self.core.paid.checkpoint_state(self.subscription["source_id"], CONNECTION)
+        self.assertEqual(state["state"], "expired")
+        self.assertIn("从头重扫", state["note"])
+
+    async def test_the_terminal_page_ends_the_dataset_without_an_extra_paid_head_check(self):
+        finished = await self.run_backfill(collect_items=50)
+        self.assertEqual(finished["state"], "succeeded", finished.get("error"))
+        self.assertEqual(finished["coverage"], "history_end")
+        self.assertEqual(finished["end_evidence"], "empty_list")
+        # 五页列表 + 一次解析 = 六次调用；终止后没有额外的头部重查。
+        self.assertEqual(self.transport.calls, 6)
+
+    async def test_duplicate_pages_do_not_buy_extra_pages(self):
+        # 服务端一直返回同一页：重复内容不算进展，不得为了追新而超页数。
+        class SamePage(FakeTransport):
+            async def post(self, path, payload, context, operation):
+                context.check(operation)
+                self.requests.append({"path": path, "payload": dict(payload), "operation": operation})
+                if path == protocol.PATH_INFO:
+                    return response(fixtures.ACCOUNT_OK)
+                return WxrankResponse(0, "获取成功", {
+                    "wxid": "gh_demo0001", "cursor": "page-2",
+                    "list": [{"url": ("https://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng%3D%3D"
+                                      "&mid=1000000001&idx=1&sn=x"), "title": "同一篇"}]})
+
+        self.core.paid.transport = SamePage()
+        finished = await self.run_backfill(collect_items=30)
+        self.assertIn(finished["state"], {"partial", "succeeded"})
+        pages = [row for row in self.transport.requests if row["path"] == protocol.PATH_LIST]
+        self.assertLessEqual(len(pages), 3, "重复页面不得让调用次数超出页数上限")
+
+    async def test_the_cost_derivation_matches_the_collector(self):
+        from subscribe_flow.application.sync import SyncService
+        descriptor = next(d for d in self.core.gateway.describe() if d.channel == protocol.CHANNEL)
+        cases = {0: (3, 15), 10: (1, 5), 30: (3, 15), 50: (5, 25)}
+        for collect_items, (pages, credits) in cases.items():
+            self.core.subscriptions.update(self.subscription["id"], collect_items=collect_items)
+            sub = dict(self.subscription, collect_items=collect_items)
+            expected = SyncService.page_budget_for(sub, "backfill", None, descriptor)
+            self.assertEqual(expected, pages, collect_items)
+            status = self.core.paid_channels.status()
+            entry = next(s for s in status["sources"] if s["sourceId"] == self.subscription["source_id"])
+            self.assertEqual(entry["backfill"]["pages"], pages)
+            self.assertEqual(entry["backfill"]["credits"], credits)
+
+    async def test_a_refresh_starts_from_the_head(self):
+        await self.run_backfill(collect_items=30)
+        calls = len([row for row in self.transport.requests if row["path"] == protocol.PATH_LIST])
+        await self.run_backfill(mode="refresh")
+        pages = [row for row in self.transport.requests if row["path"] == protocol.PATH_LIST]
+        self.assertEqual(pages[calls]["payload"].get("cursor"), None,
+                         "刷新必须从头开始，不接着回溯的游标")
+
+    async def test_metadata_is_marked_complete_but_has_no_body(self):
+        await self.run_backfill(collect_items=10)
+        items = self.core.repository.db.execute(
+            "SELECT payload FROM contents LIMIT 1").fetchone()
+        payload = json.loads(items["payload"])
+        self.assertEqual(payload["acquisition_complete"], True)
+        self.assertFalse(payload.get("summary"))
+
+
+class SchedulerPolicyTests(WxrankTestCase):
+    async def test_a_paid_timeout_is_not_replayed_automatically(self):
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        subscription = await self.core.subscriptions.add(
+            source.url, CONNECTION, confirmed=True, sync_mode="automatic")
+        self.transport.fail = ChannelError("TIMEOUT", "list_items", "上游请求超时，扣费结果未知")
+        job = self.core.sync.start(subscription["id"], mode="refresh")
+        await self.core.sync.wait(job["job_id"])
+        plan = self.core.scheduler.store.get(subscription["id"])
+        self.assertIsNone(plan["retry_job_id"], "扣费结果未知的付费请求不得自动重放")
+        self.assertIn("不自动重放", plan["reason"])
+
+    async def test_a_paid_interruption_is_not_replayed_automatically(self):
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        subscription = await self.core.subscriptions.add(
+            source.url, CONNECTION, confirmed=True, sync_mode="automatic")
+        self.core.sync.interrupted.add("no-such-job")
+        job = self.core.sync.start(subscription["id"], mode="refresh")
+        await self.core.sync.wait(job["job_id"])
+        plan = self.core.scheduler.store.get(subscription["id"])
+        self.assertIsNone(plan["retry_job_id"])
+
+    async def test_a_key_error_stops_the_channel_until_it_is_fixed(self):
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        subscription = await self.core.subscriptions.add(
+            source.url, CONNECTION, confirmed=True, sync_mode="automatic")
+        self.transport.listing = response(fixtures.LIST_KEY_INVALID)
+        job = self.core.sync.start(subscription["id"], mode="refresh")
+        await self.core.sync.wait(job["job_id"])
+        blocks = self.core.scheduler.blocked(subscription)
+        self.assertTrue(blocks, "密钥错误必须停住该连接")
+
+
 class ControlledRpcTests(WxrankTestCase):
-    """受控 RPC：三条路由在真实的分发器上可用，且只有一条会花钱。"""
 
     async def asyncSetUp(self):
         await super().asyncSetUp()

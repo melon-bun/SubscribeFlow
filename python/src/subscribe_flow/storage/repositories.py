@@ -306,7 +306,13 @@ class Repository:
                    (job["subscription_id"], snap["backend"], snap["progress_version"], snap["content_range"], mode,
                     snap["connection_version"], snap["subscription_version"], encode(payload), now()))
 
-    def commit_page(self, job_id, page):
+    def commit_page(self, job_id, page, *, checkpoint=None):
+        """提交一页。
+
+        ``checkpoint`` 是本渠道的回溯游标载荷。它与页面数据在**同一个事务**里落库：
+        否则崩溃时可能出现「页数据已存、检查点没存」，
+        下一次回溯会把同一页再买一遍。
+        """
         with self.database.transaction() as db:
             job = self.get_job(job_id)
             if job["state"] != "running":
@@ -331,7 +337,29 @@ class Repository:
                         page.end_evidence if page.terminal else None, now(), job_id))
             if job["mode"] == "backfill":
                 self._save_progress(db, job, "backfill", {"cursor": page.next_cursor, "coverage": coverage, "complete": False})
+                # 回溯检查点：只在「本页没有条目错误」时推进。
+                # 有错误说明这一页可能没拿全，跳过它就再也补不回来了。
+                if not page.item_errors:
+                    self._write_channel_checkpoint(db, job, source_key, page, checkpoint)
         return self.get_job(job_id)
+
+    def _write_channel_checkpoint(self, db, job, source_key, page, checkpoint):
+        """把本渠道的回溯游标写进检查点表（与页面数据同一事务）。"""
+        if checkpoint is None:
+            # 这一页是终止页：服务端当前数据集已扫完，没有可继续的位置。
+            # 清掉旧检查点，下一次回溯从头开始（这是用户主动发起的重扫）。
+            self.paid_channels.delete_checkpoint(db, source_key, job["snapshot"]["connection_id"])
+            return
+        if not isinstance(checkpoint, dict):
+            raise ValueError("Invalid channel checkpoint")
+        cursor = checkpoint.get("cursor")
+        self.paid_channels.write_checkpoint(
+            db, source_id=source_key, connection_id=job["snapshot"]["connection_id"],
+            cursor=json.dumps(cursor, ensure_ascii=False) if cursor else None,
+            expires_at=checkpoint.get("expiresAt"),
+            credential_version=int(checkpoint.get("credentialVersion") or 0),
+            parser_version=str(checkpoint.get("parserVersion") or "1"),
+            progress_version=str(checkpoint.get("progressVersion") or "1"))
 
     def complete_source_ids(self, source_key, limit=2000):
         """Only successfully acquired details qualify for the pre-navigation skip."""

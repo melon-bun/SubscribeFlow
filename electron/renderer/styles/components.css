@@ -870,6 +870,20 @@ textarea.input {
 .plat--wechat {
   background: var(--c-wechat);
 }
+/* M45：公众号付费 API 渠道。与公众号同色系，但用描边区分：
+   它是第三方付费接口，不是公众号原文。 */
+.plat--wxrank {
+  background: transparent;
+  color: var(--c-wechat);
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+/* M45：付费渠道卡片与普通连接行分开：它是配置面板，不是可展开的连接行。 */
+.wxrank-card {
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--c-divider);
+}
 .plat--weibo {
   background: var(--c-weibo);
 }

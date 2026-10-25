@@ -28,7 +28,7 @@ const allowed = new Set([
   'note.draft', 'draftNote',
   // M45 付费渠道：用量读数与清缓存只读本地；付费测试会真的花钱，
   // 必须由界面明确触发。
-  'wxrank.usage', 'wxrank.cache_clear', 'wxrank.test',
+  'wxrank.status', 'wxrank.usage', 'wxrank.cache_clear', 'wxrank.test',
   'getSession', 'getCounts', 'listPlatforms', 'listPriorities', 'getCalendar', 'listContents', 'getContent',
   'updateContent', 'bulkUpdate', 'listChannels', 'createChannel', 'updateChannel',
   'removeChannel', 'setChannelEnabled', 'startChannelRun', 'cancelRun', 'getRuns',

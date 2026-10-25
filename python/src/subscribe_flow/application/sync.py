@@ -135,6 +135,12 @@ class SyncService:
             # Cursor persistence is retained as evidence; page-number backends can
             # move while the app is closed, so a new run safely starts at the head.
             cursor, seen, first_keys = None, set(), set()
+            # M45：支持持久检查点的渠道，回溯从上次已提交成功的页继续；
+            # 刷新永远从头部开始。检查点由渠道自己判断是否可用（版本、过期）。
+            checkpoint = None
+            if descriptor.resumable and job["mode"] == "backfill":
+                checkpoint = repository.paid_channels.checkpoint(
+                    source.key, job["snapshot"]["connection_id"])
             consumed = 0
             for index in range(budget + descriptor.scan_overhead_budget):
                 job = repository.get_job(job_id)
@@ -143,7 +149,7 @@ class SyncService:
                 page = await self._request(job, 'list_items', lambda ctx: self.gateway.fetch_page(source,
                     FetchRequest(mode=job["mode"], cursor=cursor, limit=request_limit,
                                  known_ids=known_ids if cursor is None else (),
-                                 item_budget=item_budget), ctx))
+                                 item_budget=item_budget, progress=checkpoint), ctx))
                 page = self._limit_page_items(page, remaining)
                 if remaining is not None:
                     remaining -= len(page.items) + len(page.item_errors)
@@ -156,7 +162,7 @@ class SyncService:
                     first_keys = keys
                 no_progress = index > 0 and not (keys - seen) and not page.item_errors and not page.scan_advanced
                 seen |= keys
-                job = repository.commit_page(job_id, page)
+                job = repository.commit_page(job_id, page, checkpoint=page.candidate_progress)
                 self._record_success(context)
                 self.emit("content.changed", {"ids": [item.key for item in page.items]})
                 self.emit("sync.changed", job)
@@ -165,7 +171,11 @@ class SyncService:
                     coverage = page.coverage if complete else "possible_gaps"
                     # Recheck the head after a multi-page traversal. If new entries
                     # appeared, save them but require another scan before completion.
-                    if complete and coverage in {"history_end", "refresh_interval"} and index > 0 and job["mode"] == "backfill" and not page.scan_advanced:
+                    # M45：支持检查点的渠道不做这次额外重查——它是一次付费调用，
+                    # 而且从头部重查会把刚回溯完的页又买一遍。
+                    if (complete and coverage in {"history_end", "refresh_interval"} and index > 0
+                            and job["mode"] == "backfill" and not page.scan_advanced
+                            and not descriptor.resumable):
                         if remaining == 0:
                             repository.finish_scan(job_id, coverage="window_only")
                             return

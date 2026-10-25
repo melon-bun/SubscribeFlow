@@ -147,6 +147,7 @@ class Dispatcher:
             "settings.update": (c.settings.update, {"section": str, "patch": dict}, {"credential_refs": dict}),
             # M45 付费渠道：用量读数与清缓存都只读本地，不发请求、不花钱。
             # 付费测试是唯一会花钱的接口：它必须由用户明确触发。
+            "wxrank.status": (c.paid_channels.status, {}, {"timezone": str}),
             "wxrank.usage": (c.paid_channels.usage, {}, {"timezone": str}),
             "wxrank.cache_clear": (c.paid_channels.clear_cache, {}, {"biz": str}),
             "wxrank.test": (c.paid_channels.test, {"locator": str, "connection_id": str}, {}),

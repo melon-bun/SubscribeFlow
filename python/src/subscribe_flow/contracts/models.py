@@ -69,6 +69,13 @@ class ChannelDescriptor:
     default_backfill_budget: int = 10
     scan_overhead_budget: int = 0
     budget_unit: str = "pages"
+    # M45：付费渠道的两次开关。
+    # paid=True 表示每次成功调用都要花钱：调度器不得按通用重试策略自动重放，
+    # 界面也必须按实际推导出的调用数展示费用。
+    # resumable=True 表示该渠道支持持久回溯检查点：回溯从上次已提交成功的页继续，
+    # 不用每次重买头几页。
+    paid: bool = False
+    resumable: bool = False
 
 
 @dataclass(frozen=True)
