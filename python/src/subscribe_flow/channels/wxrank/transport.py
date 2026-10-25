@@ -13,15 +13,17 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
+import os
 import ssl
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from subscribe_flow.contracts import ChannelError
 
-from .. import http
 from . import protocol
 
 #: 单次响应体上限。超出按协议异常处理，不继续读。
@@ -29,6 +31,48 @@ MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 #: 单次请求超时上限（秒）。实际等待取「它」与「任务剩余时间」的较小值。
 DEFAULT_TIMEOUT = 20.0
+
+#: 明确的信任库候选。顺序即优先级：环境变量 → certifi → 平台自带。
+CA_BUNDLES = ("/etc/ssl/cert.pem",                      # macOS
+              "/etc/ssl/certs/ca-certificates.crt",    # Debian / Ubuntu
+              "/etc/pki/tls/certs/ca-bundle.crt",       # RHEL / Fedora
+              "/etc/ssl/ca-bundle.pem",                 # SUSE
+              "/usr/local/etc/openssl/cert.pem",        # Homebrew OpenSSL
+              "/opt/homebrew/etc/openssl@3/cert.pem")
+
+
+@functools.lru_cache(maxsize=1)
+def _ssl_context() -> ssl.SSLContext:
+    """一个能用的、**仍然校验证书**的 TLS 上下文。
+
+    python.org 的 CPython 构建会把 OpenSSL 指向一个不存在的证书路径，
+    于是 ``ssl.create_default_context()`` 可能一个 CA 都不信任，
+    Core 侧每一次 HTTPS 都会以 CERTIFICATE_VERIFY_FAILED 失败——付费渠道直接不可用。
+    浏览器渠道不受影响（Chromium 自带信任库），但 Core 直连上游的客户端得自己解决信任库。
+
+    **校验永远不关闭**：找不到任何可用 CA 时就返回空上下文，让请求大声失败，
+    而不是去信任任何东西。写法与 GitHub 渠道的 ``_ssl_context()`` 保持一致。
+    """
+    context = ssl.create_default_context()
+    if context.get_ca_certs():
+        return context
+    candidates = [os.environ.get("SSL_CERT_FILE")]
+    try:
+        import certifi
+        candidates.append(certifi.where())
+    except ImportError:
+        pass
+    candidates.extend(CA_BUNDLES)
+    for candidate in candidates:
+        if not candidate or not Path(candidate).is_file():
+            continue
+        try:
+            context.load_verify_locations(cafile=candidate)
+        except (OSError, ssl.SSLError):
+            continue
+        if context.get_ca_certs():
+            return context
+    return context
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -67,9 +111,8 @@ class WxrankTransport:
         # 信任库要自己解决：有些 Python 构建不自带任何 CA，
         # 那样每一次 HTTPS 调用都会以「证书无法验证」失败——付费渠道会完全不可用。
         # 校验仍然开启：找不到 CA 就让请求大声失败，不去信任任何东西。
-        context = http.ssl_context()
         return urllib.request.build_opener(
-            urllib.request.HTTPSHandler(context=context), _NoRedirect())
+            urllib.request.HTTPSHandler(context=_ssl_context()), _NoRedirect())
 
     async def post(self, path: str, payload: dict, context, operation: str) -> WxrankResponse:
         """发一次请求并返回业务答复。
