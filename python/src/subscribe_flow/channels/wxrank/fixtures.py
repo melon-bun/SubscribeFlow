@@ -3,6 +3,12 @@
 这些样本只保留协议结构，字段值全部是构造出来的假数据：
 不含任何真实密钥、真实公众号身份或真实文章地址。
 测试用它们离线复现协议行为（成功、业务失败、超时、坏数据、余额文案）。
+
+字段名与真实上游一致（2026-10-25 用真实样本核对）：
+``getinfo`` 返 ``name``／``user_name``／``signature``／``hd_head_img``，
+``getps`` 返 ``list[]``／``wxid``／``cursor``，
+列表项是 ``art_url``／``title``／``pub_time``／``pic_url``／``sn``，
+而且 ``art_url`` 是 http 且参数之间用 ``&amp;`` 分隔。
 """
 
 from __future__ import annotations
@@ -12,10 +18,11 @@ ACCOUNT_OK = {
     "code": 0,
     "msg": "获取成功",
     "data": {
-        "user_name": "gh_demo0001",
         "name": "示例公众号",
-        "avatar": "https://mmbiz.qpic.cn/demo/avatar",
-        "description": "用于离线复现协议的示例账号",
+        "user_name": "gh_demo0001",
+        "signature": "用于离线复现协议的示例账号",
+        # 真实上游的头像是 http：解析层要统一升成 https。
+        "hd_head_img": "http://mmbiz.qpic.cn/demo/avatar",
     },
 }
 
@@ -41,7 +48,9 @@ ACCOUNT_TIMEOUT = {
     "data": None,
 }
 
-#: 文章列表（getps 成功），含一条正常文章与一条坏地址文章。
+#: 文章列表（getps 成功），含一条头条文章与一条同推送的副条。
+#: 真实上游的 art_url 是 http 且参数之间是 ``&amp;``；
+#: 不解一层实体就取不到 mid／idx，整页会被误判成结构变化。
 LIST_OK = {
     "code": 0,
     "msg": "获取成功，剩余120积分",
@@ -50,16 +59,20 @@ LIST_OK = {
         "cursor": "cursor-2",
         "list": [
             {
-                "url": "https://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng%3D%3D&mid=1000000001&idx=1&sn=demotoken0001",
+                "art_url": ("http://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng=="
+                            "&amp;mid=1000000001&amp;idx=1&amp;sn=demotoken0001"),
                 "title": "示例文章一",
                 "pub_time": "2026-10-20 09:30:00",
-                "cover": "https://mmbiz.qpic.cn/demo/cover-1",
+                "pic_url": "http://mmbiz.qpic.cn/demo/cover-1",
+                "sn": "demotoken0001",
             },
             {
-                "url": "https://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng%3D%3D&mid=1000000001&idx=2&sn=demotoken0002",
+                "art_url": ("http://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng=="
+                            "&amp;mid=1000000001&amp;idx=2&amp;sn=demotoken0002"),
                 "title": "示例文章二",
                 "pub_time": 1792000000,
-                "cover": "https://mmbiz.qpic.cn/demo/cover-2",
+                "pic_url": "http://mmbiz.qpic.cn/demo/cover-2",
+                "sn": "demotoken0002",
             },
         ],
     },

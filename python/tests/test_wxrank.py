@@ -828,5 +828,137 @@ class ControlledRpcTests(WxrankTestCase):
         self.assertEqual(self.transport.calls, 0)
 
 
+# ---------------------------------------------------------------------------
+# M45.6：按真实上游样本锁住解析口径与付费页语义
+# ---------------------------------------------------------------------------
+class RealUpstreamContractTests(unittest.TestCase):
+    """2026-10-25 真实上游样本：字段名、业务码与链接转义形态。"""
+
+    def test_the_real_article_link_loses_its_escaping_and_gains_https(self):
+        url = ("http://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng=="
+               "&amp;mid=1000000001&amp;idx=1&amp;sn=token")
+        link = protocol.normalize_article_url(url)
+        self.assertTrue(link.startswith("https://mp.weixin.qq.com/s?"))
+        self.assertNotIn("&amp;", link)
+        self.assertIn("mid=1000000001", link)
+        biz, mid, idx = protocol.article_identity(url)
+        self.assertEqual(biz, protocol.normalize_biz(BIZ))
+        self.assertEqual((mid, idx), ("1000000001", "1"))
+
+    def test_only_one_layer_of_entities_is_removed(self):
+        # 只解一层：&amp;lt; 变成 &lt;，不能继续变成 <。
+        self.assertEqual(protocol.safe_unescape("a&amp;lt;b"), "a&lt;b")
+        self.assertEqual(protocol.safe_unescape("a&amp;amp;b"), "a&amp;b")
+
+    def test_entity_names_are_not_confused_with_entities(self):
+        # &times=1、&timestamp=123 都不是实体：不能像 html.unescape 那样改坏。
+        self.assertEqual(protocol.safe_unescape("&times=1"), "&times=1")
+        self.assertEqual(protocol.safe_unescape("&timestamp=123"), "&timestamp=123")
+
+    def test_the_real_account_fields_are_read(self):
+        account = protocol.parse_account(fixtures.ACCOUNT_OK["data"])
+        self.assertEqual(account["gh_id"], "gh_demo0001")
+        self.assertEqual(account["name"], "示例公众号")
+        self.assertEqual(account["avatar"], "https://mmbiz.qpic.cn/demo/avatar")
+        self.assertEqual(account["description"], "用于离线复现协议的示例账号")
+
+    def test_the_real_list_keeps_the_sub_article_and_reads_every_field(self):
+        parsed = protocol.parse_list(fixtures.LIST_OK["data"])
+        self.assertEqual(parsed["wxid"], "gh_demo0001")
+        self.assertEqual(parsed["cursor"], "cursor-2")
+        self.assertEqual(len(parsed["items"]), 2)
+        first, second = parsed["items"]
+        # 同一条推送共享 mid，idx 区分头条与副条：副条必须留下。
+        self.assertEqual((first["mid"], second["mid"]), ("1000000001", "1000000001"))
+        self.assertEqual((first["idx"], second["idx"]), ("1", "2"))
+        self.assertEqual(first["cover"], "https://mmbiz.qpic.cn/demo/cover-1")
+        self.assertEqual(first["published_raw"], "2026-10-20 09:30:00")
+        self.assertEqual(protocol.published_time(first["published_raw"]).precision, "second")
+
+    def test_every_business_code_has_its_own_explanation(self):
+        expected = {
+            protocol.CODE_KEY_INVALID: "AUTH_REQUIRED",
+            protocol.CODE_MISSING_WXID: "INVALID_INPUT",
+            protocol.CODE_WXID_REJECTED: "INVALID_RESULT",
+            protocol.CODE_CURSOR_REJECTED: "CURSOR_INVALID",
+            protocol.CODE_REQUEST_FAILED: "DEPENDENCY_UNAVAILABLE",
+            protocol.CODE_TIMEOUT: "DEPENDENCY_UNAVAILABLE",
+            protocol.CODE_QPS_EXCEEDED: "RATE_LIMITED",
+        }
+        for code, want in expected.items():
+            got, message, retryable = protocol.error_for_code(code, "")
+            self.assertEqual(got, want, f"code={code}")
+            self.assertTrue(message, f"code={code}")
+            self.assertFalse(retryable, "上游已经答复过，重试只会再花钱")
+
+
+def real_row(index, mid=1000000001):
+    """真实上游形态的列表项：http 地址 + ``&amp;`` 分隔 + 副条 idx。"""
+    return {
+        "art_url": (f"http://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng==&amp;mid={mid}"
+                    f"&amp;idx={index + 1}&amp;sn=demo{index}"),
+        "title": f"示例文章 {index + 1}",
+        "pub_time": "2026-10-20 09:30:00",
+    }
+
+
+class PaidPageSemanticsTests(WxrankTestCase):
+    """付费页是原子的：一次调用买下这一页的全部条目。"""
+
+    async def test_a_wider_page_is_not_truncated_by_the_estimate(self):
+        # 真实一页可能是「10 次推送 × 每次最多 8 篇」：
+        # 已经付过钱的文章不能按「每页 10 条」的估算丢掉。
+        class WidePage(FakeTransport):
+            async def post(self, path, payload, context, operation):
+                context.check(operation)
+                self.requests.append({"path": path, "payload": dict(payload), "operation": operation})
+                if path == protocol.PATH_INFO:
+                    return response(fixtures.ACCOUNT_OK)
+                rows = [real_row(index) for index in range(18)]
+                return WxrankResponse(0, "获取成功，剩余120积分",
+                                      {"wxid": "gh_demo0001", "cursor": None, "list": rows})
+
+        transport = WidePage()
+        self.core.paid.transport = transport
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        subscription = await self.core.subscriptions.add(source.url, CONNECTION, confirmed=True)
+        job = self.core.sync.start(subscription["id"], mode="refresh")
+        finished = await self.core.sync.wait(job["job_id"])
+        self.assertEqual(finished["state"], "succeeded", finished.get("error"))
+        self.assertEqual(self.core.queries.contents()["total"], 18)
+
+    async def test_a_rejected_cursor_drops_the_checkpoint(self):
+        # 上游说游标非法：留着它只会让下一次回溯再花一次钱、再失败一次。
+        class CursorRejected(FakeTransport):
+            async def post(self, path, payload, context, operation):
+                context.check(operation)
+                self.requests.append({"path": path, "payload": dict(payload), "operation": operation})
+                if path == protocol.PATH_INFO:
+                    return response(fixtures.ACCOUNT_OK)
+                if payload.get("cursor"):
+                    return WxrankResponse(protocol.CODE_CURSOR_REJECTED, "cursor校验失败", None)
+                rows = [real_row(index) for index in range(10)]
+                return WxrankResponse(0, "获取成功，剩余120积分",
+                                      {"wxid": "gh_demo0001", "cursor": "page-2", "list": rows})
+
+        transport = CursorRejected()
+        self.core.paid.transport = transport
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        subscription = await self.core.subscriptions.add(source.url, CONNECTION, confirmed=True)
+        job = self.core.sync.start(subscription["id"], mode="backfill")
+        finished = await self.core.sync.wait(job["job_id"])
+        # 第一页已经入库，所以任务结束在 partial：已保存内容保留，错误如实上报。
+        self.assertIn(finished["state"], {"failed", "partial"})
+        self.assertEqual(finished["error"]["code"], "CURSOR_INVALID")
+        # 检查点被丢掉：下一次回溯会从头开始，而不是再买同一个坏游标。
+        saved = self.core.repository.paid_channels.checkpoint(
+            subscription["source_id"], CONNECTION)
+        self.assertIsNone(saved)
+        # 业务失败不扣费：上游 code≠0 一律不扣。
+        rejected = [row for row in self.attempts() if row.get("error_code") == "CURSOR_INVALID"]
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(rejected[0]["charge_state"], "not_charged")
+
+
 if __name__ == "__main__":
     unittest.main()

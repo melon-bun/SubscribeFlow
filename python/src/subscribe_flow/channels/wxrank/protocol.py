@@ -26,7 +26,11 @@ from subscribe_flow.contracts import PublishedTime
 CHANNEL = "wxrank"
 BACKEND = "paid-http"
 ADAPTER_VERSION = "wxrank-1"
-PARSER_VERSION = "wxrank-1"
+#: 解析版本。2026-10-25 用真实上游样本核对后升到 2。
+#: 变化点：上游真实字段是 ``art_url``／``pic_url``／``hd_head_img``，
+#: 且文章地址带一层 HTML 转义（参数之间是 ``&amp;``）。旧解析器取不到
+#: mid／idx，会把真实响应当成结构变化，因此旧检查点必须作废、从头重扫。
+PARSER_VERSION = "wxrank-2"
 PROGRESS_VERSION = "wxrank-1"
 
 #: 上游固定入口。只允许这两个路径，其它一律不请求。
@@ -44,6 +48,11 @@ CREDITS_PER_CALL = 5
 #: 上游真的返回更多时按 limit 截断，不因此多算页数或多报费用。
 PAGE_SIZE = 10
 
+#: 单页最多保留多少条目。上游一页是「10 次推送 × 每次最多 8 篇」，
+#: 真实页可能多于 10 条；付费页是原子的，条目按页保留，不按估算条数丢弃。
+#: 这个上限只用来给内存兜底。
+MAX_PAGE_ITEMS = 100
+
 #: 服务端游标的保守有效期（秒）。
 #: 原记录提到「游标 24 小时有效」，但那只是有限样本的观察，未归档复验。
 #: 这里按保守方向取值：宁可当成过期后从头重扫（多花一次钱），
@@ -51,9 +60,15 @@ PAGE_SIZE = 10
 CURSOR_TTL_SECONDS = 24 * 3600
 
 #: 上游业务码。0 为成功；其余为业务失败，服务端已明确答复。
+#: 这张表来自上游文档与真实样本；``code≠0`` 一律不扣费。
 CODE_OK = 0
-CODE_KEY_INVALID = 1000       # 密钥无效或积分不足
+CODE_KEY_INVALID = 1000       # 积分不足或密钥无效（msg 带剩余余额）
+CODE_MISSING_WXID = 1001      # 缺少 wxid
+CODE_WXID_REJECTED = 1002      # wxid 校验失败
+CODE_CURSOR_REJECTED = 1003   # cursor 校验失败（游标过期或非法）
+CODE_REQUEST_FAILED = 1004    # 上游请求失败
 CODE_TIMEOUT = 1005           # 上游超时
+CODE_QPS_EXCEEDED = 9999      # QPS 超限（每秒最多 5 次）
 
 #: 账本里的扣费判定。只有这三种，不引入第四种「大概没扣」。
 CHARGE_CONFIRMED = "confirmed"      # 已确认消费（code=0）
@@ -150,12 +165,46 @@ def source_external_id(gh_id: str) -> str:
 # --------------------------------------------------------------------------
 # 身份：文章链接与内容键
 # --------------------------------------------------------------------------
+#: 只解这一组安全实体，而且只解一层。
+#: ``&amp;`` 必须排在最后：先解它会把 ``&amp;lt;`` 变成 ``<``（解了两层）；
+#: 反过来，``&lt;`` 这种要先解，否则 ``&amp;lt;`` 会留下一个假的 ``&lt;``。
+#: 不能用 html.unescape：它认识 ``&times;``／``&timestamp`` 这类实体名，
+#: 会把 ``&times=1`` 改成 ``×=1``，把文章地址改坏。
+_SAFE_ENTITIES = (
+    ("&#39;", "'"),
+    ("&quot;", '"'),
+    ("&lt;", "<"),
+    ("&gt;", ">"),
+    ("&nbsp;", " "),
+    ("&amp;", "&"),
+)
+
+
+def safe_unescape(text: str) -> str:
+    """只解一层安全 HTML 实体。
+
+    上游返回的 ``art_url`` 是 HTML 转义过的：参数之间是 ``&amp;`` 而不是 ``&``。
+    不解开就取不到 ``mid``／``idx``，整页会被误判成结构变化。
+    """
+    out = str(text or "")
+    for entity, char in _SAFE_ENTITIES:
+        out = out.replace(entity, char)
+    return out
+
+
+def https_url(url: str) -> str:
+    """把 http 地址统一升成 https。其它形态原样返回。"""
+    text = str(url or "").strip()
+    return "https://" + text[7:] if text.startswith("http://") else text
+
+
 def normalize_article_url(url: str) -> str:
     """规范化文章地址：只接受官方域名，统一 https，去掉片段，保留查询参数。
 
     查询参数必须保留：``sn`` 等参数是官方文章地址的一部分，去掉后链接会失效。
+    上游给的是转义过的 http 地址，因此先解一层实体再解析。
     """
-    parts = urlsplit((url or "").strip())
+    parts = urlsplit(safe_unescape((url or "").strip()))
     if parts.scheme not in ("http", "https"):
         raise ValueError("文章链接协议非法")
     host = (parts.hostname or "").lower()
@@ -166,7 +215,7 @@ def normalize_article_url(url: str) -> str:
 
 def article_identity(url: str) -> tuple[str, str, str]:
     """从文章地址提取 ``(biz, mid, idx)``。内容身份由这三项派生。"""
-    parts = urlsplit((url or "").strip())
+    parts = urlsplit(safe_unescape((url or "").strip()))
     if parts.scheme not in ("http", "https"):
         raise ValueError("文章链接协议非法")
     host = (parts.hostname or "").lower()
@@ -209,8 +258,8 @@ def parse_account(data) -> dict:
     """解析公众号信息。
 
     字段名按「上游可能采用的几种写法」依次尝试，取到第一个非空值。
-    上游真实字段名需要在 M45.6 用真实样本再确认一次；这里不猜造字段，
-    猜不到就报结构变化。
+    真实上游的字段是 ``name``／``user_name``(gh_xxx)／``signature``／``hd_head_img``；
+    猜不到就报结构变化，不猜造字段。
     """
     if not isinstance(data, dict):
         raise ValueError("公众号信息不是对象")
@@ -218,12 +267,13 @@ def parse_account(data) -> dict:
     if not gh_id or not isinstance(gh_id, str):
         raise ValueError("公众号信息缺少稳定 ID")
     name = _first(data, ("name", "nickname", "title", "account_name"))
-    avatar = _first(data, ("avatar", "headimg", "head_img", "avatar_url", "portrait"))
+    avatar = _first(data, ("hd_head_img", "avatar", "headimg", "head_img",
+                           "avatar_url", "portrait"))
     description = _first(data, ("description", "desc", "intro", "signature"))
     return {
         "gh_id": gh_id.strip(),
         "name": name.strip() if isinstance(name, str) and name.strip() else gh_id.strip(),
-        "avatar": avatar.strip() if isinstance(avatar, str) and avatar.strip() else None,
+        "avatar": https_url(avatar) if isinstance(avatar, str) and avatar.strip() else None,
         "description": description.strip() if isinstance(description, str) and description.strip() else None,
     }
 
@@ -232,6 +282,7 @@ def parse_list(data) -> dict:
     """解析文章列表响应。
 
     返回 ``{"items": [...], "wxid": str | None, "cursor": str | None}``。
+    真实上游的列表项字段是 ``art_url``／``title``／``pub_time``／``pic_url``／``sn``。
     列表项按「几种可能写法」取第一个非空值，取不到稳定身份的条目
     直接判为结构变化，不编造身份。
     """
@@ -246,7 +297,8 @@ def parse_list(data) -> dict:
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError("文章列表项不是对象")
-        url = _first(row, ("url", "link", "link_url", "app_msg_link", "article_url", "content_url"))
+        url = _first(row, ("art_url", "url", "link", "link_url", "app_msg_link",
+                           "article_url", "content_url"))
         if not isinstance(url, str) or not url.strip():
             raise ValueError("文章列表项缺少地址")
         link = normalize_article_url(url)
@@ -260,7 +312,7 @@ def parse_list(data) -> dict:
             "mid": mid,
             "idx": idx,
             "title": title.strip() if isinstance(title, str) and title.strip() else "",
-            "cover": cover.strip() if isinstance(cover, str) and cover.strip() else None,
+            "cover": https_url(safe_unescape(cover)) if isinstance(cover, str) and cover.strip() else None,
             "published_raw": published,
         })
     return {
@@ -282,11 +334,23 @@ def error_for_code(code: int, message: str) -> tuple[str, str, bool]:
     """业务码 → (错误码, 展示文案, 是否可重试)。
 
     业务失败一律不可重试：上游已经明确答复，再打一次只会再花钱。
+    但每种失败要分开说清楚，用户才知道该换密钥、等余额还是从头重扫。
     """
     if code == CODE_KEY_INVALID:
         return ("AUTH_REQUIRED", "付费密钥无效或积分不足，请更换密钥或充值", False)
+    if code == CODE_MISSING_WXID:
+        return ("INVALID_INPUT", "上游要求提供公众号原始 ID（wxid），本次请求未带上", False)
+    if code == CODE_WXID_REJECTED:
+        return ("INVALID_RESULT", "上游拒绝了当前公众号原始 ID，请重新解析来源", False)
+    if code == CODE_CURSOR_REJECTED:
+        # 单独的错误码：业务层据此丢掉已经不可用的回溯检查点。
+        return ("CURSOR_INVALID", "上游拒绝了当前游标（可能已过期），回溯将从头重扫", False)
+    if code == CODE_REQUEST_FAILED:
+        return ("DEPENDENCY_UNAVAILABLE", "上游答复请求失败，按上游规则本次未产生消费", False)
     if code == CODE_TIMEOUT:
         return ("DEPENDENCY_UNAVAILABLE", "上游服务超时，未自动重放以免重复扣费", False)
+    if code == CODE_QPS_EXCEEDED:
+        return ("RATE_LIMITED", "上游 QPS 超限（每秒最多 5 次），请稍后手动重试", False)
     detail = message.strip() if isinstance(message, str) and message.strip() else ""
     return ("DEPENDENCY_UNAVAILABLE", f"上游返回业务错误（code={code}）{detail}", False)
 

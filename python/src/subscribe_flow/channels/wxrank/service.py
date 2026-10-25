@@ -297,26 +297,31 @@ class WxrankService:
         if cursor is None and request.mode == "backfill":
             state = self.checkpoint_state(source.key, context.connection.id, request.progress)
             cursor = (state.get("cursor") or {}).get("cursor")
-        response = await self._paid_request(
-            operation=OP_LIST, path=protocol.PATH_LIST,
-            fields={"wxid": source.external_id, **protocol.list_request_fields(cursor)},
-            context=context, purpose=OP_LIST, wxid=source.external_id)
+        try:
+            response = await self._paid_request(
+                operation=OP_LIST, path=protocol.PATH_LIST,
+                fields={"wxid": source.external_id, **protocol.list_request_fields(cursor)},
+                context=context, purpose=OP_LIST, wxid=source.external_id)
+        except ChannelError as error:
+            if error.code == "CURSOR_INVALID" and cursor:
+                # 上游拒绝了这个游标：它已经不可用。留着它只会让下一次回溯
+                # 再花一次钱、再失败一次，所以丢掉检查点，下次从头重扫。
+                self.repository.clear_checkpoint(source.key, context.connection.id)
+            raise
         try:
             parsed = protocol.parse_list(response.data)
         except ValueError:
             raise ChannelError("SCHEMA_CHANGED", "list_items",
                                "文章列表结构已变化，请更新适配器") from None
         self._verify_identity(source, source_biz, parsed)
-        # 单页条数由 limit 决定（上游一页约 10 条）；
-        # item_budget 是整个任务的条数上限，由采集引擎负责收敛，
-        # 适配器不拿它当单页上限，也不在收费之后才拒绝参数。
-        per_page = request.limit or protocol.PAGE_SIZE
-        if type(per_page) is not int or per_page < 1:
-            per_page = protocol.PAGE_SIZE
+        # 付费页是原子的：一次调用买下这一页的全部条目，条数由上游决定
+        # （一页是 10 次推送 × 每次最多 8 篇）。按估算条数截断会白白丢掉
+        # 已经付过钱的文章，因此这里整页保留，条数窗口由采集引擎收敛。
+        # item_budget 是整个任务的条数上限，由采集引擎负责。
         known = set(request.known_ids)
         items: list[ContentItem] = []
         skipped = 0
-        for row in parsed["items"][:per_page]:
+        for row in parsed["items"][:protocol.MAX_PAGE_ITEMS]:
             item = ContentItem(
                 channel=self.CHANNEL, namespace="article",
                 external_id=protocol.content_external_id(row["biz"], row["mid"], row["idx"]),
