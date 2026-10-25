@@ -10,14 +10,13 @@ import urllib.error
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "python" / "src"))
 
-from subscribe_flow.channels import http                      # noqa: E402
 from subscribe_flow.channels.wxrank.protocol import API_ROOT  # noqa: E402
-from subscribe_flow.channels.wxrank.transport import WxrankTransport  # noqa: E402
+from subscribe_flow.channels.wxrank.transport import WxrankTransport, _ssl_context  # noqa: E402
 
 
 def main() -> int:
-    context = http.ssl_context()
-    print("产品信任库 CA 数:", len(context.get_ca_certs()))
+    context = _ssl_context()
+    print("产品传输层信任库 CA 数:", len(context.get_ca_certs()))
     opener = WxrankTransport._default_opener()
     try:
         request = opener.open(API_ROOT + "/", timeout=20)

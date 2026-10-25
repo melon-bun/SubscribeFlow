@@ -502,14 +502,17 @@ cd Subscribe_Flow && npm run smoke:wxrank:real
 而是**本机没有 CA**：python.org 的 CPython 把 OpenSSL 指向不存在的证书路径，
 `ssl.create_default_context()` 一个 CA 都不信任，Core 侧每次 HTTPS 必失败。
 
-修复（提交 `ac77059`）：新增 `python/src/subscribe_flow/channels/http.py` 共享信任库，
-默认库为空时依次尝试 `SSL_CERT_FILE` → `certifi` → 常见 CA 包位置，
-并把 `certifi` 与系统库取并集；`channels/wxrank/transport.py` 改用它。
+修复：**根证书装在环境里**——本机 Python 的 OpenSSL 默认 CA 路径
+`/Library/Frameworks/Python.framework/Versions/3.12/etc/openssl/cert.pem` 指向 certifi 的
+`cacert.pem`，`ssl.create_default_context()` 从 0 张变成 118 张，裸路径即可用。
+产品侧只按 `channels/github/transport.py` 同款写法在 `channels/wxrank/transport.py` 内
+保留最小兜底，**没有新增共享 HTTP 层**。
 **校验一个字都不放宽**：找不到 CA 就大声失败，不用 `CERT_NONE`，不注入未认证来源的证书。
 
-验证：产品链路实测上游首页 HTTP 302（TLS 与 HTTP 均通）；模拟无 certifi 时走系统 CA 包兜底仍通；
-新增 `tests/test_http_trust.py` 3 项；
-`PYTHONPATH=src python3 -m unittest tests.test_http_trust tests.test_wxrank` → **Ran 83 tests … OK**。
+验证：裸 `ssl.create_default_context()`（118 张 CA）访问上游首页 HTTP 200；产品
+`WxrankTransport` 的 opener 访问上游首页 HTTP 302（TLS 与 HTTP 均通）；
+新增 `tests/test_wxrank_trust.py` 3 项；
+`PYTHONPATH=src python3 -m unittest tests.test_wxrank_trust tests.test_wxrank` → **Ran 83 tests … OK**。
 
 ## 凭据更正
 

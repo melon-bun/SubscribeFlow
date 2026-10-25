@@ -66,29 +66,35 @@
 **现象**：首轮真实调用在 TLS 阶段就失败（`DEPENDENCY_UNAVAILABLE`「无法完成上游请求，
 扣费结果未知」）。请求在握手前就断了，**没有到达上游，没有产生任何扣费**。
 
-**根因**：本机 python.org 的 CPython 3.12.5（OpenSSL 3.0.13）把 OpenSSL 指向一个
-不存在的证书路径，`ssl.create_default_context()` 装不到**任何** CA
-（`/etc/ssl/certs` 是空目录），于是 Core 侧每一次 HTTPS 都必然
-`CERTIFICATE_VERIFY_FAILED`——付费渠道在本机**完全不可用**。
-浏览器渠道不受影响（Chromium 自带信任库），所以这个洞只在 Core 直连上游时暴露。
+**根因**：本机 python.org 的 CPython 3.12.5（OpenSSL 3.0.13）当初**没装根证书**，
+OpenSSL 的默认 CA 路径指向的 `cert.pem` 不可用，`ssl.create_default_context()` 装不到
+**任何** CA，于是 Core 侧每一次 HTTPS 都必然 `CERTIFICATE_VERIFY_FAILED`——
+付费渠道在本机**完全不可用**。浏览器渠道不受影响（Chromium 自带信任库），
+所以这个洞只在 Core 直连上游时暴露。
 
 **这不是上游不可信**：上游只下发叶子证书（链长 1，签发者 `CN=YE1`，
 有效期 2026-09-26 → 2026-12-25），叶子 ← YE1 的签名验签成立；
-Node 26.7.0 用自带信任库 `authorized=true`；修好信任库后 Python 同样验通。
+Node 26.7.0 用自带信任库 `authorized=true`；把根证书装上后 Python 同样验通。
 
-**修复**（提交 `ac77059`）：新增 `python/src/subscribe_flow/channels/http.py`，
-Core 侧共用一个信任库上下文——默认库为空时依次尝试
-`SSL_CERT_FILE` → `certifi` → 常见 CA 包位置，并把 `certifi` 与系统库**取并集**
-（补上系统库缺失的 Let's Encrypt 根与中间证书）。
-**校验一个字都没放宽**：找不到任何 CA 就让请求大声失败，不去信任任何东西，
-不使用 `CERT_NONE`，不注入未认证来源的证书。
+**修复：根证书装在环境里**（正解，也只需要这一步）
+- 本机 Python 的 OpenSSL 默认 CA 路径
+  `/Library/Frameworks/Python.framework/Versions/3.12/etc/openssl/cert.pem`
+  现指向 certifi 的 `cacert.pem`，`ssl.create_default_context()` 从 **0 张变成 118 张**，
+  **裸 Python 路径直接就能用**，不需要任何产品改造。
+- 产品侧只保留**最小兜底**：按仓库既有写法（`channels/github/transport.py` 同款
+  `_ssl_context()`）在 `channels/wxrank/transport.py` 内建一个上下文——默认库为空时依次尝试
+  `SSL_CERT_FILE` → `certifi` → 常见 CA 包位置。**没有新增共享 HTTP 层**，
+  **校验一个字都没放宽**：找不到任何 CA 就让请求大声失败，不去信任任何东西，
+  不使用 `CERT_NONE`，不注入未认证来源的证书。
 
 **验证**：
+- 裸 `ssl.create_default_context()`（118 张 CA）直接访问上游首页 → **HTTP 200**。
 - 产品链路实测：`WxrankTransport` 的 opener 访问上游首页拿到 HTTP 302（TLS 与 HTTP 均通）。
-- 模拟「机器上没有 certifi」时仍走系统 CA 包兜底并验通。
-- 新增 `python/tests/test_http_trust.py` 3 项聚焦回归（校验开启、能装到 CA、上下文复用）。
-- `cd python && PYTHONPATH=src python3 -m unittest tests.test_http_trust tests.test_wxrank`
+- 新增 `python/tests/test_wxrank_trust.py` 3 项聚焦回归（校验开启、能装到 CA、上下文复用）。
+- `cd python && PYTHONPATH=src python3 -m unittest tests.test_wxrank_trust tests.test_wxrank`
   → **Ran 83 tests … OK**（wxrank 聚焦 80 + 新增 3）。
+- 说明：第五批那 5 次真实调用是在**产品兜底生效**时跑完的；兜底改成传输层内的同款实现后，
+  产品与裸路径现在走的是同一份信任库，行为一致，**未再花积分重跑**。
 
 ## 六、已知限制与未完成项
 
@@ -99,11 +105,15 @@ Core 侧共用一个信任库上下文——默认库为空时依次尝试
    BUG-132 首次多页刷新重扫残余、BUG-134（公众号「打开主页」按钮视觉上仍像可点）、
    BUG-135（状态条「新增 N 条」重复）、BUG-136（来源头像与简介未落库，跨渠道表结构问题）。
 3. `channels/github/transport.py` 里另有一份自己的 `_ssl_context()` 兜底实现，
-   与本批新增的共享实现功能重复。本轮**没有**动它——不在本批范围，且不牵涉本次阻断。
+   本批的 wxrank 兜底按**同款写法**写在传输层内，没有把两份合并成一个共享模块——
+   合并属于跨渠道重构，不在本批范围。
 4. 真实上游的正文仍只取列表信息（产品既定口径：正文标「仅列表信息（未获取正文）」），
    公众号文章正文抓取不在 M45 范围。
 5. 本轮**没有**重新打包、推送、发布，也没有改动日常数据库／登录／通知偏好；
    全部数据都在隔离临时库与隔离 Core 进程里。
+6. **本机根证书的安装是环境侧动作，不在仓库里**：换机器／重装 Python 后需要重做，
+   否则付费渠道会再次不可用（此时传输层兜底会兜住 `certifi` 或系统 CA 包，
+   但若两者都没有，仍会失败并明确报错）。
 
 ## 七、是否具备「全 M45 完成」的条件
 
@@ -115,11 +125,15 @@ Core 侧共用一个信任库上下文——默认库为空时依次尝试
 
 ## 八、本批文件清单
 
-**产品代码（提交 `ac77059`）**
-- `python/src/subscribe_flow/channels/http.py`（新增：共享信任库）
-- `python/src/subscribe_flow/channels/wxrank/transport.py`（改：改用共享上下文）
-- `python/tests/test_http_trust.py`（新增：3 项聚焦回归）
-- `scripts/verify-chain.cjs`（新增：证书链逐跳验签工具）
+**产品代码**
+- `python/src/subscribe_flow/channels/wxrank/transport.py`（改：传输层内最小信任库兜底，
+  与 `channels/github/transport.py` 同款写法）
+- `python/tests/test_wxrank_trust.py`（新增：3 项聚焦回归）
+
+> 说明：Codex 的 `CODEX_FINAL_REVIEW.md` 审的是上一版实现（新增共享模块
+> `channels/http.py` 与 `tests/test_http_trust.py`）。按用户口径「不新增共享 HTTP 层」，
+> 该模块已移除，兜底改为传输层内的同款写法，测试文件随之改名，
+> **最终路径以本节为准**。
 
 **验收与证据（本目录）**
 - `live-wxrank-check.py`（真实付费验收脚本，硬上限 5 次调用）
