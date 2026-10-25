@@ -1,8 +1,8 @@
 # M45 公众号付费渠道：审查后的开发顺序
 
-日期：2026-10-25（Asia/Tokyo）  
-状态：**Codex 已审查并整理，待实施；以下步骤均未开始。**  
-产品基线：`main cf8f045`，版本0.5.2，schema v14，渠道契约1.1。  
+日期：2026-10-25（Asia/Tokyo）
+状态：**Codex 已审查并整理，待实施；以下步骤均未开始。**
+产品基线：`main cf8f045`，版本0.5.2，schema v14，渠道契约1.1。
 建议实施分支：`feature/m45-wxrank-paid-channel`。原方案由 MiniMax 起草，本稿按现有 Core／渠道／凭据／调度实现修订。
 
 关联：[M14 微信单条文章](M14_WECHAT_ARTICLES.md)、[API](API.md)、[存储](STORAGE.md)、[本次审查](M45_WXRANK_PAID_CHANNEL_REVIEW.md)、[原付费API实验方案](../../../xiaohongshu_login_test/docs/公众号推文列表付费API方案.md)。
