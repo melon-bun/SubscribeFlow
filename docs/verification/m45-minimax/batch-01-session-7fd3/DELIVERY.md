@@ -82,9 +82,15 @@ Main 侧渠道密钥走既有凭据编排：先加密落盘 → 提交引用 →
 
 | 提交 | 内容 |
 | --- | --- |
-| `见下方「提交」小节` | M45 第一批产品代码与文档 |
+| `15fef9f` | `feat(m45): 付费公众号渠道第一批（契约、账本缓存凭据、传输与适配器）` |
 
-> 具体提交号见本文件末尾的补记（提交后填写）与 `git log`。
+- 分支：`feature/m45-wxrank-paid-channel`，父提交 `e47f661`。
+- 一次提交包含产品代码与本批文档（`docs/M45_WXRANK_IMPLEMENTATION.md`、
+  `docs/verification/m45-minimax/batch-01-session-7fd3/DELIVERY.md`、
+  `docs/API.md`、`docs/STORAGE.md`、`docs/PROGRESS.md`、`docs/reference/DEVELOPMENT_PLAN.md`）。
+- 仓库外的总计划 `doc/DEVELOPMENT_PLAN.md` 与本地 `docs/HANDOFF.md` 同步更新
+  （前者不在本仓库内，后者按仓库约定保持本地忽略）。
+- **未打包、未推送、未发布。**
 
 ---
 
