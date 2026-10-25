@@ -1,0 +1,134 @@
+{
+  "generatedAt": "2026-10-25T22:58:25+0900",
+  "upstream": "https://data.wxrank.com",
+  "transport": "正式 WxrankTransport（真实 HTTPS，无 fixture／无本机假上游）",
+  "callBudget": 5,
+  "wechatCredentialFound": true,
+  "identity": {
+    "bizMasked": "MzA3…Ng==",
+    "wxidMasked": "gh_a…6eac"
+  },
+  "ledger": {
+    "calls": 5,
+    "confirmedCredits": 25,
+    "unknownCount": 0,
+    "balanceObserved": 30,
+    "balanceObservedAt": "2026-10-25T13:58:38.975+00:00",
+    "attempts": [
+      {
+        "operation": "list_items",
+        "status": "succeeded",
+        "chargeState": "confirmed",
+        "confirmedCredits": 5,
+        "errorCode": null,
+        "balance": 30,
+        "startedAt": "2026-10-25T13:58:37.733+00:00"
+      },
+      {
+        "operation": "list_items",
+        "status": "succeeded",
+        "chargeState": "confirmed",
+        "confirmedCredits": 5,
+        "errorCode": null,
+        "balance": 35,
+        "startedAt": "2026-10-25T13:58:36.081+00:00"
+      },
+      {
+        "operation": "list_items",
+        "status": "succeeded",
+        "chargeState": "confirmed",
+        "confirmedCredits": 5,
+        "errorCode": null,
+        "balance": 40,
+        "startedAt": "2026-10-25T13:58:30.558+00:00"
+      },
+      {
+        "operation": "list_items",
+        "status": "succeeded",
+        "chargeState": "confirmed",
+        "confirmedCredits": 5,
+        "errorCode": null,
+        "balance": 45,
+        "startedAt": "2026-10-25T13:58:26.285+00:00"
+      },
+      {
+        "operation": "resolve_source",
+        "status": "succeeded",
+        "chargeState": "confirmed",
+        "confirmedCredits": 5,
+        "errorCode": null,
+        "balance": 50,
+        "startedAt": "2026-10-25T13:58:25.809+00:00"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "step": "保存渠道密钥",
+      "paidCalls": 0,
+      "configured": true
+    },
+    {
+      "step": "免费本地检查",
+      "paidCalls": 0,
+      "readinessState": "ready",
+      "readinessDetail": null
+    },
+    {
+      "step": "冷解析",
+      "paidCalls": 1,
+      "calls": 1,
+      "confirmedCredits": 5,
+      "sourceName": "超级美工",
+      "externalIdMatchesAuthorizedCache": true
+    },
+    {
+      "step": "确认添加（命中缓存）",
+      "paidCalls": 0,
+      "calls": 1
+    },
+    {
+      "step": "单页刷新（真实入库）",
+      "paidCalls": 1,
+      "calls": 2,
+      "confirmedCredits": 10,
+      "contents": 9,
+      "urlSampleMasked": "https://mp.weixin.qq.com/s?_…&sessionid=0",
+      "publishedAt": "2026-10-23T09:00:00+08:00",
+      "titleSample": "产品海报没人看？AI竟开始给产品写歌、拍MV了！"
+    },
+    {
+      "step": "第1次一页回溯",
+      "paidCalls": 1,
+      "calls": 3,
+      "confirmedCredits": 15,
+      "contents": 19,
+      "checkpointState": "resume",
+      "checkpointNote": "从上次已提交成功的页继续"
+    },
+    {
+      "step": "第2次一页回溯",
+      "paidCalls": 1,
+      "calls": 4,
+      "confirmedCredits": 20,
+      "contents": 29,
+      "checkpointState": "resume",
+      "checkpointNote": "从上次已提交成功的页继续"
+    },
+    {
+      "step": "隔离重启（零付费调用核对进度）",
+      "paidCalls": 0,
+      "checkpointBefore": "resume",
+      "checkpointAfterRestart": "resume",
+      "contentsAfterRestart": 29
+    },
+    {
+      "step": "重启后续采（一页）",
+      "paidCalls": 1,
+      "state": "succeeded",
+      "calls": 5,
+      "confirmedCredits": 25,
+      "contents": 40
+    }
+  ]
+}

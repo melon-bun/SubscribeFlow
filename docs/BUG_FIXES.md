@@ -2401,3 +2401,12 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
   ②下一次回溯请求游标是 page-2（不重买头页）、新增16条、累计32条；
   ③重启后仍从 page-2 续采。这 3 项在修复前是红的（已用 `git stash` 对照验证）。
 - 状态：已修复（2026-10-25，第四批；提交见交付说明）；尚未重新打包。
+
+
+## BUG-138：Core 侧 HTTPS 在本机没有任何 CA，付费渠道完全不可用
+
+- 现象：真实付费验收首轮调用在 TLS 阶段就失败（`DEPENDENCY_UNAVAILABLE`「无法完成上游请求，扣费结果未知」）。请求在握手前就断了，**没有到达上游，没有产生任何扣费**。
+- 根因：本机 python.org 的 CPython 3.12.5（OpenSSL 3.0.13）把 OpenSSL 指向一个不存在的证书路径，`ssl.create_default_context()` 装不到**任何** CA（`/etc/ssl/certs` 是空目录），于是 Core 侧每一次 HTTPS 都必然 `CERTIFICATE_VERIFY_FAILED`。浏览器渠道不受影响（Chromium 自带信任库），这个洞只在 Core 直连上游时暴露。
+- 修复（2026-10-25，第五批，提交 `ac77059`）：新增 `python/src/subscribe_flow/channels/http.py` 提供共享信任库上下文——默认库为空时依次尝试 `SSL_CERT_FILE` → `certifi` → 常见 CA 包位置，并把 `certifi` 与系统库取并集（补上系统库缺失的 Let's Encrypt 根与中间证书）；`channels/wxrank/transport.py` 改用它。**校验一个字都没放宽**：找不到任何 CA 就让请求大声失败，不使用 `CERT_NONE`，不注入未认证来源的证书。
+- 验证：产品链路实测 `WxrankTransport` 的 opener 访问上游首页拿到 HTTP 302（TLS 与 HTTP 均通）；模拟「机器上没有 certifi」时仍走系统 CA 包兜底并验通；新增 `python/tests/test_http_trust.py` 3 项聚焦回归；`PYTHONPATH=src python3 -m unittest tests.test_http_trust tests.test_wxrank` → **Ran 83 tests … OK**。真实上游链长为 1（只发叶子，签发者 `CN=YE1`），叶子 ← YE1 签名验签成立，Node 26.7.0 自带信任库 `authorized=true`——**不是上游不可信，是本机没有 CA**。
+- 状态：已修复（2026-10-25，第五批）。修后第五批真实验收 5 次调用全部成功、25 积分确认消费、0 次未知扣费。

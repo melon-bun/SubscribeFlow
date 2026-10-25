@@ -474,3 +474,47 @@ cd Subscribe_Flow && npm run smoke:wxrank:real
 
 本轮**没有调用任何真实 LLM、Jev 或付费 wxrank 接口**；
 真实付费上游仍因本机没有授权密钥而未验证。
+
+---
+
+# 第五批（2026-10-25）：真实付费验收
+
+第四批末尾写的「真实付费上游仍因本机没有授权密钥而未验证」说的是**当时**的状态；
+本批已用真实密钥完成真实付费验收。
+
+## 实际结果
+
+- 真实上游 `https://data.wxrank.com`、正式 `WxrankTransport`、真实 wechat 分组密钥。
+- **5 次真实调用全部成功**：冷解析 1、刷新 1、两次一页回溯 2、重启后续采 1。
+- 费用：每次 5 积分、合计 **25 积分确认消费**，`unknownCount=0`；
+  服务端余额 55 → 50 → 45 → 40 → 35 → 30，最近观察时点 `2026-10-25T13:58:38Z`。
+- 真实数据：账号名「超级美工」，`external_id` 与已授权实验缓存一致；
+  `art_url` 解一层 `&amp;` 并升 https，链接含 `mid=`／`idx=`；
+  发布时间 `2026-10-23T09:00:00+08:00`；入库 9 → 19 → 29 → 40 条，逐页递增无重复。
+- 游标：两次一页回溯后检查点都是 `resume`（备注「从上次已提交成功的页继续」）；
+  隔离重启后检查点与条数不变，再回溯一页成功到 40 条。
+- 免费步骤零付费：保存密钥与本地检查都没有触发任何付费请求；确认添加命中解析缓存，
+  **没有再收一次费**。
+
+## 本批新增的产品修复：BUG-138
+
+首轮真实调用在 TLS 阶段失败（握手前就断了，没有产生扣费）。根因不是上游不可信，
+而是**本机没有 CA**：python.org 的 CPython 把 OpenSSL 指向不存在的证书路径，
+`ssl.create_default_context()` 一个 CA 都不信任，Core 侧每次 HTTPS 必失败。
+
+修复（提交 `ac77059`）：新增 `python/src/subscribe_flow/channels/http.py` 共享信任库，
+默认库为空时依次尝试 `SSL_CERT_FILE` → `certifi` → 常见 CA 包位置，
+并把 `certifi` 与系统库取并集；`channels/wxrank/transport.py` 改用它。
+**校验一个字都不放宽**：找不到 CA 就大声失败，不用 `CERT_NONE`，不注入未认证来源的证书。
+
+验证：产品链路实测上游首页 HTTP 302（TLS 与 HTTP 均通）；模拟无 certifi 时走系统 CA 包兜底仍通；
+新增 `tests/test_http_trust.py` 3 项；
+`PYTHONPATH=src python3 -m unittest tests.test_http_trust tests.test_wxrank` → **Ran 83 tests … OK**。
+
+## 凭据更正
+
+`test_api_key.md` 的 `wechat` 分组密钥**原本就存在**；先前「缺少公众号密钥」是
+**分组识别漏判**（旧解析器按 URL 推导组名，跳过了只有 `key:` 没有 `url:` 的 wechat 组）。
+该密钥已由本批真实调用证明有效。「缺 key」不再是当前外部阻塞。
+
+证据与交付说明：[batch-05-live-wechat/DELIVERY.md](verification/m45-minimax/batch-05-live-wechat/DELIVERY.md)。

@@ -1,0 +1,137 @@
+{
+  "library": "/usr/local/opt/openssl@4/lib/libcrypto.4.dylib",
+  "version": "OpenSSL 4.0.3 29 Sep 2026",
+  "input_certificates": {
+    "leaf.pem": {
+      "subject": "/CN=wxrank.com",
+      "issuer": "/C=US/O=Let's Encrypt/CN=YE1",
+      "sha256_der": "A6BFC1FD97D8C0F21B37C5EBCB4B4D165CD649AC047E23440876EDAF5A373B5E"
+    },
+    "aia-intermediate.pem": {
+      "subject": "/C=US/O=Let's Encrypt/CN=YE1",
+      "issuer": "/C=US/O=ISRG/CN=Root YE",
+      "sha256_der": "A2372D06431E9716365EEED47EC020351497D182FCC038E457E58168A03CAC07"
+    },
+    "root-x1.pem": {
+      "subject": "/C=US/O=Internet Security Research Group/CN=ISRG Root X1",
+      "issuer": "/C=US/O=Internet Security Research Group/CN=ISRG Root X1",
+      "sha256_der": "96BCEC06264976F37460779ACF28C5A7CFE8A3C0AAE11A8FFCEE05C0BDDF08C6"
+    },
+    "root-x2.pem": {
+      "subject": "/C=US/O=Internet Security Research Group/CN=ISRG Root X2",
+      "issuer": "/C=US/O=Internet Security Research Group/CN=ISRG Root X2",
+      "sha256_der": "69729B8E15A86EFC177A57AFB7171DFC64ADD28C2FCA8CF1507E34453CCB1470"
+    }
+  },
+  "direct_signatures": {
+    "leaf <- aia-intermediate.pem": 1,
+    "leaf <- root-x1.pem": -1,
+    "leaf <- root-x2.pem": 0
+  },
+  "scenarios": [
+    {
+      "label": "root-x1.pem only, no intermediate",
+      "result": 0,
+      "error": 20,
+      "error_depth": 0,
+      "error_text": "unable to get local issuer certificate",
+      "built_chain": [
+        {
+          "subject": "/CN=wxrank.com",
+          "issuer": "/C=US/O=Let's Encrypt/CN=YE1",
+          "sha256_der": "A6BFC1FD97D8C0F21B37C5EBCB4B4D165CD649AC047E23440876EDAF5A373B5E"
+        }
+      ]
+    },
+    {
+      "label": "root-x1.pem plus untrusted YE1",
+      "result": 0,
+      "error": 20,
+      "error_depth": 1,
+      "error_text": "unable to get local issuer certificate",
+      "built_chain": [
+        {
+          "subject": "/CN=wxrank.com",
+          "issuer": "/C=US/O=Let's Encrypt/CN=YE1",
+          "sha256_der": "A6BFC1FD97D8C0F21B37C5EBCB4B4D165CD649AC047E23440876EDAF5A373B5E"
+        },
+        {
+          "subject": "/C=US/O=Let's Encrypt/CN=YE1",
+          "issuer": "/C=US/O=ISRG/CN=Root YE",
+          "sha256_der": "A2372D06431E9716365EEED47EC020351497D182FCC038E457E58168A03CAC07"
+        }
+      ]
+    },
+    {
+      "label": "root-x2.pem only, no intermediate",
+      "result": 0,
+      "error": 20,
+      "error_depth": 0,
+      "error_text": "unable to get local issuer certificate",
+      "built_chain": [
+        {
+          "subject": "/CN=wxrank.com",
+          "issuer": "/C=US/O=Let's Encrypt/CN=YE1",
+          "sha256_der": "A6BFC1FD97D8C0F21B37C5EBCB4B4D165CD649AC047E23440876EDAF5A373B5E"
+        }
+      ]
+    },
+    {
+      "label": "root-x2.pem plus untrusted YE1",
+      "result": 0,
+      "error": 20,
+      "error_depth": 1,
+      "error_text": "unable to get local issuer certificate",
+      "built_chain": [
+        {
+          "subject": "/CN=wxrank.com",
+          "issuer": "/C=US/O=Let's Encrypt/CN=YE1",
+          "sha256_der": "A6BFC1FD97D8C0F21B37C5EBCB4B4D165CD649AC047E23440876EDAF5A373B5E"
+        },
+        {
+          "subject": "/C=US/O=Let's Encrypt/CN=YE1",
+          "issuer": "/C=US/O=ISRG/CN=Root YE",
+          "sha256_der": "A2372D06431E9716365EEED47EC020351497D182FCC038E457E58168A03CAC07"
+        }
+      ]
+    },
+    {
+      "label": "YE1 explicitly trusted (controlled test)",
+      "result": 0,
+      "error": 2,
+      "error_depth": 1,
+      "error_text": "unable to get issuer certificate",
+      "built_chain": [
+        {
+          "subject": "/CN=wxrank.com",
+          "issuer": "/C=US/O=Let's Encrypt/CN=YE1",
+          "sha256_der": "A6BFC1FD97D8C0F21B37C5EBCB4B4D165CD649AC047E23440876EDAF5A373B5E"
+        },
+        {
+          "subject": "/C=US/O=Let's Encrypt/CN=YE1",
+          "issuer": "/C=US/O=ISRG/CN=Root YE",
+          "sha256_der": "A2372D06431E9716365EEED47EC020351497D182FCC038E457E58168A03CAC07"
+        }
+      ]
+    },
+    {
+      "label": "Node root store plus untrusted YE1",
+      "result": 0,
+      "error": 20,
+      "error_depth": 1,
+      "error_text": "unable to get local issuer certificate",
+      "built_chain": [
+        {
+          "subject": "/CN=wxrank.com",
+          "issuer": "/C=US/O=Let's Encrypt/CN=YE1",
+          "sha256_der": "A6BFC1FD97D8C0F21B37C5EBCB4B4D165CD649AC047E23440876EDAF5A373B5E"
+        },
+        {
+          "subject": "/C=US/O=Let's Encrypt/CN=YE1",
+          "issuer": "/C=US/O=ISRG/CN=Root YE",
+          "sha256_der": "A2372D06431E9716365EEED47EC020351497D182FCC038E457E58168A03CAC07"
+        }
+      ]
+    }
+  ]
+}

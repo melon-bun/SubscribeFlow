@@ -1,0 +1,33 @@
+{
+  "node": "v26.7.0",
+  "openssl": "3.5.7",
+  "leaf": {
+    "subject": "CN=wxrank.com",
+    "issuer": "C=US\nO=Let's Encrypt\nCN=YE1",
+    "sha256": "A6:BF:C1:FD:97:D8:C0:F2:1B:37:C5:EB:CB:4B:4D:16:5C:D6:49:AC:04:7E:23:44:08:76:ED:AF:5A:37:3B:5E"
+  },
+  "sentLeafSha256": "A6:BF:C1:FD:97:D8:C0:F2:1B:37:C5:EB:CB:4B:4D:16:5C:D6:49:AC:04:7E:23:44:08:76:ED:AF:5A:37:3B:5E",
+  "identicalSavedLeaves": true,
+  "intermediate": {
+    "subject": "C=US\nO=Let's Encrypt\nCN=YE1",
+    "issuer": "C=US\nO=ISRG\nCN=Root YE",
+    "sha256": "A2:37:2D:06:43:1E:97:16:36:5E:EE:D4:7E:C0:20:35:14:97:D1:82:FC:C0:38:E4:57:E5:81:68:A0:3C:AC:07"
+  },
+  "checks": [
+    {
+      "issuer": "root-x1.pem",
+      "leafSignatureOK": false,
+      "intermediateSignatureOK": false
+    },
+    {
+      "issuer": "root-x2.pem",
+      "leafSignatureOK": false,
+      "intermediateSignatureOK": false
+    },
+    {
+      "issuer": "aia-intermediate.pem",
+      "leafSignatureOK": true,
+      "intermediateSignatureOK": false
+    }
+  ]
+}
