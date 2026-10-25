@@ -4,6 +4,7 @@ import logging
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from subscribe_flow.bootstrap import Core
 from subscribe_flow.rpc.server import serve
@@ -29,7 +30,20 @@ def main():
     # 生产启动不设置这个环境变量，那时走的是真正发网的传输层。
     paid_transport = None
     profile = os.environ.get("SUBSCRIBE_FLOW_WXRANK_FIXTURE")
-    if profile:
+    if profile == "http":
+        # 验收档位：真实传输层打本机假上游。
+        # 这样能验证真实 HTTP 条件下的接线、解析、计费与检查点，
+        # 又不会碰真实付费上游。只允许回环地址：密钥绝不能被发到本机以外。
+        from subscribe_flow.channels.wxrank import protocol
+        from subscribe_flow.channels.wxrank.transport import WxrankTransport
+        base = os.environ.get("SUBSCRIBE_FLOW_WXRANK_HTTP_BASE", "")
+        parsed = urlsplit(base)
+        if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+            logging.error("Refusing non-loopback wxrank acceptance upstream")
+            raise SystemExit(1)
+        protocol.API_ROOT = base.rstrip("/")
+        paid_transport = WxrankTransport()
+    elif profile:
         from subscribe_flow.channels.wxrank.fixture_transport import FixtureTransport
         paid_transport = FixtureTransport(profile)
     try:

@@ -646,6 +646,20 @@ class BackfillTests(WxrankTestCase):
         self.assertIsNotNone(saved)
         self.assertEqual(json.loads(saved["cursor"])["cursor"], "page-4")
 
+    async def test_a_refresh_also_advances_the_checkpoint(self):
+        # 刷新提交的就是头部页：回溯必须从它后面接着走。
+        # 否则第一次回溯会把刚采过的头页再买一遍——那是白花的一次钱。
+        finished = await self.run_backfill(mode="refresh")
+        self.assertEqual(finished["state"], "succeeded", finished.get("error"))
+        saved = self.checkpoint()
+        self.assertIsNotNone(saved, "刷新提交成功后必须留下检查点")
+        self.assertEqual(json.loads(saved["cursor"])["cursor"], "page-2")
+        before = len([row for row in self.transport.requests if row["path"] == protocol.PATH_LIST])
+        await self.run_backfill(collect_items=10)
+        pages = [row for row in self.transport.requests if row["path"] == protocol.PATH_LIST]
+        self.assertEqual(pages[before]["payload"].get("cursor"), "page-2",
+                         "回溯必须接着刷新提交的那页走")
+
     async def test_two_backfills_take_different_pages(self):
         await self.run_backfill(collect_items=30)
         first = self.core.queries.contents()["total"]

@@ -50,6 +50,12 @@ async function verify({window, core, root, mode}) {
     await require('./wxrank-ui-smoke.cjs').verifyWxrank({evaluate,until,click,screenshot,core,root,window});
     return;
   }
+  if (mode === 'wxrankreal') {
+    // M45 付费渠道：真实传输层打本机真实 HTTP 上游（响应形状照真实契约）。
+    // 仍然不是真实付费上游：本机没有授权密钥，这里不产生任何真实扣费。
+    await require('./wxrank-real-smoke.cjs').verifyWxrankReal({evaluate,until,click,screenshot,core,root,window});
+    return;
+  }
   if (mode === 'github') {
     // The GitHub channel uses no browser session, so it needs none of the
     // platform fixtures the other modes install. index.cjs stops the core.

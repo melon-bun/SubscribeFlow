@@ -337,10 +337,12 @@ class Repository:
                         page.end_evidence if page.terminal else None, now(), job_id))
             if job["mode"] == "backfill":
                 self._save_progress(db, job, "backfill", {"cursor": page.next_cursor, "coverage": coverage, "complete": False})
-                # 回溯检查点：只在「本页没有条目错误」时推进。
-                # 有错误说明这一页可能没拿全，跳过它就再也补不回来了。
-                if not page.item_errors:
-                    self._write_channel_checkpoint(db, job, source_key, page, checkpoint)
+            # 回溯检查点：只在「本页没有条目错误」时推进。
+            # 有错误说明这一页可能没拿全，跳过它就再也补不回来了。
+            # 刷新也推进检查点：刷新提交的就是头部页，回溯从它后面接着走。
+            # 否则第一次回溯会把刚采过的头页再买一遍——那是白花的一次钱。
+            if not page.item_errors:
+                self._write_channel_checkpoint(db, job, source_key, page, checkpoint)
         return self.get_job(job_id)
 
     def _write_channel_checkpoint(self, db, job, source_key, page, checkpoint):
