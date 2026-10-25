@@ -1,0 +1,148 @@
+{
+  "generatedAt": "2026-10-25T20:18:41+0900",
+  "mode": "真实传输层 + 本机真实 HTTP 上游（响应形状照真实契约）",
+  "notVerified": "真实付费上游：本机没有授权的 wxrank 密钥，未产生任何真实扣费。",
+  "upstream": {
+    "base": "http://127.0.0.1:52196",
+    "pages": 3
+  },
+  "steps": [
+    {
+      "step": "本地状态读取",
+      "calls": 0,
+      "configured": false
+    },
+    {
+      "step": "保存密钥（零调用）",
+      "calls": 0,
+      "configured": true
+    },
+    {
+      "step": "冷解析",
+      "calls": 1,
+      "sourceName": "真实形态公众号",
+      "externalId": "gh_demo0001",
+      "avatarParsed": true,
+      "descriptionParsed": true
+    },
+    {
+      "step": "确认添加（命中缓存）",
+      "calls": 0,
+      "subscriptionId": "fe07ae72052d4a1fb27836be74c54fc1"
+    },
+    {
+      "step": "刷新一页",
+      "calls": 1,
+      "contents": 10,
+      "urlSample": "https://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng==&mid=1000000001&idx=9&sn=8f5dfe39&chksm=cc47af0e&scene=126",
+      "publishedAt": "2026-10-23T10:15:00+08:00",
+      "thumbnail": "https://mmbiz.qpic.cn/sz_mmbiz_jpg/demo/640?wxtype=jpeg&wxfrom=0"
+    },
+    {
+      "step": "回溯一页",
+      "calls": 1,
+      "cursorSent": "C1",
+      "contents": 20,
+      "confirmedCredits": 15
+    },
+    {
+      "step": "重启后续采",
+      "calls": 1,
+      "cursorSent": "C2",
+      "contents": 30,
+      "confirmedCredits": 20
+    },
+    {
+      "step": "末页（空列表）",
+      "calls": 1,
+      "cursorSent": "C3",
+      "coverage": {
+        "subscription_id": "fe07ae72052d4a1fb27836be74c54fc1",
+        "progress": [
+          {
+            "subscription_id": "fe07ae72052d4a1fb27836be74c54fc1",
+            "backend": "paid-http",
+            "progress_version": "wxrank-1",
+            "content_range": "videos",
+            "mode": "backfill",
+            "connection_version": 1,
+            "subscription_version": 1,
+            "payload": {
+              "coverage": "history_end",
+              "complete": true,
+              "checkpoint": null,
+              "cursor": null
+            },
+            "updated_at": "2026-10-25T11:18:47.577+00:00",
+            "compatible": true
+          }
+        ]
+      },
+      "confirmedCredits": 25
+    },
+    {
+      "step": "业务失败（code=1000）",
+      "calls": 1,
+      "chargeState": "not_charged",
+      "errorCode": "AUTH_REQUIRED"
+    },
+    {
+      "step": "重定向被拒",
+      "calls": 1,
+      "chargeState": "unknown",
+      "errorCode": "DEPENDENCY_UNAVAILABLE"
+    }
+  ],
+  "summary": {
+    "calls": 7,
+    "confirmedCredits": 25,
+    "unknownCharges": 1,
+    "balanceObserved": 0,
+    "balanceObservedAt": "2026-10-25T11:18:47.778+00:00",
+    "upstreamRequests": 7,
+    "requestLog": [
+      {
+        "path": "/weixin/getinfo",
+        "hasKey": true,
+        "keyInUrl": false,
+        "cursor": null
+      },
+      {
+        "path": "/weixin/getps",
+        "hasKey": true,
+        "keyInUrl": false,
+        "cursor": null
+      },
+      {
+        "path": "/weixin/getps",
+        "hasKey": true,
+        "keyInUrl": false,
+        "cursor": "C1"
+      },
+      {
+        "path": "/weixin/getps",
+        "hasKey": true,
+        "keyInUrl": false,
+        "cursor": "C2"
+      },
+      {
+        "path": "/weixin/getps",
+        "hasKey": true,
+        "keyInUrl": false,
+        "cursor": "C3"
+      },
+      {
+        "path": "/weixin/getinfo",
+        "hasKey": true,
+        "keyInUrl": false,
+        "cursor": null
+      },
+      {
+        "path": "/weixin/getinfo",
+        "hasKey": true,
+        "keyInUrl": false,
+        "cursor": null
+      }
+    ]
+  }
+}

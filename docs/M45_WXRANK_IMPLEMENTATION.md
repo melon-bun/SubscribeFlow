@@ -336,3 +336,80 @@ cd Subscribe_Flow && npm run smoke:wxrank
 详情显示「仅列表信息」。
 
 上游换成脱敏样本（`SUBSCRIBE_FLOW_WXRANK_FIXTURE`），**本批没有任何真实收费调用**。
+
+---
+
+# 第三批（M45.6 联合真实验收）
+
+## 8. 真实上游契约核对（本批最重要的产出）
+
+第一批的协议是按推测写的，真实样本核对推迟到本批。核对结果有四类实质差距，
+不改就会在真实数据上直接失败：
+
+| 真实契约 | 旧实现 | 后果 |
+| --- | --- | --- |
+| 文章地址是 **http**，参数之间用 `&amp;` 分隔 | 直接 `parse_qs` | 取不到 `mid`／`idx`，整页被判成 `SCHEMA_CHANGED` |
+| 字段名 `art_url`／`pic_url`／`hd_head_img`／`signature` | 只认 `url`／`cover`／`avatar`／`description` | 地址、头像、简介全取不到 |
+| 业务码 1001／1002／1003／1004／9999 | 只区分 1000 与 1005 | 用户看不懂到底哪里不对 |
+| 同一推送共享 `mid`，`idx` 区分头条与副条 | 副条会被当成独立文章 | 副条覆盖 |
+
+修法（提交 `7ae0e20`）：
+
+- 只解**一层**安全实体，`&amp;` 排在最后；**不用 `html.unescape`**——它认识
+  `&times;`／`&timestamp` 这类实体名，会把 `&times=1` 改成 `×=1`，把地址改坏。
+- 解完再统一升 https；真实字段名优先，旧写法保留兜底。
+- 1003 用独立错误码 `CURSOR_INVALID`：业务层据此丢掉已经不可用的检查点，
+  下次回溯从头重扫，而不是反复买同一个坏游标。
+- 解析版本升到 `wxrank-2`：旧检查点的解析口径已变，一律作废重扫。
+- 付费页是**原子的**：一页可能多于「每页 10 条」的估算，整页保留
+  （上限 100 条兜底），条数窗口仍由采集引擎收敛——不按估算条数丢掉已经付过钱的文章。
+
+## 9. 检查点语义修正（提交 `2f314d7`）
+
+检查点原先只在 `mode == "backfill"` 时写，等于把「回溯位置」误当成回溯专用进度。
+后果：**第一次回溯会把刚采过的头页再买一遍**（真实上游上就是白花 5 积分，
+回来的还全是已收录条目）。
+
+现在检查点的语义是「**最后一次成功提交的页之后的位置**」，刷新与回溯共用同一套规则：
+刷新提交的就是头部页，回溯从它后面接着走；终止页（空列表）没有下一游标，检查点照旧清掉。
+
+## 10. 验收档位 `SUBSCRIBE_FLOW_WXRANK_FIXTURE=http`
+
+没有授权的真实密钥时，仍然要用**产品的真实传输层**验证真实 HTTP 条件下的行为：
+
+- 传输层是产品的真实传输层：真实 urllib、真实 JSON 请求体、真实超时、**拒绝一切重定向**。
+- 上游是本机 HTTP 服务（`scripts/wxrank-mock-upstream.cjs`），响应形状严格照真实契约复刻。
+- **只允许回环地址**：非回环直接拒绝启动。请求体里带着密钥，绝不能发到本机以外。
+- 生产启动不设置该环境变量，那时走的是真正发网的传输层。
+
+配套脚本：`scripts/wxrank-real-smoke.cjs`（正式 Renderer 验收）、
+`scripts/wxrank-real-acceptance.cjs`（启动本机上游并拉起正式应用），
+命令 `npm run smoke:wxrank:real`。
+
+## 11. 第三批验证结果
+
+```
+cd python && PYTHONPATH=src python3 -m unittest discover -s tests -t .
+→ Ran 633 tests … OK      （test_wxrank.py 75 项）
+
+cd Subscribe_Flow && node --test tests/*.test.cjs
+→ 155 / 155 / 0 fail
+
+cd Subscribe_Flow && npm run smoke:wxrank
+→ {"wxrankUi":"passed","confirmedCredits":15,"calls":3,"contents":10}
+
+cd Subscribe_Flow && npm run smoke:wxrank:real
+→ {"wxrankUi":"passed","upstream":"local-http (真实响应形状，非真实付费上游)",
+   "calls":4,"confirmedCredits":20,"contents":30,"checkpointAfterBackfill":"resume"}
+```
+
+真实 LLM API（走产品正式链路，凭据只在进程内解析）：
+
+```
+provider-llm  api.minimax.cn   MiniMax-M3   HTTP 200  回答 145 字符  243 tokens
+provider-jev  api.typesafe.ai  jev-1.14.0   HTTP 200  非空        input 289 / output 20
+```
+
+**真实付费上游没有验证**：本机没有授权的 wxrank 密钥（用户指定文件只有 LLM 配置；
+已授权的公众号付费实验目录里也没有真实 key，方案本身写明成功路径从未用真实验证）。
+全程没有任何真实扣费。详见交付说明里的外部阻塞一节。

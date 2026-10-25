@@ -1,0 +1,86 @@
+{
+  "generatedAt": "2026-10-25T19:57:29+0900",
+  "credentialFile": "/Users/xor/Documents/Subscribe_Call/test_api_key.md",
+  "note": "密钥只在进程内使用：证据里没有密钥、没有请求头、没有完整响应原文。",
+  "providers": [
+    {
+      "provider_id": "provider-llm",
+      "protocol": "openai_chat",
+      "host": "api.minimax.cn",
+      "configuredModel": "MiniMax-M3",
+      "keyProvided": true,
+      "rpcReachable": true,
+      "elapsedSeconds": 1.41,
+      "rpc": "ai.provider.test",
+      "ok": true,
+      "provider": "openai_chat",
+      "model": "MiniMax-M3",
+      "message": "连接正常，协议可用。",
+      "calls": 1,
+      "requests": [
+        {
+          "host": "api.minimax.cn",
+          "path": "/v1/chat/completions",
+          "model": "MiniMax-M3",
+          "roles": [
+            "user"
+          ],
+          "hasAuthorization": true,
+          "status": 200,
+          "response": {
+            "answerChars": 145,
+            "answerHead": "<think>We need respond Chinese. User says \"连接测试。\" Means connection test. Need acknowledge. Maybe \"连接成功！有什么可以帮您？\" Simple.",
+            "usage": {
+              "total_tokens": 243,
+              "total_characters": 0,
+              "prompt_tokens": 201,
+              "completion_tokens": 42,
+              "completion_tokens_details": {
+                "reasoning_tokens": 30
+              },
+              "prompt_tokens_details": {
+                "cached_tokens": 193
+              }
+            },
+            "model": "MiniMax-M3"
+          }
+        }
+      ]
+    },
+    {
+      "provider_id": "provider-jev",
+      "protocol": "jev_systemone",
+      "host": "api.typesafe.ai",
+      "configuredModel": "jev-latest",
+      "keyProvided": true,
+      "rpcReachable": true,
+      "elapsedSeconds": 1.0,
+      "rpc": "ai.provider.test",
+      "ok": true,
+      "provider": "jev_systemone",
+      "model": "jev-1.14.0",
+      "message": "连接正常，协议可用。",
+      "calls": 1,
+      "requests": [
+        {
+          "host": "api.typesafe.ai",
+          "path": "/v1/systemone",
+          "model": "jev-latest",
+          "roles": [],
+          "hasAuthorization": true,
+          "status": 200,
+          "response": {
+            "answerIds": [
+              "probe"
+            ],
+            "usage": {
+              "input_tokens": 289,
+              "output_tokens": 20
+            },
+            "model": "jev-1.14.0"
+          }
+        }
+      ]
+    }
+  ]
+}

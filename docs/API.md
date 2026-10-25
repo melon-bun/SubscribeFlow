@@ -675,3 +675,35 @@ AppClient：`getWxrankStatus(timezone?)`、`getWxrankUsage(timezone?)`、
 
 `connection.check` 对付费渠道**只做本地检查**，不发网络请求：
 返回 ready 时 reason 是「已配置付费渠道密钥，未联网验证」。付费渠道的可用性只能靠真实调用证明。
+
+### 上游业务码与错误码（M45.6）
+
+上游业务码与本应用的错误码不是一回事，映射由协议层固定：
+
+| 上游 `code` | 含义 | 本应用错误码 | 是否扣费 |
+| --- | --- | --- | --- |
+| 0 | 成功 | — | **已确认消费 5 积分** |
+| 1000 | 积分不足或密钥无效（`msg` 带剩余余额） | `AUTH_REQUIRED` | 不扣 |
+| 1001 | 缺少 wxid | `INVALID_INPUT` | 不扣 |
+| 1002 | wxid 校验失败 | `INVALID_RESULT` | 不扣 |
+| 1003 | cursor 校验失败（游标过期或非法） | `CURSOR_INVALID` | 不扣 |
+| 1004 | 上游请求失败 | `DEPENDENCY_UNAVAILABLE` | 不扣 |
+| 1005 | 上游超时 | `DEPENDENCY_UNAVAILABLE` | 不扣 |
+| 9999 | QPS 超限（每秒最多 5 次） | `RATE_LIMITED` | 不扣 |
+
+- 业务失败一律不可重试：上游已经明确答复，再打一次只会再花钱。
+- `CURSOR_INVALID` 是独立错误码：业务层据此丢掉已经不可用的回溯检查点，
+  下一次回溯从头重扫，而不是反复买同一个坏游标。
+- 1000 的 `msg` 里带剩余余额，界面显示的是**最近一次观察到的**服务端余额。
+
+### 验收档位（只给隔离验收用）
+
+`SUBSCRIBE_FLOW_WXRANK_FIXTURE` 选上游：
+- 不设置：生产路径，真实发网（`https://data.wxrank.com`）。
+- `default`／`mismatch`／`network`：仓库里的脱敏样本传输，不触网。
+- `http`：**产品的真实传输层**打本机上游（`SUBSCRIBE_FLOW_WXRANK_HTTP_BASE`）。
+  只允许回环地址（`127.0.0.1`／`localhost`／`::1`），非回环直接拒绝启动：
+  请求体里带着密钥，绝不能发到本机以外。
+
+`http` 档位用于在没有真实密钥时验证真实 HTTP 条件下的接线、解析、计费与检查点；
+它**不是**真实付费上游的证据。
