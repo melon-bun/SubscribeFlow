@@ -52,15 +52,16 @@ F1 AppClient 已在 M5 适配到上述方法，新增来源搜索/解析、连�
 
 F1 的收件箱与“未处理”使用 `listContents({state:"unread"})`，映射为
 `content.list({read:false, archived:false, deferred:false})`；`getCounts().unread` 使用相同条件。
-`content.stats({})` 返回 `{counts, platforms}`：一次分组读取返回全库九项侧栏计数及按平台计数，
-复用最终优先级表达式，不拉取正文；Main 的并行 `getCounts`／`listPlatforms` 共用在途快照，完成即释放，后续刷新重新查询。
-此方法由 Main 内部调用，未额外开放 Renderer 原始 RPC。`content.changed` 可附 `fields`，
-仅 `read`／`archived`／`deferred` 变化时智能优先级服务不做判断资格检查；`priority` 变化、恢复自动与无字段元数据的内容／标签事件照常处理。
 这是界面的待处理范围，Core 单独传 `read:false` 仍只代表未读。
 三项状态互斥，最多一项为真。content.update / content.bulk_update 传入一个 true 时，原子清除另外两项；
 一次传入多个 true 返回 INVALID_INPUT。仅传 false 时取消指定状态；全部为 false 即回到未处理。
 “全部更新”不限制处理状态，已读、稍后处理、已归档三个筛选不再重叠。
 此规则按 2026-10-05 用户确认调整，见 [BUG-005](BUG_FIXES.md#bug-005整理内容状态未互斥)。
+
+`content.stats({})` 返回 `{counts, platforms}`：一次分组读取返回全库九项侧栏计数及按平台计数，
+复用最终优先级表达式，不拉取正文；Main 的并行 `getCounts`／`listPlatforms` 共用在途快照，完成即释放，后续刷新重新查询。
+此方法由 Main 内部调用，未额外开放 Renderer 原始 RPC。`content.changed` 可附 `fields`，
+仅 `read`／`archived`／`deferred` 变化时智能优先级服务不做判断资格检查；`priority` 变化、恢复自动与无字段元数据的内容／标签事件照常处理。
 
 source.search 仅缓存渠道返回的已确认来源事实，不创建订阅；后续 subscription.add 仍必须 confirmed=true。
 content.open / source.open 是 Main 的桌面方法，分别只接受 item_id / subscription_id，从已保存记录读取和验证 URL。
@@ -559,6 +560,14 @@ M21 之前连接参数放在 `tagging.providers`。读取时两个位置都认�
     （对应 `priority.judge`）。**「自动」是兜底语义，不承诺每次都调用模型。**
 - 批量操作的「恢复自动判断」即清掉单条人工值（`priority: null`）。
 - 自主添加（收录对话框）的默认项与详情一致，显示「自动判断」。
+
+### 内容操作的控件预览（BUG-128，2026-10-25）
+
+详情中的优先级与处理状态点击后立即预览并启动动画，保存期间显示状态、同条操作保持锁定。预览只存在于 Renderer 的控件状态，不提前覆盖内容缓存、`priority_origin` 或侧栏统计。保存失败清除预览、取消残留滑块动画并恢复原状态；持久值仍由 Core 决定。
+
+初始预览／操作解锁只更新按钮属性；写入回执和列表变化才进行局部协调，保持正文节点和滚动位置。自动与人工切换造成「重新判断」入口增删时，详情不使用标签作为列表锚点。并发刷新、当前筛选移除及下一条选择继续由权威查询校验。
+
+界面的 <100ms 目标针对首帧可见反馈；写入回执、活动列表与计数刷新是后续阶段，不承诺固定完成时间。[开启智能判断的性能与失败回退证据](verification/content-action-feedback-20261025/REPORT.md)。
 
 ## M44 桌面受限桥接：智能判断的三个调用（BUG-124，2026-10-24）
 
