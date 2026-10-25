@@ -21,6 +21,7 @@ import urllib.request
 
 from subscribe_flow.contracts import ChannelError
 
+from .. import http
 from . import protocol
 
 #: 单次响应体上限。超出按协议异常处理，不继续读。
@@ -63,7 +64,10 @@ class WxrankTransport:
 
     @staticmethod
     def _default_opener():
-        context = ssl.create_default_context()
+        # 信任库要自己解决：有些 Python 构建不自带任何 CA，
+        # 那样每一次 HTTPS 调用都会以「证书无法验证」失败——付费渠道会完全不可用。
+        # 校验仍然开启：找不到 CA 就让请求大声失败，不去信任任何东西。
+        context = http.ssl_context()
         return urllib.request.build_opener(
             urllib.request.HTTPSHandler(context=context), _NoRedirect())
 
