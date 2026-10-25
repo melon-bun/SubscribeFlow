@@ -75,6 +75,7 @@ class Dispatcher:
             "content.calendar": (c.queries.calendar, {"month": str}, {"channel": str, "source_id": str, "query": str, "read": bool, "archived": bool, "deferred": bool, "priority": str,
                                                               "tags": list, "tag_mode": str, "intake_method": str, "timezone": str}),
             "content.get": (c.queries.content, {"item_id": str}, {"timezone": str}),
+            "content.stats": (c.queries.content_stats, {}, {}),
             "content.update": (c.content.update, {"item_id": str, "patch": dict}, {}),
             "content.bulk_update": (c.content.bulk_update, {"item_ids": list, "patch": dict}, {}),
             # M25 公共 AI 层：连接列表与协议最小探针。连接的新增／修改／停用／删除

@@ -237,7 +237,9 @@
       var top = node.getBoundingClientRect().top;
       // M22：标签列表的行也带稳定标签 ID，和内容／优先级／日历项一样当锚点用：
       // 列表重排后视口最上面那条标签仍然停在原处。
-      var anchor = node.scrollTop > 0 && Array.from(node.querySelectorAll('[data-content-id],[data-priority-item],[data-calendar-item],[data-tag-id]')).find(function (item) { return item.getBoundingClientRect().bottom > top; });
+      // In the reading panel tags are metadata below the article, not list
+      // anchors. Following them when a rejudge button disappears moves the text.
+      var anchor = node.scrollTop > 0 && !node.classList.contains('detail__body') && Array.from(node.querySelectorAll('[data-content-id],[data-priority-item],[data-calendar-item],[data-tag-id]')).find(function (item) { return item.getBoundingClientRect().bottom > top; });
       return {node:node, top:node.scrollTop, left:node.scrollLeft, anchor:anchor, anchorTop:anchor && anchor.getBoundingClientRect().top};
     });
     var active = document.activeElement;

@@ -10,6 +10,7 @@ import json
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from priority_engine.prompts import PRIORITY_RULES_V1
@@ -147,6 +148,21 @@ class PriorityServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context['schema_version'], 'priority_context_v1')
         self.assertEqual(context['target']['title'], '如何用执行计划定位数据库慢查询')
         self.assertEqual(context['history']['high'][0]['content_count'], 1)
+
+    async def test_processing_state_does_not_request_inference_but_restoring_auto_does(self):
+        self.configure()
+        await self.stop_workers()
+        target = self.add_content('target', 'Tagged content')
+        with patch.object(self.core.priority, 'request', wraps=self.core.priority.request) as request:
+            for state in ('archived', 'read', 'deferred'):
+                self.core.content.update(target, {state: True})
+            request.assert_not_called()
+            self.assertIsNone(self.repo.priority_tasks.get(target))
+            self.core.content.update(target, {'priority': 'high'})
+            self.assertIsNone(self.repo.priority_tasks.get(target))
+            self.core.content.update(target, {'priority': None})
+            self.assertEqual(request.call_count, 2)
+            self.assertEqual(self.repo.priority_tasks.get(target)['state'], 'pending')
 
     async def test_content_without_tags_is_not_requested(self):
         self.configure()
@@ -579,6 +595,10 @@ class UnifiedPriorityTests(unittest.TestCase):
         self.assertEqual([item['id'] for item in listed['items']], [item_id])
         counts = self.repo.query_contents(limit=1)
         self.assertEqual(counts['total'], 1)
+        self.assertEqual(self.repo.content_stats()['counts']['high'], 1)
+        self.repo.priority_intelligence.save_policy(enabled=False)
+        self.assertEqual(self.repo.content_stats()['counts']['high'], 0)
+        self.assertEqual(self.repo.content_stats()['counts']['none'], 1)
 
     def test_a_stale_smart_result_is_not_used(self):
         from priority_engine.contracts import PriorityContextSnapshot, PriorityDecision
@@ -593,6 +613,9 @@ class UnifiedPriorityTests(unittest.TestCase):
         content = self.repo.get_content(item_id)
         self.assertIsNone(content['priority'])
         self.assertEqual(content['priority_origin'], 'none')
+
+        self.assertEqual(self.repo.content_stats()['counts']['high'], 0)
+        self.assertEqual(self.repo.content_stats()['counts']['none'], 1)
 
 
 if __name__ == '__main__':

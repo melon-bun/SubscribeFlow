@@ -2488,7 +2488,11 @@ textarea.input {
 :root[data-theme="dark"] .tag--zhihu, :root[data-theme="dark"] .plat--zhihu { color: #87b9ff; background: #203752; }
 
 /* 参考页的详情正文不做 pre-wrap（只有正文段落 .detail__text 才换行保留）。 */
-.detail__body { }
+.detail__body {
+  /* Scroll is restored by the reconciler. Browser anchoring must not shift it
+     again when switching auto/manual adds or removes the rejudge button. */
+  overflow-anchor: none;
+}
 /* 正文段落自身的类名：.detail__body 已经被详情滚动容器占用，不能复用。 */
 .detail__text { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* 长正文默认只露出 20 行；展开后回到自然高度。 */
@@ -3102,6 +3106,13 @@ textarea.input {
   background: var(--c-brand-weak);
   color: var(--c-brand-ink);
   box-shadow: inset 0 0 0 1px var(--c-brand-border);
+}
+
+/* Priority controls use their immediate thumb animation; processing state gets
+   a short local fade while the save continues in the background. */
+[data-content-actions] .priority-opt,
+[data-content-actions] .state-btn {
+  transition-duration: 80ms;
 }
 
 .action-bar .btn--ink {

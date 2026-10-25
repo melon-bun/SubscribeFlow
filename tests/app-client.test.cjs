@@ -12,7 +12,7 @@ test('replacement backend capabilities drive the source UI and platform filters 
     if(name==='channel.list')return descriptors;
     if(name==='subscription.list')return [{id:'s',channel:'test',backend:'replacement',name:'Author',url:'https://example.com',status:'active'}];
     if(name==='schedule.list')return [];
-    if(name==='content.list')return {total:2};
+    if(name==='content.stats')return {counts:{total:2},platforms:{test:2}};
     throw new Error(name);
   }};
   const channel=(await callUI(core,'listChannels',[])).items[0];
@@ -292,4 +292,23 @@ test('every event the Core emits is forwarded, and every subscribed event is exp
   const exposed=new Set([...eventBlock[1].matchAll(/'([a-z_.]+)'/g)].map(m=>m[1]));
   const blocked=[...subscribed].filter(e=>!exposed.has(e));
   assert.deepEqual(blocked,[], `渲染层在订阅但 preload 未开放：${blocked}`);
+});
+
+
+test('sidebar requests share an in-flight snapshot, and later reads query again', async () => {
+  let reads=0, release;
+  const stats={counts:{total:3,high:1,medium:1,low:1,none:0},platforms:{test:3}};
+  const core={call:async name=>{
+    if(name==='channel.list')return [{channel:'test'},{channel:'test'},{channel:'empty'}];
+    assert.equal(name,'content.stats');reads++;
+    return new Promise(resolve=>{release=()=>resolve(stats);});
+  }};
+  const counts=callUI(core,'getCounts',[]),platforms=callUI(core,'listPlatforms',[]);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(reads,1);release();
+  assert.deepEqual(await counts,stats.counts);
+  assert.deepEqual(await platforms,[{id:'test',count:3},{id:'empty',count:0}]);
+  const later=callUI(core,'getCounts',[]);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(reads,2);release();await later;
 });

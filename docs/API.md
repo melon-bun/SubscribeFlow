@@ -52,6 +52,10 @@ F1 AppClient 已在 M5 适配到上述方法，新增来源搜索/解析、连�
 
 F1 的收件箱与“未处理”使用 `listContents({state:"unread"})`，映射为
 `content.list({read:false, archived:false, deferred:false})`；`getCounts().unread` 使用相同条件。
+`content.stats({})` 返回 `{counts, platforms}`：一次分组读取返回全库九项侧栏计数及按平台计数，
+复用最终优先级表达式，不拉取正文；Main 的并行 `getCounts`／`listPlatforms` 共用在途快照，完成即释放，后续刷新重新查询。
+此方法由 Main 内部调用，未额外开放 Renderer 原始 RPC。`content.changed` 可附 `fields`，
+仅 `read`／`archived`／`deferred` 变化时智能优先级服务不做判断资格检查；`priority` 变化、恢复自动与无字段元数据的内容／标签事件照常处理。
 这是界面的待处理范围，Core 单独传 `read:false` 仍只代表未读。
 三项状态互斥，最多一项为真。content.update / content.bulk_update 传入一个 true 时，原子清除另外两项；
 一次传入多个 true 返回 INVALID_INPUT。仅传 false 时取消指定状态；全部为 false 即回到未处理。

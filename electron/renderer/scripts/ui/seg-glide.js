@@ -201,5 +201,10 @@
 
   document.addEventListener("click", onClick, true);
 
-  SF.segGlide = { selector: GROUP, duration: DURATION };
+  function cancel(group) {
+    if (pending && pending.group === group) pending = null;
+    runs.forEach(function (run) { if (run.group === group) end(run); });
+    sync();
+  }
+  SF.segGlide = { selector: GROUP, duration: DURATION, cancel: cancel };
 })(window);

@@ -8,6 +8,8 @@
   var tagCache = {}, tagPanelOpen = false;
   /* 来源目录与查询条件无关，切换平台/来源时保留目录和正在进行的请求。 */
   var sourceCache = {};
+  // Only control previews live here; persisted content and sidebar counts stay authoritative.
+  var contentEdits = new Map();
   /* 后端 content.bulk_set_tags 的硬上限。界面先拦一道，好过只丢一个后端错误码上来。 */
   var BULK_LIMIT = 100, BULK_CLEAR = '__clear__';
 
@@ -383,17 +385,70 @@
     if (app.route.name === 'inbox') SF.app.renderContent({background:true});
   }
   function contentPending(id) { return SF.app.isPending('content:' + id); }
+  function previewState(item) {
+    var edit = contentEdits.get(item.id), state = Object.assign({}, item.state);
+    var patch = edit && edit.state;
+    if (patch) {
+      if (Object.keys(patch).some(function (key) { return patch[key]; })) {
+        state.read = state.archived = state.deferred = false;
+      }
+      Object.assign(state, patch);
+    }
+    return state;
+  }
+  function previewOverride(item) {
+    var edit = contentEdits.get(item.id);
+    return edit && Object.prototype.hasOwnProperty.call(edit, 'priority') ? edit.priority : item.priorityOverride;
+  }
+  function syncContentBusy(id, item) {
+    // Pending/settled changes only disable controls. Do not rebuild every card
+    // and the article body just to change a few button properties.
+    var busy = contentPending(id);
+    Array.from(document.querySelectorAll('[data-content-actions]')).forEach(function (group) {
+      if (group.getAttribute('data-content-actions') !== id) return;
+      Array.from(group.querySelectorAll('button')).forEach(function (button) {
+        if (button.hasAttribute('data-priority-value')) {
+          var active = button.getAttribute('data-priority-value') === (previewOverride(item) || 'auto');
+          button.classList.toggle('is-active', active);
+          button.setAttribute('aria-pressed', String(active));
+        }
+        if (button.hasAttribute('data-state-field')) {
+          var on = !!previewState(item)[button.getAttribute('data-state-field')];
+          button.classList.toggle('is-on', on);
+          button.setAttribute('aria-pressed', String(on));
+        }
+        button.disabled = busy || (button.classList.contains('priority-opt--inherit') && button.getAttribute('aria-pressed') === 'true');
+      });
+      var hint = group.querySelector('.detail__section-hint');
+      if (hint) hint.textContent = contentEdits.has(id) ? '正在保存…' : SF.catalog.priorityOriginText(item.priorityOrigin || 'none') + ' · 当前为' + SF.catalog.priority(item.priority).name;
+    });
+  }
   function saveContent(app, item, patch, repaint) {
     if (contentPending(item.id)) return SF.app.act('content:' + item.id, function () {});
-    var fresh = item;
+    contentEdits.set(item.id, patch);
+    var fresh = item, committed = false;
     var saving = SF.app.act('content:' + item.id, async function () {
       fresh = await app.client.updateContent(item.id, patch);
+      committed = true;
       if (repaint) repaint(fresh);
       await SF.app.refreshData(true, ['content']);
     });
-    // 数据可先回显，但控件要等整个写入/刷新动作结束才重新可用。
-    if (repaint) repaint(fresh);
-    return saving.then(function () { if (repaint) repaint(fresh, true); });
+    // Start the control animation now, without changing stored content/counts.
+    // The final callback also restores the old controls when the write failed.
+    syncContentBusy(item.id, fresh);
+    return saving.then(function () {
+      contentEdits.delete(item.id);
+      if (!committed && SF.segGlide && SF.segGlide.cancel) {
+        Array.from(document.querySelectorAll('[data-content-actions]')).forEach(function (group) {
+          if (group.getAttribute('data-content-actions') === item.id) {
+            var segment = group.querySelector('.priority-grid');
+            if (segment) SF.segGlide.cancel(segment);
+          }
+        });
+      }
+      var current = (cache.items || []).find(function (entry) { return entry.id === item.id; });
+      syncContentBusy(item.id, app.route.name === 'inbox' && current ? current : fresh);
+    });
   }
   function update(app, id, state) {
     var item = (cache.items || []).find(function (entry) { return entry.id === id; });
@@ -491,21 +546,21 @@
     options.unshift({id:'auto', short:'自动判断', name:'自动判断'});
     var origin = item.priorityOrigin || 'none';
     var originText = SF.catalog.priorityOriginText(origin);
-    var auto = !item.priorityOverride;
-    return h('div.detail__section',{'data-refresh-key':'priority:' + item.id,'data-refresh-boundary':true,
+    var shownOverride = previewOverride(item), auto = !shownOverride;
+    return h('div.detail__section',{'data-refresh-key':'priority:' + item.id,'data-refresh-boundary':true,'data-content-actions':item.id,
       /* 来源也算进刷新依据：等级没变、来源变了（小字要跟着变）也要重画。
          智能判断开关也进来：开关刚在设置里改过时，这一段的按钮要跟着出现或消失。 */
-      'data-refresh-preserve':JSON.stringify([item.priority, item.priorityOverride, origin, judgmentStatus.enabled, contentPending(item.id)])},
+      'data-refresh-preserve':JSON.stringify([item.priority, item.priorityOverride, origin, judgmentStatus.enabled, contentPending(item.id), contentEdits.get(item.id)])},
       h('div.detail__section-title', null,
         h('span', {text:'优先级'}),
         /* 提示里用完整显示名：用户改过名（「开箱即用的项目_教程」）时，
            这里能看出当前到底是哪一档；太长由 CSS 省略。 */
-        h('span.detail__section-hint', {text:originText + ' · 当前为' + current.name})),
+        h('span.detail__section-hint', {text:contentEdits.has(item.id) ? '正在保存…' : originText + ' · 当前为' + current.name})),
       h('div.seg.priority-grid',{'aria-label':'内容优先级'}, options.map(function(opt) {
-        var active = opt.id==='auto' ? auto : item.priorityOverride===opt.id;
+        var active = opt.id==='auto' ? auto : shownOverride===opt.id;
         var disabled = contentPending(item.id) || (opt.id==='auto' && auto);
         return h('button.priority-opt.priority-opt--'+(opt.id==='auto'?'inherit':opt.id)+(active?'.is-active':''),
-          {type:'button',disabled:disabled,'aria-pressed':String(active),title:opt.name,onclick:function() { save(opt.id==='auto'?null:opt.id); }},
+          {type:'button',disabled:disabled,'aria-pressed':String(active),'data-priority-value':opt.id,title:opt.name,onclick:function() { save(opt.id==='auto'?null:opt.id); }},
           opt.id==='auto' ? null : ui.prioSig(opt.id),
           h('span.priority-opt__name',{text:opt.short}));
       })),
@@ -813,12 +868,13 @@
   function detailFoot(app, item, repaint) {
     var canDetail = item.canFetchDetail !== false && !!item.channelId && app.session.channels.some(function (c) { return c.channel === item.platform && c.operations.get_item_detail && c.operations.get_item_detail.supported; });
     var states = [['read','已读','check'],['deferred','稍后','clock'],['archived','归档','archive']];
+    var shownState = previewState(item);
     return h('div.action-bar', {role:'group','aria-label':'内容操作'},
-      h('div.state-group', null, states.map(function (entry) {
-        return h('button.state-btn' + (item.state[entry[0]] ? '.is-on' : ''), {
+      h('div.state-group', {'data-content-actions':item.id}, states.map(function (entry) {
+        return h('button.state-btn' + (shownState[entry[0]] ? '.is-on' : ''), {
           type:'button',
           disabled: contentPending(item.id),
-          'aria-pressed': String(!!item.state[entry[0]]),
+          'aria-pressed': String(!!shownState[entry[0]]), 'data-state-field':entry[0],
           onclick: function () {
             var state = {}; state[entry[0]] = !item.state[entry[0]];
             saveContent(app, item, {state:state}, repaint);

@@ -6,6 +6,9 @@ class QueryService:
     def contents(self, **query):
         return self.repository.query_contents(**query)
 
+    def content_stats(self):
+        return self.repository.content_stats()
+
     def calendar(self, month, **query):
         return self.repository.calendar_summary(month, **query)
 

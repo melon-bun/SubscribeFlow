@@ -52,3 +52,10 @@ class RPCTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.rpc.handle(data))["error"]["code"], -32600)
         await self.hello()
         self.assertIsNone(await self.rpc.handle({"jsonrpc": "2.0", "method": "channel.list"}))
+
+    async def test_content_stats_is_read_only_and_rejects_extra_arguments(self):
+        await self.hello()
+        stats = (await self.call('content.stats'))['result']
+        self.assertEqual(stats['counts']['total'], 0)
+        self.assertEqual(stats['platforms'], {})
+        self.assertEqual((await self.call('content.stats', {'sql': 'SELECT 1'}))['error']['code'], -32602)

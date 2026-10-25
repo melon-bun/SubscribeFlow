@@ -11,5 +11,5 @@ class ContentService:
             from subscribe_flow.contracts import ChannelError
             raise ChannelError("INVALID_INPUT", "content.update", "每次需指定 1 到 100 条内容")
         result = self.repository.update_content_state(item_ids, patch)
-        self.emit("content.changed", {"ids": list(dict.fromkeys(item_ids))})
+        self.emit("content.changed", {"ids": list(dict.fromkeys(item_ids)), "fields": list(patch)})
         return result

@@ -17,6 +17,17 @@ const UI_METHODS = new Set([
 ]);
 // F1's “未处理” / inbox means no processing state has been set.
 const INBOX_FILTER = Object.freeze({read: false, archived: false, deferred: false});
+// Share only concurrent reads. A later refresh always queries durable state.
+const pendingStats = new WeakMap();
+function contentStats(core) {
+  if (!pendingStats.has(core)) {
+    const promise = Promise.resolve().then(() => core.call('content.stats'));
+    pendingStats.set(core, promise);
+    const release = () => { if (pendingStats.get(core) === promise) pendingStats.delete(core); };
+    promise.then(release, release);
+  }
+  return pendingStats.get(core);
+}
 function unsupported(message = '此功能属于后续模块，当前业务核心尚未支持') {
   const error = new Error(message); error.code = 'UNSUPPORTED_OPERATION'; throw error;
 }
@@ -116,13 +127,12 @@ async function callUI(core, name, args, context) {
           dependency: latest?.dependency, authentication: latest?.authentication, actions: latest?.actions || [] } };
     }
     case 'getCounts': {
-      const queries = [{}, INBOX_FILTER, {read: true}, {deferred: true}, {archived: true}, ...['high','medium','low','none'].map(priority => ({priority}))];
-      const results = await Promise.all(queries.map(query => call('content.list', { ...query, limit: 1 })));
-      return Object.fromEntries(['total', 'unread', 'read', 'deferred', 'archived', 'high', 'medium', 'low', 'none'].map((key, i) => [key, results[i].total]));
+      return (await contentStats(core)).counts;
     }
     case 'listPlatforms': {
-      const channels = [...new Map((await call('channel.list')).map(c => [c.channel,c])).values()];
-      return Promise.all(channels.map(async c => ({ id: c.channel, count: (await call('content.list', {channel: c.channel, limit: 1})).total })));
+      const [descriptors, stats] = await Promise.all([call('channel.list'), contentStats(core)]);
+      const channels = [...new Map(descriptors.map(c => [c.channel,c])).values()];
+      return channels.map(c => ({id:c.channel, count:stats.platforms[c.channel] || 0}));
     }
     case 'listPriorities': {
       const levels = ['high','medium','low','none'];

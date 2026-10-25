@@ -1,0 +1,893 @@
+{
+  "at": "2026-10-25T05:39:38.256Z",
+  "smartEnabled": true,
+  "results": [
+    {
+      "name": "priority-high",
+      "writeMs": 17.599999994039536,
+      "previewMs": 11,
+      "feedbackMs": 56.39999997615814,
+      "settledMs": 313,
+      "detailRetained": true,
+      "bodyRetained": true,
+      "cardRetained": true,
+      "scrollRetained": true,
+      "scrollBefore": 120,
+      "scrollAfter": 120,
+      "scrollMax": 337,
+      "selectedChanged": false,
+      "beforeCounts": {
+        "total": 434,
+        "unread": 286,
+        "read": 1,
+        "deferred": 62,
+        "archived": 85,
+        "high": 51,
+        "medium": 27,
+        "low": 114,
+        "none": 242
+      },
+      "afterCounts": {
+        "total": 434,
+        "unread": 286,
+        "read": 1,
+        "deferred": 62,
+        "archived": 85,
+        "high": 52,
+        "medium": 27,
+        "low": 114,
+        "none": 241
+      },
+      "renders": [
+        {
+          "name": "reconcileWithScroll",
+          "ms": 26.899999976158142
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 3.7000000178813934
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.4000000059604645
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 36.5
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 24.599999994039536
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 35.30000001192093
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 5
+        },
+        {
+          "method": "subscription.list",
+          "ms": 7.7
+        },
+        {
+          "method": "content.stats",
+          "ms": 67.5
+        },
+        {
+          "method": "channel.list",
+          "ms": 72.3
+        },
+        {
+          "method": "subscription.list",
+          "ms": 5.2
+        },
+        {
+          "method": "source.list",
+          "ms": 10.7
+        },
+        {
+          "method": "content.list",
+          "ms": 28.7
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 4.2
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": false,
+        "deferred": false
+      },
+      "savedPriority": "high"
+    },
+    {
+      "name": "priority-medium",
+      "writeMs": 14.699999988079071,
+      "previewMs": 10.699999988079071,
+      "feedbackMs": 62.79999998211861,
+      "settledMs": 352.09999999403954,
+      "detailRetained": true,
+      "bodyRetained": true,
+      "cardRetained": true,
+      "scrollRetained": true,
+      "scrollBefore": 120,
+      "scrollAfter": 120,
+      "scrollMax": 337,
+      "selectedChanged": false,
+      "beforeCounts": {
+        "total": 434,
+        "unread": 286,
+        "read": 1,
+        "deferred": 62,
+        "archived": 85,
+        "high": 52,
+        "medium": 27,
+        "low": 114,
+        "none": 241
+      },
+      "afterCounts": {
+        "total": 434,
+        "unread": 286,
+        "read": 1,
+        "deferred": 62,
+        "archived": 85,
+        "high": 51,
+        "medium": 28,
+        "low": 114,
+        "none": 241
+      },
+      "renders": [
+        {
+          "name": "reconcileWithScroll",
+          "ms": 33.19999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 6.700000017881393
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.5
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 106.09999999403954
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 25.700000017881393
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 16.599999994039536
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 6
+        },
+        {
+          "method": "subscription.list",
+          "ms": 5.7
+        },
+        {
+          "method": "content.stats",
+          "ms": 9.7
+        },
+        {
+          "method": "channel.list",
+          "ms": 13.2
+        },
+        {
+          "method": "subscription.list",
+          "ms": 9.2
+        },
+        {
+          "method": "source.list",
+          "ms": 9.9
+        },
+        {
+          "method": "content.list",
+          "ms": 35.3
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 2.6
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": false,
+        "deferred": false
+      },
+      "savedPriority": "medium"
+    },
+    {
+      "name": "priority-low",
+      "writeMs": 204.5,
+      "previewMs": 11.199999988079071,
+      "feedbackMs": 373.2999999821186,
+      "settledMs": 1280.2999999821186,
+      "detailRetained": true,
+      "bodyRetained": true,
+      "cardRetained": true,
+      "scrollRetained": true,
+      "scrollBefore": 120,
+      "scrollAfter": 120,
+      "scrollMax": 337,
+      "selectedChanged": false,
+      "beforeCounts": {
+        "total": 434,
+        "unread": 286,
+        "read": 1,
+        "deferred": 62,
+        "archived": 85,
+        "high": 51,
+        "medium": 28,
+        "low": 114,
+        "none": 241
+      },
+      "afterCounts": {
+        "total": 434,
+        "unread": 286,
+        "read": 1,
+        "deferred": 62,
+        "archived": 85,
+        "high": 51,
+        "medium": 27,
+        "low": 115,
+        "none": 241
+      },
+      "renders": [
+        {
+          "name": "reconcileWithScroll",
+          "ms": 63.400000005960464
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 4.9000000059604645
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.4000000059604645
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 32.69999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 28
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 69.5
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.30000001192092896
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 101.09999999403954
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 107.2999999821186
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 46
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 25.5
+        },
+        {
+          "method": "subscription.list",
+          "ms": 175.3
+        },
+        {
+          "method": "content.stats",
+          "ms": 72
+        },
+        {
+          "method": "channel.list",
+          "ms": 75.6
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 4.3
+        },
+        {
+          "method": "subscription.list",
+          "ms": 94.1
+        },
+        {
+          "method": "source.list",
+          "ms": 96
+        },
+        {
+          "method": "content.list",
+          "ms": 20.9
+        },
+        {
+          "method": "content.stats",
+          "ms": 141.1
+        },
+        {
+          "method": "channel.list",
+          "ms": 145.7
+        },
+        {
+          "method": "subscription.list",
+          "ms": 16.2
+        },
+        {
+          "method": "source.list",
+          "ms": 18
+        },
+        {
+          "method": "content.list",
+          "ms": 25.8
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": false,
+        "deferred": false
+      },
+      "savedPriority": "low"
+    },
+    {
+      "name": "archive",
+      "writeMs": 8.300000011920929,
+      "previewMs": 73.10000002384186,
+      "feedbackMs": 404,
+      "settledMs": 547.1000000238419,
+      "detailRetained": false,
+      "bodyRetained": false,
+      "cardRetained": false,
+      "scrollRetained": false,
+      "scrollBefore": 120,
+      "scrollAfter": 0,
+      "scrollMax": 342,
+      "selectedChanged": true,
+      "beforeCounts": {
+        "total": 434,
+        "unread": 286,
+        "read": 1,
+        "deferred": 62,
+        "archived": 85,
+        "high": 51,
+        "medium": 27,
+        "low": 115,
+        "none": 241
+      },
+      "afterCounts": {
+        "total": 434,
+        "unread": 285,
+        "read": 1,
+        "deferred": 62,
+        "archived": 86,
+        "high": 51,
+        "medium": 27,
+        "low": 115,
+        "none": 241
+      },
+      "renders": [
+        {
+          "name": "reconcileWithScroll",
+          "ms": 56.900000005960464
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 2.699999988079071
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.09999999403953552
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 23.600000023841858
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 25.400000005960464
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 82.30000001192093
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 36.80000001192093
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 3.1
+        },
+        {
+          "method": "subscription.list",
+          "ms": 3.6
+        },
+        {
+          "method": "content.stats",
+          "ms": 82.8
+        },
+        {
+          "method": "channel.list",
+          "ms": 84.3
+        },
+        {
+          "method": "subscription.list",
+          "ms": 10.6
+        },
+        {
+          "method": "source.list",
+          "ms": 21
+        },
+        {
+          "method": "content.list",
+          "ms": 64.9
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 18.3
+        },
+        {
+          "method": "note.get",
+          "ms": 56.4
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": true,
+        "deferred": false
+      },
+      "savedPriority": "low"
+    },
+    {
+      "name": "archive-from-inbox",
+      "writeMs": 101.19999998807907,
+      "previewMs": 10.5,
+      "feedbackMs": 522.5,
+      "settledMs": 703.5,
+      "detailRetained": false,
+      "bodyRetained": false,
+      "cardRetained": false,
+      "scrollRetained": false,
+      "scrollBefore": 120,
+      "scrollAfter": 0,
+      "scrollMax": 342,
+      "selectedChanged": true,
+      "beforeCounts": {
+        "total": 434,
+        "unread": 285,
+        "read": 1,
+        "deferred": 62,
+        "archived": 86,
+        "high": 51,
+        "medium": 27,
+        "low": 115,
+        "none": 241
+      },
+      "afterCounts": {
+        "total": 434,
+        "unread": 284,
+        "read": 1,
+        "deferred": 62,
+        "archived": 87,
+        "high": 51,
+        "medium": 27,
+        "low": 115,
+        "none": 241
+      },
+      "renders": [
+        {
+          "name": "reconcileWithScroll",
+          "ms": 26.399999976158142
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 3.2999999821186066
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.20000001788139343
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 85.40000000596046
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 48.89999997615814
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 171.40000000596046
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 128.30000001192093
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 73.2
+        },
+        {
+          "method": "subscription.list",
+          "ms": 26.9
+        },
+        {
+          "method": "content.stats",
+          "ms": 4.6
+        },
+        {
+          "method": "channel.list",
+          "ms": 6.5
+        },
+        {
+          "method": "subscription.list",
+          "ms": 5.7
+        },
+        {
+          "method": "source.list",
+          "ms": 7.2
+        },
+        {
+          "method": "content.list",
+          "ms": 26.6
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 11.1
+        },
+        {
+          "method": "note.get",
+          "ms": 1.6
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": true,
+        "deferred": false
+      },
+      "savedPriority": null
+    },
+    {
+      "name": "priority-leaves-filter",
+      "writeMs": 20.400000005960464,
+      "previewMs": 12,
+      "feedbackMs": 503.2000000178814,
+      "settledMs": 638.2000000178814,
+      "detailRetained": false,
+      "bodyRetained": false,
+      "cardRetained": false,
+      "scrollRetained": false,
+      "scrollBefore": 120,
+      "scrollAfter": 0,
+      "scrollMax": 340,
+      "selectedChanged": true,
+      "beforeCounts": {
+        "total": 434,
+        "unread": 284,
+        "read": 1,
+        "deferred": 62,
+        "archived": 87,
+        "high": 51,
+        "medium": 27,
+        "low": 115,
+        "none": 241
+      },
+      "afterCounts": {
+        "total": 434,
+        "unread": 284,
+        "read": 1,
+        "deferred": 62,
+        "archived": 87,
+        "high": 50,
+        "medium": 27,
+        "low": 116,
+        "none": 241
+      },
+      "renders": [
+        {
+          "name": "reconcileWithScroll",
+          "ms": 95.69999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 6.4000000059604645
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.699999988079071
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 95.7000000178814
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 47.10000002384186
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 51.900000005960464
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 41.79999998211861
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 11.3
+        },
+        {
+          "method": "subscription.list",
+          "ms": 5.7
+        },
+        {
+          "method": "content.stats",
+          "ms": 32.7
+        },
+        {
+          "method": "channel.list",
+          "ms": 43.6
+        },
+        {
+          "method": "subscription.list",
+          "ms": 10.8
+        },
+        {
+          "method": "source.list",
+          "ms": 9.2
+        },
+        {
+          "method": "content.list",
+          "ms": 18
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 9.1
+        },
+        {
+          "method": "note.get",
+          "ms": 1.2
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": false,
+        "deferred": false
+      },
+      "savedPriority": "low"
+    },
+    {
+      "name": "manual-before-restore-auto",
+      "writeMs": 14.399999976158142,
+      "previewMs": 9.399999976158142,
+      "feedbackMs": 181.69999998807907,
+      "settledMs": 455.39999997615814,
+      "detailRetained": true,
+      "bodyRetained": true,
+      "cardRetained": true,
+      "scrollRetained": true,
+      "scrollBefore": 120,
+      "scrollAfter": 120,
+      "scrollMax": 312,
+      "selectedChanged": false,
+      "beforeCounts": {
+        "total": 434,
+        "unread": 284,
+        "read": 1,
+        "deferred": 62,
+        "archived": 87,
+        "high": 50,
+        "medium": 27,
+        "low": 116,
+        "none": 241
+      },
+      "afterCounts": {
+        "total": 434,
+        "unread": 284,
+        "read": 1,
+        "deferred": 62,
+        "archived": 87,
+        "high": 49,
+        "medium": 28,
+        "low": 116,
+        "none": 241
+      },
+      "renders": [
+        {
+          "name": "reconcileWithScroll",
+          "ms": 115.30000001192093
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 2.199999988079071
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.19999998807907104
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 39.69999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 30.900000005960464
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 96.80000001192093
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 3.3
+        },
+        {
+          "method": "subscription.list",
+          "ms": 5.5
+        },
+        {
+          "method": "content.stats",
+          "ms": 6.6
+        },
+        {
+          "method": "channel.list",
+          "ms": 19
+        },
+        {
+          "method": "subscription.list",
+          "ms": 17.5
+        },
+        {
+          "method": "source.list",
+          "ms": 19.3
+        },
+        {
+          "method": "content.list",
+          "ms": 34.9
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 4.8
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": false,
+        "deferred": false
+      },
+      "savedPriority": "medium"
+    },
+    {
+      "name": "restore-auto",
+      "writeMs": 8.400000005960464,
+      "previewMs": 38.30000001192093,
+      "feedbackMs": 38.30000001192093,
+      "settledMs": 321.19999998807907,
+      "detailRetained": true,
+      "bodyRetained": true,
+      "cardRetained": true,
+      "scrollRetained": true,
+      "scrollBefore": 120,
+      "scrollAfter": 120,
+      "scrollMax": 340,
+      "selectedChanged": false,
+      "beforeCounts": {
+        "total": 434,
+        "unread": 284,
+        "read": 1,
+        "deferred": 62,
+        "archived": 87,
+        "high": 49,
+        "medium": 28,
+        "low": 116,
+        "none": 241
+      },
+      "afterCounts": {
+        "total": 434,
+        "unread": 284,
+        "read": 1,
+        "deferred": 62,
+        "archived": 87,
+        "high": 50,
+        "medium": 27,
+        "low": 116,
+        "none": 241
+      },
+      "renders": [
+        {
+          "name": "reconcileWithScroll",
+          "ms": 21.5
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 7
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.30000001192092896
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 33.099999994039536
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 86
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 26.400000005960464
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 4
+        },
+        {
+          "method": "subscription.list",
+          "ms": 3.5
+        },
+        {
+          "method": "content.stats",
+          "ms": 5.4
+        },
+        {
+          "method": "channel.list",
+          "ms": 8.3
+        },
+        {
+          "method": "subscription.list",
+          "ms": 15.9
+        },
+        {
+          "method": "source.list",
+          "ms": 18.8
+        },
+        {
+          "method": "content.list",
+          "ms": 34
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 4.5
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": false,
+        "deferred": false
+      },
+      "savedPriority": null
+    }
+  ],
+  "slowWritePreviewMs": 4.399999976158142,
+  "animationBeforeSave": true,
+  "failedWriteControlsRecovered": true
+}

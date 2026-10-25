@@ -269,6 +269,11 @@ class PriorityIntelligenceService:
         """
         if event != 'content.changed':
             return
+        fields = (data or {}).get('fields')
+        if fields and set(fields) <= {'read', 'archived', 'deferred'}:
+            # Processing state is not model input or a preference signal.
+            # Archiving/reading must not enqueue inference or rebuild statistics.
+            return
         ids = (data or {}).get('ids') or []
         if not ids:
             return

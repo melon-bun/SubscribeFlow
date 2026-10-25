@@ -592,6 +592,31 @@ class Repository:
                 'lastResult': row['last_result'], 'notificationError': row['notification_error'],
                 'backoffIndex': row['backoff_index'], 'updatedAt': row['updated_at']}
 
+    def content_stats(self):
+        """Read all sidebar counts in one snapshot, without fetching content bodies.
+
+        Group content rows, never source links: multi-source content counts once.
+        Reuse EFFECTIVE_PRIORITY so smart-policy invalidation matches the lists.
+        """
+        counts = dict.fromkeys(('total', 'unread', 'read', 'deferred', 'archived',
+                                'high', 'medium', 'low', 'none'), 0)
+        platforms = {}
+        rows = self.db.execute(
+            f"SELECT c.channel,s.read,s.archived,s.deferred,{self.EFFECTIVE_PRIORITY} AS priority,"
+            "count(*) AS n FROM contents c JOIN content_states s ON s.content_id=c.id "
+            "GROUP BY c.channel,s.read,s.archived,s.deferred,priority")
+        for row in rows:
+            n = row['n']
+            counts['total'] += n
+            if not (row['read'] or row['archived'] or row['deferred']):
+                counts['unread'] += n
+            for field in ('read', 'archived', 'deferred'):
+                if row[field]:
+                    counts[field] += n
+            counts[row['priority'] or 'none'] += n
+            platforms[row['channel']] = platforms.get(row['channel'], 0) + n
+        return {'counts': counts, 'platforms': platforms}
+
     def reminder_summary(self, timezone='UTC'):
         """待处理与高优先级未归档的数量（R01/R02）。
 

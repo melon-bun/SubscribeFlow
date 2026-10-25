@@ -55,6 +55,27 @@ class PriorityTests(unittest.TestCase):
         self.repo.set_source_priority(self.sub['id'], None)
         self.assertEqual(self.repo.query_contents(priority='none')['total'], 1)
 
+    def test_sidebar_stats_match_lists_after_state_and_source_changes(self):
+        other = Source('test', 'author', 'b', 'Other', 'https://example.com/b', True)
+        sub = self.repo.subscribe(other, 'c')
+        self.repo.set_source_priority(sub['id'], 'high')
+        self.db.connection.execute('INSERT INTO content_sources VALUES(?,?)', (self.item.key, other.key))
+        extra = [replace(self.item, external_id=str(i)) for i in range(6)]
+        self.repo.commit_page(self.job['id'], FetchPage(tuple(extra), None, 'window_only'))
+        self.repo.update_content_state([extra[0].key], {'read': True, 'priority': 'low'})
+        self.repo.update_content_state([extra[1].key], {'archived': True, 'priority': 'medium'})
+        self.repo.update_content_state([extra[2].key], {'deferred': True})
+        for source_priority in (None, 'low', 'high'):
+            self.repo.set_source_priority(self.sub['id'], source_priority)
+            stats = self.repo.content_stats()
+            queries = {'total': {}, 'unread': {'read': False, 'archived': False, 'deferred': False},
+                       'read': {'read': True}, 'archived': {'archived': True}, 'deferred': {'deferred': True}}
+            queries.update({level: {'priority': level} for level in ('high', 'medium', 'low', 'none')})
+            expected = {key: self.repo.query_contents(**query)['total'] for key, query in queries.items()}
+            self.assertEqual(stats['counts'], expected)
+            self.assertEqual(stats['counts']['total'], 7, 'source links cannot multiply content')
+            self.assertEqual(stats['platforms'], {'test': 7})
+
     def test_atomic_bulk_validation_preserves_existing_processing(self):
         self.repo.update_content_state([self.item.key], {'archived': True})
         for bad in ('urgent', False, 1, [], {}):
