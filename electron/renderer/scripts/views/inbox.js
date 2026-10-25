@@ -327,8 +327,8 @@
     var bulk = selected.size ? h('div.inbox__toolbar', {'data-refresh-key':'inbox-bulk'}, h('span', {text:'已选 ' + selected.size + ' 条'}),
       ['已读', '稍后处理', '归档'].map(function (label, i) { return ui.btn(label, {onClick:function () {
         var ids = Array.from(selected), state = {}; state[['read','deferred','archived'][i]] = true;
-        SF.app.act('bulk', async function () { await app.client.bulkUpdate(ids, {state:state}); selected.clear(); await SF.app.refreshData(true); });
-      }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复自动判断'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true); }); },{ariaLabel:'批量设置优先级'}), bulkTagControl(app), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
+        SF.app.act('bulk', async function () { await app.client.bulkUpdate(ids, {state:state}); selected.clear(); await SF.app.refreshData(true, ['content']); });
+      }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复自动判断'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true, ['content']); }); },{ariaLabel:'批量设置优先级'}), bulkTagControl(app), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
     var pager = cache.loaded && !cache.error ? h('div.pager', {'data-refresh-key':'inbox-pager'},
       h('span.pager__count', {role:cache.switching ? 'status' : null}, cache.switching ? (cache.loading ? '筛选中…' : '未切换，显示上次结果') : ['共 ', h('span.num', {text:String(cache.total)}), ' 条 · 第 ', h('span.num', {text:String(Math.floor(offset / 20) + 1)}), ' 页']),
       ui.btn('上一页', {variant:'ghost', size:'sm', disabled:cache.switching || offset === 0, onClick:function () { offset = Math.max(0, offset - 20); cache = {}; previousIds = []; selectLast = false; selected.clear(); SF.app.renderContent(); }}),
@@ -380,7 +380,7 @@
     // 写入等待期间列表可能失效或离开此页，迟到回执不能访问已清空的缓存。
     var index = (cache.items || []).findIndex(function (item) { return item.id === fresh.id; });
     if (index >= 0 && !settled) mergeItem(cache.items[index], fresh);
-    if (app.route.name === 'inbox') SF.app.renderContent();
+    if (app.route.name === 'inbox') SF.app.renderContent({background:true});
   }
   function contentPending(id) { return SF.app.isPending('content:' + id); }
   function saveContent(app, item, patch, repaint) {
@@ -389,7 +389,7 @@
     var saving = SF.app.act('content:' + item.id, async function () {
       fresh = await app.client.updateContent(item.id, patch);
       if (repaint) repaint(fresh);
-      await SF.app.refreshData(true);
+      await SF.app.refreshData(true, ['content']);
     });
     // 数据可先回显，但控件要等整个写入/刷新动作结束才重新可用。
     if (repaint) repaint(fresh);

@@ -544,7 +544,7 @@
     var closed = false;
     var positions = new Map();
     var layer = ui.dialog({title:'内容详情',wide:true,body:ui.state({icon:'clock',title:'正在载入详情…'}),onClose:function () { closed=true; }});
-    function repaint(fresh) { if (!closed) SF.dom.renderWithScroll(layer.el.querySelector('.dialog__body'), SF.views.inbox.detailBody(app,fresh,repaint), positions); }
+    function repaint(fresh) { if (!closed) SF.dom.reconcileWithScroll(layer.el.querySelector('.dialog__body'), SF.views.inbox.detailBody(app,fresh,repaint), positions); }
     app.client.getContent(item.id).then(repaint).catch(function (err) { if(!closed) SF.dom.render(layer.el.querySelector('.dialog__body'),ui.state({icon:'alert',title:'详情读取失败',desc:err.message})); });
   }
   SF.views = SF.views || {};

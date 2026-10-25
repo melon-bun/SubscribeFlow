@@ -575,10 +575,18 @@
 
   function refreshData(force, reasons) {
     var requested = reasons ? new Set(reasons) : new Set([force ? 'all' : 'poll']);
-    if (force && !reasons) {
-      clearTimeout(eventTimer); clearTimeout(eventDeadline);
-      pendingEvents.forEach(function (reason) { requested.add(reason); });
-      pendingEvents.clear(); urgentEvents = false; eventTimer = eventDeadline = null;
+    if (force) {
+      // A committed write consumes its own queued invalidation. Keep unrelated
+      // events queued when the caller requests only a content refresh.
+      pendingEvents.forEach(function (reason) {
+        if (!reasons || requested.has(reason)) {
+          requested.add(reason); pendingEvents.delete(reason);
+        }
+      });
+      if (!pendingEvents.size) {
+        clearTimeout(eventTimer); clearTimeout(eventDeadline);
+        urgentEvents = false; eventTimer = eventDeadline = null;
+      }
     }
     requested.forEach(function (reason) { queuedReasons.add(reason); });
     if (refreshPromise) return refreshPromise;
@@ -619,7 +627,7 @@
             }
             // Writes may await this promise; include the active view's follow-up reads.
             var view = currentView();
-            if (batch.has('all') && view && view.whenIdle) await view.whenIdle();
+            if ((batch.has('all') || batch.has('content')) && view && view.whenIdle) await view.whenIdle();
           } catch (err) {
             app.notice = err.message;
             if (app.session) patchStatusBar();

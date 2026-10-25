@@ -1,0 +1,1286 @@
+{
+  "at": "2026-10-25T03:46:45.465Z",
+  "results": [
+    {
+      "name": "priority-high",
+      "writeMs": 38.19999998807907,
+      "settledMs": 964.1999999880791,
+      "detailRetained": false,
+      "bodyRetained": false,
+      "cardRetained": false,
+      "scrollRetained": true,
+      "selectedChanged": false,
+      "renders": [
+        {
+          "name": "renderWithScroll",
+          "ms": 19
+        },
+        {
+          "name": "renderWithScroll",
+          "ms": 25
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 4.199999988079071
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.5
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 31.69999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 3.2000000178813934
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 29.80000001192093
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 39.60000002384186
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 31.30000001192093
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.9000000059604645
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 28.700000017881393
+        },
+        {
+          "name": "renderWithScroll",
+          "ms": 39.599999994039536
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 46.900000005960464
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 26.099999994039536
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 5
+        },
+        {
+          "method": "subscription.list",
+          "ms": 3
+        },
+        {
+          "method": "channel.list",
+          "ms": 6.3
+        },
+        {
+          "method": "connection.list",
+          "ms": 7
+        },
+        {
+          "method": "schedule.status",
+          "ms": 7.9
+        },
+        {
+          "method": "content.list",
+          "ms": 30.8
+        },
+        {
+          "method": "content.list",
+          "ms": 47.7
+        },
+        {
+          "method": "content.list",
+          "ms": 53.6
+        },
+        {
+          "method": "content.list",
+          "ms": 59.3
+        },
+        {
+          "method": "content.list",
+          "ms": 69.7
+        },
+        {
+          "method": "content.list",
+          "ms": 79.7
+        },
+        {
+          "method": "content.list",
+          "ms": 182.2
+        },
+        {
+          "method": "content.list",
+          "ms": 195.6
+        },
+        {
+          "method": "content.list",
+          "ms": 217.2
+        },
+        {
+          "method": "channel.list",
+          "ms": 220.6
+        },
+        {
+          "method": "sync.list",
+          "ms": 246.3
+        },
+        {
+          "method": "subscription.list",
+          "ms": 252.3
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 43.1
+        },
+        {
+          "method": "content.list",
+          "ms": 36.9
+        },
+        {
+          "method": "content.list",
+          "ms": 40.8
+        },
+        {
+          "method": "content.list",
+          "ms": 55.1
+        },
+        {
+          "method": "content.list",
+          "ms": 60.7
+        },
+        {
+          "method": "content.list",
+          "ms": 64.5
+        },
+        {
+          "method": "subscription.list",
+          "ms": 11.6
+        },
+        {
+          "method": "tag.list",
+          "ms": 18.3
+        },
+        {
+          "method": "source.list",
+          "ms": 21.1
+        },
+        {
+          "method": "content.list",
+          "ms": 35.5
+        },
+        {
+          "method": "content.list",
+          "ms": 12.5
+        },
+        {
+          "method": "content.list",
+          "ms": 24
+        },
+        {
+          "method": "content.list",
+          "ms": 27.6
+        },
+        {
+          "method": "content.list",
+          "ms": 32.8
+        },
+        {
+          "method": "content.list",
+          "ms": 37.8
+        },
+        {
+          "method": "content.list",
+          "ms": 45.9
+        },
+        {
+          "method": "content.list",
+          "ms": 57.5
+        },
+        {
+          "method": "content.list",
+          "ms": 70.8
+        },
+        {
+          "method": "content.list",
+          "ms": 84.3
+        },
+        {
+          "method": "channel.list",
+          "ms": 88
+        },
+        {
+          "method": "content.list",
+          "ms": 11.2
+        },
+        {
+          "method": "content.list",
+          "ms": 18.1
+        },
+        {
+          "method": "content.list",
+          "ms": 30.4
+        },
+        {
+          "method": "content.list",
+          "ms": 33.2
+        },
+        {
+          "method": "content.list",
+          "ms": 34.4
+        },
+        {
+          "method": "subscription.list",
+          "ms": 6
+        },
+        {
+          "method": "source.list",
+          "ms": 7.2
+        },
+        {
+          "method": "content.list",
+          "ms": 25.4
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": false,
+        "deferred": false
+      },
+      "savedPriority": "high"
+    },
+    {
+      "name": "priority-medium",
+      "writeMs": 45.400000005960464,
+      "settledMs": 744,
+      "detailRetained": false,
+      "bodyRetained": false,
+      "cardRetained": false,
+      "scrollRetained": true,
+      "selectedChanged": false,
+      "renders": [
+        {
+          "name": "renderWithScroll",
+          "ms": 21.399999976158142
+        },
+        {
+          "name": "renderWithScroll",
+          "ms": 28.69999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 4.5999999940395355
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.29999998211860657
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 20.80000001192093
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 5.5999999940395355
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 32.69999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 23.5
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 27.599999994039536
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.8999999761581421
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 16.599999994039536
+        },
+        {
+          "name": "renderWithScroll",
+          "ms": 30
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 24
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 22.5
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 3.3
+        },
+        {
+          "method": "subscription.list",
+          "ms": 5.5
+        },
+        {
+          "method": "channel.list",
+          "ms": 61.6
+        },
+        {
+          "method": "connection.list",
+          "ms": 61.7
+        },
+        {
+          "method": "schedule.status",
+          "ms": 62.7
+        },
+        {
+          "method": "content.list",
+          "ms": 85.5
+        },
+        {
+          "method": "content.list",
+          "ms": 107.6
+        },
+        {
+          "method": "content.list",
+          "ms": 108.9
+        },
+        {
+          "method": "content.list",
+          "ms": 112.3
+        },
+        {
+          "method": "content.list",
+          "ms": 114.8
+        },
+        {
+          "method": "content.list",
+          "ms": 118.6
+        },
+        {
+          "method": "content.list",
+          "ms": 122.1
+        },
+        {
+          "method": "content.list",
+          "ms": 128.1
+        },
+        {
+          "method": "content.list",
+          "ms": 140.4
+        },
+        {
+          "method": "channel.list",
+          "ms": 142
+        },
+        {
+          "method": "sync.list",
+          "ms": 163.2
+        },
+        {
+          "method": "subscription.list",
+          "ms": 167.7
+        },
+        {
+          "method": "content.list",
+          "ms": 32.3
+        },
+        {
+          "method": "content.list",
+          "ms": 38.8
+        },
+        {
+          "method": "content.list",
+          "ms": 64.9
+        },
+        {
+          "method": "content.list",
+          "ms": 70.1
+        },
+        {
+          "method": "content.list",
+          "ms": 74.7
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 39.2
+        },
+        {
+          "method": "subscription.list",
+          "ms": 9.6
+        },
+        {
+          "method": "tag.list",
+          "ms": 12
+        },
+        {
+          "method": "source.list",
+          "ms": 14.1
+        },
+        {
+          "method": "content.list",
+          "ms": 18.2
+        },
+        {
+          "method": "content.list",
+          "ms": 24.2
+        },
+        {
+          "method": "content.list",
+          "ms": 37.2
+        },
+        {
+          "method": "content.list",
+          "ms": 38.2
+        },
+        {
+          "method": "content.list",
+          "ms": 40.2
+        },
+        {
+          "method": "content.list",
+          "ms": 45.1
+        },
+        {
+          "method": "content.list",
+          "ms": 48.8
+        },
+        {
+          "method": "content.list",
+          "ms": 52.4
+        },
+        {
+          "method": "content.list",
+          "ms": 63.1
+        },
+        {
+          "method": "content.list",
+          "ms": 77.8
+        },
+        {
+          "method": "channel.list",
+          "ms": 80.2
+        },
+        {
+          "method": "content.list",
+          "ms": 5.5
+        },
+        {
+          "method": "content.list",
+          "ms": 12.5
+        },
+        {
+          "method": "content.list",
+          "ms": 21.9
+        },
+        {
+          "method": "content.list",
+          "ms": 23.8
+        },
+        {
+          "method": "content.list",
+          "ms": 24.9
+        },
+        {
+          "method": "subscription.list",
+          "ms": 3.3
+        },
+        {
+          "method": "source.list",
+          "ms": 4.3
+        },
+        {
+          "method": "content.list",
+          "ms": 13.4
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": false,
+        "deferred": false
+      },
+      "savedPriority": "medium"
+    },
+    {
+      "name": "priority-low",
+      "writeMs": 39.30000001192093,
+      "settledMs": 702.4000000059605,
+      "detailRetained": false,
+      "bodyRetained": false,
+      "cardRetained": false,
+      "scrollRetained": true,
+      "selectedChanged": false,
+      "renders": [
+        {
+          "name": "renderWithScroll",
+          "ms": 21.80000001192093
+        },
+        {
+          "name": "renderWithScroll",
+          "ms": 36.79999998211861
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 6.4000000059604645
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.5
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 36.099999994039536
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 3.7999999821186066
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 31.19999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 15.900000005960464
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 35.19999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.3999999761581421
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 15.199999988079071
+        },
+        {
+          "name": "renderWithScroll",
+          "ms": 23.69999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 26.69999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 30.5
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 3.3
+        },
+        {
+          "method": "subscription.list",
+          "ms": 3.3
+        },
+        {
+          "method": "channel.list",
+          "ms": 5.2
+        },
+        {
+          "method": "connection.list",
+          "ms": 6
+        },
+        {
+          "method": "schedule.status",
+          "ms": 6.5
+        },
+        {
+          "method": "content.list",
+          "ms": 33.3
+        },
+        {
+          "method": "content.list",
+          "ms": 53.2
+        },
+        {
+          "method": "content.list",
+          "ms": 54.6
+        },
+        {
+          "method": "content.list",
+          "ms": 57.1
+        },
+        {
+          "method": "content.list",
+          "ms": 59.9
+        },
+        {
+          "method": "content.list",
+          "ms": 66.9
+        },
+        {
+          "method": "content.list",
+          "ms": 72.4
+        },
+        {
+          "method": "content.list",
+          "ms": 86.2
+        },
+        {
+          "method": "content.list",
+          "ms": 97.4
+        },
+        {
+          "method": "channel.list",
+          "ms": 98.2
+        },
+        {
+          "method": "sync.list",
+          "ms": 108
+        },
+        {
+          "method": "subscription.list",
+          "ms": 110.2
+        },
+        {
+          "method": "content.list",
+          "ms": 16
+        },
+        {
+          "method": "content.list",
+          "ms": 18.9
+        },
+        {
+          "method": "content.list",
+          "ms": 25.6
+        },
+        {
+          "method": "content.list",
+          "ms": 28.5
+        },
+        {
+          "method": "content.list",
+          "ms": 30.9
+        },
+        {
+          "method": "subscription.list",
+          "ms": 23.8
+        },
+        {
+          "method": "tag.list",
+          "ms": 29.9
+        },
+        {
+          "method": "source.list",
+          "ms": 34.5
+        },
+        {
+          "method": "content.list",
+          "ms": 47.4
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 31.8
+        },
+        {
+          "method": "content.list",
+          "ms": 17.3
+        },
+        {
+          "method": "content.list",
+          "ms": 40.2
+        },
+        {
+          "method": "content.list",
+          "ms": 44
+        },
+        {
+          "method": "content.list",
+          "ms": 52.2
+        },
+        {
+          "method": "content.list",
+          "ms": 60.1
+        },
+        {
+          "method": "content.list",
+          "ms": 70.6
+        },
+        {
+          "method": "content.list",
+          "ms": 80.4
+        },
+        {
+          "method": "content.list",
+          "ms": 88.9
+        },
+        {
+          "method": "content.list",
+          "ms": 102.3
+        },
+        {
+          "method": "channel.list",
+          "ms": 105.4
+        },
+        {
+          "method": "content.list",
+          "ms": 5.2
+        },
+        {
+          "method": "content.list",
+          "ms": 10.9
+        },
+        {
+          "method": "content.list",
+          "ms": 20.2
+        },
+        {
+          "method": "content.list",
+          "ms": 23.9
+        },
+        {
+          "method": "content.list",
+          "ms": 26.7
+        },
+        {
+          "method": "subscription.list",
+          "ms": 3.6
+        },
+        {
+          "method": "source.list",
+          "ms": 5.1
+        },
+        {
+          "method": "content.list",
+          "ms": 15.5
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": false,
+        "deferred": false
+      },
+      "savedPriority": "low"
+    },
+    {
+      "name": "archive",
+      "writeMs": 44.20000001788139,
+      "settledMs": 428.10000002384186,
+      "detailRetained": false,
+      "bodyRetained": false,
+      "cardRetained": false,
+      "scrollRetained": false,
+      "selectedChanged": true,
+      "renders": [
+        {
+          "name": "renderWithScroll",
+          "ms": 20.30000001192093
+        },
+        {
+          "name": "renderWithScroll",
+          "ms": 37.80000001192093
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 2.5999999940395355
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.09999999403953552
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 23.599999994039536
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 8.199999988079071
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 16.700000017881393
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 23.599999994039536
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 46
+        },
+        {
+          "name": "renderWithScroll",
+          "ms": 23.900000005960464
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 21.700000017881393
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 4.5
+        },
+        {
+          "method": "subscription.list",
+          "ms": 5.7
+        },
+        {
+          "method": "channel.list",
+          "ms": 5.3
+        },
+        {
+          "method": "connection.list",
+          "ms": 7.2
+        },
+        {
+          "method": "schedule.status",
+          "ms": 7.9
+        },
+        {
+          "method": "content.list",
+          "ms": 18.8
+        },
+        {
+          "method": "content.list",
+          "ms": 27.5
+        },
+        {
+          "method": "content.list",
+          "ms": 28.6
+        },
+        {
+          "method": "content.list",
+          "ms": 31.1
+        },
+        {
+          "method": "content.list",
+          "ms": 33.2
+        },
+        {
+          "method": "content.list",
+          "ms": 38.7
+        },
+        {
+          "method": "content.list",
+          "ms": 43.6
+        },
+        {
+          "method": "content.list",
+          "ms": 50.8
+        },
+        {
+          "method": "content.list",
+          "ms": 61.8
+        },
+        {
+          "method": "channel.list",
+          "ms": 63.8
+        },
+        {
+          "method": "sync.list",
+          "ms": 76.5
+        },
+        {
+          "method": "subscription.list",
+          "ms": 78.6
+        },
+        {
+          "method": "content.list",
+          "ms": 16.3
+        },
+        {
+          "method": "content.list",
+          "ms": 18.7
+        },
+        {
+          "method": "content.list",
+          "ms": 23.9
+        },
+        {
+          "method": "content.list",
+          "ms": 25.8
+        },
+        {
+          "method": "content.list",
+          "ms": 26.8
+        },
+        {
+          "method": "subscription.list",
+          "ms": 3.1
+        },
+        {
+          "method": "tag.list",
+          "ms": 6.7
+        },
+        {
+          "method": "source.list",
+          "ms": 11
+        },
+        {
+          "method": "content.list",
+          "ms": 25.3
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 4.9
+        },
+        {
+          "method": "note.get",
+          "ms": 1.4
+        },
+        {
+          "method": "content.list",
+          "ms": 18.1
+        },
+        {
+          "method": "content.list",
+          "ms": 24
+        },
+        {
+          "method": "content.list",
+          "ms": 24.9
+        },
+        {
+          "method": "content.list",
+          "ms": 26.6
+        },
+        {
+          "method": "content.list",
+          "ms": 28.9
+        },
+        {
+          "method": "content.list",
+          "ms": 35.5
+        },
+        {
+          "method": "content.list",
+          "ms": 39.3
+        },
+        {
+          "method": "content.list",
+          "ms": 46.4
+        },
+        {
+          "method": "content.list",
+          "ms": 56.5
+        },
+        {
+          "method": "channel.list",
+          "ms": 57.8
+        },
+        {
+          "method": "content.list",
+          "ms": 3.2
+        },
+        {
+          "method": "content.list",
+          "ms": 8.9
+        },
+        {
+          "method": "content.list",
+          "ms": 17.1
+        },
+        {
+          "method": "content.list",
+          "ms": 19.3
+        },
+        {
+          "method": "content.list",
+          "ms": 20.3
+        },
+        {
+          "method": "subscription.list",
+          "ms": 7.7
+        },
+        {
+          "method": "source.list",
+          "ms": 8.6
+        },
+        {
+          "method": "content.list",
+          "ms": 18.8
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": true,
+        "deferred": false
+      },
+      "savedPriority": "low"
+    },
+    {
+      "name": "archive-from-inbox",
+      "writeMs": 55.30000001192093,
+      "settledMs": 653.3000000119209,
+      "detailRetained": false,
+      "bodyRetained": false,
+      "cardRetained": false,
+      "scrollRetained": false,
+      "selectedChanged": true,
+      "renders": [
+        {
+          "name": "renderWithScroll",
+          "ms": 31.5
+        },
+        {
+          "name": "renderWithScroll",
+          "ms": 31.299999982118607
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 5
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.5
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 20.200000017881393
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 2.199999988079071
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 24.19999998807907
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 26.400000005960464
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 41.20000001788139
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 28.599999994039536
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 0.20000001788139343
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 16.200000017881393
+        },
+        {
+          "name": "renderWithScroll",
+          "ms": 21.700000017881393
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 24.200000017881393
+        },
+        {
+          "name": "reconcileWithScroll",
+          "ms": 28.400000005960464
+        }
+      ],
+      "calls": [
+        {
+          "method": "content.update",
+          "ms": 3.9
+        },
+        {
+          "method": "subscription.list",
+          "ms": 2.7
+        },
+        {
+          "method": "channel.list",
+          "ms": 2.9
+        },
+        {
+          "method": "connection.list",
+          "ms": 3.5
+        },
+        {
+          "method": "schedule.status",
+          "ms": 4.1
+        },
+        {
+          "method": "content.list",
+          "ms": 12.3
+        },
+        {
+          "method": "content.list",
+          "ms": 17.6
+        },
+        {
+          "method": "content.list",
+          "ms": 18.7
+        },
+        {
+          "method": "content.list",
+          "ms": 21.5
+        },
+        {
+          "method": "content.list",
+          "ms": 27.1
+        },
+        {
+          "method": "content.list",
+          "ms": 36
+        },
+        {
+          "method": "content.list",
+          "ms": 47.3
+        },
+        {
+          "method": "content.list",
+          "ms": 59.9
+        },
+        {
+          "method": "content.list",
+          "ms": 93.2
+        },
+        {
+          "method": "channel.list",
+          "ms": 96
+        },
+        {
+          "method": "sync.list",
+          "ms": 110.1
+        },
+        {
+          "method": "subscription.list",
+          "ms": 112
+        },
+        {
+          "method": "content.list",
+          "ms": 17.8
+        },
+        {
+          "method": "content.list",
+          "ms": 20.9
+        },
+        {
+          "method": "content.list",
+          "ms": 32.6
+        },
+        {
+          "method": "content.list",
+          "ms": 35.5
+        },
+        {
+          "method": "content.list",
+          "ms": 37.8
+        },
+        {
+          "method": "subscription.list",
+          "ms": 4.8
+        },
+        {
+          "method": "tag.list",
+          "ms": 7.1
+        },
+        {
+          "method": "source.list",
+          "ms": 9.6
+        },
+        {
+          "method": "content.list",
+          "ms": 20.7
+        },
+        {
+          "method": "reminder.summary",
+          "ms": 3.5
+        },
+        {
+          "method": "note.get",
+          "ms": 3.5
+        },
+        {
+          "method": "content.list",
+          "ms": 12.2
+        },
+        {
+          "method": "content.list",
+          "ms": 19.4
+        },
+        {
+          "method": "content.list",
+          "ms": 20.8
+        },
+        {
+          "method": "content.list",
+          "ms": 22.7
+        },
+        {
+          "method": "content.list",
+          "ms": 31.1
+        },
+        {
+          "method": "content.list",
+          "ms": 40.3
+        },
+        {
+          "method": "content.list",
+          "ms": 54.8
+        },
+        {
+          "method": "content.list",
+          "ms": 72.3
+        },
+        {
+          "method": "content.list",
+          "ms": 96.1
+        },
+        {
+          "method": "channel.list",
+          "ms": 102
+        },
+        {
+          "method": "content.list",
+          "ms": 3.5
+        },
+        {
+          "method": "content.list",
+          "ms": 10.2
+        },
+        {
+          "method": "content.list",
+          "ms": 17.7
+        },
+        {
+          "method": "content.list",
+          "ms": 19.6
+        },
+        {
+          "method": "content.list",
+          "ms": 23.2
+        },
+        {
+          "method": "subscription.list",
+          "ms": 3.3
+        },
+        {
+          "method": "source.list",
+          "ms": 4.4
+        },
+        {
+          "method": "content.list",
+          "ms": 13.1
+        }
+      ],
+      "savedState": {
+        "read": false,
+        "archived": true,
+        "deferred": false
+      },
+      "savedPriority": null
+    }
+  ],
+  "failedWriteControlsRecovered": true
+}

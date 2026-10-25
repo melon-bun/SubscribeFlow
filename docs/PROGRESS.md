@@ -1,3 +1,5 @@
+2026-10-25 用户反馈优先级／归档卡顿，由 Codex 直接修复 BUG-127：内容操作缩小刷新范围、合并同类事件并保留阅读节点。实际隔离副本测试优先级中位数744→187ms，45→21次后台调用，整块内容区重建3→0；归档及侧栏计数、筛选移除、恢复自动、失败恢复均通过，Node150和完整Renderer/刷新回归通过。重启应用后生效，未打包／推送／发布。[报告](verification/content-action-performance-20261025/REPORT.md)。
+
 2026-10-25 按用户要求将 Jev 高／中／低采纳门槛降至 0.7，领先差距 0.2 与 unknown 底线 0.5 保持；114 项优先级测试通过（`5a1cb5a`）。两处间距由 MiniMax 完成（`07b3ad9`），Codex 正式 Renderer 独立测量浅深/紧凑均为 20px，通过验收，20 分钟跟进已删除。[间距验收](verification/priority-minimax/ui-followup-01/CODEX_REVIEW.md)。
 
 2026-10-25 智能优先级 M36–M44 全部源码任务完成并通过 Codex 必要独立验收，BUG-122／123／124关闭。最终113项优先级、149项Node、正式Renderer含新桥接及原失败Electron探针通过；设置原子回滚与真实LLM/Jev产品调用已验证。最终源f545adf，版本仍0.5.2，未打包／推送／发布；非致命时序测试、Jev服务波动与人工OS/偏好效果范围保留。20分钟跟进结束。[最终报告](verification/priority-minimax/batch-04/CODEX_FINAL_REVIEW.md)。
