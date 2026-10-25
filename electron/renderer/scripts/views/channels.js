@@ -186,6 +186,8 @@
   function collectPages(c,fallback) { var n = c.collectItems || 0; return n ? c.incrementalDetails ? n : Math.ceil(n / (c.pageSize || PAGE_ITEMS)) : fallback; }
   function collectDialog(app,c) {
     var saving = false, current = c.collectItems || 0;
+    /* 付费渠道按整页采集：这个条数用来折算扫描页数，不是保存条数的硬上限。 */
+    var paid = c.platform === 'wxrank';
     var error = h('p.field__error',{role:'alert'});
     var input = h('input.input',{id:'collect-items',type:'number',min:1,max:50,step:1,value:String(current || ''),placeholder:'留空使用默认',oninput:function () { error.textContent=''; }});
     var save = ui.btn('保存采集条数',{variant:'primary',onClick:async function () {
@@ -200,14 +202,14 @@
       try {
         await app.client.updateChannel(c.id,{collectItems:items});
         layer.close(); await SF.app.refreshData(true);
-        ui.toast(items ? c.checkedItems ? '刷新与回溯每次检查前 ' + items + ' 条' + (c.contentNoun || '内容') : '刷新与回溯每次最多采集 ' + items + ' 条' : '已恢复默认采集条数');
+        ui.toast(items ? paid ? '刷新与回溯每次最多扫描 ' + items + ' 条（折算页数）' : c.checkedItems ? '刷新与回溯每次检查前 ' + items + ' 条' + (c.contentNoun || '内容') : '刷新与回溯每次最多采集 ' + items + ' 条' : '已恢复默认采集条数');
       } catch(err) { error.textContent = err.message; }
       finally { saving = false; save.disabled = false; input.disabled = false; }
     }});
     var layer = ui.dialog({title:c.name + ' · 采集条数',body:h('div.col',{style:{gap:'16px'}},
       h('div.field',null,h('label.field__label',{htmlFor:'collect-items',text:'每次采集条数（1-50）'}),input,
-        h('p.field__hint',{text: c.checkedItems ? '默认刷新检查前 ' + c.defaultRefreshBudget + ' 条、回溯检查前 ' + c.defaultBackfillBudget + ' 条' + (c.contentNoun || '内容') + '；已收录的也占名额，只跳过详情。' : c.incrementalDetails ? '默认刷新最多 ' + c.defaultRefreshBudget + ' 条、回溯最多 ' + c.defaultBackfillBudget + ' 条详情；已完整收录的笔记跳过详情访问。' : current ? '刷新与回溯每次最多采集 ' + current + ' 条内容。' : '当前使用默认：刷新来源 1 页，回溯历史 10 页。留空并保存可恢复默认。'})),
-      h('p.muted',{text:c.checkedItems ? '例如设置 5，前 5 条都已收录时不打开任何详情，也不继续向后找旧笔记补足 5 条。' : c.incrementalDetails ? '此设置限制本轮详情读取条数，主页扫描单独设有上限；可能因验证、取消或超时提前停止。' : '平台按页读取，最后一页只保存设定条数内的内容；例如填 35 最多采集 35 条。已收录或解析失败的条目也占名额，不向后补足。'}),error),
+        h('p.field__hint',{text: paid ? (current ? '刷新与回溯每次最多扫描 ' + current + ' 条（折算页数）。' : '当前使用默认：刷新来源 1 页，回溯历史 3 页。留空并保存可恢复默认。') : c.checkedItems ? '默认刷新检查前 ' + c.defaultRefreshBudget + ' 条、回溯检查前 ' + c.defaultBackfillBudget + ' 条' + (c.contentNoun || '内容') + '；已收录的也占名额，只跳过详情。' : c.incrementalDetails ? '默认刷新最多 ' + c.defaultRefreshBudget + ' 条、回溯最多 ' + c.defaultBackfillBudget + ' 条详情；已完整收录的笔记跳过详情访问。' : current ? '刷新与回溯每次最多采集 ' + current + ' 条内容。' : '当前使用默认：刷新来源 1 页，回溯历史 10 页。留空并保存可恢复默认。'})),
+      h('p.muted',{text: paid ? '付费渠道按整页采集：这个条数用来折算扫描页数（每次调用买下一整页），实际保存条数可能多于设定值。' : c.checkedItems ? '例如设置 5，前 5 条都已收录时不打开任何详情，也不继续向后找旧笔记补足 5 条。' : c.incrementalDetails ? '此设置限制本轮详情读取条数，主页扫描单独设有上限；可能因验证、取消或超时提前停止。' : '平台按页读取，最后一页只保存设定条数内的内容；例如填 35 最多采集 35 条。已收录或解析失败的条目也占名额，不向后补足。'}),error),
       footer:[ui.btn('取消',{onClick:function () { layer.close(); }}),save]});
   }
   function scheduleText(c) {
@@ -587,6 +589,7 @@
     }
     var checkpoint = wxrankCheckpointText(plan ? plan.checkpoint : null);
     if (checkpoint) rows.push(h('p',{text:(backfill ? '回溯起点：' : '刷新起点：') + checkpoint}));
+    rows.push(h('p.field__hint',{text:'按整页采集：一次调用买下一整页，实际保存条数可能多于设定的采集条数。'}));
     rows.push(h('p.field__hint',{text:'即使本次采到 0 条新内容，也可能已经产生费用——空页同样收费。'}));
     var layer = ui.dialog({title:(backfill ? '回溯历史 · ' : '刷新来源 · ') + c.name,
       body:h('div.col',{style:{gap:'12px'}},rows),

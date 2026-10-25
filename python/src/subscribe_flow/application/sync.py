@@ -102,8 +102,14 @@ class SyncService:
             return value
 
     @staticmethod
-    def _limit_page_items(page, remaining):
+    def _limit_page_items(page, remaining, *, atomic=False):
         if remaining is None or len(page.items) + len(page.item_errors) <= remaining:
+            return page
+        if atomic:
+            # 付费页是原子的：这一页已经付费买下，裁掉余量就是白花钱，
+            # 而且余量再也拿不回来（下次只能重买头页，采到的还是那几篇）。
+            # 付费渠道按整页扫描：采集条数只用来折算页数（扫描窗口），
+            # 实际保存条数可能多于设定值——界面必须写清楚这一点。
             return page
         # Error indices refer to positions in the original page. Failed records
         # consume a place too, so later records cannot fill beyond the window.
@@ -150,7 +156,7 @@ class SyncService:
                     FetchRequest(mode=job["mode"], cursor=cursor, limit=request_limit,
                                  known_ids=known_ids if cursor is None else (),
                                  item_budget=item_budget, progress=checkpoint), ctx))
-                page = self._limit_page_items(page, remaining)
+                page = self._limit_page_items(page, remaining, atomic=descriptor.paid)
                 if remaining is not None:
                     remaining -= len(page.items) + len(page.item_errors)
                 if descriptor.budget_unit == "items":

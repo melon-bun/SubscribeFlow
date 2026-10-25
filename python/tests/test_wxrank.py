@@ -493,6 +493,42 @@ class PagedTransport(FakeTransport):
                               {"wxid": "gh_demo0001", "cursor": next_cursor, "list": rows})
 
 
+class WidePagedTransport(PagedTransport):
+    """宽付费页：一次调用买下 16 篇（两次推送各 8 篇）。
+
+    头条 idx=1，同一次推送的副条 idx=2..8 共享同一个 mid——副条必须一起保存。
+    """
+
+    def __init__(self, pages=3, pushes=2, articles=8):
+        super().__init__(pages=pages, items=0)
+        self.pushes = pushes
+        self.articles = articles
+
+    async def post(self, path, payload, context, operation):
+        context.check(operation)
+        self.requests.append({"path": path, "payload": dict(payload), "operation": operation})
+        if self.fail is not None:
+            raise self.fail
+        if path == protocol.PATH_INFO:
+            return self.info
+        cursor = payload.get("cursor")
+        page = 1 if not cursor else int(str(cursor).split("-")[-1])
+        rows = []
+        if page < self.pages:
+            for push in range(self.pushes):
+                mid = 1000000000 + page * 100 + push
+                for index in range(self.articles):
+                    rows.append({
+                        "url": (f"https://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng%3D%3D"
+                                f"&mid={mid}&idx={index + 1}&sn=wide{page}{push}{index}"),
+                        "title": f"宽页文章 {page}-{push + 1}-{index + 1}",
+                        "pub_time": "2026-10-20 09:30:00",
+                    })
+        next_cursor = f"page-{page + 1}" if page < self.pages else None
+        return WxrankResponse(0, "获取成功，剩余120积分",
+                              {"wxid": "gh_demo0001", "cursor": next_cursor, "list": rows})
+
+
 # ---------------------------------------------------------------------------
 # BUG-129：上游答复的身份必须与当前来源一致
 # ---------------------------------------------------------------------------
@@ -972,6 +1008,120 @@ class PaidPageSemanticsTests(WxrankTestCase):
         rejected = [row for row in self.attempts() if row.get("error_code") == "CURSOR_INVALID"]
         self.assertEqual(len(rejected), 1)
         self.assertEqual(rejected[0]["charge_state"], "not_charged")
+
+
+class CheckpointDepthTests(WxrankTestCase):
+    """BUG-132（重开）：刷新不得把更深的回溯进度退回去。"""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.transport = PagedTransport(pages=5)
+        self.core.paid.transport = self.transport
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        self.subscription = await self.core.subscriptions.add(source.url, CONNECTION, confirmed=True)
+        # 采集条数 10 → 每次任务一页，正好复现 Codex 的请求序列。
+        self.core.subscriptions.update(self.subscription["id"], collect_items=10)
+
+    def checkpoint(self):
+        row = self.core.repository.paid_channels.checkpoint(
+            self.subscription["source_id"], CONNECTION)
+        return json.loads(row["cursor"])["cursor"] if row else None
+
+    def cursors(self):
+        return [row["payload"].get("cursor") for row in self.transport.requests
+                if row["path"] == protocol.PATH_LIST]
+
+    async def run_job(self, mode):
+        job = self.core.sync.start(self.subscription["id"], mode=mode)
+        finished = await self.core.sync.wait(job["job_id"])
+        self.assertEqual(finished["state"], "succeeded", finished.get("error"))
+        return finished
+
+    async def test_a_refresh_does_not_regress_a_deeper_backfill_checkpoint(self):
+        await self.run_job("backfill")
+        await self.run_job("backfill")
+        self.assertEqual(self.checkpoint(), "page-3", "两页回溯后应停在第三页")
+        # 刷新从头开始，但它拿到的只是「头页之后」的位置。
+        await self.run_job("refresh")
+        self.assertEqual(self.checkpoint(), "page-3",
+                         "刷新不得把已经推进的历史检查点退回去")
+        before = len(self.cursors())
+        finished = await self.run_job("backfill")
+        self.assertEqual(self.cursors()[before], "page-3",
+                         "续采必须从深层位置继续，不能重买 page-2")
+        self.assertGreater(finished["new_items"], 0, "续采必须真的拿到新条目")
+        self.assertEqual(self.cursors()[:4], [None, "page-2", None, "page-3"])
+
+    async def test_the_first_refresh_may_establish_the_backfill_starting_point(self):
+        # 没有历史进度时，刷新可以建立回溯起点（否则第一次回溯会重买头页）。
+        await self.run_job("refresh")
+        self.assertEqual(self.checkpoint(), "page-2")
+        before = len(self.cursors())
+        await self.run_job("backfill")
+        self.assertEqual(self.cursors()[before], "page-2",
+                         "回溯必须接着刷新提交的那页走")
+
+
+class WidePaidPageTests(WxrankTestCase):
+    """BUG-137：付费整页与采集窗口的关系——整页保存，不丢已付费条目。"""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.transport = WidePagedTransport(pages=3)
+        self.core.paid.transport = self.transport
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        self.subscription = await self.core.subscriptions.add(source.url, CONNECTION, confirmed=True)
+        self.core.subscriptions.update(self.subscription["id"], collect_items=10)
+
+    def cursors(self):
+        return [row["payload"].get("cursor") for row in self.transport.requests
+                if row["path"] == protocol.PATH_LIST]
+
+    async def run_job(self, mode):
+        job = self.core.sync.start(self.subscription["id"], mode=mode)
+        finished = await self.core.sync.wait(job["job_id"])
+        self.assertEqual(finished["state"], "succeeded", finished.get("error"))
+        return finished
+
+    def checkpoint(self):
+        row = self.core.repository.paid_channels.checkpoint(
+            self.subscription["source_id"], CONNECTION)
+        return json.loads(row["cursor"])["cursor"] if row else None
+
+    async def test_the_whole_paid_page_is_saved_with_its_sub_articles(self):
+        await self.run_job("refresh")
+        contents = self.core.queries.contents()
+        # 一次调用买下 16 篇：全部保存，副条一条都不丢。
+        self.assertEqual(contents["total"], 16)
+        titles = {item["title"] for item in contents["items"]}
+        self.assertIn("宽页文章 1-1-1", titles, "头条必须保存")
+        self.assertIn("宽页文章 1-1-8", titles, "同一次推送的最后一篇副条必须保存")
+        self.assertIn("宽页文章 1-2-1", titles, "第二次推送的头条必须保存")
+        # 采集条数只是扫描窗口：调用次数不超上限。
+        self.assertEqual(len(self.cursors()), 1, "一页就是一次付费调用")
+        self.assertEqual(self.checkpoint(), "page-2", "整页保存后检查点必须推进")
+
+    async def test_the_next_backfill_continues_instead_of_buying_the_head_again(self):
+        await self.run_job("refresh")
+        before = len(self.cursors())
+        finished = await self.run_job("backfill")
+        self.assertEqual(self.cursors()[before], "page-2",
+                         "回溯必须接着整页保存后的检查点走，不得重买头页")
+        self.assertEqual(finished["new_items"], 16, "续采必须拿到下一页的 16 篇")
+        self.assertEqual(self.core.queries.contents()["total"], 32)
+        self.assertEqual(self.checkpoint(), "page-3")
+
+    async def test_the_wide_page_progress_survives_a_restart(self):
+        await self.run_job("refresh")
+        await self.core.close()
+        self.core = self.make_core()
+        self.core.paid.transport = self.transport
+        self.core.credentials.provide(REFERENCE, "test-secret")
+        before = len(self.cursors())
+        finished = await self.run_job("backfill")
+        self.assertEqual(self.cursors()[before], "page-2",
+                         "重启后必须接着上次的检查点走")
+        self.assertEqual(finished["new_items"], 16)
 
 
 if __name__ == "__main__":

@@ -346,22 +346,57 @@ class Repository:
         return self.get_job(job_id)
 
     def _write_channel_checkpoint(self, db, job, source_key, page, checkpoint):
-        """把本渠道的回溯游标写进检查点表（与页面数据同一事务）。"""
-        if checkpoint is None:
+        """把本渠道的回溯游标写进检查点表（与页面数据同一事务）。
+
+        两种任务对检查点的意义不同：
+
+        - 回溯：从上次的位置继续，本次提交的位置一定比之前更深，直接写。
+        - 刷新：永远从头部开始，它拿到的是「头页之后」的位置。
+          已经有一份**有效**的历史检查点就说明历史走到了更深处，
+          刷新不得把它退回去——退回去会让下一次回溯重买已经采过的页。
+          游标是不透明的，不能靠字符串比深浅：这里只判断「有没有有效检查点」。
+        """
+        connection_id = job["snapshot"]["connection_id"]
+        if job["mode"] != "backfill":
+            existing = self.paid_channels.checkpoint(source_key, connection_id)
+            if existing is not None and self._checkpoint_usable(existing, checkpoint):
+                return
+            if checkpoint is None:
+                # 终止页且没有有效检查点：没有可建立的起点，也没什么可清。
+                return
+        elif checkpoint is None:
             # 这一页是终止页：服务端当前数据集已扫完，没有可继续的位置。
             # 清掉旧检查点，下一次回溯从头开始（这是用户主动发起的重扫）。
-            self.paid_channels.delete_checkpoint(db, source_key, job["snapshot"]["connection_id"])
+            self.paid_channels.delete_checkpoint(db, source_key, connection_id)
             return
         if not isinstance(checkpoint, dict):
             raise ValueError("Invalid channel checkpoint")
         cursor = checkpoint.get("cursor")
         self.paid_channels.write_checkpoint(
-            db, source_id=source_key, connection_id=job["snapshot"]["connection_id"],
+            db, source_id=source_key, connection_id=connection_id,
             cursor=json.dumps(cursor, ensure_ascii=False) if cursor else None,
             expires_at=checkpoint.get("expiresAt"),
             credential_version=int(checkpoint.get("credentialVersion") or 0),
             parser_version=str(checkpoint.get("parserVersion") or "1"),
             progress_version=str(checkpoint.get("progressVersion") or "1"))
+
+    @staticmethod
+    def _checkpoint_usable(existing, checkpoint):
+        """已存的检查点还有效吗：版本对得上、也没过期。
+
+        当前版本从本次提交的检查点载荷里取——那就是这次调用用的版本。
+        过期或换过密钥的检查点不算数：那时从头重扫，而不是拿旧游标接着走。
+        """
+        if not isinstance(checkpoint, dict):
+            return False
+        if int(existing.get("credential_version") or 0) != int(checkpoint.get("credentialVersion") or 0):
+            return False
+        if str(existing.get("parser_version") or "") != str(checkpoint.get("parserVersion") or ""):
+            return False
+        if str(existing.get("progress_version") or "") != str(checkpoint.get("progressVersion") or ""):
+            return False
+        expires = existing.get("expires_at")
+        return not expires or expires > now()
 
     def complete_source_ids(self, source_key, limit=2000):
         """Only successfully acquired details qualify for the pre-navigation skip."""

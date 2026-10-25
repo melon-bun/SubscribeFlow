@@ -413,3 +413,64 @@ provider-jev  api.typesafe.ai  jev-1.14.0   HTTP 200  非空        input 289 / 
 **真实付费上游没有验证**：本机没有授权的 wxrank 密钥（用户指定文件只有 LLM 配置；
 已授权的公众号付费实验目录里也没有真实 key，方案本身写明成功路径从未用真实验证）。
 全程没有任何真实扣费。详见交付说明里的外部阻塞一节。
+
+---
+
+# 第四批（最终核心返修）
+
+Codex 第三批审查（HEAD0556b33）留下两个已复现的实质阻断，本轮合并修一次。
+
+## 12. 刷新不得回退更深的有效检查点（BUG-132 重开）
+
+第三批把检查点改成「任何一次成功提交的页都推进」，过头了：刷新拿到的是
+「头页之后」的位置，如果历史已经走到更深处，刷新会把检查点退回去，
+下一次回溯又重买已经采过的页（白花一次钱，采到的还全是已收录条目）。
+
+现在的规则按任务种类分开：
+
+| 任务 | 检查点 |
+| --- | --- |
+| 回溯 | 从上次的位置继续，本次提交一定更深 → **每次推进** |
+| 刷新 | 永远从头部开始 → **只在没有有效检查点时建立起点** |
+
+「有效」＝同密钥版本、同解析／进展版本、没过期。已有有效检查点就保留它：
+那说明历史走到了更深处，刷新不该把它退回去。过期或换过密钥的检查点照旧作废
+（从头重扫，不假称续采）。
+
+**游标是不透明的**：不靠字符串比深浅，只判断「有没有有效检查点」。
+实现落在 `Repository._write_channel_checkpoint`（与页数据同一事务）。
+
+## 13. 付费页整页保存（BUG-137）
+
+上游一页是「10 次推送 × 每次最多 8 篇」，一次付费调用买下的是**整页**。
+条目已经付过钱，裁掉余量等于白花钱，而且余量再也拿不回来：
+下次只能重买头页，采到的还是那几篇。
+
+所以付费渠道不再按条数裁剪已购页面：
+
+- 引擎的条目窗口对 `paid` 渠道不裁剪（`SyncService._limit_page_items(..., atomic=descriptor.paid)`）；
+- `collect_items` 变成**折算扫描页数的窗口**（0／10／30／50 → 3／1／3／5 页），
+  **调用页数与费用不越界**，但实际保存条数可能多于设定值；
+- 界面与方案各写一句必要说明：渠道卡片限制说明（Core 下发）、
+  刷新／回溯确认框、采集条数对话框、方案 §5.1 与 W45-08/09。
+
+其它渠道的条目窗口语义不变。
+
+## 14. 第四批验证结果
+
+```
+cd python && PYTHONPATH=src python3 -m unittest tests.test_wxrank
+→ Ran 80 tests … OK      （新增 5 项：CheckpointDepthTests 2 项 + WidePaidPageTests 3 项）
+
+cd python && PYTHONPATH=src python3 -m unittest tests.test_wxrank tests.test_application tests.test_storage
+→ Ran 104 tests … OK
+
+cd Subscribe_Flow && npm run smoke:wxrank:real
+→ {"wxrankUi":"passed","calls":4,"confirmedCredits":20,"contents":30,"checkpointAfterBackfill":"resume"}
+```
+
+新增的 5 项回归在修复前是**红的**（用 `git stash` 去掉两处修复对照跑过）：
+`page-3` 退回 `page-2`、宽页只存 10 条、续采又从头买。
+
+本轮**没有调用任何真实 LLM、Jev 或付费 wxrank 接口**；
+真实付费上游仍因本机没有授权密钥而未验证。

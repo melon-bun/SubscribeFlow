@@ -1,0 +1,49 @@
+{
+  "generatedAt": "2026-10-25T12:15:46.840Z",
+  "mode": "正式界面／Preload／Main／Core + 真实传输层 + 本机真实 HTTP 上游",
+  "notVerified": "真实付费上游 data.wxrank.com：本机没有授权的 wxrank 密钥，未产生任何真实扣费。",
+  "upstream": "http://127.0.0.1:53403",
+  "electronExitCode": 0,
+  "summary": {
+    "wxrankUi": "passed",
+    "upstream": "local-http (真实响应形状，非真实付费上游)",
+    "calls": 4,
+    "confirmedCredits": 20,
+    "contents": 30,
+    "checkpointAfterBackfill": "resume"
+  },
+  "requestLog": [
+    {
+      "path": "/weixin/getinfo",
+      "hasKey": true,
+      "keyLength": 29,
+      "biz": "MzI4NTEyMzQ1Ng==",
+      "wxid": null,
+      "cursor": null
+    },
+    {
+      "path": "/weixin/getps",
+      "hasKey": true,
+      "keyLength": 29,
+      "biz": null,
+      "wxid": "gh_demo0001",
+      "cursor": null
+    },
+    {
+      "path": "/weixin/getps",
+      "hasKey": true,
+      "keyLength": 29,
+      "biz": null,
+      "wxid": "gh_demo0001",
+      "cursor": "C1"
+    },
+    {
+      "path": "/weixin/getps",
+      "hasKey": true,
+      "keyLength": 29,
+      "biz": null,
+      "wxid": "gh_demo0001",
+      "cursor": "C2"
+    }
+  ]
+}
