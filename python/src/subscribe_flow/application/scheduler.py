@@ -207,6 +207,10 @@ class Scheduler:
             if sub['connection_id'] != connection_id:
                 continue
             for block in self.blocked(sub):
+                # Paid readiness only checks local configuration. It cannot
+                # prove recovery or authorize replay of an uncertain charge.
+                if block['error']['code'] == 'DEPENDENCY_UNAVAILABLE' and self._paid_channel(sub):
+                    continue
                 if block['error']['code'] in {'AUTH_REQUIRED','AUTH_EXPIRED','INTERACTION_REQUIRED','DEPENDENCY_UNAVAILABLE'}:
                     self.store.clear(block)
                     changed = True
@@ -217,6 +221,8 @@ class Scheduler:
     async def _check_dependencies(self):
         for conn in self.repository.list_connections():
             subs = [s for s in self.repository.list_subscriptions() if s['connection_id'] == conn['id'] and s['status'] == 'active' and s['sync_mode'] == 'automatic']
+            if any(self._paid_channel(s) for s in subs):
+                continue
             blocks = [b for s in subs for b in self.blocked(s)]
             if not any(b['error']['code'] == 'DEPENDENCY_UNAVAILABLE' for b in blocks):
                 continue

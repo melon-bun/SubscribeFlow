@@ -638,6 +638,9 @@ AppClient：`getWxrankUsage(timezone?)`、`clearWxrankCache(biz?)`、`testWxrank
 
 业务失败与网络未决都不自动重试：再打一次只会再花钱。
 
+付费连接的 `DEPENDENCY_UNAVAILABLE` 阻塞不会被免费的本地配置检查解除，调度器也不自动探测恢复。
+本地 `ready` 仅表示配置存在；用户明确重试付费任务成功后才解除该故障阻塞（BUG-139）。
+
 ### 付费渠道状态（M45.4～M45.5）
 
 `wxrank.status` → 渠道卡片需要的全部**只读**信息。只读本地账本，不发请求、不花钱。

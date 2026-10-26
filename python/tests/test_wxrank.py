@@ -800,6 +800,40 @@ class BackfillTests(WxrankTestCase):
 
 
 class SchedulerPolicyTests(WxrankTestCase):
+    async def test_local_dependency_check_cannot_replay_a_paid_request(self):
+        source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
+        subscription = await self.core.subscriptions.add(
+            source.url, CONNECTION, confirmed=True, sync_mode="automatic")
+        self.transport.fail = ChannelError(
+            "DEPENDENCY_UNAVAILABLE", "list_items", "无法完成上游请求，扣费结果未知")
+        job = self.core.sync.start(subscription["id"], mode="refresh")
+        await self.core.sync.wait(job["job_id"])
+        calls = self.transport.calls
+        self.assertTrue(self.core.scheduler.blocked(subscription))
+
+        # A free local credential check does not establish upstream recovery.
+        await self.core.scheduler.tick()
+        await self.core.scheduler.tick()
+        for job_id in list(self.core.sync.tasks):
+            await self.core.sync.wait(job_id)
+        self.assertEqual(self.transport.calls, calls,
+                         "本地配置检查不得自动重放扣费结果未知的付费请求")
+        self.assertTrue(self.core.scheduler.blocked(subscription))
+
+        # The UI's free configuration check must not cause a paid retry either.
+        self.transport.fail = None
+        await self.core.check_connection(CONNECTION)
+        await self.core.scheduler.tick()
+        self.assertEqual(self.transport.calls, calls)
+        self.assertTrue(self.core.scheduler.blocked(subscription))
+
+        # The user can explicitly retry the paid job after recovery.
+        await self.core.sync.retry(job["job_id"])
+        for job_id in list(self.core.sync.tasks):
+            await self.core.sync.wait(job_id)
+        self.assertEqual(self.transport.calls, calls + 1)
+        self.assertFalse(self.core.scheduler.blocked(subscription))
+
     async def test_a_paid_timeout_is_not_replayed_automatically(self):
         source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
         subscription = await self.core.subscriptions.add(

@@ -437,7 +437,8 @@
     } else {
       body = wxrankCardBody(app,c,status);
     }
-    return h('div.col.wxrank-card',{style:{gap:'16px'},'data-refresh-key':'wxrank-card'},head,body);
+    return h('div.col.wxrank-card',{style:{gap:'16px'},'data-refresh-key':'wxrank-card'},head,
+      ui.notice({tone:'warn',text:'本方案需要使用第三方在线付费 API，解析、刷新、回溯及自动检查均可能产生费用，请谨慎使用。'}),body);
   }
 
   function wxrankCardBody(app, c, status) {

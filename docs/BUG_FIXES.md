@@ -62,6 +62,7 @@
 | BUG-105 | 识别设置未保存提示被关闭后，所有后续页面导航失效 | 2ecdde0，Codex正式隔离运行时验收通过 |
 | BUG-119 | 收件箱选中卡片的上边与左边被遮挡（滚动容器裁掉外发光环与取景框角标） | 已修复，M35 实机几何断言通过 |
 | BUG-120 | 设置页导航分区的验收断言已过时（漏了 M25／M32 新增的两个分区） | 已修复，断言随实际分区列表更新 |
+| BUG-139 | 本地配置检查自动解除公众号连接故障阻塞，导致未知扣费任务被重放 | 已修复并验证（2026-10-26） |
 
 ## BUG-102：采集更新触发整页闪烁
 
@@ -2410,3 +2411,12 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 - 修复（2026-10-25，第五批）：**根证书装在环境里**——本机 Python 的 OpenSSL 默认 CA 路径 `/Library/Frameworks/Python.framework/Versions/3.12/etc/openssl/cert.pem` 指向 certifi 的 `cacert.pem`，`ssl.create_default_context()` 从 0 张变成 **118 张**，裸路径即可用，不需要产品改造。产品侧只按仓库既有写法（`channels/github/transport.py` 同款 `_ssl_context()`）在 `channels/wxrank/transport.py` 内保留最小兜底，**没有新增共享 HTTP 层**；**校验一个字都没放宽**：找不到任何 CA 就让请求大声失败，不使用 `CERT_NONE`，不注入未认证来源的证书。
 - 验证：裸 `ssl.create_default_context()`（118 张 CA）直接访问上游首页返回 HTTP 200；产品 `WxrankTransport` 的 opener 访问上游首页拿到 HTTP 302（TLS 与 HTTP 均通）；新增 `python/tests/test_wxrank_trust.py` 3 项聚焦回归；`PYTHONPATH=src python3 -m unittest tests.test_wxrank_trust tests.test_wxrank` → **Ran 83 tests … OK**。真实上游链长为 1（只发叶子，签发者 `CN=YE1`），叶子 ← YE1 签名验签成立，Node 26.7.0 自带信任库 `authorized=true`——**不是上游不可信，是本机没有 CA**。
 - 状态：已修复（2026-10-25，第五批）。修后第五批真实验收 5 次调用全部成功、25 积分确认消费、0 次未知扣费。
+
+## BUG-139：本地配置检查自动解除公众号连接故障阻塞，导致未知扣费任务被重放
+
+- 现象／复现：公众号来源开启自动检查，列表请求抛出 `DEPENDENCY_UNAVAILABLE`（例如连接断开、HTTP 失败，扣费结果未知）。任务进入连接阻塞后，连续推进两次调度周期；第一次自动执行免费的本地配置检查并清掉阻塞，第二次重试原付费任务。在隔离假传输中，调用数从 2 增至 3（含首次来源解析），没有用户重试动作。
+- 预期：本地配置检查只能判断是否配置，不得证明上游恢复或授权重放未知扣费请求；用户明确重试后可以恢复。非付费渠道仍按原策略自动检查依赖恢复情况。
+- 原因：通用 `_check_dependencies()` 对付费连接也自动检查，`connection_checked()` 将本地 `ready` 当成依赖恢复，清掉故障 block，遗留的立即重试计划随后重新发起付费请求。
+- 修复范围：调度器不自动探测付费渠道的依赖故障；付费渠道的本地检查（包括界面点击「检查配置」）不清除 `DEPENDENCY_UNAVAILABLE` 阻塞。用户手动重试任务成功后按原逻辑解除阻塞；凭据错误等既有处理和非付费恢复策略保留。
+- 验证：新增 `SchedulerPolicyTests.test_local_dependency_check_cannot_replay_a_paid_request`，修复前实际失败 `3 != 2`；修复后自动调度、本地手动检查均不增加调用，明确重试只增加一次并解除阻塞。付费策略与通用调度聚焦 **16 项通过**；完整 Python **643 项**、Node **155 项**通过；公众号与通用正式 Renderer 隔离验收均通过。本轮无真实收费调用。
+- 状态／提交：**已修复并验证**（2026-10-26），与本次渠道付费提醒同批提交；证据见 [全局检查记录](verification/m45-global-review-20261026/REPORT.md)。版本仍 0.5.2，未重新打包。
