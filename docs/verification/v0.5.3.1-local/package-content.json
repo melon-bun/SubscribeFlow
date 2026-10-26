@@ -1,0 +1,12 @@
+{
+  "version": "0.5.3.1",
+  "baseRevision": "f0321b118cfbd44313f7ad78f5158f4ef0e197ac",
+  "filesMatched": 61,
+  "logoMatched": true,
+  "allowlist": true,
+  "archiveBytes": 146141190,
+  "sha256": "117c73167bf06476baaa43255780bcc1a8cf6ddf251f0c4cf6b3b638f0656792",
+  "relativeBundleLinks": 18,
+  "symlinksValid": true,
+  "coreArchitecture": "x86_64"
+}
