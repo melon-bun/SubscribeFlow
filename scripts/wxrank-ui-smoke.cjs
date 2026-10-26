@@ -38,9 +38,20 @@ async function verifyWxrank({evaluate, until, click, screenshot, core, root}) {
   };
   const usage = async () => await core.call('wxrank.usage');
 
-  // ---- 渠道卡片存在，且明确写着这是付费渠道 ----
+  // ---- 付费配置归入微信公众号，默认收起，展开后才能操作 ----
   await evaluate(`document.querySelector('[data-nav="channels"]').click()`);
   await until(`!!document.querySelector('${card}')`);
+  const group = '.connection-row[data-connection-id="wechat:default"]';
+  const head = group + ' > .connection-row__head';
+  assert.equal(await evaluate(`document.querySelector('${card}').closest('.connection-row')?.dataset.connectionId`),
+               'wechat:default', '付费配置必须放在微信公众号内');
+  assert.equal(await evaluate(`document.querySelector('${head}').getAttribute('aria-expanded')`), 'false');
+  assert.equal(await evaluate(`document.querySelector('${card}').getClientRects().length`), 0,
+               '默认收起时不得露出付费配置');
+  await screenshot('m45-wechat-collapsed.png');
+  await evaluate(`document.querySelector('${head}').click()`);
+  await until(`document.querySelector('${head}').getAttribute('aria-expanded') === 'true'`);
+  assert.ok(await evaluate(`document.querySelector('${card}').getClientRects().length > 0`));
   await until(inCard(`c.innerText.includes('公众号 · 付费API')`));
   assert.ok((await cardText()).includes('未配置'), '未配置密钥时必须显示未配置');
   assert.ok((await cardText()).includes('本月已确认用量'), '卡片必须显示本地用量');
@@ -68,6 +79,12 @@ async function verifyWxrank({evaluate, until, click, screenshot, core, root}) {
   await clickInCard('检查配置');
   await until(inCard(`c.innerText.includes('未联网验证')`), 30000);
   const afterCheck = await usage();
+  assert.equal(await evaluate(`document.querySelector('${head}').getAttribute('aria-expanded')`), 'true',
+               '保存密钥与配置检查后的刷新必须保留展开状态');
+  await evaluate(`document.querySelector('${head}').click()`);
+  assert.equal(await evaluate(`document.querySelector('${card}').getClientRects().length`), 0);
+  await evaluate(`document.querySelector('${head}').click()`);
+  await until(`document.querySelector('${head}').getAttribute('aria-expanded') === 'true'`);
   assert.equal(afterCheck.calls, beforeCheck.calls, '本地配置检查不得触发任何调用');
   assert.equal(afterCheck.confirmed_credits, 0, '本地配置检查不得产生费用');
   await screenshot('m45-wxrank-check.png');

@@ -57,6 +57,8 @@ async function verifyWxrankReal({evaluate, until, click, screenshot, core, root}
   // ---- 渠道卡片存在，且明确写着这是付费渠道 ----
   await evaluate(`document.querySelector('[data-nav="channels"]').click()`);
   await until(`!!document.querySelector('${card}')`);
+  await evaluate(`document.querySelector('.connection-row[data-connection-id="wechat:default"] > .connection-row__head').click()`);
+  await until(`document.querySelector('${card}').getClientRects().length > 0`);
   await until(inCard(`c.innerText.includes('公众号 · 付费API')`));
   assert.ok((await cardText()).includes('未配置'), '未配置密钥时必须显示未配置');
   assert.ok((await cardText()).includes('本月已确认用量'), '卡片必须显示本地用量');

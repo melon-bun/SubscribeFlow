@@ -251,10 +251,11 @@
   }
   function bottomPanels(app) {
     return h('div.channels__bottom',{'data-refresh-key':'channel-bottom'},
-      h('section.panel.live-panel',null,h('h2.t-h2',{text:'渠道与连接'}),app.session.connections.map(function (c) {
-        /* M45：付费渠道有自己的卡片。通用连接行会把「可用」写在状态上，
-           而付费渠道的可用性只能靠真实调用证明，不能靠连接行暗示。 */
-        return c.channel === 'wxrank' ? wxrankCard(app,c) : connectionRow(app,c);
+      h('section.panel.live-panel',null,h('h2.t-h2',{text:'渠道与连接'}),app.session.connections.filter(function (c) {
+        // 付费 API 是微信公众号内的一种方式，共用同一个折叠入口。
+        return c.channel !== 'wxrank';
+      }).map(function (c) {
+        return connectionRow(app,c);
       }),h('p.field__hint',{text:'自动采集遇到登录或访问验证会暂停，处理后检查连接即可恢复。采集失败时仍可查看本地内容。'})),
       runsPanel(app));
   }
@@ -310,7 +311,9 @@
   function connectionRow(app, c) {
     var ops = descriptorFor(app, c).operations || {};
     var intakeOnly = !(ops.resolve_source && ops.resolve_source.supported);
+    var paidConnection = c.channel === 'wechat' ? wxrankConnection(app) : null;
     var status = connectionStatus(app, c);
+    if (paidConnection) status = {tone:'neutral', label:'含付费 API'};
     var r = c.readiness;
     var open = expandedConnections.has(c.id);
     var detailId = 'connection-detail-' + c.id;
@@ -327,17 +330,19 @@
         h('span.spacer'),
         h('span.badge.badge--' + status.tone,{text:status.label})),
       h('div.connection-row__detail',{id:detailId},
-        intakeOnly
+        paidConnection
+          ? h('p.muted',{text:'文章链接可在收件箱直接收录，无需登录。公众号订阅请配置下方付费 API。'})
+          : intakeOnly
           ? h('p.muted',{text:'仅支持自主添加：在收件箱粘贴文章链接即可收录，无需登录，也不订阅公众号。'})
           : (c.backend === 'electron-session'
               ? h('p.muted',{text:'使用应用内独立会话，无需启动 Chrome。登录后关闭登录窗口，再检查连接。'})
               : c.backend === 'direct-http'
                 ? h('p.muted',{text:'由核心进程直接读取公开网页，不使用浏览器会话，也不需要登录。'})
                 : null),
-        h('p',{text:r ? r.reason : '尚未检查采集环境'}),
-        h('p.muted',{text:'认证：' + ({unknown:'尚未确认',required:'需要登录',available:'已有可用会话',not_required:'无需登录'}[r && r.authentication] || '尚未确认')}),
-        r ? h('p.muted',{text:'检查时间：' + fmt.absolute(r.checked_at)}) : null,
-        h('div.row.row-gap-3',null,
+        paidConnection ? null : h('p',{text:r ? r.reason : '尚未检查采集环境'}),
+        paidConnection ? null : h('p.muted',{text:'认证：' + ({unknown:'尚未确认',required:'需要登录',available:'已有可用会话',not_required:'无需登录'}[r && r.authentication] || '尚未确认')}),
+        !paidConnection && r ? h('p.muted',{text:'检查时间：' + fmt.absolute(r.checked_at)}) : null,
+        paidConnection ? wxrankCard(app,paidConnection) : h('div.row.row-gap-3',null,
           !intakeOnly && c.backend === 'electron-session' ? ui.btn('应用内登录 ' + name,{onClick:function () { SF.app.act('login:' + c.id,function () { return app.client.loginConnection(c.id); }); }}) : null,
           ui.btn('检查连接',{onClick:function () {
             // 结果直接写回会话数据：状态立刻更新，不必等全量刷新的时序；

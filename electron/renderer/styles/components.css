@@ -878,7 +878,7 @@ textarea.input {
   box-shadow: inset 0 0 0 1px currentColor;
 }
 
-/* M45：付费渠道卡片与普通连接行分开：它是配置面板，不是可展开的连接行。 */
+/* 付费 API 配置位于「微信公众号」折叠详情内，与文章链接收录说明分隔。 */
 .wxrank-card {
   margin-top: 12px;
   padding-top: 14px;

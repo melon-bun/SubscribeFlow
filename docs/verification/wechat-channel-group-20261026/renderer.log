@@ -1,0 +1,3 @@
+npm notice run subscribe-flow@0.5.2 smoke:wxrank
+npm notice run node scripts/renderer-smoke.cjs --wxrank
+{"wxrankUi":"passed","confirmedCredits":15,"calls":3,"contents":10}

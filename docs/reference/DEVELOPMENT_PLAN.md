@@ -1,3 +1,5 @@
+2026-10-26 按用户纠正完成BUG-140：公众号付费API配置与费用警告归入现有「微信公众号」折叠项，默认收起，不再独立常驻。沿用既有展开状态；一次正式公众号界面回归通过，含默认隐藏、展开/收起、配置后状态保持及原采集流程。Codex直接实现，未派MiniMax、未真实收费、未打包/推送/发布。报告：Subscribe_Flow/docs/verification/wechat-channel-group-20261026/REPORT.md。
+
 2026-10-26 Codex按用户要求直接完成全局检查与公众号在线付费API提醒，未分配MiniMax。渠道卡片与README已加入谨慎使用警告；修复BUG-139：本地配置检查误解除连接故障后自动重放未知扣费请求，现保留阻塞并由用户明确重试。完整Python643项、Node155项、公众号及通用正式Renderer隔离回归通过；无其他新增实质阻断，既有非致命问题仍只记录。未重复真实API调用，版本仍0.5.2，未打包/推送/发布。报告：Subscribe_Flow/docs/verification/m45-global-review-20261026/REPORT.md。
 
 2026-10-25 M45已通过Codex最终独立验收：产品源码ac77059，交付fcc0134；既有实现/界面链路已核验，新增信任配置3项通过，真实公众号5次成功/确认25积分/40条/重启续采通过，真实LLM与Jev证据已验。本次未重复收费调用；wechat密钥原已存在，旧缺key结论已纠正。BUG132部分重扫残余及BUG134–136仅记录；未打包/推送/发布，定时跟进结束。最终报告：Subscribe_Flow/docs/verification/m45-minimax/batch-05-live-wechat/CODEX_FINAL_REVIEW.md。
