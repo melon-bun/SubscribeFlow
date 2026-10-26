@@ -27,7 +27,7 @@ async function connect(url) {
 async function port() {const server=net.createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const number=server.address().port;await new Promise(r=>server.close(r));return number;}
 async function launch(bundle,dataDir,work,expected='ready') {
   const number=await port();
-  const args=['-n','-g','-W','-a',bundle,'--stdout',path.join(work,'stdout.log'),'--stderr',path.join(work,'stderr.log')];
+  const args=['-n',...(process.env.SUBSCRIBE_FLOW_PACKAGED_FOREGROUND==='1'?[]:['-g']),'-W','-a',bundle,'--stdout',path.join(work,'stdout.log'),'--stderr',path.join(work,'stderr.log')];
   for(const [key,value] of Object.entries({SUBSCRIBE_FLOW_DATA_DIR:dataDir,PATH:'/usr/bin:/bin:/usr/sbin:/sbin',
     SUBSCRIBE_FLOW_PYTHON:'/missing/python',PYTHONHOME:'/missing/python',PYTHONPATH:'/missing/src',
     SUBSCRIBE_FLOW_DIAGNOSTICS:'1',SUBSCRIBE_FLOW_DESKTOP_SMOKE:'1',SUBSCRIBE_FLOW_RENDERER_SMOKE:'offline'})) args.push('--env',`${key}=${value}`);

@@ -1,16 +1,16 @@
 # 0.5.3.2 本地修复包
 
-用户于2026-10-26指定版本0.5.3.2，由Codex直接构建macOS Intel（x64）本地包。
+用户于2026-10-26指定版本0.5.3.2，由Codex直接完成macOS Intel（x64）本地打包。**包体审计及完整包内验收均已通过。**
 
-包含已通过源码界面验收的`baf92ea`：
+## 本次修复
+
+包含源码提交`baf92ea`：
 
 - BUG-128：优先级滑块按控件内部位置起跑，避免详情滚动恢复或重绘后从控件外飞入。
 - BUG-108：移除“不选择这条连接”；停用统一用自动打标开关，保留所选方式与连接；旧空引用可重新选择。
 - 保留0.5.3.1的AI自动识别页滚轮修复及此前功能。
 
-[源码验证](verification/priority-recognition-20261026/REPORT.md)：原失败位置场景对照、聚焦界面操作与18项分段动画检查已通过。本次不重复真实模型或公众号付费调用，不修改日常数据，不关闭正在使用的旧应用，不推送或发布。
-
-状态：**安装包已生成，包内基础核验通过；完整界面启动验收被macOS钥匙串访问阻塞，尚未通过。** 首次隔离启动的主线程采样停在系统`SecItemCopyMatching`/`SecKeychainItemCopyContent`调用，调试接口超时；可能在等待系统授权，尚未收到用户确认，也未证实系统弹窗已显示。两次重新启动均未完成钥匙串访问；最后一轮已给予约5分钟等待。未将这些尝试计为完整启动通过。已结束并移除本轮隔离测试进程及应用副本，未改动日常应用或钥匙串。
+[源码验证](verification/priority-recognition-20261026/REPORT.md)包含原失败位置对照、聚焦界面操作和18项分段动画检查。
 
 ## 本地产物
 
@@ -21,15 +21,36 @@
 - 构建修订：`78cc6c494549fbab04a9f2219c882271bd6f7437`。
 - Electron44.5.1、Python3.12.5、schema15，macOS Intel x64、本机ad-hoc签名。
 
-基础审计：61个Renderer/Main/Preload源码文件逐字节一致，图标/版本/构建元数据正确，无测试/凭据/数据库混入，18条相对框架链接有效，Core架构x86_64，签名与ZIP检查通过。证据：`verification/v0.5.3.2-local/audit.json`、`native-audit.json`。首次启动失败日志保留为`smoke-attempt-1.log`。
+授权后验收使用的仍是上述原包，完成后再次核对SHA-256一致，未重新构建或改变产物。
 
+## 包体验收
 
-## 验收结果与待确认项
+61个Renderer/Main/Preload源码文件逐字节一致，图标/版本/构建元数据正确，无测试/凭据/数据库混入，18条相对框架链接有效，Core架构x86_64，签名与ZIP检查通过。[包体审计](verification/v0.5.3.2-local/audit.json) · [原生审计](verification/v0.5.3.2-local/native-audit.json)。
 
-- 已通过：正式冻结Core版本、重复采集去重、取消任务、小红书本地封面及Core重启持久化；均发生于正式界面启动之前，未访问真实上游。
-- 隔离v2数据库由新包升级到schema15，并创建`subscribe-flow.before-v15.backup`，已只读核对。
-- 未完成：完整Renderer启动、界面交互、应用重启与故障恢复链路。源码界面测试已在前一修复阶段通过，但不能替代本包未完成的检查。
-- 测试入口允许以`SUBSCRIBE_FLOW_PACKAGED_STARTUP_WAIT_MS`为系统人工授权预留更长等待，默认超时不变；该脚本不在安装包内，后续无需因此重建包。
-- 证据：[包体审计](verification/v0.5.3.2-local/audit.json)、[原生审计](verification/v0.5.3.2-local/native-audit.json)、[已完成步骤及阻塞](verification/v0.5.3.2-local/partial-smoke.json)、[钥匙串调用栈摘要](verification/v0.5.3.2-local/keychain-wait.json)。原始构建/尝试日志仅保留本机验证目录。
+## 完整包内验收
 
-0.5.3.2安装包已可交付；本记录明确保留完整启动验收待确认。未覆盖运行中的0.5.3.1应用，旧ZIP和日常数据仍保留。未推送或发布到远端。
+正式包复制到项目外目录，经LaunchServices启动，使用独立临时数据、最小PATH和故意无效的外部Python设置，确认自带Core正常工作。完整入口退出0，`packagedSmoke=passed`：
+
+- 冻结Core版本、去重、取消任务，小红书本地封面及Core重启持久化通过。
+- 隔离v2数据库升级到schema15并创建升级前备份。
+- 优先级看板/继承、标签、笔记、总结设置隔离与应用重启持久化通过。
+- 公众号付费API仍归入微信公众号折叠项，警告存在；未调用真实付费上游。
+- 正式包内“不选择这条连接”入口已移除，标签工具栏正常，AI自动识别页真实滚轮可下滑到底。
+- 隔离Core崩溃后自动恢复、缺失Core时修复提示、脱敏诊断通过。
+- 本轮测试实例及临时副本已正常清理，未改日常数据库、登录或通知偏好，未退出用户正在使用的旧应用。
+
+[完整结果](verification/v0.5.3.2-local/result.json) · [实际运行结果](verification/v0.5.3.2-local/foreground-consent/result.json)。截图与运行日志保留在本地同目录。
+
+## 首次启动等待记录
+
+先前后台隔离启动超时，主线程采样停在`SecItemCopyMatching`/`SecKeychainItemCopyContent`；历史失败日志和部分完成步骤保留，不改写为成功。用户随后明确回复“已允许”。后台补验仍超时，改为前台启动隔离副本后完整验收通过。
+
+验收入口新增可选`SUBSCRIBE_FLOW_PACKAGED_FOREGROUND=1`，便于系统人工授权；配合可选`SUBSCRIBE_FLOW_PACKAGED_STARTUP_WAIT_MS`延长等待，默认行为不变。实际成功命令：
+
+```sh
+SUBSCRIBE_FLOW_PACKAGED_FOREGROUND=1 SUBSCRIBE_FLOW_PACKAGED_STARTUP_WAIT_MS=600000 SUBSCRIBE_FLOW_VERIFY_OUTPUT=docs/verification/v0.5.3.2-local/foreground-consent npm run smoke:packaged
+```
+
+这些脚本不在安装包内，无需重建产物。当前钥匙串等待已不再阻塞本次验收；不据此承诺其他系统账户免于正常系统授权。
+
+没有重复真实LLM、Jev或公众号付费调用，没有修改系统保护机制，没有推送或远端发布。旧ZIP和用户日常数据仍保留。
