@@ -70,6 +70,23 @@ async function run() {
   assert.ok(await evaluate(`backfill === document.querySelector('[data-ai-slot="backfill"]') && confirmButton.isConnected && document.activeElement === confirmButton`), 'AI任务更新应保留补打预览节点和焦点');
   assert.equal(await evaluate(`document.querySelectorAll('.ai-task').length`), 12);
   assert.ok(await evaluate(`document.querySelector('.tags-ai').scrollWidth <= document.querySelector('.tags-ai').clientWidth + 1`), '长任务不得横向溢出');
+  // Native wheel input must scroll, not merely permit programmatic scrollTop.
+  await evaluate(`document.querySelector('.tags-ai').scrollTop = 0; void 0`);
+  const wheelPoint = await evaluate(`(() => { const r = document.querySelector('.tags-ai').getBoundingClientRect(); return {x:Math.round(r.left + 8),y:Math.round(r.top + 60)}; })()`);
+  win.webContents.sendInputEvent({type:'mouseWheel',...wheelPoint,deltaX:0,deltaY:-500,canScroll:true});
+  await until(`document.querySelector('.tags-ai').scrollTop > 0`);
+  const atAiBottom = `(() => { const p=document.querySelector('.tags-ai'),last=p.querySelector('.ai-task:last-child').getBoundingClientRect();return last.bottom<=p.getBoundingClientRect().bottom && last.bottom>=p.getBoundingClientRect().top; })()`;
+  for (let index=0;index<20 && !(await evaluate(atAiBottom));index++) {
+    win.webContents.sendInputEvent({type:'mouseWheel',...wheelPoint,deltaX:0,deltaY:-500,canScroll:true});
+    await new Promise(resolve=>setTimeout(resolve,160));
+  }
+  await until(atAiBottom);
+  // Let native smooth wheel scrolling settle before testing refresh retention.
+  await new Promise(resolve=>setTimeout(resolve,500));
+  const aiTop = await evaluate(`(() => { const p=document.querySelector('.tags-ai'); p.scrollTop=200; return p.scrollTop; })()`);
+  await background(['tagging']); await idle();
+  assert.equal(await evaluate(`document.querySelector('.tags-ai').scrollTop`), aiTop, '后台状态更新应保留AI面板滚动位置');
+  await evaluate(`document.querySelector('.tags-ai').scrollTop = 0; void 0`);
   await screenshot('tags-ai-preview-survives');
   await evaluate(`TagsRefreshStub.configure({delays:{'tagging.status':300}}); void 0`);
   await background(['tagging']);

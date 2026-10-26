@@ -19,6 +19,7 @@ const bridge = {
       case 'core.status': return {state: 'ready'};
       case 'getSession': return {user: {name: '界面验收'}, capabilities: {canManageTags: true}, connection: {state: 'ready', actions: []}};
       case 'getCounts': return {total: 0, unread: 0};
+      case 'getSettings': return {tagging:{enabled:false,mode:'llm',providerIds:{}},ai:{providers:{}}};
       case 'listPlatforms': case 'listPriorities': case 'getRuns': return [];
       case 'listContents': case 'listContentSources': return {items: [], total: 0};
       case 'listTags': return {items: tags.filter(t => !first?.keyword || t.name.includes(first.keyword)), total: tags.length};

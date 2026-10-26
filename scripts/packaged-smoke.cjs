@@ -204,6 +204,24 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     assert.ok(await app.evaluate(`document.querySelector('.tags-toolbar').scrollWidth <= document.querySelector('.tags-toolbar').clientWidth+1`));
     fs.writeFileSync(path.join(output,'packaged-tags.png'),Buffer.from((await app.page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
     result.wxrankGrouped=true;result.wxrankPaidWarning=true;result.tagsToolbar=true;
+    // Regression: the shipped theme must not hide the AI page's wheel scrolling.
+    await app.page.send('Emulation.setDeviceMetricsOverride',{width:1000,height:600,deviceScaleFactor:1,mobile:false});
+    await app.evaluate(`SF.app.navigate('tags',{tab:'ai'})`);
+    await until(()=>app.evaluate(`!!document.querySelector('.tags-ai')`));
+    await app.evaluate(`SF.views.tags.whenIdle()`);
+    const aiPoint=await app.evaluate(`(() => {const p=document.querySelector('.tags-ai'),r=p.getBoundingClientRect();p.scrollTop=0;return {x:r.left+8,y:r.top+60,client:p.clientHeight,scroll:p.scrollHeight};})()`);
+    assert.ok(aiPoint.scroll>aiPoint.client,'AI settings exceed the compact viewport');
+    await app.page.send('Input.dispatchMouseEvent',{type:'mouseWheel',x:aiPoint.x,y:aiPoint.y,deltaX:0,deltaY:500});
+    await until(()=>app.evaluate(`document.querySelector('.tags-ai').scrollTop>0`));
+    const aiAtBottom=`(() => {const p=document.querySelector('.tags-ai'),last=p.lastElementChild.getBoundingClientRect(),r=p.getBoundingClientRect();return last.bottom<=r.bottom&&last.bottom>=r.top;})()`;
+    for(let i=0;i<20&&!(await app.evaluate(aiAtBottom));i++){
+      await app.page.send('Input.dispatchMouseEvent',{type:'mouseWheel',x:aiPoint.x,y:aiPoint.y,deltaX:0,deltaY:500});
+      await delay(160);
+    }
+    await until(()=>app.evaluate(aiAtBottom));
+    fs.writeFileSync(path.join(output,'packaged-tags-ai-bottom.png'),Buffer.from((await app.page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    result.tagsAiWheelScroll=true;result.tagsAiBottomReachable=true;
+    await app.page.send('Emulation.clearDeviceMetricsOverride');
     // Find only the frozen child of the test-launched app; never touch another instance.
     const rows=spawnSync('/bin/ps',['-axo','pid=,ppid=,comm='],{encoding:'utf8'}).stdout.split('\n');
     const child=rows.map(r=>r.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/)).find(m=>m&&Number(m[2])===app.pid&&path.basename(m[3])===path.basename(executable));
