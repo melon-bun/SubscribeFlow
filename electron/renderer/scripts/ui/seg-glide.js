@@ -121,12 +121,14 @@
     var run = runOf(group);
     var from = run ? thumbBox(run) : old ? box(old.getBoundingClientRect()) : null;
     if (!old || !from || !from.width) return;
+    var rect = group.getBoundingClientRect();
     pending = {
       group: group,
       sig: signature(group),
       index: items(group).indexOf(btn),
       old: old,
       from: from,
+      origin: run ? run.origin : { left: rect.left + group.clientLeft, top: rect.top + group.clientTop },
       // 动画中途旧按钮的底被压成透明，外观要取正在跑的那次。
       look: run ? run.look : look(old),
       until: performance.now() + WAIT,
@@ -146,7 +148,7 @@
           pending = null;
           var prev = runOf(group) || runOf(p.group);
           if (prev) end(prev);
-          start(group, target, p.from, p.look, p.sig, p.index, DURATION, p.old);
+          start(group, target, p.from, p.look, p.sig, p.index, DURATION, p.old, p.origin);
         }
       }
     }
@@ -157,18 +159,22 @@
       var at = thumbBox(run);
       var left = DURATION - (performance.now() - run.started);
       end(run);
-      if (target && isActive(target) && left > 0) start(next, target, at, run.look, run.sig, run.index, Math.max(MIN_LEG, left), null);
+      if (target && isActive(target) && left > 0) start(next, target, at, run.look, run.sig, run.index, Math.max(MIN_LEG, left), null, run.origin);
     });
     sync();
   }
 
-  function start(group, target, from, face, sig, index, duration, old) {
+  function start(group, target, from, face, sig, index, duration, old, origin) {
     var to = box(target.getBoundingClientRect());
     if (!to.width) return;
     // 有 contain: layout，::before 的包含块就是分组的内边距盒。
     var g = group.getBoundingClientRect();
     var ox = g.left + group.clientLeft;
     var oy = g.top + group.clientTop;
+    // 保存／重绘会恢复滚动位置，分组也可能被替换。滑块应从旧的组内位置
+    // 接着走，不能把旧屏幕坐标直接套进新分组，否则会从控件外斜飞进来。
+    from = { left: ox + from.left - origin.left, top: oy + from.top - origin.top,
+      width: from.width, height: from.height };
     function frame(r) {
       return {
         transform: "translate(" + (r.left - ox) + "px, " + (r.top - oy) + "px)",
@@ -191,6 +197,7 @@
     var run = {
       group: group, sig: sig, index: index, look: face, thumb: thumb, anims: anims,
       from: from, to: to, started: performance.now() - (DURATION - duration),
+      origin: { left: ox, top: oy },
     };
     runs.add(run);
     thumb.onfinish = function () {

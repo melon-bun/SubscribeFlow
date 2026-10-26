@@ -182,12 +182,6 @@ async function verify({window, root}) {
   await resting('overview');
   await glide('overview-mode', '.view__actions .seg');
 
-  // 渠道管理：渠道列表 / 优先级设置
-  await go('channels');
-  await until(`!!document.querySelector('[data-view="channels"] .seg')`);
-  await resting('channels');
-  await glide('channels-tab', '[data-view="channels"] .seg');
-
   // 标签：标签列表 / AI 自动识别（深色下再拍一次）
   await go('tags');
   await until(`!!document.querySelector('.tags-tabbar .seg')`);
@@ -202,10 +196,10 @@ async function verify({window, root}) {
   const dbg = window.webContents.debugger;
   dbg.attach('1.3');
   await dbg.sendCommand('Emulation.setEmulatedMedia', {features: [{name: 'prefers-reduced-motion', value: 'reduce'}]});
-  await go('channels');
-  await until(`!!document.querySelector('[data-view="channels"] .seg')`);
+  await go('overview');
+  await until(`!!document.querySelector('.view__actions .seg')`);
   await check('reduced-motion', `(async () => {
-    const group = document.querySelector('[data-view="channels"] .seg');
+    const group = document.querySelector('.view__actions .seg');
     const target = __sg.buttons(group).find(b => !b.classList.contains('is-active'));
     target.click();
     const thumb = await __sg.waitThumb(500);

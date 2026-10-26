@@ -1243,7 +1243,7 @@
     var draftIds = recognition.draft && recognition.draft.providerIds;
     var savedIds = recognition.saved && recognition.saved.providerIds;
     var providerId = null;
-    // 草稿里显式选了「不选」就是没有连接，不再回退到已保存的那一条。
+    // 没配过连接或旧设置显式为空时，不回退到其他方式的连接。
     if (draftIds && mode in draftIds) providerId = draftIds[mode] || null;
     else if (savedIds) providerId = savedIds[mode] || null;
     return providerId ? (recognition.providers[providerId] || {}) : {};
@@ -1502,6 +1502,17 @@
     // 用哪条连接：按能力筛出可用的连接，用户自己挑一条。
     var usable = compatibleProviders(draft.mode);
     var currentProviderId = (draft.providerIds || {})[draft.mode] || "";
+    var providerOptions = usable.map(function (providerId) {
+      var provider = recognition.providers[providerId] || {};
+      return {
+        value: providerId,
+        label: (provider.name || providerId) +
+          (provider.enabled === false ? "（已停用）" : "") +
+          (provider.configured ? "" : "（未配置完整）"),
+      };
+    });
+    // 初次配置及旧的空引用显示占位，选定后只保留实际连接。
+    if (!currentProviderId) providerOptions.unshift({ value: "", label: usable.length ? "请选择连接" : "暂无可用连接" });
     children.push(
       h(
         "div.ai-status__row",
@@ -1519,15 +1530,7 @@
         "div.ai-status__row",
         null,
         ui.select(
-          usable.map(function (providerId) {
-            var provider = recognition.providers[providerId] || {};
-            return {
-              value: providerId,
-              label: (provider.name || providerId) +
-                (provider.enabled === false ? "（已停用）" : "") +
-                (provider.configured ? "" : "（未配置完整）"),
-            };
-          }),
+          providerOptions,
           currentProviderId,
           function (value) {
             draft.providerIds = draft.providerIds || {};
@@ -1536,19 +1539,7 @@
             paintRecognition(app);
           },
           { ariaLabel: "选择连接" }
-        ),
-        // 明确的「不选择」：解除这一类识别与连接的引用。解除后才能删除那条连接。
-        ui.btn("不选择这条连接", {
-          variant: "ghost",
-          disabled: !currentProviderId,
-          title: currentProviderId ? "解除这一类识别与连接的引用" : "当前没有选中的连接",
-          onClick: function () {
-            draft.providerIds = draft.providerIds || {};
-            draft.providerIds[draft.mode] = null;
-            recognition.notice = null;
-            paintRecognition(app);
-          },
-        })
+        )
       )
     );
     // 当前方式用的 API 摘要与可用状态：缺什么直接写出来。
@@ -1559,7 +1550,7 @@
         h("span.ai-status__name", { text: "当前方式的 API" }),
         h("span.ai-status__note", {
           text: !currentProviderId
-            ? modeLabel + " 还没有选连接：选一条，或点「不选择这条连接」解除引用。"
+            ? modeLabel + " 还没有选连接，请先选择一条连接。"
             : missing.length
               ? modeLabel + " 尚未配置完整，缺：" + missing.join("、") + "。"
               : modeLabel + " 使用 " + (provider.endpoint || "") + " · " + (provider.model || "") + "，配置完整。",
