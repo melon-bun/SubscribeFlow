@@ -80,7 +80,7 @@ class WechatTests(unittest.IsolatedAsyncioTestCase):
         task = self.core.intake.start(url)
         return await self.core.intake.wait(task['task_id'])
 
-    async def test_declares_single_item_operations_only(self):
+    async def test_page_implementation_declares_single_item_operations_without_paid_service(self):
         operations = self.adapter.describe().operations
         self.assertEqual({name for name, cap in operations.items() if cap.supported},
                          {'match_item_url', 'resolve_item', 'read_item'})
@@ -199,7 +199,7 @@ class WechatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(task['error']['code'], 'SCHEMA_CHANGED')
         self.assertEqual(self.core.queries.contents()['total'], 0)
 
-    async def test_channel_has_no_subscription_or_listing_operations(self):
+    async def test_missing_paid_implementation_does_not_advertise_subscription_operations(self):
         context = self.context()
         gateway = self.core.gateway
         with self.assertRaises(ChannelError) as caught:
@@ -212,7 +212,7 @@ class WechatTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ChannelError):
             await self.core.check_connection('wechat:default', 'list_items')
         self.assertEqual((await self.core.check_connection('wechat:default', 'read_item')).state, 'ready')
-        self.assertFalse(hasattr(self.adapter, 'resolve_source'))
+        self.assertFalse(self.adapter.describe().operations['resolve_source'].supported)
 
     async def test_route_only_accepts_enabled_wechat_connection(self):
         connections = [self.core.repository.get_connection('wechat:default')]

@@ -1,6 +1,6 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {callUI, contentDTO} = require('../electron/main/app-client.cjs');
+const {callUI, contentDTO, channelDTO} = require('../electron/main/app-client.cjs');
 const {openSavedLink} = require('../electron/main/external-links.cjs');
 const DISPLAY_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
@@ -32,6 +32,43 @@ test('display DTO preserves missing dates, date precision and cover without inve
   assert.equal(item.publishedTimezone,'UTC');
   assert.equal(item.cover,'https://example.com/cover.jpg');
   assert.equal(item.priority,null);
+});
+
+test('content details use the subscribed backend capability and preserve explicit body state', () => {
+  const item={id:'wechat:article:1',channel:'wechat',source:{channel:'wechat',kind:'account',external_id:'biz',name:'Account'},
+    published:{value:null,precision:'unknown'},body_state:'list_only'};
+  const subs=[{id:'sub',source_id:'wechat:account:biz',channel:'wechat',backend:'electron-session',status:'active',connection_id:'wechat:default'}];
+  const descriptors=[{channel:'wechat',backend:'retired',operations:{get_item_detail:{supported:true}}},
+    {channel:'wechat',backend:'electron-session',paid:true,resumable:true,source_homepage:false,operations:{get_item_detail:{supported:false},list_items:{supported:true,pagination:'cursor'}}}];
+  const displayed=contentDTO(item,subs,descriptors);
+  assert.equal(displayed.bodyState,'list_only');
+  assert.equal(displayed.canFetchDetail,false,'a different backend must not grant detail capability');
+  assert.equal(displayed.connectionId,'wechat:default');
+  descriptors[1].operations.get_item_detail.supported=true;
+  assert.equal(contentDTO({...item,body_state:'full'},subs,descriptors).canFetchDetail,true);
+  assert.equal(contentDTO({...item,body_state:'full'},subs,descriptors).bodyState,'full');
+  subs[0].status='paused';
+  assert.equal(contentDTO(item,subs,descriptors).canFetchDetail,false);
+  const channel=channelDTO(subs[0],descriptors);
+  assert.equal(channel.platform,'wechat');
+  assert.equal(channel.paid,true);
+  assert.equal(channel.resumable,true);
+  assert.equal(channel.capabilities.canOpenHomepage,false);
+});
+
+test('one unified WeChat connection advertises both imports even before paid credentials are configured', async () => {
+  const operations=Object.fromEntries(['resolve_source','list_items','match_item_url','resolve_item','read_item'].map(name=>[name,{supported:true}]));
+  const core={call:async name=>({
+    'channel.list':[{channel:'wechat',backend:'electron-session',paid:true,operations}],
+    'connection.list':[{id:'wechat:default',channel:'wechat',backend:'electron-session',enabled:true,readiness:{state:'blocked',reason:'尚未配置付费密钥'}}],
+    'schedule.status':{},'content.stats':{counts:{total:2},platforms:{wechat:2}},
+  })[name]};
+  const session=await callUI(core,'getSession',[]);
+  assert.equal(session.channels.length,1);
+  assert.equal(session.connections.length,1);
+  assert.equal(session.capabilities.canRefresh,true);
+  assert.equal(session.capabilities.canIntake,true);
+  assert.deepEqual(await callUI(core,'listPlatforms',[]),[{id:'wechat',count:2}]);
 });
 
 test('M11 common queries preserve intake dates and filter real sources independently of subscriptions', async () => {
@@ -168,7 +205,8 @@ test('source search and resolution stay separate from confirmed creation', async
   const calls=[];
   const core={call:async (name,params)=>{
     calls.push([name,params]);
-    if(name==='connection.list') return [{id:'c',channel:'test'}];
+    if(name==='connection.list') return [{id:'c',channel:'test',backend:'test-backend'}];
+    if(name==='channel.list') return [{channel:'test',backend:'test-backend',operations:{resolve_source:{supported:true}}}];
     if(name==='subscription.add') { assert.equal(params.confirmed,false); throw new Error('confirmation required'); }
     return {items:[]};
   }};
@@ -176,6 +214,22 @@ test('source search and resolution stay separate from confirmed creation', async
   await callUI(core,'resolveSource',[{connectionId:'c',text:'1'}]);
   assert.deepEqual(calls.map(c=>c[0]),['source.search','source.resolve']);
   await assert.rejects(callUI(core,'createChannel',[{platform:'test',link:'1'}]),/confirmation required/);
+});
+
+test('source creation selects a connection with the requested operation rather than the first matching platform', async () => {
+  const seen=[];
+  const core={call:async(name,params)=>{
+    seen.push([name,params]);
+    if(name==='connection.list') return [{id:'old',channel:'test',backend:'old'},{id:'current',channel:'test',backend:'current'}];
+    if(name==='channel.list') return [{channel:'test',backend:'old',operations:{resolve_source:{supported:false}}},
+      {channel:'test',backend:'current',operations:{resolve_source:{supported:true}}}];
+    if(name==='subscription.add') return {id:'sub',channel:'test',backend:'current',name:'Author',url:'https://example.com',status:'active'};
+    throw new Error(name);
+  }};
+  await callUI(core,'createChannel',[{platform:'test',link:'account',confirmed:true}]);
+  assert.deepEqual(seen.find(([name])=>name==='subscription.add')[1],{locator:'account',connection_id:'current',confirmed:true});
+  await assert.rejects(callUI(core,'createChannel',[{connectionId:'old',link:'account',confirmed:true}]),{code:'UNSUPPORTED_OPERATION'});
+  assert.equal(seen.filter(([name])=>name==='subscription.add').length,1);
 });
 
 test('calendar maps shared filters to a full monthly summary without pagination', async () => {

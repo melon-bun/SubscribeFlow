@@ -4,8 +4,8 @@
  * 启动本机上游（响应形状照真实上游契约复刻），再用正式 Electron 应用
  * 跑一遍：Renderer → Preload → Main → Core → 真实传输层 → 真实 HTTP。
  *
- * 这不是真实付费上游：本机没有授权的 wxrank 密钥，整个过程不产生任何
- * 真实扣费。证据文件里会写清楚这一点。
+ * 本次只使用本机假上游和构造密钥，整个过程不产生真实扣费。
+ * 证据文件里会写清楚这一点。
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -14,7 +14,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
-const outputDir = path.join(root, 'docs', 'verification', 'm45-minimax', 'batch-03');
+const outputDir = process.env.SUBSCRIBE_FLOW_VERIFY_OUTPUT || path.join(root, 'docs', 'verification', 'm45-minimax', 'batch-03');
 const screenshotDir = path.join(outputDir, 'screenshots');
 const evidencePath = path.join(outputDir, 'real-wxrank-ui-evidence.json');
 
@@ -51,7 +51,7 @@ async function main() {
   const evidence = {
     generatedAt: new Date().toISOString(),
     mode: '正式界面／Preload／Main／Core + 真实传输层 + 本机真实 HTTP 上游',
-    notVerified: '真实付费上游 data.wxrank.com：本机没有授权的 wxrank 密钥，未产生任何真实扣费。',
+    notVerified: '本次使用本机假上游与构造密钥，未访问真实付费上游 data.wxrank.com，未产生真实扣费。',
     upstream: upstream.base,
     electronExitCode: code,
     summary,

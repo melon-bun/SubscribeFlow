@@ -1,6 +1,6 @@
 import sqlite3
 from uuid import uuid4
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 
@@ -38,7 +38,12 @@ class Database:
             # fails, neither an intermediate schema nor partial data can be committed.
             script = "\n".join(path.read_text() for path in pending)
             try:
-                self.connection.executescript("BEGIN IMMEDIATE;\n" + script + f"\nPRAGMA user_version={latest};\nCOMMIT;")
+                self.connection.executescript("BEGIN IMMEDIATE;\n" + script)
+                if current < 16 <= latest:
+                    from .wechat_identity_migration import migrate
+                    migrate(self.connection)
+                self.connection.execute(f"PRAGMA user_version={latest}")
+                self.connection.commit()
             except BaseException:
                 if self.connection.in_transaction:
                     self.connection.rollback()
@@ -63,7 +68,7 @@ class Database:
         if self.connection.in_transaction:
             raise RuntimeError("Backup cannot run inside a write transaction")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(destination) as target:
+        with closing(sqlite3.connect(destination)) as target:
             self.connection.backup(target)
 
     def close(self):

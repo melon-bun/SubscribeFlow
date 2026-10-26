@@ -44,6 +44,10 @@ async function verifyWxrankReal({evaluate, until, click, screenshot, core, root}
     assert.ok(done, '渠道卡片上必须能找到输入框：' + selector);
   };
   const usage = async () => await core.call('wxrank.usage');
+  const descriptors = await core.call('channel.list');
+  assert.equal(descriptors.filter(d => d.channel === 'wechat').length,1,'微信只有一个公开 Adapter');
+  assert.equal(descriptors.some(d => d.channel === 'wxrank'),false);
+  assert.deepEqual((await core.call('connection.list')).filter(c => c.channel === 'wechat').map(c => c.id),['wechat:default']);
   const contents = async () => await core.call('content.list');
   const waitContents = async (previous) => {
     for (let i = 0; i < 240; i += 1) {
@@ -94,10 +98,10 @@ async function verifyWxrankReal({evaluate, until, click, screenshot, core, root}
   await click('添加渠道或创作者');
   await until(`!!document.querySelector('#source-input')`);
   await evaluate(`(() => {
-    const b = document.querySelector('[data-connection-id="wxrank:default"]');
+    const b = document.querySelector('.source-platforms [data-connection-id="wechat:default"]');
     if (b) b.click();
   })()`);
-  await until(`document.querySelector('.source-platforms [data-connection-id="wxrank:default"]')?.getAttribute('aria-pressed') === 'true'`);
+  await until(`document.querySelector('.source-platforms [data-connection-id="wechat:default"]')?.getAttribute('aria-pressed') === 'true'`);
   assert.ok((await evaluate(`document.querySelector('.dialog').innerText`)).includes('积分'),
             '添加来源时必须说明首次解析的费用');
   await evaluate(`document.querySelector('#source-input').value = ${JSON.stringify(BIZ)}; document.querySelector('#source-input').dispatchEvent(new Event('input', {bubbles:true}));`);

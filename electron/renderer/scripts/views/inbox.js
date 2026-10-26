@@ -497,10 +497,10 @@
        仍在 5.2 期接；在此之前这行是版式示例，必须带「示例数据」标记。
        M45：只取列表元数据的渠道不得在这行宣称「正文已采集」——
        同一面板里下面就写着「仅列表信息」，两处不能自相矛盾。 */
-    var listOnly = !!item && item.platform === 'wxrank';
+    var listOnly = !!item && item.bodyState === 'list_only';
     var rows = [
       { key: '采集', val: '09:14' },
-      { key: '详情', val: listOnly ? '仅列表信息' : '正文已采集' },
+      { key: '详情', val: listOnly ? '仅列表信息' : item && item.bodyState === 'full' ? '正文已采集' : '尚未确认' },
       { key: 'AI 打标', val: '3 个' },
     ];
     return h(
@@ -754,17 +754,17 @@
    * 真正被截断才显示「展开内容」，不给一个点了没反应的按钮。
    */
   function bodySection(item, whole) {
-    /* M45：公众号付费渠道只取列表元数据，不抓正文。
+    /* 列表采集只取得元数据的记录，按记录本身的正文状态说明。
        这时不能落到通用兜底文案——那句「没有文字正文」会把
        「本来就不提供正文」说成「可能没抓到」，反而含混。 */
-    if (item.platform === 'wxrank') {
+    if (item.bodyState === 'list_only') {
       var listOnly = h('div.detail__section', null,
         h('div.detail__section-title', {text:'正文'}));
       listOnly.setAttribute('data-refresh-key', 'body:' + item.id);
       listOnly.setAttribute('data-refresh-boundary', '');
       listOnly.setAttribute('data-refresh-preserve', JSON.stringify([item.kind, item.summary]));
       if (item.summary) listOnly.appendChild(h('p.detail__summary.detail__text', {text:item.summary}));
-      listOnly.appendChild(h('p.detail__summary.detail__text', {text:'仅列表信息（未获取正文）：本渠道只取列表元数据，不抓取正文。需要全文请打开原文。'}));
+      listOnly.appendChild(h('p.detail__summary.detail__text', {text:'仅列表信息（未获取正文）：这条内容由列表采集取得。需要全文请打开原文。'}));
       return listOnly;
     }
     var fallback = whole ? '这条内容没有文字正文，可打开原文查看。' : '此内容尚未提供摘要，可补充详情或打开原文。';
@@ -882,7 +882,7 @@
    * 「打开原文」用墨色——橙色主操作留给「保存」这类真主操作。
    */
   function detailFoot(app, item, repaint) {
-    var canDetail = item.canFetchDetail !== false && !!item.channelId && app.session.channels.some(function (c) { return c.channel === item.platform && c.operations.get_item_detail && c.operations.get_item_detail.supported; });
+    var canDetail = item.canFetchDetail === true && !!item.channelId;
     var states = [['read','已读','check'],['deferred','稍后','clock'],['archived','归档','archive']];
     var shownState = previewState(item);
     return h('div.action-bar', {role:'group','aria-label':'内容操作'},

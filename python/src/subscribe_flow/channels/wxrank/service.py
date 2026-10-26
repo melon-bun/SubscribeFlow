@@ -55,6 +55,7 @@ class WxrankService:
     """付费渠道业务层。传输可注入，测试用假传输，不触网。"""
 
     CHANNEL = protocol.CHANNEL
+    PROVIDER_ID = protocol.PROVIDER_ID
 
     def __init__(self, *, settings, credentials, repository, transport=None,
                  resources=None, qps: int = DEFAULT_QPS):
@@ -104,7 +105,7 @@ class WxrankService:
         密钥只存在于内存里；版本号来自设置，换密钥时前进，
         账本据此区分「哪一次调用用的是哪一把密钥」。
         """
-        entry = self.settings.channel_credential(self.CHANNEL) or {}
+        entry = self.settings.channel_credential(self.PROVIDER_ID) or {}
         reference = entry.get("reference")
         secret = self.credentials.secret_for(reference) if reference else None
         return secret, int(entry.get("revision") or 0)
@@ -128,17 +129,29 @@ class WxrankService:
         secret, version = self.credential()
         if not secret:
             raise ChannelError("NOT_CONFIGURED", operation, "尚未配置付费渠道密钥")
-        entry = self.settings.channel_credential(self.CHANNEL) or {}
+        entry = self.settings.channel_credential(self.PROVIDER_ID) or {}
         if not entry.get("enabled", True):
             raise ChannelError("DEPENDENCY_UNAVAILABLE", operation, "付费渠道已停用")
+        reference = entry.get("reference")
         attempt = self.repository.begin_attempt(
-            channel=self.CHANNEL, operation=purpose or operation,
+            channel=self.PROVIDER_ID, operation=purpose or operation,
             connection_id=context.connection.id, credential_version=version,
             biz=biz, wxid=wxid)
         payload = protocol.request_body(operation, secret, **fields)
         sent = False
         try:
             async with self.resources.acquire(context, operation, gap=self.min_interval):
+                # Waiting for the shared gate must not retain authorization from
+                # before a stop, credential replacement, or provider disable.
+                if self._closed:
+                    raise ChannelError("CANCELLED", operation, "应用正在关闭，请求未发出")
+                current = self.settings.channel_credential(self.PROVIDER_ID) or {}
+                if not current.get("enabled", True):
+                    raise ChannelError("DEPENDENCY_UNAVAILABLE", operation, "付费渠道已停用")
+                current_secret, current_version = self.credential()
+                if (current.get("reference") != reference or current_version != version
+                        or current_secret != secret):
+                    raise ChannelError("STALE_CONFIG", operation, "付费采集凭据已变化，请重新发起操作")
                 sent = True
                 response = await self.transport.post(path, payload, context, operation)
         except asyncio.CancelledError:
@@ -220,21 +233,23 @@ class WxrankService:
             raise ChannelError("SCHEMA_CHANGED", "resolve_source",
                                "公众号信息结构已变化，请更新适配器") from None
         source = Source(channel=self.CHANNEL, kind="account",
-                        external_id=protocol.source_external_id(account["gh_id"]),
+                        external_id=biz,
                         name=account["name"], url=protocol.source_url(biz),
                         confirmed=False, avatar=account["avatar"],
                         description=account["description"])
+        self.repository.save_backend_identity(self.PROVIDER_ID, biz, account["gh_id"])
         _, version = self.credential()
         self.repository.save_source_cache(
-            biz=biz, gh_id=source.external_id, name=source.name, avatar=source.avatar,
+            biz=biz, gh_id=account["gh_id"], name=source.name, avatar=source.avatar,
             description=source.description, source_id=source.key,
             credential_version=version, parser_version=protocol.PARSER_VERSION)
         return source
 
     def _source_from_cache(self, biz: str, cached: dict) -> Source:
         """用缓存里的身份重建来源。地址仍由规范 biz 推导，两处不会走偏。"""
+        self.repository.save_backend_identity(self.PROVIDER_ID, biz, cached["gh_id"])
         return Source(channel=self.CHANNEL, kind="account",
-                      external_id=protocol.source_external_id(cached["gh_id"]),
+                      external_id=biz,
                       name=cached["name"] or cached["gh_id"],
                       url=protocol.source_url(biz), confirmed=False,
                       avatar=cached.get("avatar"), description=cached.get("description"))
@@ -248,7 +263,7 @@ class WxrankService:
         内容身份必须与它一致，否则就是别人的文章。
         """
         try:
-            return protocol.extract_biz(source.url)
+            return protocol.normalize_biz(source.external_id)
         except ValueError:
             return ""
 
@@ -292,6 +307,11 @@ class WxrankService:
         source_biz = self.source_biz(source)
         if not source_biz:
             raise ChannelError("INVALID_INPUT", "list_items", "来源缺少公众号标识，无法核对身份")
+        upstream = self.repository.backend_identity(self.PROVIDER_ID, source_biz)
+        if not upstream:
+            # This must not silently issue a paid resolution after clearing profile cache.
+            raise ChannelError("NOT_CONFIGURED", "list_items", "缺少公众号上游身份，请重新解析来源后采集")
+        gh_id = upstream["upstream_id"]
         # 回溯从上次已提交成功的页继续；刷新永远从头部开始。
         cursor = (request.cursor or {}).get("cursor")
         if cursor is None and request.mode == "backfill":
@@ -300,8 +320,8 @@ class WxrankService:
         try:
             response = await self._paid_request(
                 operation=OP_LIST, path=protocol.PATH_LIST,
-                fields={"wxid": source.external_id, **protocol.list_request_fields(cursor)},
-                context=context, purpose=OP_LIST, wxid=source.external_id)
+                fields={"wxid": gh_id, **protocol.list_request_fields(cursor)},
+                context=context, purpose=OP_LIST, wxid=gh_id)
         except ChannelError as error:
             if error.code == "CURSOR_INVALID" and cursor:
                 # 上游拒绝了这个游标：它已经不可用。留着它只会让下一次回溯
@@ -313,7 +333,7 @@ class WxrankService:
         except ValueError:
             raise ChannelError("SCHEMA_CHANGED", "list_items",
                                "文章列表结构已变化，请更新适配器") from None
-        self._verify_identity(source, source_biz, parsed)
+        self._verify_identity(gh_id, source_biz, parsed)
         # 付费页是原子的：一次调用买下这一页的全部条目，条数由上游决定
         # （一页是 10 次推送 × 每次最多 8 篇）。按估算条数截断会白白丢掉
         # 已经付过钱的文章，因此这里整页保留，条数窗口由采集引擎收敛。
@@ -330,7 +350,7 @@ class WxrankService:
                 thumbnail=row["cover"], summary=None,
                 # 本渠道只取列表元数据：这一层对列表来说已经是完整的。
                 # 正文没有取到，界面必须标明「仅列表信息」。
-                acquisition_complete=True)
+                acquisition_complete=True, body_state="list_only")
             if item.external_id in known:
                 # 已收录的条目仍然返回：入库层会判重，页面因此不为空，
                 # 不会被上层判成「没有进展」。
@@ -352,10 +372,10 @@ class WxrankService:
         return FetchPage(tuple(items), None, "partial_history", False, None,
                          candidate_progress=checkpoint, metrics=metrics)
 
-    def _verify_identity(self, source: Source, source_biz: str, parsed: dict):
+    def _verify_identity(self, gh_id: str, source_biz: str, parsed: dict):
         """核对上游答复的身份，不符就整页拒绝。"""
         returned = parsed.get("wxid")
-        if returned and returned != source.external_id:
+        if returned and returned != gh_id:
             raise ChannelError(
                 "INVALID_RESULT", "list_items",
                 "上游返回的公众号与当前来源不一致，已拒绝本页内容")
@@ -381,9 +401,9 @@ class WxrankService:
 
     def usage_summary(self, since: str, until: str) -> dict:
         """自然月汇总：已确认用量与结果未知次数。只读本地账本，不发请求。"""
-        summary = self.repository.usage_summary(channel=self.CHANNEL, since=since, until=until)
+        summary = self.repository.usage_summary(channel=self.PROVIDER_ID, since=since, until=until)
         _, version = self.credential()
-        balance = self.repository.latest_balance(channel=self.CHANNEL, credential_version=version)
+        balance = self.repository.latest_balance(channel=self.PROVIDER_ID, credential_version=version)
         summary["balance"] = balance["balance_credits"] if balance else None
         summary["balanceObservedAt"] = balance["balance_observed_at"] if balance else None
         summary["credentialVersion"] = version

@@ -54,7 +54,7 @@ class PaidChannelService:
 
     def descriptor(self):
         for descriptor in self.gateway.describe():
-            if descriptor.channel == self.service.CHANNEL:
+            if descriptor.channel == self.service.CHANNEL and descriptor.paid:
                 return descriptor
         return None
 
@@ -72,7 +72,7 @@ class PaidChannelService:
     def recent_attempts(self, limit: int = 20) -> list[dict]:
         """最近的付费调用记录。字段是白名单：没有密钥，也没有响应原文。"""
         rows = self.repository.paid_channels.list_attempts(
-            channel=self.service.CHANNEL, limit=limit)
+            channel=self.service.PROVIDER_ID, limit=limit)
         return [{
             "operation": row["operation"],
             "status": row["status"],
@@ -87,11 +87,11 @@ class PaidChannelService:
     def status(self, timezone_name: str | None = None) -> dict:
         """渠道卡片要的全部信息。只读本地，不发请求，不花钱。"""
         descriptor = self.descriptor()
-        entry = self.service.settings.channel_credential(self.service.CHANNEL) or {}
+        entry = self.service.settings.channel_credential(self.service.PROVIDER_ID) or {}
         usage = self.usage(timezone_name)
         sources = []
         for sub in self.repository.list_subscriptions():
-            if sub.get("channel") != self.service.CHANNEL:
+            if sub.get("channel") != self.service.CHANNEL or not descriptor or sub.get("backend") != descriptor.backend:
                 continue
             source_key = sub["source_id"]
             checkpoint = self.service.checkpoint_state(source_key, sub["connection_id"])
@@ -107,6 +107,7 @@ class PaidChannelService:
             })
         return {
             "channel": self.service.CHANNEL,
+            "provider": self.service.PROVIDER_ID,
             "configured": self.service.configured(),
             "enabled": bool(entry.get("enabled", True)),
             "credentialVersion": int(entry.get("revision") or 0),
@@ -178,6 +179,9 @@ class PaidChannelService:
     async def test(self, locator: str, connection_id: str) -> dict:
         """显式付费测试。必定产生一次付费调用。"""
         connection = self.repository.get_connection(connection_id)
+        descriptor = self.descriptor()
+        if not descriptor or connection.channel != descriptor.channel or connection.backend != descriptor.backend:
+            raise ChannelError("INVALID_INPUT", "wxrank.test", "请选择微信公众号连接")
         context = Context(connection, f"wxrank-test-{uuid.uuid4().hex}",
                           time.monotonic() + TEST_TIMEOUT)
         return await self.service.paid_test(locator, context)

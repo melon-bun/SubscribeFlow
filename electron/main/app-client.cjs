@@ -55,12 +55,16 @@ function tagIds(value) {
 function displayTimezone(value) {
   return value ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
 }
-function contentDTO(item, subscriptions) {
+function contentDTO(item, subscriptions, descriptors = []) {
   const sourceKey = `${item.source.channel}:${item.source.kind}:${item.source.external_id}`;
-  const sub = subscriptions.find(row => row.source_id === sourceKey);
+  const matching = subscriptions.filter(row => row.source_id === sourceKey);
+  const sub = matching.find(row => row.status === 'active') || matching[0];
+  const canFetchDetail = matching.some(row => row.status === 'active' && descriptors.some(descriptor =>
+    descriptor.channel === row.channel && descriptor.backend === row.backend && descriptor.operations?.get_item_detail?.supported));
   return {
     id: item.id, title: item.title, summary: item.summary, platform: item.channel, kind: item.kind,
-    canFetchDetail: subscriptions.some(row => row.source_id === sourceKey && row.status === 'active'),
+    bodyState: item.body_state || 'unknown', canFetchDetail,
+    connectionId: sub?.connection_id ?? null, backend: sub?.backend ?? null,
     channelId: sub?.id ?? null, channelName: sub?.name ?? item.source.name, author: sub?.name ?? item.source.name,
     publishedAt: item.published.value, publishedPrecision: item.published.precision,
     publishedTimezone: item.published.timezone, publishedLabel:item.published.raw_label || null, url: item.url, thumb: item.thumbnail, cover: item.thumbnail, publishedProvenance: item.published.provenance,
@@ -83,6 +87,7 @@ function channelDTO(sub, descriptors = [], schedule = null) {
   const descriptor = descriptors.find(c => c.channel === sub.channel && (!sub.backend || c.backend === sub.backend)) || {};
   const operations = descriptor.operations || {};
   return { id: sub.id, name: sub.name, platform: sub.channel, link: sub.url,
+    backend: sub.backend || descriptor.backend || null, paid: !!descriptor.paid, resumable: !!descriptor.resumable,
     enabled: sub.status === 'active', status: sub.status, connectionId: sub.connection_id,
     defaultPriority: sub.default_priority ?? null, externalId: sub.external_id, intervalSeconds: sub.interval_seconds, syncMode:sub.sync_mode, collectItems: sub.collect_items || 0,
     frequency: sub.sync_mode === 'automatic' ? (sub.interval_seconds % 3600 ? `每 ${sub.interval_seconds/60} 分钟` : `每 ${sub.interval_seconds/3600} 小时`) : '手动刷新', schedule,
@@ -92,7 +97,8 @@ function channelDTO(sub, descriptors = [], schedule = null) {
     contentNoun: descriptor.content_types?.includes('pin') ? '想法' : descriptor.content_types?.includes('note') ? '笔记' : '内容',
     capabilities: { canRefresh: !!operations.list_items?.supported,
       canBackfill: !!operations.list_items?.supported && operations.list_items.pagination !== 'none',
-      fullHistory: !!operations.list_items?.full_history, canFetchDetail: !!operations.get_item_detail?.supported } };
+      fullHistory: !!operations.list_items?.full_history, canFetchDetail: !!operations.get_item_detail?.supported,
+      canOpenHomepage: descriptor.source_homepage !== false } };
 }
 function runDTO(job, subscriptions) {
   const metrics = job.acquisition_metrics || {};
@@ -113,6 +119,11 @@ async function callUI(core, name, args, context) {
   const [first, second] = args;
   const call = (method, params = {}) => core.call(method, params);
   const subscriptions = () => call('subscription.list', { include_cancelled: true });
+  const content = async item => {
+    const subs = await subscriptions();
+    const descriptors = subs.some(sub => sub.status === 'active') ? await call('channel.list') : [];
+    return contentDTO(item, subs, descriptors);
+  };
   switch (name) {
     case 'getSession': {
       const [channels, connections, scheduler] = await Promise.all([call('channel.list'), call('connection.list'), call('schedule.status')]);
@@ -182,13 +193,14 @@ async function callUI(core, name, args, context) {
       }
       if (name === 'getCalendar') return call('content.calendar', {...params, month:query.month});
       const result = await call('content.list', params);
-      return {...result, items: result.items.map(item => contentDTO(item, subs))};
+      const descriptors = result.items.length && subs.some(sub => sub.status === 'active') ? await call('channel.list') : [];
+      return {...result, items: result.items.map(item => contentDTO(item, subs, descriptors))};
     }
     case 'getContent':
-      return contentDTO(await call('content.get', {item_id: first, timezone: displayTimezone()}), await subscriptions());
+      return content(await call('content.get', {item_id: first, timezone: displayTimezone()}));
     case 'updateContent': {
       const patch = contentPatch(second);
-      return contentDTO(await call('content.update', {item_id: first, patch}), await subscriptions());
+      return content(await call('content.update', {item_id: first, patch}));
     }
     case 'bulkUpdate': {
       return call('content.bulk_update', {item_ids: first, patch: contentPatch(second)});
@@ -287,10 +299,11 @@ async function callUI(core, name, args, context) {
       else if (query.state) unsupported('不支持此内容状态');
       const result = await call('tag.contents', params);
       const subs = await subscriptions();
-      return {...result, items: result.items.map(item => contentDTO(item, subs))};
+      const descriptors = result.items.length && subs.some(sub => sub.status === 'active') ? await call('channel.list') : [];
+      return {...result, items: result.items.map(item => contentDTO(item, subs, descriptors))};
     }
     case 'setContentTags':
-      return contentDTO(await call('content.set_tags', {item_id: first, tag_ids: tagIds(second)}), await subscriptions());
+      return content(await call('content.set_tags', {item_id: first, tag_ids: tagIds(second)}));
     case 'bulkSetTags': {
       if (!Array.isArray(first)) throw new Error('缺少内容列表');
       return call('content.bulk_set_tags', {item_ids: first, tag_ids: tagIds(second)});
@@ -306,13 +319,14 @@ async function callUI(core, name, args, context) {
     }
     case 'createChannel': {
       const draft = object(first); keys(draft, ['platform', 'link', 'connectionId', 'confirmed', 'intervalSeconds', 'syncMode']);
-      const connections = await call('connection.list');
-      const connection = connections.find(c => draft.connectionId ? c.id === draft.connectionId : c.channel === draft.platform);
+      const [connections, descriptors] = await Promise.all([call('connection.list'), call('channel.list')]);
+      const connection = connections.find(c => (draft.connectionId ? c.id === draft.connectionId : c.channel === draft.platform) &&
+        descriptors.some(d => d.channel === c.channel && d.backend === c.backend && d.operations?.resolve_source?.supported));
       if (!connection) unsupported('所选平台尚未接入');
       const params = {locator: draft.link, connection_id: connection.id, confirmed: draft.confirmed === true};
       if (draft.intervalSeconds !== undefined) params.interval_seconds = draft.intervalSeconds;
       if (draft.syncMode !== undefined) params.sync_mode = draft.syncMode;
-      return channelDTO(await call('subscription.add', params), await call('channel.list'));
+      return channelDTO(await call('subscription.add', params), descriptors);
     }
     case 'updateChannel': {
       const patch = object(second); keys(patch, ['enabled', 'connectionId', 'intervalSeconds', 'syncMode', 'collectItems']);
@@ -401,7 +415,7 @@ async function callUI(core, name, args, context) {
     case 'sendTestNotification':
       return require('./notifications.cjs').sendTestNotification();
     case 'checkConnection': {
-      // 检查必须挑该连接真正支持的操作：只支持单条读取的渠道（例如微信）
+      // 检查必须挑该连接真正支持的操作：只支持单条读取的渠道
       // 不支持 list_items，用默认操作会把可用的渠道误报成不可用。
       const [rows, descriptors] = await Promise.all([call('connection.list'), call('channel.list')]);
       const connection = rows.find(c => c.id === first);

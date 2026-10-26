@@ -37,6 +37,19 @@ async function verifyWxrank({evaluate, until, click, screenshot, core, root}) {
     assert.ok(done, '渠道卡片上必须能找到输入框：' + selector);
   };
   const usage = async () => await core.call('wxrank.usage');
+  const descriptors = await core.call('channel.list');
+  const wechat = descriptors.filter(d => d.channel === 'wechat');
+  assert.equal(wechat.length,1,'微信只注册一个公开 Adapter');
+  assert.equal(wechat[0].backend,'electron-session');
+  for (const op of ['resolve_source','list_items','match_item_url','resolve_item','read_item']) {
+    assert.equal(wechat[0].operations[op].supported,true,'统一微信 Adapter 必须支持 ' + op);
+  }
+  assert.equal(descriptors.some(d => d.channel === 'wxrank'),false,'供应商不是独立业务渠道');
+  const connections = await core.call('connection.list');
+  assert.deepEqual(connections.filter(c => c.channel === 'wechat').map(c => c.id),['wechat:default']);
+  assert.equal(connections.some(c => c.channel === 'wxrank'),false);
+  assert.equal(await evaluate(`document.querySelectorAll('.sidebar [data-platform="wechat"]').length`),1);
+  assert.equal(await evaluate(`document.querySelectorAll('[data-platform="wxrank"]').length`),0);
 
   // ---- 付费配置归入微信公众号，默认收起，展开后才能操作 ----
   await evaluate(`document.querySelector('[data-nav="channels"]').click()`);
@@ -107,10 +120,10 @@ async function verifyWxrank({evaluate, until, click, screenshot, core, root}) {
   await click('添加渠道或创作者');
   await until(`!!document.querySelector('#source-input')`);
   await evaluate(`(() => {
-    const b = document.querySelector('[data-connection-id="wxrank:default"]');
+    const b = document.querySelector('.source-platforms [data-connection-id="wechat:default"]');
     if (b) b.click();
   })()`);
-  await until(`document.querySelector('.source-platforms [data-connection-id="wxrank:default"]')?.getAttribute('aria-pressed') === 'true'`);
+  await until(`document.querySelector('.source-platforms [data-connection-id="wechat:default"]')?.getAttribute('aria-pressed') === 'true'`);
   assert.ok((await evaluate(`document.querySelector('.dialog').innerText`)).includes('积分'),
             '添加来源时必须说明首次解析的费用');
   await evaluate(`document.querySelector('#source-input').value = ${JSON.stringify(BIZ)}; document.querySelector('#source-input').dispatchEvent(new Event('input', {bubbles:true}));`);
@@ -139,6 +152,7 @@ async function verifyWxrank({evaluate, until, click, screenshot, core, root}) {
     await new Promise(r => setTimeout(r, 250));
   }
   assert.ok(contents.total > 0, '刷新后必须有内容入库');
+  assert.ok(contents.items.every(item => item.channel === 'wechat' && item.body_state === 'list_only'));
   const afterRefresh = await usage();
   assert.equal(afterRefresh.confirmed_credits, 15, '一次刷新一页记 5 积分');
 
@@ -169,12 +183,28 @@ async function verifyWxrank({evaluate, until, click, screenshot, core, root}) {
   await until(`!!document.querySelector('.detail')`);
   await until(`document.querySelector('.detail').innerText.includes('仅列表信息')`);
   const detailText = await evaluate(`document.querySelector('.detail').innerText`);
+  assert.ok(detailText.includes('这条内容由列表采集取得'),'正文说明针对记录本身');
+  assert.ok(!detailText.includes('本渠道只取列表'),'统一渠道还支持人工读取正文');
   assert.ok(!detailText.includes('已采集正文'), '不得宣称正文已取得');
   assert.ok(!detailText.includes('正文已采集'), '读数条也不得宣称正文已采集');
   await screenshot('m45-wxrank-list-only.png');
 
+  // ---- 同一微信平台可独立按收录方式筛选 ----
+  await evaluate(`if (SF.app.state.filters.platform !== 'wechat') document.querySelector('.sidebar [data-platform="wechat"]').click()`);
+  await until(`SF.app.state.filters.platform === 'wechat'`);
+  const intakeFilter = async (value, count) => {
+    await evaluate(`document.querySelector('[aria-label="筛选收录方式"]').click()`);
+    await until(`!!document.querySelector('.menu [data-value="${value}"]')`);
+    await evaluate(`document.querySelector('.menu [data-value="${value}"]').click()`);
+    await until(`document.querySelector('[aria-label="筛选收录方式"]').dataset.value === '${value}' && document.querySelectorAll('.content-card').length === ${count}`);
+  };
+  await intakeFilter('subscription',contents.total);
+  await intakeFilter('manual',0);
+  await intakeFilter('',contents.total);
+  await screenshot('bug143-unified-platform-filters.png');
+
   console.log(JSON.stringify({wxrankUi:'passed', confirmedCredits:afterRefresh.confirmed_credits,
-    calls:afterRefresh.calls, contents:contents.total}));
+    calls:afterRefresh.calls, contents:contents.total,unifiedPlatform:true,intakeFilters:true}));
 }
 
 module.exports = {verifyWxrank};

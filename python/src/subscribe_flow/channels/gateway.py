@@ -127,6 +127,7 @@ class ChannelGateway:
                 or any(not isinstance(part, str) or not part for part in
                        (item.title, item.url, item.source.external_id, item.source.kind, item.source.name, item.source.url))
                 or ':' in item.source.external_id or ':' in item.source.kind
+                or item.body_state not in {'full', 'list_only', 'unknown'}
                 or not isinstance(item.published, PublishedTime)
                 or item.published.precision not in {'unknown','date','minute','second'}
                 or (item.published.value is not None and not isinstance(item.published.value, str))

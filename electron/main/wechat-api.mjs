@@ -171,13 +171,17 @@ function imageUrl(value) {
  * multi-article push still keeps every article apart.
  */
 export function articleIdentity(html) {
-  const biz = scriptVar(html, 'biz');
+  const rawBiz = scriptVar(html, 'biz');
   const mid = scriptVar(html, 'mid');
   const idx = scriptVar(html, 'idx');
-  if (!/^[A-Za-z0-9+/=_-]{4,64}$/.test(biz || '') || !/^\d{1,30}$/.test(mid || '') || !/^\d{1,30}$/.test(idx || '')) {
+  const match = /^([A-Za-z0-9+/_-]+)(={0,2})$/.exec(rawBiz || '');
+  if (!match || rawBiz.length > 128 || match[1].length % 4 === 1 || !/^\d{1,30}$/.test(mid || '') || !/^\d{1,30}$/.test(idx || '')) {
     fail('SCHEMA_CHANGED', '微信页面未提供可确认的稳定文章身份');
   }
-  const account = /^[A-Za-z0-9+/=_-]{4,64}$/.test(biz) ? biz : scriptVar(html, 'user_name');
+  // Match the channel's canonical business identity, including URL-safe and
+  // unpadded forms. The read request compares this key with Core's reference.
+  const biz = Buffer.from(match[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('base64');
+  const account = biz;
   const name = scriptVar(html, 'nickname');
   if (!account || !ARTICLE_ID.test(account) || !name) {
     fail('SCHEMA_CHANGED', '微信页面未提供可确认的公众号身份');

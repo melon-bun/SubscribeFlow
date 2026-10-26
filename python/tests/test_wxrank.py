@@ -24,7 +24,7 @@ from subscribe_flow.contracts import ChannelError
 
 BIZ = "MzI4NTEyMzQ1Ng=="
 BIZ_PADDED = "MzI4NTEyMzQ1Ng=="
-CONNECTION = "wxrank:default"
+CONNECTION = "wechat:default"
 REFERENCE = "channel-wxrank-test"
 
 
@@ -78,7 +78,7 @@ class WxrankTestCase(unittest.IsolatedAsyncioTestCase):
         self.temp.cleanup()
 
     def attempts(self):
-        return self.core.repository.paid_channels.list_attempts(channel=protocol.CHANNEL, limit=50)
+        return self.core.repository.paid_channels.list_attempts(channel=protocol.PROVIDER_ID, limit=50)
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ class ContractTests(unittest.TestCase):
         biz, mid, idx = protocol.article_identity(url)
         self.assertEqual((biz, mid, idx), (protocol.normalize_biz(BIZ), "1000000001", "2"))
         self.assertEqual(protocol.content_key(biz, mid, idx),
-                         f"wxrank:article:{protocol.normalize_biz(BIZ)}_1000000001_2")
+                         f"wechat:article:{protocol.normalize_biz(BIZ)}_1000000001_2")
 
     def test_article_url_is_normalised_but_keeps_its_query(self):
         url = "http://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng%3D%3D&mid=1&idx=1&sn=keep#frag"
@@ -221,7 +221,7 @@ class LedgerTests(WxrankTestCase):
 
     async def test_pending_attempts_from_a_previous_run_become_unknown(self):
         self.core.repository.paid_channels.begin_attempt(
-            channel=protocol.CHANNEL, operation="list_items", credential_version=1)
+            channel=protocol.PROVIDER_ID, operation="list_items", credential_version=1)
         self.assertEqual(self.core.repository.paid_channels.recover_pending(), 1)
         rows = self.attempts()
         self.assertEqual(rows[0]["charge_state"], "unknown")
@@ -295,12 +295,63 @@ class ChannelSettingsTests(WxrankTestCase):
 # M45.3 业务层与适配器
 # ---------------------------------------------------------------------------
 class ServiceTests(WxrankTestCase):
+    async def queued_paid_test(self, change):
+        """Pause after authorization was read, before the transport can run."""
+        from contextlib import asynccontextmanager
+        waiting, release = asyncio.Event(), asyncio.Event()
+
+        class Gate:
+            @asynccontextmanager
+            async def acquire(self, context, operation, *, gap=0):
+                waiting.set()
+                await release.wait()
+                yield
+
+        self.core.paid.resources = Gate()
+        pending = asyncio.create_task(self.core.paid_channels.test(BIZ, CONNECTION))
+        await asyncio.wait_for(waiting.wait(), 1)
+        changed = change()
+        if asyncio.iscoroutine(changed):
+            await changed
+        release.set()
+        with self.assertRaises(ChannelError) as raised:
+            await pending
+        self.assertEqual(self.transport.calls, 0, '等待期间失去授权不得继续付费调用')
+        return raised.exception
+
+    async def test_disabling_paid_collection_while_queued_prevents_the_request(self):
+        error = await self.queued_paid_test(
+            lambda: self.core.settings.update('channels', {'wxrank': {'enabled': False}}))
+        self.assertEqual(error.code, 'DEPENDENCY_UNAVAILABLE')
+        self.assertEqual(self.attempts()[0]['charge_state'], 'not_charged')
+
+    async def test_changing_credential_reference_while_queued_prevents_the_request(self):
+        error = await self.queued_paid_test(lambda: self.core.settings.update(
+            'channels', {'wxrank': {'enabled': True}},
+            credential_refs={'wxrank': 'changed-reference'}))
+        self.assertEqual(error.code, 'STALE_CONFIG')
+        self.assertEqual(self.attempts()[0]['charge_state'], 'not_charged')
+
+    async def test_revoking_the_runtime_secret_while_queued_prevents_the_request(self):
+        error = await self.queued_paid_test(lambda: self.core.credentials.revoke(REFERENCE))
+        self.assertEqual(error.code, 'STALE_CONFIG')
+        self.assertEqual(self.attempts()[0]['charge_state'], 'not_charged')
+
+    async def test_replacing_the_runtime_secret_while_queued_prevents_the_request(self):
+        error = await self.queued_paid_test(lambda: self.core.credentials.provide(REFERENCE, 'replacement'))
+        self.assertEqual(error.code, 'STALE_CONFIG')
+        self.assertEqual(self.attempts()[0]['charge_state'], 'not_charged')
+
+    async def test_closing_the_paid_service_while_queued_prevents_a_late_request(self):
+        error = await self.queued_paid_test(self.core.paid.close)
+        self.assertEqual(error.code, 'CANCELLED')
+
     async def test_the_adapter_declares_exactly_the_supported_operations(self):
         descriptor = self.core.gateway.describe()
         wxrank = [d for d in descriptor if d.channel == protocol.CHANNEL]
         self.assertEqual(len(wxrank), 1)
-        self.assertEqual(wxrank[0].backend, "paid-http")
-        self.assertEqual(resource_key(wxrank[0]), "http:wxrank")
+        self.assertEqual(wxrank[0].backend, "electron-session")
+        self.assertEqual(resource_key(wxrank[0]), "browser:electron-wechat")
         operations = wxrank[0].operations
         self.assertTrue(operations["resolve_source"].supported)
         self.assertTrue(operations["list_items"].supported)
@@ -321,7 +372,7 @@ class ServiceTests(WxrankTestCase):
     async def test_resolve_then_confirm_add_charges_only_once(self):
         source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
         self.assertEqual(self.transport.calls, 1)
-        self.assertEqual(source.key, "wxrank:account:gh_demo0001")
+        self.assertEqual(source.key, f"wechat:account:{BIZ}")
         # 确认添加时界面传回来源地址；命中缓存，不再产生付费调用。
         subscription = await self.core.subscriptions.add(source.url, CONNECTION, confirmed=True)
         self.assertEqual(self.transport.calls, 1, "确认添加不得再次扣费")
@@ -335,13 +386,13 @@ class ServiceTests(WxrankTestCase):
         self.core.credentials.provide(REFERENCE, "test-secret")
         source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
         self.assertEqual(self.transport.calls, 1, "重启后必须复用缓存，不得再付费")
-        self.assertEqual(source.key, "wxrank:account:gh_demo0001")
+        self.assertEqual(source.key, f"wechat:account:{BIZ}")
 
     async def test_concurrent_resolutions_of_one_account_issue_one_request(self):
         results = await asyncio.gather(*[self.core.subscriptions.resolve(BIZ, CONNECTION)
                                          for _ in range(4)])
         self.assertEqual(self.transport.calls, 1, "同一个 biz 的并发解析必须合并成一次请求")
-        self.assertEqual({source.key for source in results}, {"wxrank:account:gh_demo0001"})
+        self.assertEqual({source.key for source in results}, {f"wechat:account:{BIZ}"})
 
     async def test_one_page_is_collected_into_the_database(self):
         source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
@@ -352,7 +403,7 @@ class ServiceTests(WxrankTestCase):
         self.assertEqual(self.core.queries.contents()["total"], 2)
         rows = self.core.repository.db.execute(
             "SELECT id,channel,namespace FROM contents ORDER BY id").fetchall()
-        self.assertEqual({row["channel"] for row in rows}, {"wxrank"})
+        self.assertEqual({row["channel"] for row in rows}, {"wechat"})
         self.assertEqual({row["namespace"] for row in rows}, {"article"})
         # 一次解析 + 一页列表 = 两次付费调用。
         self.assertEqual(self.transport.calls, 2)
@@ -413,7 +464,7 @@ class ServiceTests(WxrankTestCase):
 
     async def test_paid_calls_are_serialised_by_the_shared_resource_key(self):
         from subscribe_flow.contracts import Connection, Context
-        context = Context(Connection(CONNECTION, protocol.CHANNEL, "paid-http", "http:wxrank"),
+        context = Context(Connection(CONNECTION, protocol.CHANNEL, "electron-session", "browser:electron-wechat"),
                           "job", time.monotonic() + 30)
         service = self.core.paid
         stamps = []
@@ -452,7 +503,7 @@ class CredentialIsolationTests(WxrankTestCase):
         self.core.credentials.provide("provider-llm", "ai-secret")
         self.core.credentials.provide(REFERENCE, "test-secret")
         source = await self.core.subscriptions.resolve(BIZ, CONNECTION)
-        self.assertEqual(source.key, "wxrank:account:gh_demo0001")
+        self.assertEqual(source.key, f"wechat:account:{BIZ}")
         self.assertEqual(self.core.credentials.secret_for("provider-llm"), "ai-secret")
 
     async def test_changing_the_channel_key_advances_the_version_but_keeps_the_old_ledger(self):
@@ -618,7 +669,7 @@ class CloseRaceTests(WxrankTestCase):
         restarted = self.make_core()
         try:
             rows = restarted.repository.paid_channels.list_attempts(
-                channel=protocol.CHANNEL, limit=10)
+                channel=protocol.PROVIDER_ID, limit=10)
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["charge_state"], "unknown")
         finally:
@@ -1156,6 +1207,118 @@ class WidePaidPageTests(WxrankTestCase):
         self.assertEqual(self.cursors()[before], "page-2",
                          "重启后必须接着上次的检查点走")
         self.assertEqual(finished["new_items"], 16)
+
+
+
+
+class UnifiedWechatTests(WxrankTestCase):
+    """Both entry points expose one adapter and one business identity."""
+
+    def make_transport(self):
+        from copy import deepcopy
+        listing = deepcopy(fixtures.LIST_OK)
+        listing['data']['list'] = listing['data']['list'][:1]
+        return FakeTransport(listing=response(listing))
+
+    def make_core(self):
+        from tests.test_wechat import Bridge, article
+        self.bridge = Bridge()
+        self.bridge.row = article(f'{BIZ}_1000000001_1', account=BIZ, name='示例公众号')
+        self.bridge.row['url'] = protocol.normalize_article_url(fixtures.LIST_OK['data']['list'][0]['art_url'])
+        self.bridge.row['account']['url'] = self.bridge.row['url']
+        return Core(self.path, paid_transport=self.transport, browser_bridge=self.bridge,
+                    schedule_policy=SchedulePolicy(startup_delay=0, dispatch_gap=0, resource_gap=0))
+
+    async def collect(self):
+        sub = await self.core.subscriptions.add(BIZ, CONNECTION, confirmed=True)
+        started = self.core.sync.start(sub['id'], page_budget=1)
+        result = await self.core.sync.wait(started['job_id'])
+        self.assertEqual(result['state'], 'succeeded', result.get('error'))
+        return result
+
+    async def manual(self):
+        started = self.core.intake.start(self.bridge.row['url'])
+        preview = await self.core.intake.wait(started['task_id'])
+        if preview['state'] == 'exists':
+            return preview
+        self.assertEqual(preview['state'], 'preview', preview.get('error'))
+        return self.core.intake.save(preview['preview_id'])
+
+    async def test_one_adapter_declares_both_import_methods(self):
+        descriptors = [d for d in self.core.gateway.describe() if d.channel in {'wechat', 'wxrank'}]
+        self.assertEqual(len(descriptors), 1)
+        descriptor = descriptors[0]
+        self.assertEqual((descriptor.channel, descriptor.backend), ('wechat', 'electron-session'))
+        self.assertEqual({op for op, cap in descriptor.operations.items() if cap.supported},
+                         {'resolve_source', 'list_items', 'match_item_url', 'resolve_item', 'read_item'})
+        self.assertFalse(descriptor.source_homepage)
+        connections = [c for c in self.core.repository.list_connections() if c['channel'] == 'wechat']
+        self.assertEqual([c['id'] for c in connections], ['wechat:default'])
+
+    async def test_automatic_then_manual_uses_one_content_and_source(self):
+        first = await self.collect()
+        self.assertEqual(first['new_items'], 1)
+        second = await self.manual()
+        self.assertEqual(second['state'], 'exists')
+        self.assertEqual(self.core.queries.contents()['total'], 1)
+        self.assertEqual(len(self.core.repository.list_content_sources()['items']), 1)
+        item = self.core.queries.contents()['items'][0]
+        self.assertEqual(item['intake_method'], 'subscription')
+        self.assertEqual(item['body_state'], 'list_only')
+        self.assertEqual([v[0] for v in self.bridge.visits], ['resolve'])
+
+    async def test_manual_then_automatic_preserves_first_intake_and_full_body(self):
+        saved = await self.manual()
+        self.assertEqual(saved['status'], 'created')
+        original = self.core.repository.get_content(saved['item_id'])
+        self.core.content.update(saved['item_id'], {'read': True})
+        collected = await self.collect()
+        self.assertEqual(collected['new_items'], 0)
+        self.assertEqual(self.core.queries.contents()['total'], 1)
+        self.assertEqual(len(self.core.repository.list_content_sources()['items']), 1)
+        item = self.core.repository.get_content(saved['item_id'])
+        for key in ('intake_method', 'manual_added_at', 'first_seen_at', 'summary', 'body_state'):
+            self.assertEqual(item[key], original[key])
+        self.assertEqual(item['body_state'], 'full')
+        self.assertTrue(item['state']['read'])
+
+    async def test_manual_intake_does_not_require_paid_configuration(self):
+        self.core.credentials.clear()
+        self.core.settings.update('channels', {'wxrank': {'enabled': False}})
+        readiness = await self.core.check_connection(CONNECTION, 'list_items')
+        self.assertEqual(readiness.state, 'blocked')
+        saved = await self.manual()
+        self.assertEqual(saved['status'], 'created')
+        self.assertEqual(self.transport.calls, 0)
+        self.assertEqual(self.core.repository.list_subscriptions(), [])
+
+    async def test_manual_success_and_check_do_not_release_paid_operation_blocks(self):
+        sub = await self.core.subscriptions.add(BIZ, CONNECTION, confirmed=True, sync_mode='automatic')
+        for code in ('AUTH_REQUIRED', 'DEPENDENCY_UNAVAILABLE'):
+            with self.subTest(code=code):
+                self.core.scheduler.store.block('connection', CONNECTION, 'list_items',
+                    ChannelError(code, 'list_items', '付费采集尚未恢复').to_dict())
+                started = self.core.intake.start(self.bridge.row['url'])
+                preview = await self.core.intake.wait(started['task_id'])
+                self.assertEqual(preview['state'], 'preview')
+                self.assertTrue(self.core.scheduler.blocked(sub))
+                await self.core.check_connection(CONNECTION, 'read_item')
+                self.assertTrue(self.core.scheduler.blocked(sub),
+                                '页面读取就绪不能解除列表采集的故障阻塞')
+                self.assertEqual(self.transport.calls, 1, '只能包含首次来源解析')
+
+    async def test_clearing_profile_cache_keeps_collection_identity_without_an_extra_parse(self):
+        sub = await self.core.subscriptions.add(BIZ, CONNECTION, confirmed=True)
+        self.assertEqual(self.transport.calls, 1)
+        self.core.paid_channels.clear_cache()
+        self.assertIsNone(self.core.repository.paid_channels.cached_source(BIZ))
+        started = self.core.sync.start(sub['id'], page_budget=1)
+        completed = await self.core.sync.wait(started['job_id'])
+        self.assertEqual(completed['state'], 'succeeded', completed.get('error'))
+        self.assertEqual([request['path'] for request in self.transport.requests],
+                         [protocol.PATH_INFO, protocol.PATH_LIST])
+        self.assertEqual(self.transport.requests[-1]['payload']['wxid'], 'gh_demo0001')
+        self.assertEqual({row['channel'] for row in self.attempts()}, {'wxrank'})
 
 
 if __name__ == "__main__":

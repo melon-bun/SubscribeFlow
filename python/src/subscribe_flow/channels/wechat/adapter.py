@@ -1,8 +1,7 @@
-"""WeChat Official Account articles: single-item intake only.
+"""One WeChat adapter for subscription collection and single-article intake.
 
-The channel deliberately exposes no subscription, search, listing or refresh
-operation. Platform URLs, page fields and error-page classification stay here so
-Core, Gateway and storage never grow a WeChat branch.
+The adapter selects its private paid-list or page implementation by operation.
+Core, Gateway and storage consume the same WeChat source/content identities.
 """
 import re
 from datetime import datetime, timezone
@@ -12,7 +11,9 @@ from subscribe_flow.acquisition.resources import ResourceCoordinator
 from subscribe_flow.contracts import (ChannelDescriptor, ChannelError, ContentItem,
     ContentReference, OperationCapability, PublishedTime, Readiness, Source)
 
-CHANNEL, BACKEND, VERSION = "wechat", "electron-session", "wechat-article-1"
+from .identity import CHANNEL, content_external_id, normalize_biz, source_url, split_article_id
+
+BACKEND, VERSION = "electron-session", "wechat-article-1"
 HOSTS = {"mp.weixin.qq.com"}
 BIZ = re.compile(r"^[A-Za-z0-9+/=_-]{4,64}$")
 DIGITS = re.compile(r"^\d{1,30}$")
@@ -80,7 +81,8 @@ def account_row(row):
     url = _clean_url(row.get("url"))
     if not url:
         raise ValueError("invalid account link")
-    return Source(CHANNEL, "account", str(row["id"]), row["name"].strip()[:200], url, True,
+    return Source(CHANNEL, "account", normalize_biz(row["id"]), row["name"].strip()[:200],
+                  source_url(row["id"]), True,
                   _clean_url(row.get("avatar"), images=True), str(row.get("description") or "")[:350] or None)
 
 
@@ -118,28 +120,61 @@ def item_from_row(row, source=None):
     if source and actual.key != source.key:
         raise ValueError("article does not belong to account")
     # 页面确认的原文地址才是保存用的链接；不保留粘贴时的分享参数。
-    return ContentItem(CHANNEL, 'article', str(row["id"]), actual, row["title"].strip()[:1000],
+    biz, mid, idx = split_article_id(row['id'])
+    if biz != actual.external_id:
+        raise ValueError('article does not belong to account')
+    return ContentItem(CHANNEL, 'article', content_external_id(biz, mid, idx), actual, row["title"].strip()[:1000],
                        _clean_url(row["url"]), kind='article', published=publication(row["published"]),
-                       summary=row["content"], thumbnail=_cover(row), acquisition_complete=True)
+                       summary=row["content"], thumbnail=_cover(row), acquisition_complete=True, body_state="full")
 
 
 class WechatAdapter:
-    def __init__(self, bridge):
-        self.bridge, self.resources = bridge, ResourceCoordinator()
+    def __init__(self, bridge=None, paid_service=None):
+        self.bridge, self.paid_service = bridge, paid_service
+        self.resources = ResourceCoordinator()
 
     def describe(self):
+        from subscribe_flow.channels.wxrank import protocol
+        page = self.bridge is not None
+        paid = self.paid_service is not None
         deps = ("electron-session",)
         return ChannelDescriptor(CHANNEL, "微信公众号", BACKEND, {
-            'resolve_source': OperationCapability(False, notes='微信公众号只通过「添加内容」单条接入，不提供公众号订阅'),
-            'search_sources': OperationCapability(False, notes='不提供公众号搜索'),
-            'list_items': OperationCapability(False, notes='不提供公众号列表采集、刷新、回溯或自动调度'),
-            'get_item_detail': OperationCapability(False, notes='单条读取即取回完整正文，不借用订阅详情任务'),
-            'match_item_url': OperationCapability(True, True, 'not_required', notes='官方 /s/<定位串> 与 /s?__biz&mid&idx 文章链接；不支持主页、搜索页、二维码和站外链接'),
-            'resolve_item': OperationCapability(True, deps, 'not_required', notes='读取官方页面确认稳定文章身份，不依赖链接参数；公开文章无需登录'),
-            'read_item': OperationCapability(True, deps, 'not_required', notes='单条读取标题、公众号、正文、封面与原始发布时间；不要求订阅'),
-        }, adapter_version='1', parser_version='1', progress_version=VERSION, content_types=('article',),
-           page_size=1, default_refresh_budget=1, default_backfill_budget=1,
-           scan_overhead_budget=0, budget_unit='items')
+            'resolve_source': OperationCapability(paid, dependencies=('paid-api',), authentication='not_required',
+                notes='输入公众号 biz 或含 __biz 的链接；首次解析消耗一次付费调用，命中缓存不消耗'),
+            'search_sources': OperationCapability(False, notes='本期不提供公众号搜索'),
+            'list_items': OperationCapability(paid, dependencies=('paid-api',), authentication='not_required',
+                pagination='cursor', ordering='server_cursor', full_history=False,
+                notes='按页获取文章列表；每一页都是一次付费调用，游标由上游给出'),
+            'get_item_detail': OperationCapability(False, notes='单篇读取通过人工添加；列表采集不提供正文补充'),
+            'match_item_url': OperationCapability(page, verified=True, authentication='not_required',
+                notes='官方 /s/<定位串> 与 /s?__biz&mid&idx 文章链接'),
+            'resolve_item': OperationCapability(page, dependencies=deps, authentication='not_required',
+                notes='读取官方页面确认稳定文章身份；公开文章无需登录'),
+            'read_item': OperationCapability(page, dependencies=deps, authentication='not_required',
+                notes='读取标题、公众号、正文、封面与原始发布时间；不要求订阅'),
+        }, adapter_version='wechat-2', parser_version=protocol.PARSER_VERSION if paid else '1',
+           progress_version=protocol.PROGRESS_VERSION if paid else VERSION, content_types=('article',),
+           page_size=protocol.PAGE_SIZE if paid else 1, default_refresh_budget=1,
+           default_backfill_budget=3 if paid else 1, scan_overhead_budget=0,
+           budget_unit='pages' if paid else 'items', paid=paid, resumable=paid, source_homepage=False)
+
+    async def resolve_source(self, locator, context):
+        if self.paid_service is None:
+            raise ChannelError('UNSUPPORTED_OPERATION', 'resolve_source', '公众号订阅采集实现不可用')
+        return await self.paid_service.resolve_source(locator, context)
+
+    async def fetch_page(self, source, request, context):
+        if self.paid_service is None:
+            raise ChannelError('UNSUPPORTED_OPERATION', 'list_items', '公众号订阅采集实现不可用')
+        if source.channel != CHANNEL or source.kind != 'account':
+            raise ChannelError('INVALID_INPUT', 'list_items', '来源不是公众号账号')
+        return await self.paid_service.fetch_page(source, request, context)
+
+    async def search_sources(self, query, request, context):
+        raise ChannelError('UNSUPPORTED_OPERATION', 'search_sources', '本期不提供公众号搜索')
+
+    async def get_item_detail(self, item_ref, context):
+        raise ChannelError('UNSUPPORTED_OPERATION', 'get_item_detail', '列表采集不提供正文与详情补充')
 
     async def call(self, action, context, **params):
         async with self.resources.acquire(context, action):
@@ -149,16 +184,29 @@ class WechatAdapter:
         return data
 
     async def check_readiness(self, operation, context):
-        # 单条读取不需要订阅或登录。这里只报告依赖可用性，不为检查本身
-        # 多发一次请求：文章是否可读由真正的读取决定，失败的读取会带着
-        # 具体原因返回，而不是被一次「检查连接」的探测请求消耗掉。
         checked = datetime.now(timezone.utc).isoformat()
+        context.check(operation)
         if operation in {'match_item_url', 'resolve_item', 'read_item'}:
-            context.check(operation)
+            if self.bridge is None:
+                return Readiness('blocked', operation, '文章页面读取实现不可用',
+                    'operation', operation, checked, dependency='not_configured', authentication='not_required')
             return Readiness('ready', operation, '微信公众号单条文章读取无需登录；文章是否可读以实际读取为准',
-                             'connection', context.connection.id, checked, dependency='available',
-                             authentication='not_required')
-        raise ChannelError('UNSUPPORTED_OPERATION', operation, '微信公众号只支持单条文章读取')
+                'operation', operation, checked, dependency='available', authentication='not_required')
+        if operation not in {'resolve_source', 'list_items'} or self.paid_service is None:
+            raise ChannelError('UNSUPPORTED_OPERATION', operation, '微信公众号不支持此操作')
+        # The paid implementation's local configuration does not gate manual intake.
+        from subscribe_flow.channels.wxrank import protocol
+        entry = self.paid_service.settings.channel_credential(protocol.PROVIDER_ID) or {}
+        if not entry.get('enabled', True):
+            return Readiness('blocked', operation, '付费采集已停用',
+                'operation', operation, checked, actions=('settings',),
+                dependency='not_configured', authentication='configured')
+        if not self.paid_service.configured():
+            return Readiness('blocked', operation, '尚未配置付费采集密钥',
+                'operation', operation, checked, actions=('settings',),
+                dependency='not_configured', authentication='required')
+        return Readiness('ready', operation, '已配置付费采集密钥，未联网验证',
+            'operation', operation, checked, dependency='available', authentication='configured')
 
     def match_item_url(self, url):
         return article_link(url) is not None

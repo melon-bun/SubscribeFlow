@@ -207,6 +207,10 @@ class Scheduler:
             if sub['connection_id'] != connection_id:
                 continue
             for block in self.blocked(sub):
+                # A ready result proves only the operation that was checked.
+                # One adapter may use independent implementations per operation.
+                if block['operation'] != readiness.operation:
+                    continue
                 # Paid readiness only checks local configuration. It cannot
                 # prove recovery or authorize replay of an uncertain charge.
                 if block['error']['code'] == 'DEPENDENCY_UNAVAILABLE' and self._paid_channel(sub):

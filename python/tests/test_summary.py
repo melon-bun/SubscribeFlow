@@ -210,6 +210,15 @@ class SummaryDraftTests(_SummaryFixture, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result['ok'])
         self.assertEqual(result['scope'], '简介', '仓库只有简介，不能假装读过 README')
 
+    async def test_list_only_article_text_is_not_reported_as_full_body(self):
+        from dataclasses import replace
+        item = replace(make_item('wechat', 'sum-list', '列表文章', '这是列表提供的摘要内容。', kind='article'),
+                       body_state='list_only')
+        item_id = self.repo.save_manual(item)['item_id']
+        result = await self.core.summary.draft(item_id, 'req-list')
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['scope'], '简介')
+
     async def test_text_too_short_is_refused(self):
         item_id = self.repo.save_manual(make_item('zhihu', 'sum-empty', '空内容', ''))['item_id']
         result = await self.core.summary.draft(item_id, 'req-1')
@@ -359,10 +368,26 @@ class SummaryDraftTests(_SummaryFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIs(adapter.gate, self.core.ai.gate, '打标与总结共用同一个闸门')
 
     async def test_the_call_runs_off_the_event_loop(self):
-        # 业务调用在执行器里跑：事件循环不会被网络请求卡住。
+        # Keep a request in flight explicitly; an instant fake response may
+        # legitimately finish before the next event-loop turn.
+        import threading
+        entered, release = threading.Event(), threading.Event()
+        original = self.transport.post_json
+
+        def pending(*args, **kwargs):
+            entered.set()
+            if not release.wait(5):
+                raise AssertionError('未释放隔离请求')
+            return original(*args, **kwargs)
+
+        self.transport.post_json = pending
         task = asyncio.ensure_future(self.core.summary.draft(self.item_id, 'req-1'))
-        await asyncio.sleep(0)
-        self.assertFalse(task.done(), '请求还在路上时事件循环仍然可以调度')
+        try:
+            self.assertTrue(await asyncio.to_thread(entered.wait, 3), '请求已进入传输层')
+            self.assertFalse(task.done(), '请求还在路上时事件循环仍然可以调度')
+        finally:
+            release.set()
+            self.transport.post_json = original
         result = await task
         self.assertTrue(result['ok'])
 

@@ -71,7 +71,7 @@
         cache.coverageDirty.add(run.channelId);
         /* M45：付费任务结束后重读一次渠道状态，用量与余额才对得上。 */
         var sub = (cache.items || []).filter(function (s) { return s.id === run.channelId; })[0];
-        if (sub && sub.platform === 'wxrank') wxrank.stale = true;
+        if (sub && sub.paid) wxrank.stale = true;
       }
       runStates.set(run.id, run.state);
     });
@@ -90,8 +90,7 @@
   function descriptorFor(app, connection) {
     return (app.session.channels || []).filter(function (d) { return d.channel === connection.channel && d.backend === connection.backend; })[0] || {};
   }
-  // 只有能定位来源的渠道才出现在「添加渠道或创作者」里。微信只支持自主
-  // 添加，把它放进订阅表单只会让用户走进一个注定失败的流程。
+  // 只有能定位来源的渠道才出现在「添加渠道或创作者」里。
   function subscribable(app, connection) {
     var ops = descriptorFor(app, connection).operations || {};
     return !!(ops.resolve_source && ops.resolve_source.supported);
@@ -161,7 +160,7 @@
           /* 「静流」§.who：头像在左，平台方块跟着名字走（名字行里），
              整列都扫得见的只有头像 + 名字 + UID。 */
           h('td',null,h('div.channel-cell',null,ui.avatar(c.name),h('div.channel-cell__text',null,h('div.channel-cell__name',null,ui.platformIcon(c.platform),h('span',{text:c.name})),h('div.channel-cell__desc',null,h('span',{text:'UID '}),h('span.mono',{text:c.externalId}))))),
-          h('td',null,c.platform === 'wxrank'
+          h('td',null,c.capabilities.canOpenHomepage === false
             /* M45：公众号渠道的来源地址是内部定位用的公众号地址，不是可浏览主页。 */
             ? ui.btn('打开主页',{size:'sm',disabled:true,title:'该地址是内部定位用的公众号地址，不是可浏览主页；文章原文在内容详情里打开。'})
             : ui.btn('打开主页',{size:'sm',icon:'external',onClick:function () { SF.app.act('source:' + c.id,function () { return app.client.openChannel(c.id); }); }})),
@@ -172,8 +171,8 @@
           h('td',null,h('button.badge.coverage-cell' + (cov.complete?'':'.coverage-cell--limited'),{type:'button',title:cov.detail,onclick:function () { ui.dialog({title:c.name + ' · 覆盖范围',body:ui.notice({tone:cov.complete?'info':'warn',text:cov.detail})}); }},SF.icon(cov.complete?'check':'clock',14),h('span',{text:cov.label}))),
           h('td',{'data-channel-run':c.id},latestRun(app,c.id)),
           h('td',null,h('div.ops.table__ops',null,
-            ui.iconBtn('refresh','刷新来源',function () { if (c.platform === 'wxrank') wxrankRunDialog(app,c,'recent'); else startRun(app,c,'recent'); },{disabled:!c.enabled || !c.capabilities.canRefresh}),
-            ui.iconBtn('clock','回溯历史',function () { if (c.platform === 'wxrank') { wxrankRunDialog(app,c,'backfill'); return; } var pages = collectPages(c,c.defaultBackfillBudget || 10); ui.confirm({title:'回溯 ' + c.name,message:c.checkedItems ? '本次按主页顺序检查前 ' + pages + ' 条' + (c.contentNoun || '内容') + '。已收录的也占一个名额，跳过详情后不向后补足；结果不代表全部历史。' : c.incrementalDetails ? '本次最多读取 ' + pages + ' 条' + (c.contentNoun || '内容') + '详情，已完整收录的会跳过；主页分页扫描有上限，结果不代表全部历史。' : '本次最多采集 ' + (c.collectItems || pages*(c.pageSize || 20)) + ' 条内容。已收录或解析失败的条目也占名额，不向后补足；回溯成功不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
+            ui.iconBtn('refresh','刷新来源',function () { if (c.paid) wxrankRunDialog(app,c,'recent'); else startRun(app,c,'recent'); },{disabled:!c.enabled || !c.capabilities.canRefresh}),
+            ui.iconBtn('clock','回溯历史',function () { if (c.paid) { wxrankRunDialog(app,c,'backfill'); return; } var pages = collectPages(c,c.defaultBackfillBudget || 10); ui.confirm({title:'回溯 ' + c.name,message:c.checkedItems ? '本次按主页顺序检查前 ' + pages + ' 条' + (c.contentNoun || '内容') + '。已收录的也占一个名额，跳过详情后不向后补足；结果不代表全部历史。' : c.incrementalDetails ? '本次最多读取 ' + pages + ' 条' + (c.contentNoun || '内容') + '详情，已完整收录的会跳过；主页分页扫描有上限，结果不代表全部历史。' : '本次最多采集 ' + (c.collectItems || pages*(c.pageSize || 20)) + ' 条内容。已收录或解析失败的条目也占名额，不向后补足；回溯成功不代表全部历史已获取。',confirmText:'开始回溯'}).then(function (ok) { if(ok) startRun(app,c,'backfill'); }); },{disabled:!c.enabled || !c.capabilities.canBackfill}),
             ui.iconBtn('sliders',(c.collectItems ? '采集条数（当前 '+c.collectItems+' 条）' : '采集条数（默认）'),function () { collectDialog(app,c); },{disabled:!c.enabled,ariaLabel:'设置采集条数'}),
             ui.iconBtn('trash','取消追踪',function () { ui.confirm({title:'取消追踪 ' + c.name + '？',message:'已保存的历史内容会保留。再次添加相同 UID 可以恢复订阅。',confirmText:'取消追踪',danger:true}).then(function(ok) { if(ok) SF.app.act('subscription:' + c.id,async function () { await app.client.removeChannel(c.id); await SF.app.refreshData(true); }); }); },{danger:true}))));
       })))));
@@ -187,7 +186,7 @@
   function collectDialog(app,c) {
     var saving = false, current = c.collectItems || 0;
     /* 付费渠道按整页采集：这个条数用来折算扫描页数，不是保存条数的硬上限。 */
-    var paid = c.platform === 'wxrank';
+    var paid = c.paid;
     var error = h('p.field__error',{role:'alert'});
     var input = h('input.input',{id:'collect-items',type:'number',min:1,max:50,step:1,value:String(current || ''),placeholder:'留空使用默认',oninput:function () { error.textContent=''; }});
     var save = ui.btn('保存采集条数',{variant:'primary',onClick:async function () {
@@ -245,16 +244,13 @@
       h('div.field',null,h('label.field__label',{htmlFor:'refresh-interval',text:'自动刷新间隔（小时）'}),interval,
         h('p.field__hint',{text:'默认 24 小时，最多 72 小时，最少 5 分钟。可输入小数，切回手动会保留此设置。'})),
       /* M45：付费渠道的自动检查每次都要调用付费接口，必须先说清。 */
-      c.platform === 'wxrank' ? ui.notice({tone:'warn',text:'启用自动检查后，每次检查都会调用付费接口并产生费用。默认仍是手动刷新。'}) : null,
+      c.paid ? ui.notice({tone:'warn',text:'启用自动检查后，每次检查都会调用付费接口并产生费用。默认仍是手动刷新。'}) : null,
       h('p.muted',{text:'自动模式只在应用运行、电脑未休眠时检查。首次自动检查在设定间隔后执行，也可随时手动刷新。'}),error),
       footer:[ui.btn('取消',{onClick:function () { layer.close(); }}),save]});
   }
   function bottomPanels(app) {
     return h('div.channels__bottom',{'data-refresh-key':'channel-bottom'},
-      h('section.panel.live-panel',null,h('h2.t-h2',{text:'渠道与连接'}),app.session.connections.filter(function (c) {
-        // 付费 API 是微信公众号内的一种方式，共用同一个折叠入口。
-        return c.channel !== 'wxrank';
-      }).map(function (c) {
+      h('section.panel.live-panel',null,h('h2.t-h2',{text:'渠道与连接'}),app.session.connections.map(function (c) {
         return connectionRow(app,c);
       }),h('p.field__hint',{text:'自动采集遇到登录或访问验证会暂停，处理后检查连接即可恢复。采集失败时仍可查看本地内容。'})),
       runsPanel(app));
@@ -311,7 +307,7 @@
   function connectionRow(app, c) {
     var ops = descriptorFor(app, c).operations || {};
     var intakeOnly = !(ops.resolve_source && ops.resolve_source.supported);
-    var paidConnection = c.channel === 'wechat' ? wxrankConnection(app) : null;
+    var paidConnection = descriptorFor(app,c).paid ? c : null;
     var status = connectionStatus(app, c);
     if (paidConnection) status = {tone:'neutral', label:'含付费 API'};
     var r = c.readiness;
@@ -333,7 +329,7 @@
         paidConnection
           ? h('p.muted',{text:'文章链接可在收件箱直接收录，无需登录。公众号订阅请配置下方付费 API。'})
           : intakeOnly
-          ? h('p.muted',{text:'仅支持自主添加：在收件箱粘贴文章链接即可收录，无需登录，也不订阅公众号。'})
+          ? h('p.muted',{text:'仅支持自主添加：在收件箱使用「添加内容」收录单条链接，此连接不提供来源订阅。'})
           : (c.backend === 'electron-session'
               ? h('p.muted',{text:'使用应用内独立会话，无需启动 Chrome。登录后关闭登录窗口，再检查连接。'})
               : c.backend === 'direct-http'
@@ -363,11 +359,11 @@
      读不到就写「未知」，绝不填 0，也绝不假装渠道可用。 */
 
   function wxrankConnection(app) {
-    return (app.session.connections || []).filter(function (c) { return c.channel === 'wxrank'; })[0] || null;
+    return (app.session.connections || []).filter(function (c) { return descriptorFor(app,c).paid; })[0] || null;
   }
   function wxrankStatus() { return wxrank.data; }
   /** 按来源找它的任务计划：页数、调用次数、积分与检查点。
-      来源标识有两种说法：来源表的 id，或来源键（wxrank:account:gh_…）。
+      来源标识有两种说法：来源表的 id，或规范来源键。
       两种都认，免得两边口径一改就找不到费用。 */
   function wxrankSource(channel) {
     var status = wxrankStatus();
@@ -426,12 +422,12 @@
   /** 公众号付费渠道卡片：密钥、本地检查、显式付费测试、用量与缓存。 */
   function wxrankCard(app, c) {
     var status = wxrankStatus();
-    var title = descriptorFor(app, c).name || '公众号 · 付费API';
+    var title = '公众号 · 付费API';
     var head = h('div.row.row-gap-3',null,
       h('h3.t-h3',{text:title}),
       status ? h('span.badge.badge--' + (status.configured ? 'success' : 'neutral'),{text:status.configured ? '已配置' : '未配置'}) : null,
       h('div.spacer'),
-      status ? ui.toggle(status.enabled !== false,function (on) { setWxrankEnabled(app,on); },{label:'启用公众号付费渠道'}) : null);
+      status ? ui.toggle(status.enabled !== false,function (on) { setWxrankEnabled(app,on); },{label:'启用公众号付费采集'}) : null);
     var body;
     if (wxrank.error) {
       body = h('div.col',{style:{gap:'12px'}},
@@ -528,7 +524,7 @@
     SF.app.act('wxrank-enabled',async function () {
       try {
         await app.client.saveSettings({section:'channels',patch:{wxrank:{enabled:on}}});
-        ui.toast(on ? '已启用公众号付费渠道' : '已停用公众号付费渠道');
+        ui.toast(on ? '已启用公众号付费采集' : '已停用公众号付费采集');
       } catch (err) { ui.toast(err.message,'error'); }
       refreshWxrankStatus(app);
     });
@@ -618,7 +614,7 @@
   }
   function addDialog(app) {
     var connections = app.session.connections.filter(function (c) { return c.enabled && subscribable(app, c); });
-    if (!connections.length) { ui.toast('没有可添加来源的渠道；微信公众号请在收件箱用「添加内容」','error'); return; }
+    if (!connections.length) { ui.toast('没有可添加来源的渠道，请先启用支持订阅的连接','error'); return; }
     var connectionId = connections[0].id, chosen = null, requestId = 0, busy = false, closed = false, searchLocked = false;
     var disabledBefore = new Map();
     var input = h('input.input',{id:'source-input',placeholder:'输入作者 UID、主页链接或搜索名称',autocomplete:'off'});
@@ -648,11 +644,19 @@
       input.disabled=value; platform.querySelectorAll('button').forEach(function(button) { button.disabled=value; });
       resolve.disabled=value; search.disabled=value || !searchSupported();
       confirm.disabled=value || !chosen; add.disabled=value || !chosen || !confirm.checked;
-      if(login) login.disabled=value; if(check) check.disabled=value;
+      if(login) login.disabled=value || !loginSupported(); if(check) check.disabled=value;
     }
     function searchSupported() {
       var c = connections.find(function (v) { return v.id === connectionId; });
       return app.session.channels.some(function (d) { return d.channel === c.channel && d.backend === c.backend && d.operations.search_sources && d.operations.search_sources.supported; });
+    }
+    function loginSupported() {
+      var connection = connections.find(function (c) { return c.id === connectionId; });
+      if (!connection || connection.backend !== 'electron-session') return false;
+      var operations = descriptorFor(app,connection).operations || {};
+      return Object.keys(operations).some(function (name) {
+        return operations[name].supported && operations[name].authentication !== 'not_required';
+      });
     }
     function choose(source) {
       if(busy || closed) return;
@@ -696,16 +700,16 @@
     var cost=h('p.field__hint');
     function paintCost() {
       var selected=connections.filter(function(c) { return c.id===connectionId; })[0];
-      if(!selected || selected.channel!=='wxrank') { cost.textContent=''; return; }
+      if(!selected || !descriptorFor(app,selected).paid) { cost.textContent=''; return; }
       var status=wxrankStatus();
       var addCost=status ? status.addCost : null;
       var credits=addCost && addCost.credits != null ? addCost.credits : (status ? status.creditsPerCall : null);
-      cost.textContent='首次添加要解析一次公众号' + (credits == null ? '' : '，约 ' + credits + ' 积分') + '；确认添加命中缓存，不再收费。';
+      cost.textContent='首次添加要付费解析一次公众号' + (credits == null ? '（当前费用未读取）' : '，约 ' + credits + ' 积分') + '；确认添加命中缓存，不再收费。';
     }
     paintCost();
     var resolve=ui.btn('解析 UID / 主页',{onClick:function () { locate(false); }});
     var search=ui.btn('搜索作者',{variant:'primary',disabled:!searchSupported(),onClick:function () { locate(true); }});
-    var login=ui.btn('应用内登录',{onClick:function () { SF.app.act('login:' + connectionId,function () { return app.client.loginConnection(connectionId); }); }});
+    var login=ui.btn('应用内登录',{disabled:!loginSupported(),onClick:function () { SF.app.act('login:' + connectionId,function () { return app.client.loginConnection(connectionId); }); }});
     var check=ui.btn('检查连接',{onClick:function () { SF.app.act('check:' + connectionId,async function () { var status=await app.client.checkConnection(connectionId); if(!closed) error.textContent=status.state==='ready' ? '' : status.reason; await SF.app.refreshData(true); }); }});
     var layer=ui.dialog({title:'添加渠道或创作者',wide:true,body:h('div.col',{style:{gap:'16px'}},
       h('div.field',null,h('span.field__label',{text:'来源平台'}),platform),

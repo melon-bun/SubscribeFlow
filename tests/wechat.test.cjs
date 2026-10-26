@@ -95,6 +95,23 @@ test('another article of the same push keeps a separate key', async()=>{
   assert.equal(parseArticle(page({mid:'2247551518',idx:'2'}), new URL(SHORT)).id, OTHER);
 });
 
+test('page biz aliases produce the same canonical article and account identity', async()=>{
+  const {parseArticle, WechatAPI}=await load();
+  for (const biz of [ACCOUNT.replace(/=+$/, ''), '-__-']) {
+    const canonical=Buffer.from(biz.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('base64');
+    const expected=`${canonical}_2247551517_1`;
+    const row=parseArticle(page({biz}), new URL(SHORT));
+    assert.equal(row.id, expected);
+    assert.equal(row.account.id, canonical);
+    const api=new WechatAPI(responder({mode:'ok',page:{biz}}),{minGap:0,readTimeout:2000});
+    await api.request({channel:'wechat',operation:'resolve',url:SHORT});
+    assert.equal((await api.request({channel:'wechat',operation:'read',url:SHORT,id:expected})).article.id, expected);
+  }
+  for (const biz of ['A', 'AAAAA', 'AA=A', 'AAAA===']) {
+    assert.throws(()=>parseArticle(page({biz}), new URL(SHORT)), /稳定文章身份/);
+  }
+});
+
 test('missing identity is refused instead of invented', async()=>{
   const {parseArticle}=await load();
   assert.throws(()=>parseArticle(page({biz:''}), new URL(SHORT)), /稳定文章身份/);

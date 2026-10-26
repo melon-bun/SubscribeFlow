@@ -192,7 +192,8 @@ class SummaryService:
         """取本地已保存的文本，并如实说明它是正文还是简介。"""
         payload_text = str((content.get('summary') or '')).strip()
         kind = content.get('kind')
-        scope = SCOPE_BODY if kind in BODY_KINDS else SCOPE_SUMMARY
+        scope = (SCOPE_BODY if content.get('body_state') != 'list_only' and kind in BODY_KINDS
+                 else SCOPE_SUMMARY)
         total = len(payload_text)
         truncated = total > INPUT_MAX_CHARS
         text = payload_text[:INPUT_MAX_CHARS] if truncated else payload_text

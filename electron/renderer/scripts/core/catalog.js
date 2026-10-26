@@ -11,10 +11,6 @@
     xiaohongshu: { id: "xiaohongshu", name: "小红书", short: "小红书", mark: "红" },
     bilibili: { id: "bilibili", name: "B站", short: "B站", mark: "B" },
     wechat: { id: "wechat", name: "微信公众号", short: "公众号", mark: "微" },
-    /* M45：公众号付费 API 渠道（wxrank）。与 wechat 同属公众号，
-       但 wxrank 走第三方付费接口取推文列表；wechat 只做自主添加，
-       两者不会同时出现在来源表里。 */
-    wxrank: { id: "wxrank", name: "公众号", short: "公众号", mark: "微" },
     weibo: { id: "weibo", name: "微博", short: "微博", mark: "博" },
     zhihu: { id: "zhihu", name: "知乎", short: "知乎", mark: "知" },
     /* GitHub 用官方实心标识（icon），其余平台仍用文字缩写（mark）。 */

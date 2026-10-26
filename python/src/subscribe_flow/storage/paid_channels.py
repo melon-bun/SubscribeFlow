@@ -114,6 +114,24 @@ class PaidChannelRepository:
         return dict(row) if row else None
 
     # ------------------------------------------------------------------
+    # Stable backend identities are not part of the clearable profile cache.
+    # ------------------------------------------------------------------
+    def backend_identity(self, provider_id: str, biz: str) -> dict | None:
+        row = self.db.execute(
+            "SELECT * FROM wechat_backend_identities WHERE provider_id=? AND biz=?",
+            (provider_id, biz)).fetchone()
+        return dict(row) if row else None
+
+    def save_backend_identity(self, provider_id: str, biz: str, upstream_id: str) -> None:
+        if not upstream_id or not isinstance(upstream_id, str):
+            raise ValueError("Missing upstream account identity")
+        with self.database.transaction() as db:
+            db.execute("""INSERT INTO wechat_backend_identities(provider_id,biz,upstream_id,updated_at)
+                          VALUES(?,?,?,?) ON CONFLICT(provider_id,biz) DO UPDATE SET
+                          upstream_id=excluded.upstream_id,updated_at=excluded.updated_at""",
+                       (provider_id, biz, upstream_id, now()))
+
+    # ------------------------------------------------------------------
     # 来源解析缓存
     # ------------------------------------------------------------------
     def cached_source(self, biz: str) -> dict | None:

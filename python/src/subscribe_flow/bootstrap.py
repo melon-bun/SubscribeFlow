@@ -7,7 +7,6 @@ from subscribe_flow.channels.bilibili.electron import BilibiliElectronAdapter
 from subscribe_flow.channels.github.adapter import GithubTrendingAdapter
 from subscribe_flow.channels.xiaohongshu.adapter import XiaohongshuAdapter
 from subscribe_flow.channels.wechat.adapter import WechatAdapter
-from subscribe_flow.channels.wxrank.adapter import WxrankAdapter
 from subscribe_flow.channels.wxrank.service import WxrankService
 from subscribe_flow.channels.zhihu.adapter import ZhihuAdapter
 from subscribe_flow.application.subscriptions import SubscriptionService
@@ -39,15 +38,13 @@ def build_gateway(opencli_path: str = "opencli", browser_bridge=None, *, paid_se
     # 无条件注册：纯 HTTP 渠道不依赖浏览器桥接，写在 if 分支里会在
     # --backend opencli 启动时整个消失。
     gateway.register(GithubTrendingAdapter())
-    # M45 付费渠道同样是纯 HTTP，同样无条件注册。业务层由调用方注入：
-    # 它要读设置里的凭据引用，并拥有自己的计费账本与限流闸门。
-    if paid_service is not None:
-        gateway.register(WxrankAdapter(paid_service))
+    # One business adapter owns both page intake and paid subscription listing.
+    if browser_bridge is not None or paid_service is not None:
+        gateway.register(WechatAdapter(browser_bridge, paid_service))
     if browser_bridge is not None:
         gateway.register(BilibiliElectronAdapter(browser_bridge))
         gateway.register(XiaohongshuAdapter(browser_bridge))
         gateway.register(ZhihuAdapter(browser_bridge))
-        gateway.register(WechatAdapter(browser_bridge))
     else:
         gateway.register(BilibiliAdapter(BilibiliOpenCLIBackend(CLITransport(ResourceCoordinator()), opencli_path)))
     return gateway
@@ -60,9 +57,6 @@ RESOURCE_KEYS = {
     "opencli": lambda channel: "browser:opencli-default",
     # 三张榜共用 http:github，因此天然串行，间隔沿用 policy.resource_gap（默认 3 秒）。
     "direct-http": lambda channel: f"http:{channel}",
-    # M45 付费渠道：每条付费渠道一个资源键，因此不同渠道互不阻塞，
-    # 同一条渠道的所有付费入口（解析、列表、显式测试）共用一把闸门。
-    "paid-http": lambda channel: f"http:{channel}",
 }
 
 

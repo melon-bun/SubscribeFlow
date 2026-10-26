@@ -17,19 +17,30 @@ async function verify({window,core,root,fixture}) {
   assert.equal(await evaluate(`SF.app.state.session.capabilities.canIntake`),true);
   const descriptor=(await core.call('channel.list')).find(d=>d.channel==='wechat');
   assert.equal(descriptor.name,'微信公众号');
-  assert.deepEqual(Object.keys(descriptor.operations).filter(op=>descriptor.operations[op].supported).sort(),['match_item_url','read_item','resolve_item']);
+  assert.deepEqual(Object.keys(descriptor.operations).filter(op=>descriptor.operations[op].supported).sort(),['list_items','match_item_url','read_item','resolve_item','resolve_source']);
   assert.equal(descriptor.content_types[0],'article');
+  assert.equal((await core.call('channel.list')).filter(d=>d.channel==='wechat').length,1);
+  assert.equal((await core.call('channel.list')).some(d=>d.channel==='wxrank'),false);
+  assert.equal((await core.call('connection.list')).filter(c=>c.channel==='wechat').length,1);
 
-  // W12: a single-item channel offers no subscription entry and no login window.
+  // 统一渠道同时提供订阅与人工添加，未配置付费密钥时也能人工读取。
   await evaluate(`SF.app.navigate('channels')`);await until(`!!document.querySelector('.channels__toolbar')`);
   await click('添加渠道或创作者');
   await until(`!!document.querySelector('.source-platforms')`);
-  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.source-platforms button')].map(b=>b.dataset.connectionId)`),['bilibili:default','xiaohongshu:default','zhihu:default']);
+  const platforms=await evaluate(`[...document.querySelectorAll('.source-platforms button')].map(b=>b.dataset.connectionId)`);
+  assert.ok(platforms.includes('wechat:default'),'微信公众号可以添加订阅来源');
+  assert.equal(platforms.filter(id=>id==='wechat:default').length,1);
+  assert.equal(platforms.includes('wxrank:default'),false);
+  await evaluate(`document.querySelector('.source-platforms [data-connection-id="wechat:default"]').click()`);
+  assert.ok((await evaluate(`document.querySelector('.dialog').textContent`)).includes('付费解析'),'订阅解析说明付费，即使费用读数尚未返回');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.dialog button')].find(b=>b.textContent.trim()==='应用内登录').disabled`),true,'微信读取和付费采集均不要求登录');
   await evaluate(`document.querySelector('.dialog [aria-label="关闭对话框"]').click()`);await until(`!document.querySelector('.dialog')`);
-  await click('检查连接');await until(`!!document.querySelector('.connection-card')`);
-  const wechatCard=`[...document.querySelectorAll('.connection-card')].find(c=>c.textContent.includes('微信公众号'))`;
+  const wechatCard=`document.querySelector('.connection-row[data-connection-id="wechat:default"]')`;
   assert.ok(await evaluate(`!!${wechatCard}`),'微信连接卡片存在');
-  assert.ok(await evaluate(`${wechatCard}.textContent.includes('仅支持自主添加')`));
+  await evaluate(`${wechatCard}.querySelector('.connection-row__head').click()`);
+  await until(`${wechatCard}.textContent.includes('未配置')`);
+  assert.ok(await evaluate(`${wechatCard}.textContent.includes('文章链接可在收件箱直接收录')`));
+  assert.ok(await evaluate(`${wechatCard}.textContent.includes('未配置')`),'未配置付费密钥');
   assert.equal(await evaluate(`[...${wechatCard}.querySelectorAll('button')].some(b=>b.textContent.includes('应用内登录'))`),false,'微信没有登录入口');
   assert.equal((await core.call('connection.check',{connection_id:'wechat:default',operation:'read_item'})).state,'ready');
 
@@ -57,6 +68,7 @@ async function verify({window,core,root,fixture}) {
   assert.equal(saved.source.kind,'account');
   assert.equal(saved.source.external_id,fixture.ACCOUNT);
   assert.equal(saved.intake_method,'manual');
+  assert.equal(saved.body_state,'full');
   assert.equal(saved.calendar_basis,'manual_added_at');
   assert.equal(saved.priority,'high');
   assert.equal(saved.published.value,'2026-06-05T18:51:40+08:00');
@@ -147,9 +159,20 @@ async function verify({window,core,root,fixture}) {
   assert.equal((await core.call('subscription.list')).length,0);
   await evaluate(`SF.app.navigate('inbox');SF.app.refreshData(true)`);
   await until(`SF.app.state.counts.total===3`);
-  console.log(JSON.stringify({wechatRenderer:'passed',realBridge:true,realCore:true,realPlatform:false,intakeOnlyChannel:true,
+  await evaluate(`if (SF.app.state.filters.platform !== 'wechat') document.querySelector('.sidebar [data-platform="wechat"]').click()`);
+  const intakeFilter=async(value,count)=>{
+    await evaluate(`document.querySelector('[aria-label="筛选收录方式"]').click()`);
+    await until(`!!document.querySelector('.menu [data-value="${value}"]')`);
+    await evaluate(`document.querySelector('.menu [data-value="${value}"]').click()`);
+    await until(`document.querySelector('[aria-label="筛选收录方式"]').dataset.value==='${value}' && document.querySelectorAll('.content-card').length===${count}`);
+  };
+  await intakeFilter('subscription',0);
+  await intakeFilter('manual',3);
+  await intakeFilter('',3);
+  await shot('bug143-unified-manual-filters.png');
+  console.log(JSON.stringify({wechatRenderer:'passed',realBridge:true,realCore:true,realPlatform:false,unifiedChannel:true,manualWithoutPaidKey:true,
     capabilityFilter:true,connectionCheck:true,previewNoWrite:true,accountSource:true,originalTime:true,manualCalendar:true,
     aliasSameKey:true,samePushSeparate:true,noSubscriptionOrJob:true,filtersAndCalendar:true,blockedPageStops:true,
-    errorPageNotSaved:true,restartPersisted:true,contents:3,longBodyCollapse:true}));
+    errorPageNotSaved:true,restartPersisted:true,contents:3,longBodyCollapse:true,intakeFilters:true}));
 }
 module.exports={verify};

@@ -2,7 +2,7 @@
 // Shapes mirror the real platform page: identity variables, #js_content body and
 // the error pages the reader must classify by body evidence rather than status.
 const SHORT='https://mp.weixin.qq.com/s/m14FixtureArticleToken';
-const ACCOUNT='M14FixTURE0ACCOUNT==',OTHER_ACCOUNT='M14FixTURE0OTHER==';
+const ACCOUNT='MzIxODg1OTk1MA==',OTHER_ACCOUNT='MzI4NTEyMzQ1Ng==';
 const IDS=[{mid:'2247551517',idx:1},{mid:'2247551518',idx:2}];
 const ARTICLES=IDS.map(({mid,idx})=>`${ACCOUNT}_${mid}_${idx}`);
 const CONTROL={mode:'normal'};

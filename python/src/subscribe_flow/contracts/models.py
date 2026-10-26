@@ -70,12 +70,13 @@ class ChannelDescriptor:
     scan_overhead_budget: int = 0
     budget_unit: str = "pages"
     # M45：付费渠道的两次开关。
-    # paid=True 表示每次成功调用都要花钱：调度器不得按通用重试策略自动重放，
-    # 界面也必须按实际推导出的调用数展示费用。
+    # paid=True 表示订阅采集调用需要付费：调度器不得按通用重试策略自动重放，
+    # 界面按实际调用数展示费用。单篇读取的依赖和费用由其操作实现决定。
     # resumable=True 表示该渠道支持持久回溯检查点：回溯从上次已提交成功的页继续，
     # 不用每次重买头几页。
     paid: bool = False
     resumable: bool = False
+    source_homepage: bool = True
 
 
 @dataclass(frozen=True)
@@ -145,6 +146,9 @@ class ContentItem:
     thumbnail: str | None = None
     duration_seconds: int | None = None
     acquisition_complete: bool = False
+    # Acquisition may complete with list metadata only; callers must not infer
+    # body availability from the channel or acquisition_complete.
+    body_state: Literal["full", "list_only", "unknown"] = "unknown"
 
     @property
     def key(self) -> str:

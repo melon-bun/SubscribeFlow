@@ -1,7 +1,7 @@
 """M45 付费渠道（wxrank）冻结契约。
 
-本模块是本期唯一的协议事实来源：请求形状、业务码、身份规则与计费口径都写在这里，
-transport / service / adapter 与测试只引用本模块，不各自抄一份。
+本模块保存供应商请求形状、业务码与计费口径，业务身份统一复用 wechat.identity。
+transport、service 与测试引用同一协议，供应商不作为独立业务渠道。
 
 真实付费响应不进入仓库：仓库内只有脱敏样本（channels/wxrank/fixtures.py），
 它们不含任何密钥、真实公众号身份或真实文章地址。
@@ -15,16 +15,17 @@ transport / service / adapter 与测试只引用本模块，不各自抄一份�
 
 from __future__ import annotations
 
-import base64
-import binascii
 import re
 from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qs, quote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from subscribe_flow.contracts import PublishedTime
 
-CHANNEL = "wxrank"
-BACKEND = "paid-http"
+from subscribe_flow.channels.wechat.identity import (CHANNEL, content_external_id,
+    content_key, extract_biz, normalize_biz, source_url)
+
+PROVIDER_ID = "wxrank"
+BACKEND = "electron-session"
 ADAPTER_VERSION = "wxrank-1"
 #: 解析版本。2026-10-25 用真实上游样本核对后升到 2。
 #: 变化点：上游真实字段是 ``art_url``／``pic_url``／``hd_head_img``，
@@ -78,88 +79,8 @@ CHARGE_UNKNOWN = "unknown"          # 结果未知：可能已扣费
 #: 公众号文章官方域名。文章链接只接受这里的域名。
 ARTICLE_HOSTS = ("mp.weixin.qq.com",)
 
-#: 内部定位用的公众号主页地址。它不是官方主页，只用于本应用内部定位来源。
-SOURCE_URL_TEMPLATE = "https://mp.weixin.qq.com/s?__biz={biz}"
-
-_BIZ_ALLOWED = re.compile(r"^[A-Za-z0-9+/=_-]+$")
-_URLSAFE_TO_STANDARD = str.maketrans("-_", "+/")
 _BALANCE_PATTERN = re.compile(r"剩余\s*([0-9]+)\s*积分")
 _SHANGHAI = timezone(timedelta(hours=8))
-
-_MAX_BIZ = 128
-
-
-# --------------------------------------------------------------------------
-# 身份：biz 归一
-# --------------------------------------------------------------------------
-def normalize_biz(value: str) -> str:
-    """把任意书写形式的 biz 归一成标准 base64（标准字母表 + 正确填充）。
-
-    规则：
-    - 去掉首尾空白；空值、超长值与 base64 字母表以外的字符一律无效；
-    - 只允许结尾出现 ``=``，且填充不超过 2 个；
-    - 去掉已有填充后按长度补齐（可能补 0／1／2 个），长度 % 4 == 1 视为无效；
-    - 归一后必须能严格解码并重新编码成同一串，否则视为无效。
-
-    归一后的串是缓存键、来源定位地址与内容身份的共同基础，
-    同一个公众号无论用哪种写法传进来都必须得到同一个结果。
-    """
-    if not isinstance(value, str):
-        raise ValueError("公众号标识必须是文本")
-    text = value.strip()
-    if not text or len(text) > _MAX_BIZ:
-        raise ValueError("公众号标识长度非法")
-    if not _BIZ_ALLOWED.match(text):
-        raise ValueError("公众号标识含有非 base64 字符")
-    body = text.rstrip("=")
-    padding = len(text) - len(body)
-    if padding > 2:
-        raise ValueError("公众号标识填充位过多")
-    if not body or len(body) % 4 == 1:
-        raise ValueError("公众号标识长度非法")
-    padded = body + "=" * ((4 - len(body) % 4) % 4)
-    try:
-        raw = base64.b64decode(padded.translate(_URLSAFE_TO_STANDARD), validate=True)
-    except (binascii.Error, ValueError):
-        raise ValueError("公众号标识不是合法的 base64") from None
-    return base64.b64encode(raw).decode("ascii")
-
-
-def extract_biz(locator: str) -> str:
-    """从输入中提取规范 biz。
-
-    输入可以是裸 biz、公众号主页地址，或带 ``__biz`` 的公众号文章地址。
-    裸 biz 优先按 base64 判定；判定不通过时再按地址解析，避免把
-    含 ``/`` 的 base64 误当成路径。
-    """
-    text = (locator or "").strip()
-    if not text:
-        raise ValueError("缺少公众号标识")
-    try:
-        return normalize_biz(text)
-    except ValueError:
-        pass
-    parts = urlsplit(text if "://" in text else "https://" + text)
-    query = parse_qs(parts.query)
-    for key in ("__biz", "biz"):
-        for value in query.get(key) or []:
-            if value:
-                return normalize_biz(value)
-    raise ValueError("无法从输入中识别公众号标识")
-
-
-def source_url(biz: str) -> str:
-    """来源的内部定位地址。同一 biz 永远得到同一个地址。"""
-    canonical = normalize_biz(biz)
-    return SOURCE_URL_TEMPLATE.format(biz=quote(canonical, safe=""))
-
-
-def source_external_id(gh_id: str) -> str:
-    """来源的稳定外部 ID：上游给出的公众号原始 ID。"""
-    text = (gh_id or "").strip()
-    if not text:
-        raise ValueError("公众号原始 ID 缺失")
-    return text
 
 
 # --------------------------------------------------------------------------
@@ -230,17 +151,6 @@ def article_identity(url: str) -> tuple[str, str, str]:
     return biz, mid, idx
 
 
-def content_external_id(biz: str, mid: str, idx: str) -> str:
-    """内容稳定 ID：``{biz}_{mid}_{idx}``，与来源使用同一份规范 biz。"""
-    canonical = normalize_biz(biz)
-    if not str(mid).isdigit() or not str(idx).isdigit():
-        raise ValueError("文章身份缺少 mid 或 idx")
-    return f"{canonical}_{mid}_{idx}"
-
-
-def content_key(biz: str, mid: str, idx: str) -> str:
-    """内容键：``wxrank:article:{biz}_{mid}_{idx}``。"""
-    return f"{CHANNEL}:article:{content_external_id(biz, mid, idx)}"
 
 
 # --------------------------------------------------------------------------
