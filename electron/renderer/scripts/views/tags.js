@@ -428,6 +428,7 @@
       "div.panel__head.tags-toolbar",
       {"data-refresh-key": "tags-toolbar"},
       h("h2.toolbar__title.t-h2", { text: "全部标签（" + cache.total + "）" }),
+      ui.btn("新建标签", { variant: "secondary", icon: "plus", onClick: function () { openCreateTag(app); } }),
       h(
         "div.toolbar__tools",
         null,
@@ -462,8 +463,7 @@
             load(app, { force: true });
           },
           { ariaLabel: "状态筛选" }
-        ),
-        ui.btn("新建标签", { variant: "secondary", icon: "plus", onClick: function () { openCreateTag(app); } })
+        )
       )
     );
   }

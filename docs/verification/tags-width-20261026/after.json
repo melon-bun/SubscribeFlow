@@ -1,0 +1,842 @@
+[
+  {
+    "viewport": 1440,
+    "elements": {
+      ".view__head": {
+        "x": 272,
+        "y": 78,
+        "w": 1134,
+        "h": 57,
+        "client": 1134,
+        "scroll": 1134,
+        "flex": "0 0 auto",
+        "align": "flex-start"
+      },
+      ".tags-layout": {
+        "x": 272,
+        "y": 151,
+        "w": 1134,
+        "h": 619,
+        "client": 1134,
+        "scroll": 1134,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-list": {
+        "x": 272,
+        "y": 151,
+        "w": 678,
+        "h": 619,
+        "client": 678,
+        "scroll": 678,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-panel": {
+        "x": 272,
+        "y": 151,
+        "w": 678,
+        "h": 196,
+        "client": 678,
+        "scroll": 678,
+        "flex": "0 1 auto",
+        "align": "normal"
+      },
+      ".tags-toolbar": {
+        "x": 272,
+        "y": 151,
+        "w": 678,
+        "h": 100,
+        "client": 678,
+        "scroll": 678,
+        "flex": "0 0 auto",
+        "align": "center"
+      },
+      ".toolbar__title": {
+        "x": 288,
+        "y": 163,
+        "w": 535,
+        "h": 34,
+        "client": 535,
+        "scroll": 535,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".toolbar__tools": {
+        "x": 288,
+        "y": 205,
+        "w": 646,
+        "h": 34,
+        "client": 646,
+        "scroll": 646,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[data-tag-search]": {
+        "x": 288,
+        "y": 206,
+        "w": 260,
+        "h": 32,
+        "client": 260,
+        "scroll": 260,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"标签排序\"]": {
+        "x": 556,
+        "y": 205,
+        "w": 168,
+        "h": 34,
+        "client": 168,
+        "scroll": 168,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"状态筛选\"]": {
+        "x": 732,
+        "y": 205,
+        "w": 98,
+        "h": 34,
+        "client": 98,
+        "scroll": 98,
+        "flex": "0 1 auto",
+        "align": "center"
+      }
+    }
+  },
+  {
+    "viewport": 1280,
+    "elements": {
+      ".view__head": {
+        "x": 272,
+        "y": 78,
+        "w": 974,
+        "h": 57,
+        "client": 974,
+        "scroll": 974,
+        "flex": "0 0 auto",
+        "align": "flex-start"
+      },
+      ".tags-layout": {
+        "x": 272,
+        "y": 151,
+        "w": 974,
+        "h": 619,
+        "client": 974,
+        "scroll": 974,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-list": {
+        "x": 272,
+        "y": 151,
+        "w": 578,
+        "h": 619,
+        "client": 578,
+        "scroll": 578,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-panel": {
+        "x": 272,
+        "y": 151,
+        "w": 578,
+        "h": 196,
+        "client": 578,
+        "scroll": 578,
+        "flex": "0 1 auto",
+        "align": "normal"
+      },
+      ".tags-toolbar": {
+        "x": 272,
+        "y": 151,
+        "w": 578,
+        "h": 100,
+        "client": 578,
+        "scroll": 578,
+        "flex": "0 0 auto",
+        "align": "center"
+      },
+      ".toolbar__title": {
+        "x": 288,
+        "y": 163,
+        "w": 435,
+        "h": 34,
+        "client": 435,
+        "scroll": 435,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".toolbar__tools": {
+        "x": 288,
+        "y": 205,
+        "w": 546,
+        "h": 34,
+        "client": 546,
+        "scroll": 546,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[data-tag-search]": {
+        "x": 288,
+        "y": 206,
+        "w": 260,
+        "h": 32,
+        "client": 260,
+        "scroll": 260,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"标签排序\"]": {
+        "x": 556,
+        "y": 205,
+        "w": 168,
+        "h": 34,
+        "client": 168,
+        "scroll": 168,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"状态筛选\"]": {
+        "x": 732,
+        "y": 205,
+        "w": 98,
+        "h": 34,
+        "client": 98,
+        "scroll": 98,
+        "flex": "0 1 auto",
+        "align": "center"
+      }
+    }
+  },
+  {
+    "viewport": 1200,
+    "elements": {
+      ".view__head": {
+        "x": 272,
+        "y": 78,
+        "w": 894,
+        "h": 57,
+        "client": 894,
+        "scroll": 894,
+        "flex": "0 0 auto",
+        "align": "flex-start"
+      },
+      ".tags-layout": {
+        "x": 272,
+        "y": 151,
+        "w": 894,
+        "h": 619,
+        "client": 894,
+        "scroll": 894,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-list": {
+        "x": 272,
+        "y": 151,
+        "w": 558,
+        "h": 619,
+        "client": 558,
+        "scroll": 558,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-panel": {
+        "x": 272,
+        "y": 151,
+        "w": 558,
+        "h": 196,
+        "client": 558,
+        "scroll": 558,
+        "flex": "0 1 auto",
+        "align": "normal"
+      },
+      ".tags-toolbar": {
+        "x": 272,
+        "y": 151,
+        "w": 558,
+        "h": 100,
+        "client": 558,
+        "scroll": 558,
+        "flex": "0 0 auto",
+        "align": "center"
+      },
+      ".toolbar__title": {
+        "x": 288,
+        "y": 163,
+        "w": 415,
+        "h": 34,
+        "client": 415,
+        "scroll": 415,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".toolbar__tools": {
+        "x": 288,
+        "y": 205,
+        "w": 526,
+        "h": 34,
+        "client": 526,
+        "scroll": 526,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[data-tag-search]": {
+        "x": 288,
+        "y": 206,
+        "w": 244,
+        "h": 32,
+        "client": 244,
+        "scroll": 244,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"标签排序\"]": {
+        "x": 540,
+        "y": 205,
+        "w": 168,
+        "h": 34,
+        "client": 168,
+        "scroll": 168,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"状态筛选\"]": {
+        "x": 716,
+        "y": 205,
+        "w": 98,
+        "h": 34,
+        "client": 98,
+        "scroll": 98,
+        "flex": "0 1 auto",
+        "align": "center"
+      }
+    }
+  },
+  {
+    "viewport": 1100,
+    "elements": {
+      ".view__head": {
+        "x": 272,
+        "y": 78,
+        "w": 794,
+        "h": 57,
+        "client": 794,
+        "scroll": 794,
+        "flex": "0 0 auto",
+        "align": "flex-start"
+      },
+      ".tags-layout": {
+        "x": 272,
+        "y": 151,
+        "w": 794,
+        "h": 619,
+        "client": 794,
+        "scroll": 794,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-list": {
+        "x": 272,
+        "y": 151,
+        "w": 458,
+        "h": 619,
+        "client": 458,
+        "scroll": 458,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-panel": {
+        "x": 272,
+        "y": 151,
+        "w": 458,
+        "h": 196,
+        "client": 458,
+        "scroll": 458,
+        "flex": "0 1 auto",
+        "align": "normal"
+      },
+      ".tags-toolbar": {
+        "x": 272,
+        "y": 151,
+        "w": 458,
+        "h": 100,
+        "client": 458,
+        "scroll": 458,
+        "flex": "0 0 auto",
+        "align": "center"
+      },
+      ".toolbar__title": {
+        "x": 288,
+        "y": 163,
+        "w": 315,
+        "h": 34,
+        "client": 315,
+        "scroll": 315,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".toolbar__tools": {
+        "x": 288,
+        "y": 205,
+        "w": 426,
+        "h": 34,
+        "client": 426,
+        "scroll": 426,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[data-tag-search]": {
+        "x": 288,
+        "y": 206,
+        "w": 144,
+        "h": 32,
+        "client": 144,
+        "scroll": 144,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"标签排序\"]": {
+        "x": 440,
+        "y": 205,
+        "w": 168,
+        "h": 34,
+        "client": 168,
+        "scroll": 168,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"状态筛选\"]": {
+        "x": 616,
+        "y": 205,
+        "w": 98,
+        "h": 34,
+        "client": 98,
+        "scroll": 98,
+        "flex": "0 1 auto",
+        "align": "center"
+      }
+    }
+  },
+  {
+    "viewport": 1080,
+    "elements": {
+      ".view__head": {
+        "x": 288,
+        "y": 94,
+        "w": 742,
+        "h": 57,
+        "client": 742,
+        "scroll": 742,
+        "flex": "0 0 auto",
+        "align": "flex-start"
+      },
+      ".tags-layout": {
+        "x": 288,
+        "y": 167,
+        "w": 742,
+        "h": 587,
+        "client": 742,
+        "scroll": 742,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-list": {
+        "x": 288,
+        "y": 167,
+        "w": 742,
+        "h": 196,
+        "client": 742,
+        "scroll": 742,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".tags-panel": {
+        "x": 288,
+        "y": 167,
+        "w": 742,
+        "h": 196,
+        "client": 742,
+        "scroll": 742,
+        "flex": "0 1 auto",
+        "align": "normal"
+      },
+      ".tags-toolbar": {
+        "x": 288,
+        "y": 167,
+        "w": 742,
+        "h": 100,
+        "client": 742,
+        "scroll": 742,
+        "flex": "0 0 auto",
+        "align": "center"
+      },
+      ".toolbar__title": {
+        "x": 304,
+        "y": 179,
+        "w": 599,
+        "h": 34,
+        "client": 599,
+        "scroll": 599,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".toolbar__tools": {
+        "x": 304,
+        "y": 221,
+        "w": 710,
+        "h": 34,
+        "client": 710,
+        "scroll": 710,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[data-tag-search]": {
+        "x": 304,
+        "y": 222,
+        "w": 260,
+        "h": 32,
+        "client": 260,
+        "scroll": 260,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"标签排序\"]": {
+        "x": 572,
+        "y": 221,
+        "w": 168,
+        "h": 34,
+        "client": 168,
+        "scroll": 168,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"状态筛选\"]": {
+        "x": 748,
+        "y": 221,
+        "w": 98,
+        "h": 34,
+        "client": 98,
+        "scroll": 98,
+        "flex": "0 1 auto",
+        "align": "center"
+      }
+    }
+  },
+  {
+    "viewport": 1000,
+    "elements": {
+      ".view__head": {
+        "x": 288,
+        "y": 94,
+        "w": 662,
+        "h": 57,
+        "client": 662,
+        "scroll": 662,
+        "flex": "0 0 auto",
+        "align": "flex-start"
+      },
+      ".tags-layout": {
+        "x": 288,
+        "y": 167,
+        "w": 662,
+        "h": 587,
+        "client": 662,
+        "scroll": 662,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-list": {
+        "x": 288,
+        "y": 167,
+        "w": 662,
+        "h": 196,
+        "client": 662,
+        "scroll": 662,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".tags-panel": {
+        "x": 288,
+        "y": 167,
+        "w": 662,
+        "h": 196,
+        "client": 662,
+        "scroll": 662,
+        "flex": "0 1 auto",
+        "align": "normal"
+      },
+      ".tags-toolbar": {
+        "x": 288,
+        "y": 167,
+        "w": 662,
+        "h": 100,
+        "client": 662,
+        "scroll": 662,
+        "flex": "0 0 auto",
+        "align": "center"
+      },
+      ".toolbar__title": {
+        "x": 304,
+        "y": 179,
+        "w": 519,
+        "h": 34,
+        "client": 519,
+        "scroll": 519,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".toolbar__tools": {
+        "x": 304,
+        "y": 221,
+        "w": 630,
+        "h": 34,
+        "client": 630,
+        "scroll": 630,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[data-tag-search]": {
+        "x": 304,
+        "y": 222,
+        "w": 260,
+        "h": 32,
+        "client": 260,
+        "scroll": 260,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"标签排序\"]": {
+        "x": 572,
+        "y": 221,
+        "w": 168,
+        "h": 34,
+        "client": 168,
+        "scroll": 168,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"状态筛选\"]": {
+        "x": 748,
+        "y": 221,
+        "w": 98,
+        "h": 34,
+        "client": 98,
+        "scroll": 98,
+        "flex": "0 1 auto",
+        "align": "center"
+      }
+    }
+  },
+  {
+    "viewport": 900,
+    "elements": {
+      ".view__head": {
+        "x": 104,
+        "y": 94,
+        "w": 746,
+        "h": 57,
+        "client": 746,
+        "scroll": 746,
+        "flex": "0 0 auto",
+        "align": "flex-start"
+      },
+      ".tags-layout": {
+        "x": 104,
+        "y": 167,
+        "w": 746,
+        "h": 587,
+        "client": 746,
+        "scroll": 746,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-list": {
+        "x": 104,
+        "y": 167,
+        "w": 746,
+        "h": 196,
+        "client": 746,
+        "scroll": 746,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".tags-panel": {
+        "x": 104,
+        "y": 167,
+        "w": 746,
+        "h": 196,
+        "client": 746,
+        "scroll": 746,
+        "flex": "0 1 auto",
+        "align": "normal"
+      },
+      ".tags-toolbar": {
+        "x": 104,
+        "y": 167,
+        "w": 746,
+        "h": 100,
+        "client": 746,
+        "scroll": 746,
+        "flex": "0 0 auto",
+        "align": "center"
+      },
+      ".toolbar__title": {
+        "x": 120,
+        "y": 179,
+        "w": 603,
+        "h": 34,
+        "client": 603,
+        "scroll": 603,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".toolbar__tools": {
+        "x": 120,
+        "y": 221,
+        "w": 714,
+        "h": 34,
+        "client": 714,
+        "scroll": 714,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[data-tag-search]": {
+        "x": 120,
+        "y": 222,
+        "w": 260,
+        "h": 32,
+        "client": 260,
+        "scroll": 260,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"标签排序\"]": {
+        "x": 388,
+        "y": 221,
+        "w": 168,
+        "h": 34,
+        "client": 168,
+        "scroll": 168,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"状态筛选\"]": {
+        "x": 564,
+        "y": 221,
+        "w": 98,
+        "h": 34,
+        "client": 98,
+        "scroll": 98,
+        "flex": "0 1 auto",
+        "align": "center"
+      }
+    }
+  },
+  {
+    "viewport": 800,
+    "elements": {
+      ".view__head": {
+        "x": 104,
+        "y": 94,
+        "w": 646,
+        "h": 57,
+        "client": 646,
+        "scroll": 646,
+        "flex": "0 0 auto",
+        "align": "flex-start"
+      },
+      ".tags-layout": {
+        "x": 104,
+        "y": 167,
+        "w": 646,
+        "h": 587,
+        "client": 646,
+        "scroll": 646,
+        "flex": "1 1 0%",
+        "align": "normal"
+      },
+      ".tags-list": {
+        "x": 104,
+        "y": 167,
+        "w": 646,
+        "h": 196,
+        "client": 646,
+        "scroll": 646,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".tags-panel": {
+        "x": 104,
+        "y": 167,
+        "w": 646,
+        "h": 196,
+        "client": 646,
+        "scroll": 646,
+        "flex": "0 1 auto",
+        "align": "normal"
+      },
+      ".tags-toolbar": {
+        "x": 104,
+        "y": 167,
+        "w": 646,
+        "h": 100,
+        "client": 646,
+        "scroll": 646,
+        "flex": "0 0 auto",
+        "align": "center"
+      },
+      ".toolbar__title": {
+        "x": 120,
+        "y": 179,
+        "w": 503,
+        "h": 34,
+        "client": 503,
+        "scroll": 503,
+        "flex": "0 0 auto",
+        "align": "normal"
+      },
+      ".toolbar__tools": {
+        "x": 120,
+        "y": 221,
+        "w": 614,
+        "h": 34,
+        "client": 614,
+        "scroll": 614,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[data-tag-search]": {
+        "x": 120,
+        "y": 222,
+        "w": 260,
+        "h": 32,
+        "client": 260,
+        "scroll": 260,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"标签排序\"]": {
+        "x": 388,
+        "y": 221,
+        "w": 168,
+        "h": 34,
+        "client": 168,
+        "scroll": 168,
+        "flex": "0 1 auto",
+        "align": "center"
+      },
+      "[aria-label=\"状态筛选\"]": {
+        "x": 564,
+        "y": 221,
+        "w": 98,
+        "h": 34,
+        "client": 98,
+        "scroll": 98,
+        "flex": "0 1 auto",
+        "align": "center"
+      }
+    }
+  }
+]
