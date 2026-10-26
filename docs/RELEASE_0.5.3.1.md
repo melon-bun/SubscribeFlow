@@ -7,3 +7,5 @@
 源码已完成浅／深色 4 档窗口共 8 组真实滚轮测试，底部可达、标签后台刷新／草稿／焦点与滚动保持通过。[源码证据](verification/tags-ai-scroll-20261026/REPORT.md)。
 
 当前进行 macOS Intel（x64）0.5.3.1 本地打包。包内验收新增真实输入事件滚动 AI 页及底部可达检查，不只测量几何或程序化设置 scrollTop。未请求真实 API，日常数据与登录不变，未推送或发布。
+
+首轮打包的 Electron 归档下载返回 `fetch failed`。本机已有同版 44.5.1／darwin-x64 ZIP 缓存，使用打包脚本新增的可选 `SUBSCRIBE_FLOW_ELECTRON_ZIP_DIR` 参数指向该目录重建；默认在线构建方式不变，未替换 Electron 版本。首轮日志保留为 `verification/v0.5.3.1-local/build-attempt-1.log`。
