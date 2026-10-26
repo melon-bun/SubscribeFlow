@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-26",
+  "retiredVersion": "0.5.3.1",
+  "retainedVersion": "0.5.3.2",
+  "retiredAppMovedToTrash": true,
+  "trashDestination": "/Users/xor/.Trash/Subscribe Flow 20-48-20-012.app",
+  "indexedApps": [
+    "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.3.2/Subscribe Flow-darwin-x64/Subscribe Flow.app"
+  ],
+  "zipBackupsKept": [
+    "Subscribe-Flow-0.5.3.1-mac-x64.zip",
+    "Subscribe-Flow-0.5.3.2-mac-x64.zip"
+  ],
+  "dailyDataTouched": false
+}
