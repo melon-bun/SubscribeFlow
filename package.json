@@ -1,6 +1,6 @@
 {
   "name": "subscribe-flow",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "private": true,
   "description": "Local-first subscription desktop application",
   "main": "electron/main/index.cjs",
