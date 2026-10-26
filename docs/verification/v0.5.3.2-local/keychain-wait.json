@@ -1,0 +1,12 @@
+{
+  "attempt": 1,
+  "startupVerification": "not_passed",
+  "error": "Debug timeout: Runtime.evaluate",
+  "sampledMainThread": [
+    "SecItemCopyMatching",
+    "SecKeychainItemCopyContent",
+    "Security::SecurityServer::ClientSession::decrypt",
+    "mach_msg2_trap"
+  ],
+  "action": "Await normal macOS Keychain consent; no bypass; only isolated test processes cleaned"
+}

@@ -1,0 +1,16 @@
+{
+  "version": "0.5.3.2",
+  "status": "awaiting_macos_keychain_consent",
+  "fullPackagedSmoke": "not_passed",
+  "priorFrozenCoreStepsCompleted": [
+    "version",
+    "deduplication",
+    "cancellation",
+    "xiaohongshu_cover_persistence"
+  ],
+  "startupWait": "System Keychain authorization pending; no bypass",
+  "isolatedSchema": 15,
+  "upgradeBackupExists": true,
+  "isolatedTestStopped": true,
+  "dailyAppUntouched": true
+}

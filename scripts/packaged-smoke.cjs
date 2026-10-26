@@ -51,8 +51,10 @@ async function launch(bundle,dataDir,work,expected='ready') {
     page.close();browser.close();
   }};
   try {
-    await until(async()=>await evaluate(`!!window.SubscribeFlow && !!window.SF && SubscribeFlow.call('core.status',{}).then(s=>s.state===${JSON.stringify(expected)})`));
-    if(expected==='ready') await until(async()=>await evaluate('!!SF.app.state.session'));
+    // A newly signed local build can await the user's macOS Keychain consent.
+    const startupWait=Number(process.env.SUBSCRIBE_FLOW_PACKAGED_STARTUP_WAIT_MS)||20000;
+    await until(async()=>await evaluate(`!!window.SubscribeFlow && !!window.SF && SubscribeFlow.call('core.status',{}).then(s=>s.state===${JSON.stringify(expected)})`),startupWait);
+    if(expected==='ready') await until(async()=>await evaluate('!!SF.app.state.session'),startupWait);
     return app;
   } catch(error){await app.close();throw error;}
 }
