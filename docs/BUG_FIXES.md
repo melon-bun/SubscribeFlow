@@ -2516,3 +2516,56 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 - 对照：既有 `IntakeStorageTests.test_both_duplicate_orders_preserve_all_content_source_and_organizing_rows` 与 `test_concurrent_subscription_and_manual_save_first_commit_wins` 两项通过，表明公共仓储在统一身份下已有双向查重与并发首次写入口径。
 - 证据：[复现脚本](verification/wechat-channel-identity-20261027/probe.py) · [双向结果](verification/wechat-channel-identity-20261027/result.json)。重跑：项目根目录执行 `python/.venv/bin/python docs/verification/wechat-channel-identity-20261027/probe.py`。脚本断言的是当前缺陷，不是修复验收通过。
 - 相关提交：本次记录与证据随文档提交；**产品修复提交：无**。未打包、推送或发布。
+
+### 2026-10-27：修复方案（设计，未实施）
+
+推荐采用**一个微信业务渠道、两种收录方式、两个采集后端**。现有 Gateway 已按 `(channel, backend)` 注册和路由；保留两个 Adapter，由公共 Sync／Intake 分别调用。无需给公共采集引擎新增微信专用流程。以下是本次提出的实现方案，状态仍为待修复。
+
+| 层次 | 设计 |
+|---|---|
+| 业务渠道 | 统一 `channel=wechat`；平台目录只保留一个微信公众号入口 |
+| 收录方式 | 沿用 `intake_method=subscription/manual`；订阅的手动刷新仍属于 subscription |
+| 采集后端 | 自动采集使用 `paid-http`；人工添加使用 `electron-session`；能力、就绪检查、费用与资源策略按实际后端判断 |
+| 供应商 | 独立 `PROVIDER_ID=wxrank`；供应商名称不参与公众号或文章的业务身份 |
+| 来源身份 | `wechat:account:{规范biz}`；`gh_id` 是付费后端的上游定位信息 |
+| 文章身份 | `wechat:article:{规范biz}_{mid}_{idx}`；两种方式返回同一身份，沿用公共仓储的事务查重与首次收录口径 |
+
+**1. 先统一适配边界与路由。**
+
+- 抽取 `channels/wechat/identity.py`，集中规范 biz、公众号键与文章键，页面与付费 Adapter 共用；平台 URL 与身份解析留在渠道层。
+- 付费协议／服务拆分业务 `CHANNEL=wechat` 与供应商 `PROVIDER_ID=wxrank`：标准 Source／ContentItem 使用前者，凭据、账本和供应商配置使用后者。保留 `settings.channels.wxrank`、`wxrank.*` RPC、已有密钥引用／revision，以及账本的 `wxrank` 供应商命名空间，保证原配置与历史消费继续可读。
+- 已有 `wechat:default` 和 `wxrank:default` 连接 ID 视为不透明标识并保留，只把后者的业务 channel 迁到 wechat。初始化按 `(channel, backend)` 查找、复用现有连接；全新库给两个后端分配不同稳定 ID，例如页面 `wechat:default`、付费 `wechat:paid-http`。旧编号不作为用户可见平台名。
+- 付费连接继续使用供应商资源键 `http:wxrank`；页面连接继续使用 `browser:electron-wechat`。保留 enabled、version、readiness、订阅 ID 和订阅版本；不得借用会递增版本／清空就绪状态的普通“更新连接”接口完成迁移。
+- `PaidChannelService.descriptor()`／`status()` 按实际后端和付费能力选择，不能只取第一个 wechat 描述符；Main 创建订阅按 `resolve_source` 能力选择连接，人工添加仍由 Gateway 选择支持单篇读取的连接。
+
+**2. 把上游账号身份从可清缓存中分离。**
+
+- 最小新增微信后端身份表，例如 `wechat_backend_identities(provider_id, biz, upstream_id, updated_at)`，主键 `(provider_id,biz)`。它只保存解析已确认的 `biz ↔ gh_id`，不存密钥；不依赖来源已订阅，也不为人工添加创建订阅。
+- 付费解析成功后写入该绑定；旧数据可从旧来源的 `gh_id` 与 URL 中的 biz、解析缓存及关联文章身份交叉核对后离线填充。若证据不一致，迁移应明确失败并回滚，不能猜测合并或通过付费请求补齐。
+- `paid_channel_sources` 继续作为可清理的解析／资料缓存。已订阅来源的列表请求从持久绑定取 `gh_id`，即使用户清过缓存仍可正常采集，不额外付费解析一次。新来源解析缓存未命中仍遵守既有付费语义。
+- 来源统一后 `Source.external_id` 是 biz，列表接口的 `wxid` 仍必须传 gh_id；响应账号核对也应对 gh_id，同时逐篇核对文章 biz，保留 BUG-129 的身份校验。
+
+**3. 展示和能力判断改用真实元数据。**
+
+- Main／Renderer 的费用确认、页数说明、自动检查费用提示和主页能力，按订阅的实际连接／backend／paid 元数据判断；渠道管理按业务 channel 分组，微信只显示一组，组内包含两种方式。
+- 为内容增加显式正文状态，例如 `body_state=full/list_only/unknown`，贯穿 ContentItem、持久 payload 与 DTO。付费列表标 list_only，成功读取微信正文标 full；替换 `platform === 'wxrank'` 的正文提示分支。`acquisition_complete` 表示本次采集契约已完成，不能借它断言已有正文。
+- 移除独立 wxrank 平台项。列表、总览、笔记等复用规范渠道查询与统计；详情能力依据实际关联连接，不能用“微信另一个后端支持此能力”推断当前内容可补详情。AI 总结的输入范围也应依据真实正文状态。
+- 新收录的两种顺序继续遵守首次写入口径；本项不把“重复人工添加”隐式改成正文补全操作。正文补全如另行提供，应走明确的详情更新契约。
+
+**4. 历史数据通过一次原子升级归一。**
+
+- 暂按下一版 schema v16 规划：升级前创建独立备份；服务与调度启动前，在同一事务里建立旧→新 ID 映射、写入持久后端身份、重建规范内容并迁移关联。完成外键与计数校验后才提交版本。现有首次收录不可变触发器、主键与无 ON UPDATE CASCADE 的关联使直接替换 ID／INSERT OR REPLACE 不可行；需有序复制与合并，失败整体回滚。
+- 迁移范围包括 sources、contents 及 JSON payload 内身份，订阅 source_id、content_sources、整理状态、标签／人工屏蔽、笔记、事件、AI 任务与智能结果、偏好样本、jobs.item_key、付费缓存 source_id 与历史检查点。衍生指纹因输入变化失效时按既有规则失效并保留历史，不伪造仍有效，也不因升级额外调用模型。
+- 检查点只重映射 source_id，保留原连接 ID、游标、取得／过期时间及凭据／parser／progress 版本。身份归一不改变上游分页协议，不为此主动升级 parser／progress 版本或清掉游标。订阅日程、失败次数及已有阻塞保留；backend 范围阻塞的 `wxrank:paid-http`（含错误载荷内相关 scope_key）映射为 `wechat:paid-http`，避免未知扣费阻塞丢失后自动重放。
+- 重复内容合并的建议规则：最早 first_seen 决定首次收录时间／方式，保留已有完整正文；处理状态取较晚更新的一整行，不能把已读／归档／稍后标志逐个 OR。人工优先级优先采用有人工操作证据的值，再比较更新时间。标签保留手工来源与人工屏蔽，屏蔽不能被旧自动建议抵消。同一标签的人工添加／移除冲突按记录时间处理并保留依据。
+- 两份笔记完全相同时合并；不同时，建议以较晚更新的整份为主笔记，另一份完整存入本机迁移档案。其他用户状态冲突同样保存两边原始数据、旧新 ID 和选择理由，保证可恢复；这些档案只在用户本机，不写进仓库证据。
+- 上述冲突选择是**拟定规则**：当前状态与优先级共用更新时间，且没有逐字段操作历史，不能严格还原用户最后一次改档意图。实施前必须把规则固定在验收中；不能把“取最新一行”表述为已证明恢复了最后意图。无论采用何种主记录选择，冲突原值都须完整保留。
+
+**5. 实施顺序与必要验收。**
+
+- 先实现规范身份、持久后端绑定、连接复用和两条公共入口，在新隔离库验证统一身份；再完成既有库原子升级；最后完成前端投影、分组、正文状态和联合验收。三部分全部通过后才关闭 BUG-143。
+- 新库：自动→人工、人工→自动及并发均只保存一篇／一个来源；无付费密钥也可人工添加；清解析缓存后已订阅来源采集不增加解析调用；有／无正文提示与统计、筛选一致。
+- 升级：只有旧页面数据、只有旧付费数据、两边重复、不同笔记／标签屏蔽／人工状态、已消费和未消费事件、在途任务、未过期／过期检查点、未知扣费阻塞均须有隔离样本；覆盖失败回滚、重启、再次升级幂等和跨旧版本升级。
+- 付费回归：有效游标在升级后继续，不重买头页；原收费页数上限、整页保存、余额与历史消费读取、未知扣费不自动重试均保持。优先以可计数假传输和正式 Renderer 验证，架构修复与迁移验收不依赖真实扣费请求。
+
+本轮只完成设计复核并补入本条 Bug，未执行上述实现或迁移，未将方案验收写为已通过。原始复现基线和结果保留，实施时应另写修复后的通过证据。
