@@ -209,6 +209,9 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     await app.evaluate(`SF.app.navigate('tags',{tab:'ai'})`);
     await until(()=>app.evaluate(`!!document.querySelector('.tags-ai')`));
     await app.evaluate(`SF.views.tags.whenIdle()`);
+    await until(()=>app.evaluate(`!!document.querySelector('.tags-ai select[aria-label="选择连接"]')`));
+    assert.equal(await app.evaluate(`[...document.querySelectorAll('.tags-ai button')].some(b=>b.textContent.includes('不选择这条连接'))`),false);
+    result.recognitionUnselectRemoved=true;
     const aiPoint=await app.evaluate(`(() => {const p=document.querySelector('.tags-ai'),r=p.getBoundingClientRect();p.scrollTop=0;return {x:r.left+8,y:r.top+60,client:p.clientHeight,scroll:p.scrollHeight};})()`);
     assert.ok(aiPoint.scroll>aiPoint.client,'AI settings exceed the compact viewport');
     await app.page.send('Input.dispatchMouseEvent',{type:'mouseWheel',x:aiPoint.x,y:aiPoint.y,deltaX:0,deltaY:500});
