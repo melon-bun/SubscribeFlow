@@ -120,31 +120,21 @@ async function main() {
     await core.stop();core=null;result.xiaohongshuLocalCover=true;
     // Make a v2 database so the real installed binary, not test code, performs the upgrade.
     const runtime=JSON.parse(fs.readFileSync(path.join(root,'.runtime-paths.json'),'utf8'));
-    const legacy=spawnSync(runtime.python,['-c',`import sqlite3,sys
-db=sqlite3.connect(sys.argv[1]);db.executescript('''
-ALTER TABLE content_states RENAME TO old_states;
-CREATE TABLE content_states(content_id TEXT PRIMARY KEY REFERENCES contents(id) ON DELETE CASCADE,read INTEGER NOT NULL DEFAULT 0,archived INTEGER NOT NULL DEFAULT 0,deferred INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL);
-INSERT INTO content_states SELECT content_id,read,archived,deferred,updated_at FROM old_states;
-DROP TABLE old_states;
-ALTER TABLE subscriptions DROP COLUMN collect_items;
-ALTER TABLE subscriptions DROP COLUMN default_priority;
-DROP TABLE content_tags;
-DROP TABLE content_tag_blocks;
-DROP TABLE tags;
-ALTER TABLE jobs DROP COLUMN acquisition_metrics;
-DROP TRIGGER content_intake_immutable;
-DROP INDEX content_intake_timeline;
-ALTER TABLE contents DROP COLUMN manual_added_at;
-ALTER TABLE contents DROP COLUMN intake_method;
--- v2 predates settings, reminders and tagging; keeping these tables makes
--- the upgrade fail with "table already exists" instead of testing a v2 file.
-DROP TABLE tagging_tasks;
-DROP TABLE content_events;
-DROP TABLE reminder_run_state;
-DROP TABLE app_settings;
-DROP TABLE content_notes;
-PRAGMA user_version=2;
-''');db.execute('UPDATE content_states SET read=1,archived=1 WHERE content_id=?',(sys.argv[2],));db.commit();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id],{encoding:'utf8'});
+    // Build the historical schema from its migrations. Removing selected new
+    // tables left newer priority/paid tables behind and made this a false v2.
+    const legacy=spawnSync(runtime.python,['-c',`import pathlib,sqlite3,sys
+db=sqlite3.connect(sys.argv[1]);old=sqlite3.connect(':memory:')
+migrations=pathlib.Path(sys.argv[3])
+for name in ('001_initial.sql','002_scheduling.sql'):
+    old.executescript((migrations/name).read_text())
+for (name,) in old.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+    columns=[row[1] for row in old.execute('PRAGMA table_info("'+name+'")')]
+    names=','.join('"'+column+'"' for column in columns)
+    rows=db.execute('SELECT '+names+' FROM "'+name+'"').fetchall()
+    old.executemany('INSERT INTO "'+name+'" ('+names+') VALUES ('+','.join('?' for _ in columns)+')',rows)
+old.execute('UPDATE content_states SET read=1,archived=1 WHERE content_id=?',(sys.argv[2],))
+old.execute('PRAGMA user_version=2');old.commit();old.backup(db)
+old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,path.join(root,'python/src/subscribe_flow/storage/migrations')],{encoding:'utf8'});
     assert.equal(legacy.status,0,legacy.stderr);
     app=await launch(bundle,dataDir,folder);
     const call=(method,params={})=>app.evaluate(`SubscribeFlow.call(${JSON.stringify(method)},${JSON.stringify(params)})`);
@@ -196,6 +186,24 @@ PRAGMA user_version=2;
     const xhs=(await call('channel.list')).find(channel=>channel.channel==='xiaohongshu');
     assert.ok(xhs);assert.equal(xhs.backend,'electron-session');
     result.tags=true;result.xiaohongshuChannel=true;
+    // Check the latest grouped paid configuration without making a paid call.
+    const wxrank=await call('wxrank.status');
+    assert.equal(wxrank.configured,false);assert.equal(wxrank.usage.calls,0);
+    await app.evaluate(`SF.app.navigate('channels')`);
+    await until(()=>app.evaluate(`!!document.querySelector('[data-refresh-key="wxrank-card"]')`));
+    assert.equal(await app.evaluate(`document.querySelector('[data-refresh-key="wxrank-card"]').closest('.connection-row')?.dataset.connectionId`),'wechat:default');
+    const wechatHead=`document.querySelector('.connection-row[data-connection-id="wechat:default"] > .connection-row__head')`;
+    assert.equal(await app.evaluate(`${wechatHead}.getAttribute('aria-expanded')`),'false');
+    await app.evaluate(`${wechatHead}.click()`);
+    await until(()=>app.evaluate(`document.querySelector('[data-refresh-key="wxrank-card"]').getClientRects().length>0`));
+    assert.ok(await app.evaluate(`document.querySelector('[data-refresh-key="wxrank-card"]').innerText.includes('在线付费 API')`));
+    fs.writeFileSync(path.join(output,'packaged-channels.png'),Buffer.from((await app.page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await app.evaluate(`SF.app.navigate('tags',{tab:'list'})`);
+    await until(()=>app.evaluate(`!!document.querySelector('.tags-toolbar')`));
+    assert.equal(await app.evaluate(`getComputedStyle(document.querySelector('.tags-toolbar')).display`),'grid');
+    assert.ok(await app.evaluate(`document.querySelector('.tags-toolbar').scrollWidth <= document.querySelector('.tags-toolbar').clientWidth+1`));
+    fs.writeFileSync(path.join(output,'packaged-tags.png'),Buffer.from((await app.page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    result.wxrankGrouped=true;result.wxrankPaidWarning=true;result.tagsToolbar=true;
     // Find only the frozen child of the test-launched app; never touch another instance.
     const rows=spawnSync('/bin/ps',['-axo','pid=,ppid=,comm='],{encoding:'utf8'}).stdout.split('\n');
     const child=rows.map(r=>r.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/)).find(m=>m&&Number(m[2])===app.pid&&path.basename(m[3])===path.basename(executable));
