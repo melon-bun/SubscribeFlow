@@ -1,0 +1,216 @@
+{
+  "bug": "BUG-143",
+  "date": "2026-10-27",
+  "baseline_commit": "37fdb669ccc8ce96db2c4f68be0d91feeae3ddc5",
+  "scope": "Production Core/Gateway/Sync/Intake/SQLite and Main listPlatforms/catalog; offline fixtures; no rendered UI or live platform acceptance",
+  "cases": [
+    {
+      "order": [
+        "subscription",
+        "manual"
+      ],
+      "outcomes": [
+        {
+          "method": "subscription",
+          "state": "succeeded",
+          "trigger": "automatic",
+          "new_items": 1
+        },
+        {
+          "method": "manual",
+          "state": "created",
+          "item_id": "wechat:article:MzI4NTEyMzQ1Ng==_1000000001_1"
+        }
+      ],
+      "contents": [
+        {
+          "id": "wechat:article:MzI4NTEyMzQ1Ng==_1000000001_1",
+          "channel": "wechat",
+          "namespace": "article",
+          "external_id": "MzI4NTEyMzQ1Ng==_1000000001_1",
+          "intake_method": "manual"
+        },
+        {
+          "id": "wxrank:article:MzI4NTEyMzQ1Ng==_1000000001_1",
+          "channel": "wxrank",
+          "namespace": "article",
+          "external_id": "MzI4NTEyMzQ1Ng==_1000000001_1",
+          "intake_method": "subscription"
+        }
+      ],
+      "sources": [
+        {
+          "id": "wechat:account:MzI4NTEyMzQ1Ng==",
+          "channel": "wechat",
+          "kind": "account",
+          "external_id": "MzI4NTEyMzQ1Ng==",
+          "name": "示例公众号",
+          "url": "https://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng==&mid=1000000001&idx=1&sn=demotoken0001",
+          "confirmed": 1,
+          "content_count": 1
+        },
+        {
+          "id": "wxrank:account:gh_demo0001",
+          "channel": "wxrank",
+          "kind": "account",
+          "external_id": "gh_demo0001",
+          "name": "示例公众号",
+          "url": "https://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng%3D%3D",
+          "confirmed": 0,
+          "content_count": 1
+        }
+      ],
+      "stats": {
+        "counts": {
+          "total": 2,
+          "unread": 2,
+          "read": 0,
+          "deferred": 0,
+          "archived": 0,
+          "high": 0,
+          "medium": 0,
+          "low": 0,
+          "none": 2
+        },
+        "platforms": {
+          "wechat": 1,
+          "wxrank": 1
+        }
+      },
+      "platforms": [
+        {
+          "id": "wxrank",
+          "count": 1,
+          "name": "公众号",
+          "short": "公众号"
+        },
+        {
+          "id": "wechat",
+          "count": 1,
+          "name": "微信公众号",
+          "short": "公众号"
+        }
+      ],
+      "filters": {
+        "wechat": 1,
+        "wxrank": 1
+      },
+      "fake_transport_calls": 2,
+      "wechat_capabilities": {
+        "wxrank": [
+          "resolve_source",
+          "list_items"
+        ],
+        "wechat": [
+          "match_item_url",
+          "resolve_item",
+          "read_item"
+        ]
+      }
+    },
+    {
+      "order": [
+        "manual",
+        "subscription"
+      ],
+      "outcomes": [
+        {
+          "method": "manual",
+          "state": "created",
+          "item_id": "wechat:article:MzI4NTEyMzQ1Ng==_1000000001_1"
+        },
+        {
+          "method": "subscription",
+          "state": "succeeded",
+          "trigger": "automatic",
+          "new_items": 1
+        }
+      ],
+      "contents": [
+        {
+          "id": "wechat:article:MzI4NTEyMzQ1Ng==_1000000001_1",
+          "channel": "wechat",
+          "namespace": "article",
+          "external_id": "MzI4NTEyMzQ1Ng==_1000000001_1",
+          "intake_method": "manual"
+        },
+        {
+          "id": "wxrank:article:MzI4NTEyMzQ1Ng==_1000000001_1",
+          "channel": "wxrank",
+          "namespace": "article",
+          "external_id": "MzI4NTEyMzQ1Ng==_1000000001_1",
+          "intake_method": "subscription"
+        }
+      ],
+      "sources": [
+        {
+          "id": "wechat:account:MzI4NTEyMzQ1Ng==",
+          "channel": "wechat",
+          "kind": "account",
+          "external_id": "MzI4NTEyMzQ1Ng==",
+          "name": "示例公众号",
+          "url": "https://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng==&mid=1000000001&idx=1&sn=demotoken0001",
+          "confirmed": 1,
+          "content_count": 1
+        },
+        {
+          "id": "wxrank:account:gh_demo0001",
+          "channel": "wxrank",
+          "kind": "account",
+          "external_id": "gh_demo0001",
+          "name": "示例公众号",
+          "url": "https://mp.weixin.qq.com/s?__biz=MzI4NTEyMzQ1Ng%3D%3D",
+          "confirmed": 0,
+          "content_count": 1
+        }
+      ],
+      "stats": {
+        "counts": {
+          "total": 2,
+          "unread": 2,
+          "read": 0,
+          "deferred": 0,
+          "archived": 0,
+          "high": 0,
+          "medium": 0,
+          "low": 0,
+          "none": 2
+        },
+        "platforms": {
+          "wechat": 1,
+          "wxrank": 1
+        }
+      },
+      "platforms": [
+        {
+          "id": "wxrank",
+          "count": 1,
+          "name": "公众号",
+          "short": "公众号"
+        },
+        {
+          "id": "wechat",
+          "count": 1,
+          "name": "微信公众号",
+          "short": "公众号"
+        }
+      ],
+      "filters": {
+        "wechat": 1,
+        "wxrank": 1
+      },
+      "fake_transport_calls": 2,
+      "wechat_capabilities": {
+        "wxrank": [
+          "resolve_source",
+          "list_items"
+        ],
+        "wechat": [
+          "match_item_url",
+          "resolve_item",
+          "read_item"
+        ]
+      }
+    }
+  ]
+}

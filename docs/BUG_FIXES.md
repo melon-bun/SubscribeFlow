@@ -68,6 +68,7 @@
 | BUG-142 | 标签管理 AI 自动识别页被通用面板样式禁用纵向滚动 | 已修复并通过0.5.3.1源码及包内真实滚轮验收 |
 | BUG-108 | 识别连接草稿/保存与清空交互 | 聚焦界面通过，已纳入0.5.3.2并通过完整包内验收 |
 | BUG-128 | 自动改人工时阅读位置与滑块起点偏移 | 原失败场景及18项动画回归通过，已纳入0.5.3.2并通过完整包内验收 |
+| BUG-143 | 微信自动采集与人工添加被拆为两个渠道，来源、文章身份及平台统计分裂 | 待修复；已完成代码检查与双向隔离复现（2026-10-27） |
 
 ## BUG-102：采集更新触发整页闪烁
 
@@ -2479,3 +2480,39 @@ Codex 验收确认 r01 的两条恢复路径（skipped／cancelled 补打到终�
 - 修复：仅用 `.tags-ai.scroll-y` 明确保留 `overflow-y:auto`，不改变设置、模型请求或标签列表布局。隔离验收桥补齐只读设置，回归用实际滚轮输入验证移动、底部可达及后台刷新滚动保持。
 - 源码验证：浅／深色各 1440×800、1100×600、1000×600、800×600 共 8 档，修复前均 `overflow:hidden`、滚轮位移 0、底部任务不可见；修复后全部 `overflow:auto`，真实滚轮产生正位移并能到达最后任务。标签后台刷新验收通过，保留草稿、焦点、保存与滚动位置。
 - 状态／提交：**已修复并通过0.5.3.1包内验收**（2026-10-26）。修复 `d612b40`，构建 `f0321b1`；正式安装包移动到项目外，用真实输入事件验证紧凑窗口下 AI 页滚轮产生位移、底部历史补打与任务可见，启动／升级／重启回归也通过。[源码证据](verification/tags-ai-scroll-20261026/REPORT.md) · [包内结果](verification/v0.5.3.1-local/packaged/result.json)。本轮未真实调用 LLM 或公众号收费 API。
+
+## BUG-143：微信自动采集与人工添加被拆为两个渠道，采集架构与其他渠道不一致
+
+- 记录日期：2026-10-27（Asia/Tokyo）。用户明确：「公众号」与「微信公众号」是同一渠道；微信采集架构也要与其他渠道一致，同一渠道支持自动采集和人工添加。
+- 状态：**待修复**。本轮完成代码检查与离线隔离复现，仅更新记录、计划和复现证据，未修改产品代码，不能标记已修复。
+- 现象：侧栏分别出现「公众号」和「微信公众号」；收件箱短名都叫「公众号」，却是两个独立平台筛选。两种方式导入同一篇文章会保存两条内容，同一公众号也成为两个来源，平台计数与筛选各自分开。
+- 复现步骤：在隔离库同时注册微信页面后端与付费列表后端，以同一公众号的规范 `biz` 添加订阅；通过自动触发的同步任务采集一篇文章，再在「添加内容」粘贴同一文章链接并保存。第二次仍进入预览并返回 `created`。反过来先人工添加、再自动采集，也会报告新增 1 条。此处“自动采集”指订阅导入路径，订阅的手动刷新也属于该路径，不等同于人工添加单篇文章。
+
+### 预期架构与行为
+
+- 业务渠道统一为微信（沿用 `wechat` 身份）；自动采集与人工添加是该渠道的两种收录方式，以既有 `intake_method=subscription/manual` 区分。第三方供应商 `wxrank` 属于自动采集的后端／实现，不再构成独立业务渠道或平台。
+- 沿用其他渠道的公共调用结构：订阅／定时任务 → `SyncService` → `ChannelGateway` → 微信采集实现；人工添加 → `IntakeService` → `ChannelGateway` → 微信单篇读取实现。渠道适配层负责平台协议与身份归一，两条路径返回相同业务渠道的标准 `Source`／`ContentItem`，共用仓储、事件与下游处理。
+- 同一公众号使用同一稳定来源身份；同一篇文章按规范 `biz + mid + idx` 使用同一稳定内容身份，两种收录顺序都须查重成功、只计一条。遵守现有首次收录口径，重复操作保留原收录方式、时间、整理状态、优先级、标签与笔记；人工添加不自动创建订阅。
+- 侧栏与各页面的微信平台入口、统计和筛选统一；“收录方式”仍可独立筛选。第三方付费配置、用量和费用警告保留在微信内，按实际采集后端／操作生效；人工添加不能因付费密钥缺失而被阻止，也不能误走付费列表接口。
+
+### 代码检查与原因
+
+- 公共 `SyncService`／`IntakeService`／`ChannelGateway`／仓储实际上已经复用，缺陷在微信渠道与身份建模，不能笼统认定整个公共采集链路另起了一套。B站正式桌面适配器、小红书与知乎均在同一个渠道下声明列表采集和单篇读取能力；微信却由 `WechatAdapter` 声明 `channel=wechat, backend=electron-session` 的单篇能力，由 `WxrankAdapter` 声明 `channel=wxrank, backend=paid-http` 的订阅能力。定位：`python/src/subscribe_flow/channels/wechat/adapter.py:15,130`、`channels/wxrank/protocol.py:26`、`channels/wxrank/adapter.py:29`。
+- `bootstrap.py:141` 按描述符分别建连接；`electron/main/app-client.cjs:132` 按 `descriptor.channel` 返回平台，`electron/renderer/scripts/core/catalog.js:13` 又为两者设置不同全名。侧栏／收件箱直接展示该平台列表，所以即使付费配置已折叠到微信下，业务平台仍有两项。
+- 来源也不一致：页面读取使用 `wechat:account:{biz}`，付费解析使用 `wxrank:account:{gh_id}`（`channels/wechat/adapter.py:74`、`channels/wxrank/service.py:222`）。仅替换渠道字符串仍不能合并来源，必须在微信适配边界统一来源身份，并把供应商 `gh_id` 保留为后端定位信息。
+- 内容分别使用 `wechat:article:{biz}_{mid}_{idx}` 与 `wxrank:article:{biz}_{mid}_{idx}`。仓储 `existing_item_id()` 按 `(channel, namespace, external_id)` 查重，唯一约束也是这个三元组；两者渠道不同，故不会命中。`content_stats()` 按 `c.channel` 分组，`content_filter()` 精确匹配渠道，因此重复会反映到计数、筛选及所有复用该条件的页面。定位：`storage/repositories.py:220,546,663`、`storage/migrations/001_initial.sql`。
+- M45 原方案明确新增独立 `channel=wxrank`，是此次建模偏差的来源。BUG-140 已修复的范围只是付费配置折叠归组，不能作为本项架构与数据身份已统一的证据；BUG-140 保持原状态，本项单独跟踪。
+
+### 待修复范围与验收要求
+
+- 统一微信业务渠道、来源／文章键、能力路由和前后端投影；复用现有网关按 `(channel, backend)` 选择实现的机制，具体实现方案待开发时确定。若保留两个后端，须处理当前默认连接 ID 只有 `{channel}:default` 的冲突，并移除按 `wxrank` 业务平台判断采集能力／正文状态的假设，避免单改常量后漏掉连接或选错实现。
+- 对已有 `wxrank` 来源、内容和连接制定兼容迁移；迁移覆盖订阅、内容来源关联、整理状态、标签、笔记、AI 任务／事件、历史检查点及付费缓存／账本的关联。已有重复记录的合并规则须保留用户数据与首次收录事实；正文有无和后续补全遵守既有详情更新契约，不以统一身份为由隐式覆盖内容。必须隔离验证升级、重启和重复升级，不直接修改日常库。
+- 验收至少覆盖：两个导入顺序均只存一篇／一个来源；并发到达仍只计一次；平台入口与统计统一且收录方式筛选有效；人工添加不创建订阅、无需付费密钥；自动采集／手动刷新／回溯仍按原费用、页数、检查点与未知扣费不自动重放的策略执行；迁移保留用户状态与关联。不能以改显示名、隐藏平台项或仅前端合并计数销项。
+
+### 本轮验证与相关提交
+
+- 基线：`37fdb669ccc8ce96db2c4f68be0d91feeae3ddc5`，版本 0.5.3.2。使用正式 Core、Gateway、Sync、Intake、SQLite，以及 Main `listPlatforms` 和真实前端 catalog；网络／页面返回均由现有脱敏夹具替代，未做界面渲染或真实平台验收。
+- 两个顺序均复现：相同 `external_id=MzI4NTEyMzQ1Ng==_1000000001_1` 保存 **2 条内容、2 个来源**，`total=2`，平台统计 `wechat=1, wxrank=1`；平台投影分别显示「微信公众号」「公众号」，任一平台筛选只返回 1 条。订阅任务实际记录 `trigger=automatic`；每组仅 2 次假传输（来源解析与一页列表），没有真实 API 请求或扣费。
+- 对照：既有 `IntakeStorageTests.test_both_duplicate_orders_preserve_all_content_source_and_organizing_rows` 与 `test_concurrent_subscription_and_manual_save_first_commit_wins` 两项通过，表明公共仓储在统一身份下已有双向查重与并发首次写入口径。
+- 证据：[复现脚本](verification/wechat-channel-identity-20261027/probe.py) · [双向结果](verification/wechat-channel-identity-20261027/result.json)。重跑：项目根目录执行 `python/.venv/bin/python docs/verification/wechat-channel-identity-20261027/probe.py`。脚本断言的是当前缺陷，不是修复验收通过。
+- 相关提交：本次记录与证据随文档提交；**产品修复提交：无**。未打包、推送或发布。
