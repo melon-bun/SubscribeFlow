@@ -1,0 +1,70 @@
+{
+  "priority": [
+    {
+      "value": "high",
+      "runs": 2
+    },
+    {
+      "value": "medium",
+      "runs": 2
+    },
+    {
+      "value": "auto",
+      "runs": 2
+    }
+  ],
+  "recognition": {
+    "clearActionRemoved": true,
+    "disableKeepsConnection": true,
+    "reenableSameConnection": true,
+    "switchConnectionSaved": true,
+    "navigationWorks": true,
+    "legacyEmptyRecoverable": true
+  },
+  "patches": [
+    {
+      "section": "tagging",
+      "patch": {
+        "enabled": false,
+        "mode": "jev",
+        "providerIds": {
+          "jev": "jev",
+          "llm": "text-a"
+        }
+      }
+    },
+    {
+      "section": "tagging",
+      "patch": {
+        "enabled": true,
+        "mode": "jev",
+        "providerIds": {
+          "jev": "jev",
+          "llm": "text-a"
+        }
+      }
+    },
+    {
+      "section": "tagging",
+      "patch": {
+        "enabled": true,
+        "mode": "llm",
+        "providerIds": {
+          "jev": "jev",
+          "llm": "text-b"
+        }
+      }
+    },
+    {
+      "section": "tagging",
+      "patch": {
+        "enabled": false,
+        "mode": "jev",
+        "providerIds": {
+          "jev": "jev",
+          "llm": "text-b"
+        }
+      }
+    }
+  ]
+}

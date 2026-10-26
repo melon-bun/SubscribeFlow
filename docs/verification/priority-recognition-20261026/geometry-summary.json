@@ -1,0 +1,157 @@
+{
+  "relocationPixels": 48,
+  "before": [
+    {
+      "value": "high",
+      "firstStart": "translate(3px, -45px)",
+      "relayStarts": [
+        "translate(3px, -45px)"
+      ],
+      "ends": [
+        "translate(91.75px, 3px)",
+        "translate(91.75px, 3px)"
+      ],
+      "groupPositions": [
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        },
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        }
+      ]
+    },
+    {
+      "value": "medium",
+      "firstStart": "translate(91.75px, 3px)",
+      "relayStarts": [
+        "translate(91.75px, 3px)"
+      ],
+      "ends": [
+        "translate(180.5px, 3px)",
+        "translate(180.5px, 3px)"
+      ],
+      "groupPositions": [
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        },
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        }
+      ]
+    },
+    {
+      "value": "auto",
+      "firstStart": "translate(180.5px, 3px)",
+      "relayStarts": [
+        "translate(180.5px, 3px)"
+      ],
+      "ends": [
+        "translate(3px, 3px)",
+        "translate(3px, 3px)"
+      ],
+      "groupPositions": [
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        },
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "value": "high",
+      "firstStart": "translate(3px, 3px)",
+      "relayStarts": [
+        "translate(3px, 3px)"
+      ],
+      "ends": [
+        "translate(91.75px, 3px)",
+        "translate(91.75px, 3px)"
+      ],
+      "groupPositions": [
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        },
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        }
+      ]
+    },
+    {
+      "value": "medium",
+      "firstStart": "translate(91.75px, 3px)",
+      "relayStarts": [
+        "translate(91.75px, 3px)"
+      ],
+      "ends": [
+        "translate(180.5px, 3px)",
+        "translate(180.5px, 3px)"
+      ],
+      "groupPositions": [
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        },
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        }
+      ]
+    },
+    {
+      "value": "auto",
+      "firstStart": "translate(180.5px, 3px)",
+      "relayStarts": [
+        "translate(180.5px, 3px)"
+      ],
+      "ends": [
+        "translate(3px, 3px)",
+        "translate(3px, 3px)"
+      ],
+      "groupPositions": [
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        },
+        {
+          "x": 811,
+          "y": 453.71875,
+          "w": 359,
+          "h": 34
+        }
+      ]
+    }
+  ]
+}
