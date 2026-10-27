@@ -167,5 +167,7 @@
   "priorityRestart": true,
   "appRestart": true,
   "missingCoreHint": true,
-  "redactedDiagnostics": true
+  "redactedDiagnostics": true,
+  "baseRevision": "67bdb18dc7053bd4764b5fd85b2b8f5224597e9e",
+  "sha256": "82e4441a2f0e4c059d7ff8c79075c690777d3d12c66d814f7e71b9502efbb0d8"
 }
