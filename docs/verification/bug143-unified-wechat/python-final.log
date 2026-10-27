@@ -1,0 +1,105 @@
+.............................................................................................../Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 403: 'boom'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 429: 'boom'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 404: 'boom'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 500: 'boom'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+............................./Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/tests/test_m16_tagging.py:105: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  asyncio.get_event_loop_policy()
+./Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/src/subscribe_flow/storage/tagging.py:558: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x105a33100>
+  candidates = [dict(row) for row in rows]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/src/subscribe_flow/storage/tagging.py:558: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x105a334c0>
+  candidates = [dict(row) for row in rows]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/src/subscribe_flow/storage/tagging.py:558: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x105a331f0>
+  candidates = [dict(row) for row in rows]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/src/subscribe_flow/storage/tagging.py:558: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x105b384f0>
+  candidates = [dict(row) for row in rows]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/src/subscribe_flow/storage/tagging.py:558: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x105b38400>
+  candidates = [dict(row) for row in rows]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/src/subscribe_flow/storage/tagging.py:558: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x105b38220>
+  candidates = [dict(row) for row in rows]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+................................................................................................................................................................./Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10463be20>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x104639030>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x104639f30>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x104639c60>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x104639b70>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1046395d0>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x104639e40>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1046393f0>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x104549210>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1045493f0>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1045484f0>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1045489a0>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.........................................................../Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/asyncio/timeouts.py:83: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x104548f40>
+  async def __aenter__(self) -> "Timeout":
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/asyncio/timeouts.py:83: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x104549120>
+  async def __aenter__(self) -> "Timeout":
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+................................................................................................./Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/urllib/request.py:412: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x105a33790>
+  for meth in dir(handler):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/urllib/request.py:412: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x105a305e0>
+  for meth in dir(handler):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/urllib/request.py:412: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x105a307c0>
+  for meth in dir(handler):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/urllib/request.py:412: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x105a30d60>
+  for meth in dir(handler):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/urllib/request.py:412: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10419f3d0>
+  for meth in dir(handler):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/urllib/request.py:412: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10463a5c0>
+  for meth in dir(handler):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/urllib/request.py:412: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10463b880>
+  for meth in dir(handler):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/urllib/request.py:412: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10463a7a0>
+  for meth in dir(handler):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/urllib/request.py:412: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10463bc40>
+  for meth in dir(handler):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+................................................................................................................./Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/src/subscribe_flow/storage/settings.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10463ae30>
+  row = self.db.execute("SELECT version,payload,updated_at FROM app_settings WHERE id=1").fetchone()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.............................................................................................................
+----------------------------------------------------------------------
+Ran 664 tests in 37.568s
+
+OK

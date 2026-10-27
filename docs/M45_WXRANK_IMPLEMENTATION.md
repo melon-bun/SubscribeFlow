@@ -1,5 +1,7 @@
 # M45 公众号付费渠道（wxrank）实施说明
 
+2026-10-27 BUG-143 更新：下文保留 M45 历史交付事实；当前修复分支统一为一个公开 `WechatAdapter`、`wechat/electron-session/wechat:default`，付费列表与页面收录为内部实现。供应商配置／账本仍用 wxrank，业务来源／文章键不再使用 wxrank。v16 升级与单渠道联合验收以 [BUG-143](BUG_FIXES.md#bug-143微信自动采集与人工添加被拆为两个渠道采集架构与其他渠道不一致) 为准。
+
 本文件记录 **M45 第一批（M45.1～M45.3）** 的实际实现。方案与审查见
 [M45 方案](M45_WXRANK_PAID_CHANNEL.md) 与 [审查记录](M45_WXRANK_PAID_CHANNEL_REVIEW.md)；
 本文件只写「实际做成了什么、与方案的偏差、以及下一批要接什么」。

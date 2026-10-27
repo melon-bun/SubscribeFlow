@@ -1,0 +1,47 @@
+{
+  "manual": {
+    "wechatRenderer": "passed",
+    "realBridge": true,
+    "realCore": true,
+    "realPlatform": false,
+    "unifiedChannel": true,
+    "manualWithoutPaidKey": true,
+    "capabilityFilter": true,
+    "connectionCheck": true,
+    "previewNoWrite": true,
+    "accountSource": true,
+    "originalTime": true,
+    "manualCalendar": true,
+    "aliasSameKey": true,
+    "samePushSeparate": true,
+    "noSubscriptionOrJob": true,
+    "filtersAndCalendar": true,
+    "blockedPageStops": true,
+    "errorPageNotSaved": true,
+    "restartPersisted": true,
+    "contents": 3,
+    "longBodyCollapse": true,
+    "intakeFilters": true
+  },
+  "paid_fixture": {
+    "wxrankUi": "passed",
+    "confirmedCredits": 15,
+    "calls": 3,
+    "contents": 10,
+    "unifiedPlatform": true,
+    "intakeFilters": true
+  },
+  "paid_local_http": {
+    "wxrankUi": "passed",
+    "upstream": "local-http (真实响应形状，非真实付费上游)",
+    "calls": 4,
+    "confirmedCredits": 20,
+    "contents": 30,
+    "checkpointAfterBackfill": "resume"
+  },
+  "scope": "Formal Electron Main/Preload/Renderer/Core; isolated temporary databases; fixture pages and a local HTTP fake upstream; no daily data or real paid requests.",
+  "focused_node_tests": {
+    "file": "tests/app-client.test.cjs",
+    "passed": 19
+  }
+}

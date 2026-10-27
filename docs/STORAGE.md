@@ -1,5 +1,7 @@
 # M2–M11 存储约定
 
+2026-10-27 BUG-143，schema v16：`016_wechat_identity.sql` 与同事务受控数据升级将旧 `wechat`／`wxrank` 来源、文章与连接归一到单微信渠道。新增 `wechat_backend_identities(provider_id,biz,upstream_id,updated_at)` 持久保存供应商账号映射，与可清解析缓存独立；新增 `wechat_identity_migration_archive` 在本机保留原始记录、用户冲突及归并依据。升级前生成不覆盖的 `.before-v16.backup`，外键校验后才提交版本，失败整体回滚。来源／内容及各关联、任务、日程阻塞、缓存与检查点一并迁移；有效游标及凭据／解析／进度版本保留。供应商设置、密钥引用和付费账本的 wxrank 命名空间保留；内容 payload 新增 `body_state`。完整范围与证据见 [BUG-143](BUG_FIXES.md#bug-143微信自动采集与人工添加被拆为两个渠道采集架构与其他渠道不一致)。
+
 运行时数据库位置由启动层提供绝对路径，不能依赖工作目录。Python 单连接统一写入，
 WAL、外键约束和短事务；平台请求不在写事务内。初始 schema 在 migrations/001_initial.sql。
 

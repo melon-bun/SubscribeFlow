@@ -1,5 +1,9 @@
 # 业务 API 与事件（含三期 M11／M13／M12）
 
+2026-10-27 BUG-143：微信统一为一个 `WechatAdapter`／`wechat` 渠道、`electron-session` 后端与 `wechat:default` 连接，同时提供 `resolve_source`／`list_items` 和 `match_item_url`／`resolve_item`／`read_item`。付费服务与页面读取是 Adapter 内部实现。`wxrank.*` RPC 和 `channels.wxrank` 只保留供应商配置／费用用途，不再产生独立平台。来源和文章键分别为 `wechat:account:{规范biz}`、`wechat:article:{规范biz}_{mid}_{idx}`；收录方式沿用 `subscription/manual`。
+
+通用内容字段 `body_state` 为 `full/list_only/unknown`（默认 unknown），Main 对应投影 `bodyState`；它描述正文可用性，与 `acquisition_complete` 的采集契约完成状态独立。UI 与 AI 输入范围依实际状态展示，不按平台推断正文。渠道描述符 `source_homepage` 默认 true，false 表示来源定位地址不是可浏览主页；Main 的 `canOpenHomepage` 及付费／续采能力均来自描述符。连接就绪检查只能解除同操作的故障阻塞，付费结果未知的依赖阻塞仍由用户明确重试处理。
+
 Core 是唯一业务状态来源；接口不暴露原始 OpenCLI 参数、SQL 或平台 Cookie。
 参数使用 JSON 对象；结果可经 contracts.jsonable 序列化。错误包含 code、operation、scope、
 scope_key、retryable、retry_after 和脱敏 message。取消属于控制状态。

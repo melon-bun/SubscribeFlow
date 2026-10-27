@@ -1,0 +1,99 @@
+{
+  "bug": "BUG-143",
+  "date": "2026-10-27",
+  "timezone": "Asia/Tokyo",
+  "branch": "fix/bug-143-unified-wechat-adapter",
+  "source_commit": "170cd98761251f7377f77e97a9fa25edbab52bb8",
+  "status": "passed_source_isolated_acceptance",
+  "public_model": {
+    "channel": "wechat",
+    "adapter": "WechatAdapter",
+    "backend": "electron-session",
+    "connection": "wechat:default",
+    "intake_methods": [
+      "subscription",
+      "manual"
+    ]
+  },
+  "python": {
+    "passed": 664,
+    "failed": 0,
+    "log": "python-final.log"
+  },
+  "node": {
+    "passed": 159,
+    "failed": 0,
+    "log": "node-final.log"
+  },
+  "ui": {
+    "manual": {
+      "wechatRenderer": "passed",
+      "realBridge": true,
+      "realCore": true,
+      "realPlatform": false,
+      "unifiedChannel": true,
+      "manualWithoutPaidKey": true,
+      "capabilityFilter": true,
+      "connectionCheck": true,
+      "previewNoWrite": true,
+      "accountSource": true,
+      "originalTime": true,
+      "manualCalendar": true,
+      "aliasSameKey": true,
+      "samePushSeparate": true,
+      "noSubscriptionOrJob": true,
+      "filtersAndCalendar": true,
+      "blockedPageStops": true,
+      "errorPageNotSaved": true,
+      "restartPersisted": true,
+      "contents": 3,
+      "longBodyCollapse": true,
+      "intakeFilters": true
+    },
+    "paid_fixture": {
+      "wxrankUi": "passed",
+      "confirmedCredits": 15,
+      "calls": 3,
+      "contents": 10,
+      "unifiedPlatform": true,
+      "intakeFilters": true
+    },
+    "paid_local_http": {
+      "wxrankUi": "passed",
+      "upstream": "local-http (真实响应形状，非真实付费上游)",
+      "calls": 4,
+      "confirmedCredits": 20,
+      "contents": 30,
+      "checkpointAfterBackfill": "resume"
+    },
+    "scope": "Formal Electron Main/Preload/Renderer/Core; isolated temporary databases; fixture pages and a local HTTP fake upstream; no daily data or real paid requests.",
+    "focused_node_tests": {
+      "file": "tests/app-client.test.cjs",
+      "passed": 19
+    }
+  },
+  "general_renderer": {
+    "status": "passed",
+    "contents": 25,
+    "restart_persisted": true,
+    "reload_persisted": true,
+    "log": "general-renderer.log"
+  },
+  "migration": {
+    "schema": 16,
+    "focused_tests": 9,
+    "foreign_keys": true,
+    "unique_backup": true,
+    "rollback": true,
+    "idempotency": true,
+    "v2_to_v16": true,
+    "cursor_and_unknown_charge_blocks_preserved": true
+  },
+  "scope": {
+    "daily_data_used": false,
+    "live_paid_api_called": false,
+    "packaged": false,
+    "pushed": false,
+    "published": false
+  }
+}
