@@ -259,7 +259,7 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     assert.equal((await call('note.get',{item_id:selected})).summary,note.summary);
     assert.equal((await call('note.list',{sort:'updated'})).total,1);
     // Verify BUG-144 in the shipped editor after a real save through the bridge.
-    await app.evaluate(`SF.app.navigate('notes')`);
+    await app.evaluate(`SF.noteUi.forget(${JSON.stringify(selected)}); SF.app.navigate('notes')`);
     await until(()=>app.evaluate(`!!document.querySelector('textarea[aria-label="这个项目解决什么问题"]')`));
     await app.evaluate(`(() => {const area=document.querySelector('textarea[aria-label="这个项目解决什么问题"]');area.value='离线发布验收笔记 · 按钮布局';area.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.note-editor__actions .btn--primary').click();})()`);
     await until(async()=>(await call('note.get',{item_id:selected})).summary==='离线发布验收笔记 · 按钮布局');

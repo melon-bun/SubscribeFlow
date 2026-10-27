@@ -1,0 +1,171 @@
+{
+  "packagedSmoke": "passed",
+  "version": "0.5.3.4",
+  "schema": 16,
+  "platform": "macOS x64",
+  "launchServices": true,
+  "minimalPath": true,
+  "externalPythonIgnored": true,
+  "productionIgnoresTestFlags": true,
+  "wechatUnified": {
+    "passed": true,
+    "fromSchema": 15,
+    "toSchema": 16,
+    "oneAdapter": true,
+    "oneConnection": true,
+    "oneSource": true,
+    "duplicatesMerged": true,
+    "fullBodyAndNotePreserved": true,
+    "manualWithoutPaidKey": true,
+    "duplicateIntake": true,
+    "restartPersisted": true,
+    "cursor": "resume",
+    "unknownChargeBlocked": true,
+    "paidAttempts": 1,
+    "manualPageReads": 3,
+    "schema": 16,
+    "foreignKeys": true,
+    "bindingAfterCacheClear": true,
+    "conflictArchive": true
+  },
+  "frozenCore": {
+    "deduplication": true,
+    "cancellation": true,
+    "contents": 3
+  },
+  "xiaohongshuLocalCover": true,
+  "whiteBrandLogo": true,
+  "priorityBoard": true,
+  "priorityInheritance": true,
+  "noteFooter": {
+    "savedThroughUI": true,
+    "samples": [
+      {
+        "theme": "light",
+        "width": 280,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "删除这条笔记",
+            "deficit": 0,
+            "centerError": 0
+          },
+          {
+            "text": "保存笔记",
+            "deficit": 0,
+            "centerError": 0
+          }
+        ]
+      },
+      {
+        "theme": "light",
+        "width": 360,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "删除这条笔记",
+            "deficit": 0,
+            "centerError": 0
+          },
+          {
+            "text": "保存笔记",
+            "deficit": 0,
+            "centerError": 0
+          }
+        ]
+      },
+      {
+        "theme": "light",
+        "width": 640,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "删除这条笔记",
+            "deficit": 0,
+            "centerError": 0
+          },
+          {
+            "text": "保存笔记",
+            "deficit": 0,
+            "centerError": 0
+          }
+        ]
+      },
+      {
+        "theme": "dark",
+        "width": 280,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "删除这条笔记",
+            "deficit": 0,
+            "centerError": 0
+          },
+          {
+            "text": "保存笔记",
+            "deficit": 0,
+            "centerError": 0
+          }
+        ]
+      },
+      {
+        "theme": "dark",
+        "width": 360,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "删除这条笔记",
+            "deficit": 0,
+            "centerError": 0
+          },
+          {
+            "text": "保存笔记",
+            "deficit": 0,
+            "centerError": 0
+          }
+        ]
+      },
+      {
+        "theme": "dark",
+        "width": 640,
+        "overflow": 0,
+        "buttons": [
+          {
+            "text": "删除这条笔记",
+            "deficit": 0,
+            "centerError": 0
+          },
+          {
+            "text": "保存笔记",
+            "deficit": 0,
+            "centerError": 0
+          }
+        ]
+      }
+    ]
+  },
+  "notes": true,
+  "summarySettingsSeparate": true,
+  "tags": true,
+  "xiaohongshuChannel": true,
+  "wxrankGrouped": true,
+  "wxrankPaidWarning": true,
+  "tagsToolbar": true,
+  "recognitionUnselectRemoved": true,
+  "tagsAiWheelScroll": true,
+  "tagsAiBottomReachable": true,
+  "upgradeBackup": true,
+  "exclusiveState": true,
+  "modeSwitch": true,
+  "automaticCrashRecovery": true,
+  "interval144Hours": {
+    "seconds": 518400,
+    "overLimitRejected": true,
+    "restartPersisted": true
+  },
+  "notesRestart": true,
+  "priorityRestart": true,
+  "appRestart": true,
+  "missingCoreHint": true,
+  "redactedDiagnostics": true
+}

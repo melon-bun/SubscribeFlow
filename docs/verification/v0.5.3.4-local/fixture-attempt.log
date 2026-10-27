@@ -1,0 +1,5 @@
+npm notice run subscribe-flow@0.5.3.4 smoke:packaged
+npm notice run node scripts/packaged-smoke.cjs
+Error: Packaged acceptance timed out
+    at until (/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/scripts/packaged-smoke.cjs:12:9)
+    at async main (/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/scripts/packaged-smoke.cjs:263:5)
