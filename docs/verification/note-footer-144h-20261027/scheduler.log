@@ -1,0 +1,6 @@
+Executing <Task finished name='Task-1' coro=<SchedulerTests.asyncSetUp() done, defined at /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/tests/test_scheduler.py:14> result=None created at /Users/xor/.local/share/uv/python/cpython-3.14.4-macos-x86_64-none/lib/python3.14/asyncio/runners.py:109> took 0.115 seconds
+.............
+----------------------------------------------------------------------
+Ran 13 tests in 1.648s
+
+OK

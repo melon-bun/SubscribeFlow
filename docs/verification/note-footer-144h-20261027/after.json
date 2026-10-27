@@ -1,0 +1,212 @@
+[
+  {
+    "width": 280,
+    "theme": "light",
+    "rowOverflow": 0,
+    "buttons": [
+      {
+        "text": "删除这条笔记",
+        "width": 107,
+        "labelWidth": 81,
+        "deficit": 0,
+        "centerError": 0
+      },
+      {
+        "text": "保存笔记",
+        "width": 80,
+        "labelWidth": 54,
+        "deficit": 0,
+        "centerError": 0
+      }
+    ]
+  },
+  {
+    "width": 320,
+    "theme": "light",
+    "rowOverflow": 0,
+    "buttons": [
+      {
+        "text": "删除这条笔记",
+        "width": 107,
+        "labelWidth": 81,
+        "deficit": 0,
+        "centerError": 0
+      },
+      {
+        "text": "保存笔记",
+        "width": 80,
+        "labelWidth": 54,
+        "deficit": 0,
+        "centerError": 0
+      }
+    ]
+  },
+  {
+    "width": 360,
+    "theme": "light",
+    "rowOverflow": 0,
+    "buttons": [
+      {
+        "text": "删除这条笔记",
+        "width": 107,
+        "labelWidth": 81,
+        "deficit": 0,
+        "centerError": 0
+      },
+      {
+        "text": "保存笔记",
+        "width": 80,
+        "labelWidth": 54,
+        "deficit": 0,
+        "centerError": 0
+      }
+    ]
+  },
+  {
+    "width": 420,
+    "theme": "light",
+    "rowOverflow": 0,
+    "buttons": [
+      {
+        "text": "删除这条笔记",
+        "width": 107,
+        "labelWidth": 81,
+        "deficit": 0,
+        "centerError": 0
+      },
+      {
+        "text": "保存笔记",
+        "width": 80,
+        "labelWidth": 54,
+        "deficit": 0,
+        "centerError": 0
+      }
+    ]
+  },
+  {
+    "width": 640,
+    "theme": "light",
+    "rowOverflow": 0,
+    "buttons": [
+      {
+        "text": "删除这条笔记",
+        "width": 107,
+        "labelWidth": 81,
+        "deficit": 0,
+        "centerError": 0
+      },
+      {
+        "text": "保存笔记",
+        "width": 80,
+        "labelWidth": 54,
+        "deficit": 0,
+        "centerError": 0
+      }
+    ]
+  },
+  {
+    "width": 280,
+    "theme": "dark",
+    "rowOverflow": 0,
+    "buttons": [
+      {
+        "text": "删除这条笔记",
+        "width": 107,
+        "labelWidth": 81,
+        "deficit": 0,
+        "centerError": 0
+      },
+      {
+        "text": "保存笔记",
+        "width": 80,
+        "labelWidth": 54,
+        "deficit": 0,
+        "centerError": 0
+      }
+    ]
+  },
+  {
+    "width": 320,
+    "theme": "dark",
+    "rowOverflow": 0,
+    "buttons": [
+      {
+        "text": "删除这条笔记",
+        "width": 107,
+        "labelWidth": 81,
+        "deficit": 0,
+        "centerError": 0
+      },
+      {
+        "text": "保存笔记",
+        "width": 80,
+        "labelWidth": 54,
+        "deficit": 0,
+        "centerError": 0
+      }
+    ]
+  },
+  {
+    "width": 360,
+    "theme": "dark",
+    "rowOverflow": 0,
+    "buttons": [
+      {
+        "text": "删除这条笔记",
+        "width": 107,
+        "labelWidth": 81,
+        "deficit": 0,
+        "centerError": 0
+      },
+      {
+        "text": "保存笔记",
+        "width": 80,
+        "labelWidth": 54,
+        "deficit": 0,
+        "centerError": 0
+      }
+    ]
+  },
+  {
+    "width": 420,
+    "theme": "dark",
+    "rowOverflow": 0,
+    "buttons": [
+      {
+        "text": "删除这条笔记",
+        "width": 107,
+        "labelWidth": 81,
+        "deficit": 0,
+        "centerError": 0
+      },
+      {
+        "text": "保存笔记",
+        "width": 80,
+        "labelWidth": 54,
+        "deficit": 0,
+        "centerError": 0
+      }
+    ]
+  },
+  {
+    "width": 640,
+    "theme": "dark",
+    "rowOverflow": 0,
+    "buttons": [
+      {
+        "text": "删除这条笔记",
+        "width": 107,
+        "labelWidth": 81,
+        "deficit": 0,
+        "centerError": 0
+      },
+      {
+        "text": "保存笔记",
+        "width": 80,
+        "labelWidth": 54,
+        "deficit": 0,
+        "centerError": 0
+      }
+    ]
+  }
+]

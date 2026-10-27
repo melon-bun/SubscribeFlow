@@ -1,0 +1,19 @@
+✔ real sidecar handshake, persistent subscription, UI mapping and controlled restart (1502.41508ms)
+✔ unsupported websites remain rejected through real RPC without acquisition (861.488324ms)
+✔ automatic mode persists, dispatches an overdue plan through real RPC and stops in manual mode (1368.445442ms)
+✔ unexpected exit recovers automatically with a bounded restart policy (2415.867409ms)
+✔ unexpected sidecar exit rejects pending requests and allows explicit restart (1054.321599ms)
+✔ malformed protocol input does not contaminate subsequent JSON Lines (408.644928ms)
+✔ live acceptance retries a persisted waiting job and proves a new acquisition occurred (841.233005ms)
+✔ bounded acceptance preserves coverage and reports item failures independently of login (0.69344ms)
+✔ private browser RPC commits a large API page, details and repeated refresh without losing read state (1087.682755ms)
+✔ cancelling a live Core job aborts Main acquisition and releases the shared resource (506.288819ms)
+✔ real sidecar tag lifecycle, filtering and restart survival through the whitelisted bridge (1026.010875ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12170.787752
