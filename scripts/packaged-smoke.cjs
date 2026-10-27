@@ -232,7 +232,9 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     await app.evaluate(`Array.from(document.querySelectorAll('.detail .state-btn')).find(b=>b.textContent.trim()==='稍后').click()`);
     await until(()=>app.evaluate('SF.app.state.counts.unread===1 && document.querySelectorAll(".content-card").length===1'));
     assert.equal((await call('content.get',{item_id:selected})).state.deferred,true);
-    await call('subscription.update',{subscription_id:sub.id,sync_mode:'automatic',interval_seconds:259200});
+    await call('subscription.update',{subscription_id:sub.id,sync_mode:'automatic',interval_seconds:518400});
+    assert.equal((await call('subscription.list'))[0].interval_seconds,518400);
+    await assert.rejects(call('subscription.update',{subscription_id:sub.id,interval_seconds:518401}));
     assert.equal((await call('schedule.list'))[0].state,'scheduled');
     await call('subscription.update',{subscription_id:sub.id,sync_mode:'manual'});
     assert.equal((await call('schedule.list'))[0].next_due,null);
@@ -256,6 +258,26 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
       takeaway:'保留个人判断与原内容',verdict:'using',summary_origin:'manual',expected_version:null});
     assert.equal((await call('note.get',{item_id:selected})).summary,note.summary);
     assert.equal((await call('note.list',{sort:'updated'})).total,1);
+    // Verify BUG-144 in the shipped editor after a real save through the bridge.
+    await app.evaluate(`SF.app.navigate('notes')`);
+    await until(()=>app.evaluate(`!!document.querySelector('textarea[aria-label="这个项目解决什么问题"]')`));
+    await app.evaluate(`(() => {const area=document.querySelector('textarea[aria-label="这个项目解决什么问题"]');area.value='离线发布验收笔记 · 按钮布局';area.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.note-editor__actions .btn--primary').click();})()`);
+    await until(async()=>(await call('note.get',{item_id:selected})).summary==='离线发布验收笔记 · 按钮布局');
+    await until(()=>app.evaluate(`document.querySelector('.note-editor__actions-state')?.textContent.includes('已保存')`));
+    const layout=[];
+    for(const theme of ['light','dark'])for(const width of [280,360,640]) {
+      await app.evaluate(`document.documentElement.dataset.theme='${theme}';document.documentElement.dataset.fx='on';document.querySelector('.note-editor').style.width='${width}px';new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))`);
+      const measurement=await app.evaluate(`(() => {const row=document.querySelector('.note-editor__actionbar>.note-editor__actions');return {theme:'${theme}',width:${width},overflow:row.scrollWidth-row.clientWidth,buttons:[...row.querySelectorAll('button')].map(b=>{const r=b.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(b.querySelector('span'));const t=range.getBoundingClientRect(),s=getComputedStyle(b);return {text:b.textContent,deficit:t.width+parseFloat(s.paddingLeft)+parseFloat(s.paddingRight)-r.width,centerError:Math.abs((t.left+t.right-r.left-r.right)/2)};})};})()`);
+      assert.equal(measurement.buttons.length,2);
+      assert.ok(measurement.overflow<=1);
+      assert.ok(measurement.buttons.every(b=>b.deficit<=0.5&&b.centerError<=0.5));
+      layout.push(measurement);
+    }
+    await app.evaluate(`document.documentElement.dataset.theme='light';document.querySelector('.note-editor').style.width='360px';document.querySelector('.note-editor__actions').scrollIntoView({block:'center'})`);
+    fs.writeFileSync(path.join(output,'packaged-note-footer.png'),Buffer.from((await app.page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await app.evaluate(`document.querySelector('.note-editor').style.removeProperty('width')`);
+    result.noteFooter={savedThroughUI:true,samples:layout};
+
     const settingsBefore=await call('getSettings',[]);
     await call('saveSettings',[{section:'summarization',patch:{enabled:false,length:'detailed',language:'zh-CN'}}]);
     assert.deepEqual((await call('getSettings',[])).tagging,settingsBefore.tagging);
@@ -317,6 +339,8 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     assert.equal((await call('content.list')).total,3);
     assert.equal((await call('content.get',{item_id:selected})).state.deferred,true);
     assert.equal((await call('subscription.list'))[0].sync_mode,'manual');
+    assert.equal((await call('subscription.list'))[0].interval_seconds,518400);
+    result.interval144Hours={seconds:518400,overLimitRejected:true,restartPersisted:true};
     assert.equal((await call('content.get',{item_id:selected})).priority,'low');
     assert.equal((await call('subscription.list'))[0].default_priority,'high');
     assert.equal((await call('content.list',{tags:[tag.id]})).total,1);
