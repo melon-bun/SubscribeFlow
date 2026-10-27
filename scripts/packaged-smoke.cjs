@@ -127,7 +127,7 @@ async function launch(bundle,dataDir,work,expected='ready') {
   }};
   try {
     // A newly signed local build can await the user's macOS Keychain consent.
-    const startupWait=Number(process.env.SUBSCRIBE_FLOW_PACKAGED_STARTUP_WAIT_MS)||20000;
+    const startupWait=Number(process.env.SUBSCRIBE_FLOW_PACKAGED_STARTUP_WAIT_MS)||120000;
     await until(async()=>await evaluate(`!!window.SubscribeFlow && !!window.SF && SubscribeFlow.call('core.status',{}).then(s=>s.state===${JSON.stringify(expected)})`),startupWait);
     if(expected==='ready') await until(async()=>await evaluate('!!SF.app.state.session'),startupWait);
     return app;
@@ -135,7 +135,7 @@ async function launch(bundle,dataDir,work,expected='ready') {
 }
 async function main() {
   const info=JSON.parse(fs.readFileSync(path.join(root,'dist/build-info.json'),'utf8'));
-  const output=process.env.SUBSCRIBE_FLOW_VERIFY_OUTPUT||path.join(root,'docs/verification/m7');fs.mkdirSync(output,{recursive:true});
+  const output=process.env.SUBSCRIBE_FLOW_VERIFY_OUTPUT||path.join(root,`docs/verification/v${info.version}-local`);fs.mkdirSync(output,{recursive:true});
   const folder=fs.mkdtempSync(path.join(os.tmpdir(),'subscribe-flow-packaged-'));
   const bundle=path.join(folder,'Moved Application','Subscribe Flow.app');
   fs.mkdirSync(path.dirname(bundle),{recursive:true});
@@ -152,7 +152,7 @@ async function main() {
   assert.ok(!entries.some(p=>/runtime-paths|^\/tests\/|^\/scripts\/|\.sqlite|\/diagnostics\//.test(p)));
   const dataDir=path.join(folder,'profile');fs.mkdirSync(dataDir);
   let app,core;
-  const result={packagedSmoke:'pending',version:expectedVersion,schema,platform:'macOS x64',launchServices:true,minimalPath:true,externalPythonIgnored:true,productionIgnoresTestFlags:true};
+  const result={packagedSmoke:'pending',version:expectedVersion,baseRevision:info.baseRevision,sha256:info.sha256,schema,platform:'macOS x64',launchServices:true,minimalPath:true,externalPythonIgnored:true,productionIgnoresTestFlags:true};
   try {
     const runtime=JSON.parse(fs.readFileSync(path.join(root,'.runtime-paths.json'),'utf8'));
     result.wechatUnified=await verifyWechatUpgrade(executable,resources,folder,runtime);
@@ -366,5 +366,10 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(result,null,2)+'\n');
     console.log(JSON.stringify(result));
   } finally {await app?.close();await core?.stop();fs.rmSync(folder,{recursive:true,force:true});}
+  // A successful release also retires inactive older build entries, keeping ZIPs.
+  const finalized=spawnSync(require('electron'),[path.join(root,'scripts/finalize-macos-release.cjs')],
+    {cwd:root,env:{...process.env,SUBSCRIBE_FLOW_VERIFY_OUTPUT:path.resolve(output)},encoding:'utf8'});
+  assert.equal(finalized.status,0,finalized.stderr||finalized.error?.message);
+  console.log(finalized.stdout.trim());
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
