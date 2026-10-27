@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>知流 · 当前代码结构</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #f3f5f8; --surface: #fff; --ink: #1d2939; --muted: #546275;
+      --line: #d6dfe9; --soft: #f7f9fc; --request: #325fa6; --result: #08765f;
+      --request-soft: #eef3fc; --result-soft: #eef8f3;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #141a22; --surface: #1d2530; --ink: #edf2f8; --muted: #b3c1cf;
+        --line: #3a4657; --soft: #222c38; --request: #98baf0; --result: #87d7bd;
+        --request-soft: #26364e; --result-soft: #253d35;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--page); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    main { width: min(1120px, 100%); margin: 0 auto; padding: 30px 28px; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(24px, 3vw, 32px); line-height: 1.3; font-weight: 650; letter-spacing: -.025em; }
+    h2 { font-size: 18px; font-weight: 600; }
+    h3 { font-size: 15px; font-weight: 600; }
+    code { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+    .eyebrow { color: var(--muted); font-size: 12px; letter-spacing: .1em; margin-bottom: 8px; }
+    .intro { color: var(--muted); margin-top: 10px; max-width: 850px; }
+    .intro strong { color: var(--ink); font-weight: 600; }
+    .topline { display: flex; gap: 16px; justify-content: space-between; align-items: baseline; flex-wrap: wrap; margin: 20px 0 18px; }
+    .legend, .milestones { display: flex; gap: 15px; flex-wrap: wrap; font-size: 12px; }
+    .legend .request { color: var(--request); }
+    .legend .result { color: var(--result); }
+    .milestones { gap: 7px; color: var(--muted); }
+    .milestones b { color: var(--ink); font-weight: 600; }
+    .diagram { display: grid; grid-template-columns: minmax(0, 1fr) 90px minmax(230px, .43fr); align-items: center; }
+    .node { padding: 17px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 11px; min-width: 0; }
+    .node p { color: var(--muted); font-size: 13px; margin-top: 5px; }
+    .role { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+    .renderer { grid-area: 1 / 1; }
+    .renderer .views { color: var(--muted); font-size: 12px; margin-top: 5px; }
+    .ui-link { grid-area: 2 / 1; }
+    .core { grid-area: 3 / 1; background: var(--request-soft); }
+    .services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 11px; }
+    .service { padding-left: 11px; border-left: 2px solid var(--line); }
+    .service.new { border-left-color: var(--result); }
+    .new-label { color: var(--result); font-size: 11px; margin-left: 5px; font-weight: 400; }
+    .core .shared { border-top: 1px solid var(--line); margin-top: 13px; padding-top: 10px; font-size: 13px; }
+    .core .shared strong { color: var(--ink); font-weight: 600; }
+    .core-link { grid-area: 4 / 1; }
+    .gateway { grid-area: 5 / 1; }
+    .gateway-link { grid-area: 6 / 1; }
+    .adapter { grid-area: 7 / 1; background: var(--result-soft); }
+    .adapter-link { grid-area: 8 / 1; }
+    .backend { grid-area: 9 / 1; }
+    .adapter .output { color: var(--result); margin-top: 8px; }
+    .output code { font-size: 13px; }
+    .platforms { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; padding: 7px 15px; min-width: 0; }
+    .edge { display: flex; align-items: center; gap: 8px; font-size: 12px; min-width: 0; }
+    .edge .direction { font-size: 24px; line-height: 1.2; flex: none; }
+    .edge.request { color: var(--request); }
+    .edge.result { color: var(--result); }
+    .edge.result code { font-size: 12px; }
+    .db-link { grid-area: 3 / 2; text-align: center; color: var(--muted); font-size: 12px; padding: 0 7px; }
+    .db-link .direction { display: block; font-size: 24px; line-height: 1.4; }
+    .store { grid-area: 3 / 3; align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
+    .store code { display: block; color: var(--muted); margin-top: 12px; }
+    .store .mobile-title { display: none; }
+    .explanation { grid-area: 5 / 3 / 10 / 4; align-self: start; padding: 17px 0 0 18px; border-left: 1px solid var(--line); }
+    .explanation h3 { margin-bottom: 5px; }
+    .explanation p { color: var(--muted); font-size: 13px; }
+    .explanation > div + div { margin-top: 22px; }
+    .explanation strong { color: var(--ink); font-weight: 500; }
+    .example { margin-top: 22px; padding: 18px 20px; border-left: 3px solid var(--result); background: var(--result-soft); border-radius: 0 10px 10px 0; }
+    .example h2 { font-size: 16px; }
+    .example p { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    .example strong { color: var(--ink); font-weight: 600; }
+    footer { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 12px; margin-top: 18px; }
+    @media (max-width: 900px) {
+      main { padding: 24px 18px; }
+      .diagram { grid-template-columns: minmax(0, 1fr); }
+      .renderer { grid-area: 1 / 1; }
+      .ui-link { grid-area: 2 / 1; }
+      .core { grid-area: 3 / 1; }
+      .core-link { grid-area: 4 / 1; }
+      .gateway { grid-area: 5 / 1; }
+      .gateway-link { grid-area: 6 / 1; }
+      .adapter { grid-area: 7 / 1; }
+      .adapter-link { grid-area: 8 / 1; }
+      .backend { grid-area: 9 / 1; }
+      .db-link { display: none; }
+      .store { grid-area: 10 / 1; margin-top: 20px; }
+      .store .mobile-title { display: block; color: var(--ink); font-size: 13px; margin-bottom: 8px; }
+      .explanation { grid-area: 11 / 1; margin-top: 19px; padding: 0; border: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+      .explanation > div + div { margin-top: 0; }
+    }
+    @media (max-width: 480px) {
+      main { padding: 20px 12px; }
+      .node { padding: 15px; }
+      .services, .explanation { grid-template-columns: 1fr; gap: 13px; }
+      .pair { column-gap: 8px; padding: 8px 4px; }
+      .edge { gap: 5px; }
+      .example { padding: 15px; }
+    }
+    @media print {
+      :root { color-scheme: light; --page: #fff; --surface: #fff; --ink: #1d2939; --muted: #546275; --line: #cbd5e1; --request: #325fa6; --result: #08765f; --request-soft: #eef3fc; --result-soft: #eef8f3; }
+      main { padding: 0; width: 100%; }
+      .node, .pair, .example { break-inside: avoid; }
+    }
+
+    :root { --violet: #7355a5; --violet-soft: #f3eff9; }
+    html[data-theme="dark"] { color-scheme: dark; --page:#141a22; --surface:#1d2530; --ink:#edf2f8; --muted:#b3c1cf; --line:#3a4657; --soft:#222c38; --request:#98baf0; --result:#87d7bd; --request-soft:#26364e; --result-soft:#253d35; --violet:#c9b1ef; --violet-soft:#322a41; }
+    html[data-theme="light"] { color-scheme:light; --page:#f3f5f8; --surface:#fff; --ink:#1d2939; --muted:#546275; --line:#d6dfe9; --soft:#f7f9fc; --request:#325fa6; --result:#08765f; --request-soft:#eef3fc; --result-soft:#eef8f3; --violet:#7355a5; --violet-soft:#f3eff9; }
+    @media (prefers-color-scheme:dark) { :root { --violet:#c9b1ef; --violet-soft:#322a41; } }
+    [hidden] { display:none !important; }
+    main { width:min(1220px,100%); padding:32px 28px 26px; }
+    a { color:var(--request); text-underline-offset:3px; overflow-wrap:anywhere; }
+    button { font:inherit; cursor:pointer; }
+    button:focus-visible, a:focus-visible, summary:focus-visible { outline:3px solid var(--request); outline-offset:4px; }
+    .header-row { display:flex; justify-content:space-between; align-items:start; gap:20px; }
+    .theme { border:1px solid var(--line); background:var(--surface); color:var(--muted); padding:7px 12px; border-radius:8px; white-space:nowrap; font-size:12px; }
+    .stamp { display:flex; gap:8px 18px; flex-wrap:wrap; color:var(--muted); font-size:12px; margin-top:17px; }
+    .stamp code { color:var(--ink); }
+    .tabs { display:flex; gap:5px; border-bottom:1px solid var(--line); margin:25px 0 22px; padding-bottom:9px; flex-wrap:wrap; }
+    .tabs button { border:0; background:transparent; color:var(--muted); padding:9px 15px; border-radius:8px; font-size:14px; }
+    .tabs button[aria-selected="true"] { background:var(--request-soft); color:var(--request); font-weight:600; }
+    .section-heading { margin-bottom:18px; }
+    .section-heading h2 { font-size:20px; letter-spacing:-.02em; }
+    .section-heading p { margin-top:5px; color:var(--muted); font-size:13px; }
+    .map-grid { display:grid; grid-template-columns:minmax(0,1fr) 285px; gap:24px; align-items:start; }
+    .stack, .sidebar-cards { min-width:0; }
+    .layer { position:relative; }
+    .layer .role { display:flex; align-items:center; gap:8px; }
+    .layer .num { font:11px ui-monospace,monospace; color:var(--request); }
+    .layer .files { display:flex; flex-wrap:wrap; gap:6px 12px; margin-top:10px; font-size:11px; }
+    .files a { text-decoration:none; }
+    .files a:hover { text-decoration:underline; }
+    .flow-arrow { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:7px 16px; font-size:11px; color:var(--muted); }
+    .flow-arrow span:first-child { color:var(--request); }
+    .flow-arrow span:last-child { color:var(--result); text-align:right; }
+    .core-card { background:var(--request-soft); }
+    .core-card .services { gap:13px 15px; }
+    .core-card .service { border-color:var(--request); }
+    .core-card .service p { font-size:12px; }
+    .service code { color:var(--ink); }
+    .adapter-card { background:var(--result-soft); }
+    .adapter-list { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:7px; margin-top:13px; }
+    .adapter-item { padding:9px 7px; background:var(--surface); border:1px solid var(--line); border-radius:7px; text-align:center; }
+    .adapter-item b { display:block; font-size:12px; }
+    .adapter-item span { display:block; color:var(--muted); font:10px/1.5 ui-monospace,monospace; margin-top:3px; overflow-wrap:anywhere; }
+    .layer .inline-note { font-size:11px; border-top:1px solid var(--line); padding-top:9px; margin-top:10px; }
+    .side-card { padding:17px; border:1px solid var(--line); border-radius:11px; background:var(--surface); }
+    .side-card + .side-card { margin-top:15px; }
+    .side-card h3 { margin-bottom:7px; }
+    .side-card p { font-size:12px; color:var(--muted); }
+    .side-card ul { padding-left:17px; margin:10px 0 0; color:var(--muted); font-size:12px; }
+    .side-card li + li { margin-top:6px; }
+    .side-card code { font-size:11px; }
+    .side-card.ai { background:var(--violet-soft); }
+    .side-card.ai .role { color:var(--violet); }
+    .path { padding:10px 12px; border:1px solid var(--line); border-radius:7px; margin-top:10px; background:var(--surface); color:var(--ink); font-size:12px; }
+    .section-note { color:var(--muted); font-size:12px; margin-top:16px; padding:13px 15px; border-left:2px solid var(--line); }
+    .columns { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+    .journey { border:1px solid var(--line); border-radius:12px; background:var(--surface); padding:20px; min-width:0; }
+    .journey h3 { font-size:17px; }
+    .journey .lead { font-size:12px; color:var(--muted); margin-top:5px; }
+    .steps { padding:0; margin:18px 0 0; list-style:none; counter-reset:step; }
+    .steps li { position:relative; padding:0 0 19px 34px; counter-increment:step; }
+    .steps li:last-child { padding-bottom:0; }
+    .steps li:not(:last-child):after { content:""; position:absolute; left:11px; top:24px; bottom:3px; width:1px; background:var(--line); }
+    .steps li:before { content:counter(step); position:absolute; left:0; top:1px; width:23px; height:23px; border-radius:50%; background:var(--request-soft); color:var(--request); text-align:center; font:11px/23px ui-monospace,monospace; }
+    .steps li b { font-size:13px; font-weight:600; }
+    .steps li p { color:var(--muted); font-size:12px; margin-top:3px; }
+    .journey.manual .steps li:before { background:var(--result-soft); color:var(--result); }
+    .shared-strip { margin-top:20px; padding:18px 20px; background:var(--result-soft); border:1px solid var(--line); border-radius:10px; }
+    .shared-strip p { font-size:13px; color:var(--muted); margin-top:6px; }
+    .subheading { font-size:17px; margin:27px 0 13px; }
+    .ai-path { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:17px; background:var(--violet-soft); border-radius:10px; }
+    .ai-path .chip { padding:8px 10px; background:var(--surface); border:1px solid var(--line); border-radius:7px; font-size:12px; }
+    .ai-path .chev { color:var(--violet); }
+    .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
+    table { width:100%; border-collapse:collapse; text-align:left; font-size:12px; }
+    th { color:var(--muted); background:var(--soft); font-weight:500; }
+    td, th { padding:11px 13px; vertical-align:top; border-bottom:1px solid var(--line); }
+    tr:last-child td { border-bottom:0; }
+    td code { font-size:11px; }
+    .good { color:var(--result); font-weight:600; }
+    .wechat-box { background:var(--result-soft); border:1px solid var(--line); border-radius:12px; padding:22px; margin-top:20px; }
+    .wechat-box header { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+    .wechat-box header p { color:var(--muted); font-size:12px; }
+    .public-adapter { border:1.5px solid var(--result); border-radius:10px; padding:19px; background:var(--surface); margin-top:15px; }
+    .public-adapter > h3 { color:var(--result); font-size:18px; }
+    .public-adapter > p { font-size:12px; color:var(--muted); margin-top:5px; }
+    .internal { display:grid; grid-template-columns:1fr 1fr; gap:13px; margin-top:17px; }
+    .method { background:var(--soft); border:1px solid var(--line); border-radius:8px; padding:14px; }
+    .method .role { font-size:11px; }
+    .method p { color:var(--muted); font-size:12px; margin-top:6px; }
+    .method > code { display:block; margin-top:7px; }
+    .identity { display:grid; gap:8px; border-top:1px solid var(--line); margin-top:17px; padding-top:13px; }
+    .identity p { font-size:12px; color:var(--muted); }
+    .identity code { font-size:12px; color:var(--ink); }
+    .file-grid { display:grid; grid-template-columns:1fr 1fr; gap:15px; }
+    .file-group { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:17px 18px; min-width:0; }
+    .file-group h3 { margin-bottom:3px; }
+    .file-group > p { color:var(--muted); font-size:12px; margin-bottom:12px; }
+    .file-row { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:10px; padding:7px 0; font-size:11px; border-top:1px solid var(--line); }
+    .file-row span { color:var(--muted); }
+    .file-row a { font:11px/1.5 ui-monospace,monospace; text-decoration:none; }
+    .file-row a:hover { text-decoration:underline; }
+    .panel-tail { margin-top:18px; display:flex; flex-wrap:wrap; gap:12px; font-size:12px; }
+    footer { padding-top:18px; border-top:1px solid var(--line); margin-top:27px; }
+    @media (max-width:1000px) { .map-grid { grid-template-columns:minmax(0,1fr); } .sidebar-cards { display:grid; grid-template-columns:1fr 1fr; gap:15px; } .side-card + .side-card { margin-top:0; } }
+    @media (max-width:650px) { .table-wrap table { min-width:650px; } .columns,.internal,.file-grid,.sidebar-cards { grid-template-columns:1fr; } .adapter-list { grid-template-columns:repeat(3,minmax(0,1fr)); } .tabs button { flex:1; padding:9px 5px; font-size:12px; } .flow-arrow { padding:7px 5px; font-size:10px; } .wechat-box { padding:15px; } .journey { padding:17px; } .theme { font-size:11px; padding:6px 8px; } .stamp { font-size:11px; gap:6px 13px; } }
+    @media print { html, html[data-theme] { color-scheme:light; --page:#fff; --surface:#fff; --ink:#1d2939; --muted:#546275; --line:#cbd5e1; --soft:#f7f9fc; --request:#325fa6; --result:#08765f; --request-soft:#eef3fc; --result-soft:#eef8f3; --violet:#7355a5; --violet-soft:#f3eff9; } .tabs,.theme { display:none; } [role="tabpanel"][hidden] { display:block !important; } [role="tabpanel"] { margin:20px 0 30px; } .columns,.internal,.file-grid { grid-template-columns:1fr 1fr; } .map-grid { grid-template-columns:1fr 260px; } .sidebar-cards { display:block; } .side-card + .side-card { margin-top:15px; } .journey,.file-group,.wechat-box { break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main>
+  <header class="header-row">
+    <div>
+      <p class="eyebrow">SUBSCRIBE FLOW / CURRENT ARCHITECTURE</p>
+      <h1>知流 · 当前代码结构</h1>
+      <p class="intro">界面提交业务指令，<strong>Core 编排与保存</strong>，<strong>Adapter 读取并标准化</strong>。自动采集与人工添加共用渠道、内容身份和存储；微信内部的两种访问方式也归在同一个 Adapter 中。</p>
+    </div>
+    <button class="theme" id="theme-toggle" type="button" aria-label="切换明暗主题">切换明暗</button>
+  </header>
+  <div class="stamp">
+    <span>更新于 <strong>2026-10-27</strong></span>
+    <span>源码 <code>170cd98</code></span>
+    <span>schema <code>v16</code></span>
+    <span>分支 <code>fix/bug-143-unified-wechat-adapter</code></span>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="代码结构视图">
+    <button id="tab-overview" role="tab" aria-selected="true" aria-controls="overview" type="button">总体分层</button>
+    <button id="tab-flows" role="tab" aria-selected="false" aria-controls="flows" type="button">收录流程</button>
+    <button id="tab-channels" role="tab" aria-selected="false" aria-controls="channels" type="button">渠道与微信</button>
+    <button id="tab-files" role="tab" aria-selected="false" aria-controls="files" type="button">源码与存储</button>
+  </nav>
+
+  <section id="overview" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
+    <div class="section-heading"><h2>从用户界面到平台访问</h2><p>蓝色向下是请求，绿色向上是结果。右侧列出 Core 共享的存储、AI 与桌面能力。</p></div>
+    <div class="map-grid">
+      <div class="stack">
+        <div class="node layer">
+          <div class="role"><span class="num">01</span> 用户界面 / Electron Renderer</div>
+          <h2>页面与 AppClient</h2>
+          <p>收件箱 · 日历／看板 · 渠道管理 · 标签 · 笔记 · 设置</p>
+          <p>展示查询结果、收录预览和任务状态，发起受限业务操作。</p>
+          <div class="files"><a href="../electron/renderer/scripts/app.js">app.js</a><a href="../electron/renderer/scripts/core/app-client.js">core/app-client.js</a><a href="../electron/renderer/scripts/views/inbox.js">views/</a></div>
+        </div>
+        <div class="flow-arrow"><span>↓ AppClient → 受限 IPC</span><span>↑ 页面数据与变更事件</span></div>
+        <div class="node layer">
+          <div class="role"><span class="num">02</span> 桌面边界 / Preload + Main</div>
+          <h2>桥接、投影与桌面资源</h2>
+          <p>Preload 限定接口和事件；Main 把 UI 请求映射为 Core RPC，并把返回值转换为页面数据。</p>
+          <p>窗口、托盘、通知、外部链接、持久会话及受保护凭据也由 Main 管理。</p>
+          <div class="files"><a href="../electron/preload/index.cjs">preload/index.cjs</a><a href="../electron/main/app-client.cjs">main/app-client.cjs</a><a href="../electron/main/core-client.cjs">main/core-client.cjs</a></div>
+        </div>
+        <div class="flow-arrow"><span>↓ JSON-RPC / stdio</span><span>↑ RPC 结果 / Core 事件</span></div>
+        <div class="node layer core-card">
+          <div class="role"><span class="num">03</span> Python Core / 业务状态来源</div>
+          <h2>Dispatcher → 应用服务</h2>
+          <p><code>bootstrap.py</code> 组装服务与依赖；Dispatcher 校验 RPC 参数并路由到对应业务。</p>
+          <div class="services">
+            <div class="service"><h3>订阅与同步</h3><p><code>SubscriptionService · SyncService</code><br>解析来源、分页采集、刷新与回溯。</p></div>
+            <div class="service"><h3>人工添加</h3><p><code>IntakeService</code><br>识别单篇、按身份查重、预览与确认保存。</p></div>
+            <div class="service"><h3>内容与查询</h3><p><code>ContentService · QueryService</code><br>处理状态、筛选、统计、日历和覆盖情况。</p></div>
+            <div class="service"><h3>整理与设置</h3><p><code>TagService · NoteService</code><br>优先级、标签、笔记及设置由独立服务管理。</p></div>
+            <div class="service"><h3>调度与后台任务</h3><p><code>Scheduler · TaggingService</code><br>自动检查、故障阻塞、持久任务与恢复。</p></div>
+            <div class="service"><h3>总结与智能优先级</h3><p><code>SummaryService · PriorityIntelligenceService</code><br>共享 AI 网关，分别生成草稿或判断结果。</p></div>
+          </div>
+          <p class="shared"><strong>业务规则：</strong>相同身份查重、首次收录信息、事务保存、用户整理状态与持久事件。<br><strong>数据通路：</strong>应用服务 ↔ Repository ↔ SQLite。</p>
+          <div class="files"><a href="../python/src/subscribe_flow/bootstrap.py">bootstrap.py</a><a href="../python/src/subscribe_flow/rpc/dispatcher.py">rpc/dispatcher.py</a><a href="../python/src/subscribe_flow/application/sync.py">application/</a></div>
+        </div>
+        <div class="flow-arrow"><span>↓ 来源 / 列表 / 单篇读取指令</span><span>↑ 标准引用、分页与内容</span></div>
+        <div class="node layer">
+          <div class="role"><span class="num">04</span> 公共渠道入口</div>
+          <h2>ChannelGateway</h2>
+          <p>按连接的 <code>(channel, backend)</code> 选择已注册 Adapter，核对操作能力与标准结果；链接识别由 Adapter 提供。</p>
+          <div class="files"><a href="../python/src/subscribe_flow/channels/gateway.py">channels/gateway.py</a><a href="../python/src/subscribe_flow/contracts/models.py">contracts/models.py</a></div>
+        </div>
+        <div class="flow-arrow"><span>↓ 调用渠道公开能力</span><span>↑ Source / ContentReference / FetchPage / ContentItem</span></div>
+        <div class="node layer adapter-card">
+          <div class="role"><span class="num">05</span> 平台协议与标准化</div>
+          <h2>五个正式渠道 Adapter</h2>
+          <p>每个渠道同时声明列表与单篇能力；平台身份、字段解析及访问错误留在渠道实现内。</p>
+          <div class="adapter-list">
+            <div class="adapter-item"><b>B站</b><span>bilibili</span></div>
+            <div class="adapter-item"><b>小红书</b><span>xiaohongshu</span></div>
+            <div class="adapter-item"><b>知乎</b><span>zhihu</span></div>
+            <div class="adapter-item"><b>微信公众号</b><span>wechat</span></div>
+            <div class="adapter-item"><b>GitHub</b><span>github</span></div>
+          </div>
+          <p class="inline-note">微信只注册 <code>WechatAdapter</code>；<code>wxrank</code> 是内部供应商实现和配置名称。</p>
+        </div>
+        <div class="flow-arrow"><span>↓ Adapter 内部选择访问实现</span><span>↑ 平台原始响应 → 标准模型</span></div>
+        <div class="node layer">
+          <div class="role"><span class="num">06</span> 实际平台访问</div>
+          <h2>应用自有会话 / HTTP 传输</h2>
+          <p>B站、小红书、知乎及微信页面读取：<code>rpc/browser.py ↔ Main ChannelSessions</code>，访问应用自有会话或页面读取模块。</p>
+          <p>GitHub：Python 直接 HTTP；微信列表：Adapter 内部调用 <code>WxrankService → WxrankTransport</code>。付费访问不经过 Renderer。</p>
+          <div class="files"><a href="../python/src/subscribe_flow/rpc/browser.py">rpc/browser.py</a><a href="../electron/main/channel-sessions.cjs">main/channel-sessions.cjs</a><a href="../python/src/subscribe_flow/channels/wxrank/transport.py">wxrank/transport.py</a></div>
+        </div>
+      </div>
+      <aside class="sidebar-cards" aria-label="共享能力与职责边界">
+        <div class="side-card">
+          <div class="role">Core 的持久化通路</div><h3>Repository → SQLite</h3>
+          <p>内容、整理记录、订阅与任务都由 Core 经仓储读写。</p>
+          <ul><li>事实：来源、内容、原始时间、收录方式。</li><li>整理：已读／稍后／归档、标签、优先级、笔记。</li><li>运行：同步任务、日程、事件、AI 任务。</li><li>微信：付费账本、缓存、持久账号绑定与回溯检查点。</li></ul>
+          <div class="path">schema v16<br>升级前备份 → 同事务迁移 → 外键校验 → 提交</div>
+        </div>
+        <div class="side-card ai">
+          <div class="role">与渠道网关分开的公共能力</div><h3>AiGateway</h3>
+          <p>自动打标、总结草稿和智能优先级共享连接解析、凭据取用、协议适配和并发闸门。</p>
+          <div class="path">业务服务<br>↓ AiGateway / ProviderGate<br>↓ OpenAI Chat / Jev 协议适配<br>↓ HttpTransport</div>
+          <p style="margin-top:10px">正文范围按 <code>body_state</code> 判断；模型结果分别进入标签、优先级结果或可编辑草稿。</p>
+        </div>
+        <div class="side-card">
+          <div class="role">Main 的私有职责</div><h3>会话、凭据与桌面生命周期</h3>
+          <p>受保护凭据保存在桌面侧；Core 设置只保存引用，运行时凭据经私有桥送入内存容器。</p>
+          <p style="margin-top:8px">窗口、托盘、通知和休眠／退出由 Main 协调；提醒统计仍取自 Core。</p>
+        </div>
+        <div class="side-card">
+          <h3>标准模型在哪里？</h3><p>在 Adapter → Gateway → Core 的返回链路上。<code>ContentItem</code> 是数据对象，<code>Repository</code> 才是存储入口。</p>
+          <p style="margin-top:8px">订阅路径用 <code>FetchPage</code> 携带内容；人工路径先返回 <code>ContentReference</code> 查重，再读取内容。</p>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="flows" role="tabpanel" aria-labelledby="tab-flows" tabindex="0">
+    <div class="section-heading"><h2>两个业务入口，共用同一套渠道与内容库</h2><p>“人工添加”与“订阅的手动刷新”是不同动作；手动刷新仍属于订阅采集。</p></div>
+    <div class="columns">
+      <article class="journey">
+        <h3>订阅采集</h3><p class="lead">手动刷新、历史回溯、定时自动检查</p>
+        <ol class="steps">
+          <li><b>建立真实来源与订阅</b><p><code>SubscriptionService</code> 经 Gateway 解析来源；用户确认后保存订阅。</p></li>
+          <li><b>发起同步任务</b><p>用户操作或 <code>Scheduler</code> 调用 <code>SyncService</code>，使用任务预算与故障阻塞规则。</p></li>
+          <li><b>读取平台列表</b><p><code>ChannelGateway → Adapter.fetch_page()</code>，Adapter 返回含 <code>ContentItem</code> 的 <code>FetchPage</code>。</p></li>
+          <li><b>按稳定身份原子入库</b><p>Repository 查重；新内容、首次收录事件、页进度／检查点在对应事务内保存。</p></li>
+          <li><b>返回采集结果与变更事件</b><p>页面局部更新，后台任务消费持久事件；重复内容保留原记录。</p></li>
+        </ol>
+        <div class="path"><code>intake_method = subscription</code><br>日历依据：原始发布时间</div>
+      </article>
+      <article class="journey manual">
+        <h3>人工添加</h3><p class="lead">粘贴单条链接、查看预览、确认保存</p>
+        <ol class="steps">
+          <li><b>识别链接对应的渠道</b><p><code>IntakeService → Gateway.route_item_url()</code>，使用 Adapter 声明的单篇能力。</p></li>
+          <li><b>解析标准身份，先查重</b><p><code>Adapter.resolve_item()</code> 返回 <code>ContentReference</code>；已存在则直接返回原记录。</p></li>
+          <li><b>读取单篇并生成预览</b><p><code>Adapter.read_item()</code> 返回标准内容；预览本身不创建内容、订阅或同步任务。</p></li>
+          <li><b>用户确认后再次查重</b><p><code>Repository.save_manual()</code> 在事务中保存，防止预览期间自动采集已经先入库。</p></li>
+          <li><b>返回保存结果与变更事件</b><p>首次保存记录手动添加时间；不自动订阅该作者，也不制造同步任务。</p></li>
+        </ol>
+        <div class="path"><code>intake_method = manual</code><br>日历依据：首次保存成功的添加时间</div>
+      </article>
+    </div>
+    <div class="shared-strip"><h3>共同的内容身份与首次收录规则</h3><p><code>channel + namespace + external_id</code> 相同即为同一内容。两种路径使用相同仓储查重；首次成功收录决定原有方式和时间，重复操作保留已存正文及用户整理记录。</p><p>两种方式均保存真实原始发布时间。正文是否存在由 <code>body_state</code> 表达，不由“手动／自动”或平台名称推断。</p></div>
+    <h2 class="subheading">内容保存后的 AI 通路</h2>
+    <div class="ai-path" aria-label="AI业务通路"><span class="chip">持久事件／任务 → 自动打标</span><span class="chip">用户触发 → 总结草稿</span><span class="chip">偏好与内容任务 → 智能优先级</span><span class="chev" aria-hidden="true">→</span><span class="chip"><strong>AiGateway</strong></span><span class="chev" aria-hidden="true">→</span><span class="chip">协议 Adapter + HttpTransport</span></div>
+    <p class="section-note">总结先返回可编辑草稿，由用户保存进笔记。自动打标和智能优先级分别维护任务与版本，不由渠道 Adapter 决定。</p>
+  </section>
+
+  <section id="channels" role="tabpanel" aria-labelledby="tab-channels" tabindex="0">
+    <div class="section-heading"><h2>正式桌面配置下，每个渠道一个公开 Adapter</h2><p>以下按当前 <code>bootstrap.build_gateway()</code> 的注册结果绘制。每个渠道支持订阅采集与单条链接收录。</p></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>渠道</th><th>公开 Adapter</th><th>backend 描述符</th><th>内部访问</th></tr></thead>
+      <tbody>
+        <tr><td>B站<br><code>bilibili</code></td><td><code>BilibiliElectronAdapter</code></td><td><code>electron-session</code></td><td>Main 自有会话与平台接口</td></tr>
+        <tr><td>小红书<br><code>xiaohongshu</code></td><td><code>XiaohongshuAdapter</code></td><td><code>electron-session</code></td><td>Main 会话、页面与接口读取</td></tr>
+        <tr><td>知乎<br><code>zhihu</code></td><td><code>ZhihuAdapter</code></td><td><code>electron-session</code></td><td>Main 会话、想法列表与单篇读取</td></tr>
+        <tr><td>微信公众号<br><code>wechat</code></td><td><code>WechatAdapter</code></td><td><code>electron-session</code></td><td>内部付费列表服务 + Main 文章页面读取</td></tr>
+        <tr><td>GitHub<br><code>github</code></td><td><code>GithubTrendingAdapter</code></td><td><code>direct-http</code></td><td>Python HTTP；榜单订阅与仓库链接读取</td></tr>
+      </tbody>
+    </table></div>
+    <div class="wechat-box">
+      <header><h2>微信：实现分工在同一个 Adapter 内部</h2><p>一个渠道 · 一个公开 Adapter · 一个默认连接</p></header>
+      <div class="public-adapter">
+        <h3>WechatAdapter</h3>
+        <p><code>channel = wechat</code>　<code>backend = electron-session</code>　<code>connection = wechat:default</code></p>
+        <div class="internal">
+          <div class="method"><div class="role">内部实现 A / 来源解析与列表</div><h3>WxrankService → WxrankTransport</h3><code>resolve_source · fetch_page</code><p>第三方付费 API。账号解析、列表分页、调用账本、缓存、限流与续采由内部服务处理；读取列表信息与原文链接。</p><p>付费配置只影响这些操作。</p></div>
+          <div class="method"><div class="role">内部实现 B / 单篇文章</div><h3>BrowserBridge → WechatSession</h3><code>match_item_url · resolve_item · read_item</code><p>通过 Main 的 <code>wechat-api.mjs</code> 读取并解析官方文章页面，确认公众号与文章身份、正文和原始发布时间。</p><p>人工添加无需付费密钥，不创建订阅。</p></div>
+        </div>
+        <div class="identity"><p>两种实现返回同一套业务身份，交回同一 Gateway 与 Core：</p><code>Source　wechat:account:{规范 biz}</code><code>ContentItem　wechat:article:{规范 biz}_{mid}_{idx}</code><p>完整正文标 <code>body_state=full</code>；仅列表信息标 <code>list_only</code>。</p></div>
+      </div>
+      <p class="section-note"><code>wxrank</code> 保留为供应商配置、密钥与费用记录名称；它不再注册成渠道 Adapter 或出现在平台筛选中。持久 <code>biz ↔ gh_id</code> 绑定独立保存，清资料缓存后仍能定位已订阅公众号。</p>
+    </div>
+    <p class="section-note">公共描述符的 <code>backend</code> 用于连接与路由；实际访问协议由 Adapter 内部实现决定。源码中的 B站 OpenCLI 适配器为历史／非桌面替代实现，不与正式桌面 B站适配器同时注册。</p>
+    <div class="panel-tail"><a href="../python/src/subscribe_flow/bootstrap.py">查看正式注册代码</a><a href="../python/src/subscribe_flow/channels/wechat/adapter.py">查看微信 Adapter</a><a href="BUG_FIXES.md#bug-143微信自动采集与人工添加被拆为两个渠道采集架构与其他渠道不一致">查看 BUG-143 修复记录</a></div>
+  </section>
+
+  <section id="files" role="tabpanel" aria-labelledby="tab-files" tabindex="0">
+    <div class="section-heading"><h2>从图找到实际源码</h2><p>路径相对于 <code>Subscribe_Flow/</code>。蓝色链接指向该组的入口文件；这里展示当前主链路及主要模块。</p></div>
+    <div class="file-grid">
+      <article class="file-group"><h3>electron/renderer/</h3><p>页面、交互、视图更新和 AppClient</p>
+        <div class="file-row"><a href="../electron/renderer/scripts/app.js">scripts/app.js</a><span>路由、应用状态、页面外壳与更新</span></div>
+        <div class="file-row"><a href="../electron/renderer/scripts/core/app-client.js">scripts/core/app-client.js</a><span>Renderer 的受限业务调用入口</span></div>
+        <div class="file-row"><a href="../electron/renderer/scripts/views/inbox.js">scripts/views/</a><span>收件箱、总览、渠道、标签、笔记与设置</span></div>
+        <div class="file-row"><a href="../electron/renderer/scripts/ui/intake-dialog.js">scripts/ui/</a><span>添加内容对话框、标签控件与笔记编辑器</span></div>
+      </article>
+      <article class="file-group"><h3>electron/main/ + preload/</h3><p>桌面编排、IPC 与私有资源</p>
+        <div class="file-row"><a href="../electron/main/index.cjs">main/index.cjs</a><span>启动、服务接线、窗口及退出编排</span></div>
+        <div class="file-row"><a href="../electron/preload/index.cjs">preload/index.cjs</a><span>接口和事件白名单</span></div>
+        <div class="file-row"><a href="../electron/main/app-client.cjs">main/app-client.cjs</a><span>UI 方法映射与返回数据投影</span></div>
+        <div class="file-row"><a href="../electron/main/core-client.cjs">main/core-client.cjs</a><span>Python 子进程、RPC 与故障恢复</span></div>
+        <div class="file-row"><a href="../electron/main/channel-sessions.cjs">main/channel-sessions.cjs</a><span>渠道会话与私有采集桥</span></div>
+        <div class="file-row"><a href="../electron/main/credentials.cjs">main/credentials.cjs</a><span>受保护凭据保存与取用</span></div>
+        <div class="file-row"><a href="../electron/main/reminders.cjs">main/reminders.cjs</a><span>桌面提醒调度；托盘、通知与生命周期另有模块</span></div>
+      </article>
+      <article class="file-group"><h3>python/src/subscribe_flow/application/</h3><p>用户操作与持久业务的编排</p>
+        <div class="file-row"><a href="../python/src/subscribe_flow/application/subscriptions.py">subscriptions.py · sync.py</a><span>来源、订阅和分页同步</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/application/intake.py">intake.py</a><span>单篇读取、预览和确认保存</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/application/scheduler.py">scheduler.py</a><span>自动检查、阻塞与恢复规则</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/application/queries.py">queries.py · content.py</a><span>读取、统计与整理状态</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/application/tags.py">tags.py · notes.py · priorities.py</a><span>标签、笔记与人工优先级</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/application/tagging.py">tagging.py · summary.py</a><span>自动打标与总结草稿</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/application/priority_intelligence.py">priority_intelligence.py</a><span>智能优先级任务与偏好处理</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/application/paid_channels.py">paid_channels.py · settings.py</a><span>供应商受控操作与非敏感设置</span></div>
+      </article>
+      <article class="file-group"><h3>channels/ + acquisition/ + contracts/</h3><p>渠道接口、平台实现与标准模型</p>
+        <div class="file-row"><a href="../python/src/subscribe_flow/channels/gateway.py">channels/gateway.py</a><span>公开 Adapter 注册、能力路由与结果核对</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/channels/bilibili/electron.py">bilibili/ · xiaohongshu/ · zhihu/</a><span>正式桌面渠道实现</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/channels/wechat/adapter.py">wechat/adapter.py · identity.py</a><span>统一微信 Adapter 与稳定身份</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/channels/wxrank/service.py">wxrank/service.py · protocol.py · transport.py</a><span>微信内部付费实现；没有独立 Adapter</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/channels/github/adapter.py">github/adapter.py · transport.py</a><span>榜单／仓库读取与 HTTP</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/acquisition/resources.py">acquisition/resources.py</a><span>资源互斥与访问间隔</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/contracts/models.py">contracts/models.py</a><span>Source、ContentItem、FetchPage 与能力契约</span></div>
+      </article>
+      <article class="file-group"><h3>python/src/subscribe_flow/ai/</h3><p>所有 AI 业务共享的调用层</p>
+        <div class="file-row"><a href="../python/src/subscribe_flow/ai/gateway.py">gateway.py</a><span>按连接取用模型、凭据并调用协议实现</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/ai/registry.py">registry.py · contracts.py</a><span>连接资源、协议与能力</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/ai/gate.py">gate.py</a><span>按 Provider 共享并发闸门</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/ai/adapters/openai_chat.py">adapters/openai_chat.py</a><span>文本生成与 LLM 协议调用</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/ai/adapters/jev_systemone.py">adapters/jev_systemone.py</a><span>候选分类协议调用</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/ai/transport.py">transport.py</a><span>AI HTTP 传输</span></div>
+      </article>
+      <article class="file-group"><h3>python/src/subscribe_flow/storage/</h3><p>SQLite、领域仓储与升级</p>
+        <div class="file-row"><a href="../python/src/subscribe_flow/storage/database.py">database.py · lease.py</a><span>数据库连接、升级事务与单 Core 租约</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/storage/repositories.py">repositories.py</a><span>来源、内容、查重、查询与用户状态</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/storage/notes.py">notes.py · tagging.py · priority_intelligence.py</a><span>笔记、持久事件与 AI 任务／结果</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/storage/schedules.py">schedules.py · settings.py</a><span>同步日程、阻塞与设置</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/storage/paid_channels.py">paid_channels.py</a><span>账本、可清缓存、持久账号绑定与检查点</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/storage/migrations/016_wechat_identity.sql">migrations/001 … 016.sql</a><span>结构升级；当前 schema v16</span></div>
+        <div class="file-row"><a href="../python/src/subscribe_flow/storage/wechat_identity_migration.py">wechat_identity_migration.py</a><span>一次性旧微信身份归并与本机恢复档案</span></div>
+      </article>
+    </div>
+    <h2 class="subheading">主要持久数据</h2>
+    <div class="table-wrap"><table><thead><tr><th>领域</th><th>主要表／记录</th><th>用途</th></tr></thead><tbody>
+      <tr><td>采集事实</td><td><code>sources · contents · content_sources</code></td><td>真实来源、标准内容与关联</td></tr>
+      <tr><td>用户整理</td><td><code>content_states · tags · content_tags · content_tag_blocks · content_notes</code></td><td>状态、人工标签／屏蔽、优先级与笔记</td></tr>
+      <tr><td>同步运行</td><td><code>connections · subscriptions · jobs · sync_progress · schedules · schedule_blocks</code></td><td>连接、订阅、同步任务、进度、日程与故障阻塞</td></tr>
+      <tr><td>AI 后台</td><td><code>content_events · tagging_tasks · priority_tasks · content_priority_decisions</code></td><td>持久事件、任务去重、结果与版本</td></tr>
+      <tr><td>微信付费与升级</td><td><code>paid_channel_attempts · paid_channel_sources · paid_channel_checkpoints · wechat_backend_identities · wechat_identity_migration_archive</code></td><td>消费事实、资料缓存、续采、上游绑定与迁移原值</td></tr>
+    </tbody></table></div>
+    <div class="panel-tail"><a href="API.md">业务接口</a><a href="STORAGE.md">存储约定</a><a href="verification/bug143-unified-wechat/REPORT.md">本次源码验收</a></div>
+  </section>
+  <footer><span>沿用三期架构图文件，更新为当前代码结构 · 完全离线可查看</span><span>源码快照 170cd98 · 2026-10-27 / Asia/Tokyo</span></footer>
+</main>
+<script>
+(function () {
+  'use strict';
+  const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+  const panels = Array.from(document.querySelectorAll('[role="tabpanel"]'));
+  function select(id, focus) {
+    if (!panels.some(panel => panel.id === id)) id = 'overview';
+    tabs.forEach(tab => {
+      const active = tab.getAttribute('aria-controls') === id;
+      tab.setAttribute('aria-selected', String(active));
+      tab.tabIndex = active ? 0 : -1;
+      if (active && focus) tab.focus();
+    });
+    panels.forEach(panel => { panel.hidden = panel.id !== id; });
+  }
+  tabs.forEach((tab, index) => {
+    tab.addEventListener('click', function () {
+      const id = tab.getAttribute('aria-controls');
+      select(id, false);
+      history.replaceState(null, '', '#' + id);
+    });
+    tab.addEventListener('keydown', function (event) {
+      let next;
+      if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+      if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = tabs.length - 1;
+      if (next === undefined) return;
+      event.preventDefault();
+      tabs[next].click(); tabs[next].focus();
+    });
+  });
+  select(location.hash.slice(1), false);
+  window.addEventListener('hashchange', function () { select(location.hash.slice(1), false); });
+  document.getElementById('theme-toggle').addEventListener('click', function () {
+    const current = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.dataset.theme = current === 'dark' ? 'light' : 'dark';
+    this.setAttribute('aria-label', current === 'dark' ? '切换到深色主题' : '切换到浅色主题');
+  });
+})();
+</script>
+</body>
+</html>

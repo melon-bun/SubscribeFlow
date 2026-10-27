@@ -1,0 +1,129 @@
+{
+  "status": "passed",
+  "sizes": [
+    {
+      "width": 1440,
+      "panel": "overview",
+      "active": "overview",
+      "visible": [
+        "overview"
+      ],
+      "overflow": 0,
+      "height": 1875
+    },
+    {
+      "width": 1440,
+      "panel": "flows",
+      "active": "flows",
+      "visible": [
+        "flows"
+      ],
+      "overflow": 0,
+      "height": 1282
+    },
+    {
+      "width": 1440,
+      "panel": "channels",
+      "active": "channels",
+      "visible": [
+        "channels"
+      ],
+      "overflow": 0,
+      "height": 1468
+    },
+    {
+      "width": 1440,
+      "panel": "files",
+      "active": "files",
+      "visible": [
+        "files"
+      ],
+      "overflow": 0,
+      "height": 1874
+    },
+    {
+      "width": 1000,
+      "panel": "overview",
+      "active": "overview",
+      "visible": [
+        "overview"
+      ],
+      "overflow": 0,
+      "height": 2344
+    },
+    {
+      "width": 1000,
+      "panel": "flows",
+      "active": "flows",
+      "visible": [
+        "flows"
+      ],
+      "overflow": 0,
+      "height": 1356
+    },
+    {
+      "width": 1000,
+      "panel": "channels",
+      "active": "channels",
+      "visible": [
+        "channels"
+      ],
+      "overflow": 0,
+      "height": 1503
+    },
+    {
+      "width": 1000,
+      "panel": "files",
+      "active": "files",
+      "visible": [
+        "files"
+      ],
+      "overflow": 0,
+      "height": 1941
+    },
+    {
+      "width": 390,
+      "panel": "overview",
+      "active": "overview",
+      "visible": [
+        "overview"
+      ],
+      "overflow": 0,
+      "height": 3613
+    },
+    {
+      "width": 390,
+      "panel": "flows",
+      "active": "flows",
+      "visible": [
+        "flows"
+      ],
+      "overflow": 0,
+      "height": 2443
+    },
+    {
+      "width": 390,
+      "panel": "channels",
+      "active": "channels",
+      "visible": [
+        "channels"
+      ],
+      "overflow": 0,
+      "height": 2222
+    },
+    {
+      "width": 390,
+      "panel": "files",
+      "active": "files",
+      "visible": [
+        "files"
+      ],
+      "overflow": 0,
+      "height": 3545
+    }
+  ],
+  "sourceLinks": 59,
+  "keyboardTabs": true,
+  "themeToggle": true,
+  "consoleErrors": []
+}
