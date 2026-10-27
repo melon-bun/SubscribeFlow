@@ -804,8 +804,7 @@
       return h("div.note-editor__actionbar" + (opts.stickyActions ? ".is-sticky" : ""), null,
         h("div.note-editor__actions", null,
           h("div.note-editor__actions-state", null, status(draft, state)),
-          h("div.spacer"),
-          buttons),
+          h("div.note-editor__actions-buttons", null, buttons)),
         conflictRow(state));
     }
 

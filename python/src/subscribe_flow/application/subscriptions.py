@@ -23,8 +23,8 @@ class SubscriptionService:
 
     @staticmethod
     def validate_schedule(interval_seconds=None, sync_mode=None, collect_items=None):
-        if interval_seconds is not None and (type(interval_seconds) is not int or not 300 <= interval_seconds <= 259200):
-            raise ChannelError('INVALID_INPUT', 'subscription', '自动刷新间隔需在 5 分钟到 72 小时之间')
+        if interval_seconds is not None and (type(interval_seconds) is not int or not 300 <= interval_seconds <= 518400):
+            raise ChannelError('INVALID_INPUT', 'subscription', '自动刷新间隔需在 5 分钟到 144 小时之间')
         if sync_mode is not None and sync_mode not in {'manual', 'automatic'}:
             raise ChannelError('INVALID_INPUT', 'subscription', '请选择手动或自动模式')
         if collect_items is not None and (type(collect_items) is not int or not 0 <= collect_items <= 50):

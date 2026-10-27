@@ -48,7 +48,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.scheduler.store.update(sub['id'], next_due=self.timestamp)
         await self.tick()
 
-    async def test_manual_default_and_24h_schedule_are_persisted_and_capped_at_72h(self):
+    async def test_manual_default_and_24h_schedule_are_persisted_and_capped_at_144h(self):
         sub = await self.add()
         self.assertEqual((sub['sync_mode'], sub['interval_seconds']), ('manual', 86400))
         with self.assertRaises(ChannelError):
@@ -56,11 +56,11 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         await self.tick(4*86400)
         self.assertEqual(self.adapter.calls, 0)
         self.assertIsNone(self.scheduler.list()[0]['next_due'])
-        for interval in (299, 259201, True):
+        for interval in (299, 518401, True):
             with self.assertRaises(ChannelError):
                 await self.core.update_subscription(sub['id'], interval_seconds=interval)
-        sub = await self.core.update_subscription(sub['id'], sync_mode='automatic', interval_seconds=259200)
-        await self.tick(259199)
+        sub = await self.core.update_subscription(sub['id'], sync_mode='automatic', interval_seconds=518400)
+        await self.tick(518399)
         self.assertEqual(self.adapter.calls, 0)
         await self.tick(1)
         await self.finish()
@@ -72,7 +72,18 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         await self.core.update_subscription(sub['id'], sync_mode='manual')
         await self.tick(5*86400)
         self.assertEqual(self.adapter.calls, 1)
-        self.assertEqual(self.core.repository.get_subscription(sub['id'])['interval_seconds'], 259200)
+        self.assertEqual(self.core.repository.get_subscription(sub['id'])['interval_seconds'], 518400)
+
+    async def test_creation_accepts_extended_intervals_and_preserves_existing_72h(self):
+        for hours in (72, 73, 144):
+            sub = await self.add(f'interval-{hours}', sync_mode='automatic', interval_seconds=hours*3600)
+            self.assertEqual(sub['interval_seconds'], hours*3600)
+            self.assertEqual(self.scheduler.store.get(sub['id'])['next_due'], self.timestamp+hours*3600)
+        minimum = await self.add('minimum', interval_seconds=300)
+        self.assertEqual(minimum['interval_seconds'], 300)
+        for invalid in (299, 518401, True):
+            with self.assertRaises(ChannelError):
+                await self.add('invalid', interval_seconds=invalid)
 
     async def test_collect_items_persists_converts_to_whole_pages_and_defaults_are_unchanged(self):
         sub = await self.add()

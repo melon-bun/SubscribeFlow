@@ -220,7 +220,7 @@
   }
   function scheduleDialog(app,c) {
     var mode = c.syncMode || 'manual', saving = false;
-    var interval = h('input.input',{id:'refresh-interval',type:'number',min:5/60,max:72,step:'any',value:String((c.intervalSeconds || 86400)/3600)});
+    var interval = h('input.input',{id:'refresh-interval',type:'number',min:5/60,max:144,step:'any',value:String((c.intervalSeconds || 86400)/3600)});
     var error = h('p.field__error',{role:'alert'});
     var select = ui.select([{value:'manual',label:'手动刷新'},{value:'automatic',label:'自动刷新'}],mode,function(value) {
       mode = value; interval.disabled = mode === 'manual'; error.textContent='';
@@ -229,8 +229,8 @@
     var save = ui.btn('保存同步设置',{variant:'primary',onClick:async function () {
       if (saving) return;
       var hours = Number(interval.value), minutes = Math.round(hours*60);
-      if (!Number.isFinite(hours) || minutes < 5 || minutes > 4320 || Math.abs(hours*60-minutes)>0.000001) {
-        error.textContent='请输入 5 分钟到 72 小时之间的间隔，精确到分钟；例如 0.5 小时'; return;
+      if (!Number.isFinite(hours) || minutes < 5 || minutes > 8640 || Math.abs(hours*60-minutes)>0.000001) {
+        error.textContent='请输入 5 分钟到 144 小时之间的间隔，精确到分钟；例如 0.5 小时'; return;
       }
       saving = true; save.disabled = true; select._input.disabled = true; interval.disabled = true;
       try {
@@ -242,7 +242,7 @@
     var layer = ui.dialog({title:c.name + ' · 同步设置',body:h('div.col',{style:{gap:'16px'}},
       h('div.field',null,h('span.field__label',{text:'同步模式'}),select),
       h('div.field',null,h('label.field__label',{htmlFor:'refresh-interval',text:'自动刷新间隔（小时）'}),interval,
-        h('p.field__hint',{text:'默认 24 小时，最多 72 小时，最少 5 分钟。可输入小数，切回手动会保留此设置。'})),
+        h('p.field__hint',{text:'默认 24 小时，最多 144 小时，最少 5 分钟。可输入小数，切回手动会保留此设置。'})),
       /* M45：付费渠道的自动检查每次都要调用付费接口，必须先说清。 */
       c.paid ? ui.notice({tone:'warn',text:'启用自动检查后，每次检查都会调用付费接口并产生费用。默认仍是手动刷新。'}) : null,
       h('p.muted',{text:'自动模式只在应用运行、电脑未休眠时检查。首次自动检查在设定间隔后执行，也可随时手动刷新。'}),error),

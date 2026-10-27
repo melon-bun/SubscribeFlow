@@ -64,8 +64,8 @@ test('automatic mode persists, dispatches an overdue plan through real RPC and s
     const sub=await callUI(core,'createChannel',[{platform:'bilibili',link:'946974',confirmed:true}]);
     assert.equal(sub.syncMode,'manual');
     assert.equal(sub.intervalSeconds,86400);
-    await assert.rejects(callUI(core,'updateChannel',[sub.id,{syncMode:'automatic',intervalSeconds:259201}]),e=>e.code==='INVALID_INPUT');
-    await callUI(core,'updateChannel',[sub.id,{syncMode:'automatic',intervalSeconds:259200}]);
+    await assert.rejects(callUI(core,'updateChannel',[sub.id,{syncMode:'automatic',intervalSeconds:518401}]),e=>e.code==='INVALID_INPUT');
+    await callUI(core,'updateChannel',[sub.id,{syncMode:'automatic',intervalSeconds:518400}]);
     assert.equal((await core.call('schedule.list'))[0].state,'scheduled');
     await core.stop();
     const seed=spawnSync(runtime.python,['-c',"import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); db.execute('UPDATE schedules SET next_due=0'); db.commit()",path.join(core.dataDir,'subscribe-flow.sqlite3')],{encoding:'utf8'});
@@ -84,7 +84,7 @@ test('automatic mode persists, dispatches an overdue plan through real RPC and s
     await callUI(core,'updateChannel',[sub.id,{syncMode:'manual'}]);
     const listed=(await callUI(core,'listChannels',[])).items[0];
     assert.equal(listed.syncMode,'manual');
-    assert.equal(listed.intervalSeconds,259200);
+    assert.equal(listed.intervalSeconds,518400);
     assert.equal(listed.schedule.next_due,null);
   }, async p=>{
     assert.equal(p.operation,'list'); calls++;

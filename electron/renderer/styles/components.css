@@ -2591,6 +2591,7 @@ textarea.input {
 
 .note-editor__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--s-3);
   margin-top: var(--s-4);
@@ -2729,7 +2730,24 @@ textarea.input {
 }
 
 .note-editor__actions-state {
+  flex: 1 1 180px;
   min-width: 0;
+}
+
+/* Keep the actions together at their natural widths. A longer saved timestamp
+   can take its own row instead of shrinking or clipping button labels. */
+.note-editor__actions-buttons {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-3);
+  margin-left: auto;
+}
+
+.note-editor__actions-buttons > .btn {
+  flex: none;
+  justify-content: center;
 }
 
 /* ==========================================================================
