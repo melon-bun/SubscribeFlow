@@ -1,3 +1,5 @@
+2026-10-27 用户授权的合并与打包已完成：修复分支fix/bug-143-unified-wechat-adapter快进合入main（43f09ab），dbc279d构建0.5.3.3 macOS Intel包，纳入微信单Adapter/双收录、v16身份归并与当前架构HTML。61文件逐字节匹配、18相对链接、x86_64 Core、签名/ZIP/SHA通过；新增包内v15微信升级/正文笔记/有效游标/未知扣费阻塞/无key人工收录与重启，以及原v2→v16/界面滚轮/Core恢复等完整包内验收通过。ZIP146157813字节，SHA256为d7ad6922ae0b3bf6c0d645062e13a93570e88581bf63d1ae2a44643b89787b31。旧0.5.3.2.app已移废纸篓，系统只注册0.5.3.3，旧ZIP与日常数据保留；未真实收费/推送/远端发布。详见Subscribe_Flow/docs/RELEASE_0.5.3.3.md。
+
 2026-10-27 BUG-143源码修复已完成并验收，分支fix/bug-143-unified-wechat-adapter，产品提交170cd98：微信统一为一个WechatAdapter、一个wechat/electron-session/wechat:default，同时提供人工与自动采集；内部按操作调用页面或付费服务，删除独立wxrank平台/Adapter。v16原子升级统一来源/文章/连接及关联，保留用户数据原值、凭据/账本/有效游标与未知扣费阻塞；清缓存不丢供应商账号绑定。Python664、Node159、人工/付费/本机HTTP与通用正式Renderer隔离验收通过。仅源码交付，版本仍0.5.3.2，未真实收费、操作日常库、打包、推送或发布。详情：Subscribe_Flow/docs/BUG_FIXES.md（BUG-143）及docs/verification/bug143-unified-wechat/REPORT.md。
 
 2026-10-26 按用户反馈清理重复知流入口：系统收录的0.5.3.1已退出，已将该旧app移废纸篓；Spotlight同bundle ID现仅剩0.5.3.2。0.5.3.1/0.5.3.2 ZIP备份、订阅、配置和日常数据保留。后续本地包验收包含旧构建应用清理，运行中的旧版须明确说明暂留。记录：Subscribe_Flow/docs/RELEASE_0.5.3.2.md。
