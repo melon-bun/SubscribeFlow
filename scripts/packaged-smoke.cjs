@@ -25,6 +25,81 @@ async function connect(url) {
   })};
 }
 async function port() {const server=net.createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const number=server.address().port;await new Promise(r=>server.close(r));return number;}
+
+async function verifyWechatUpgrade(executable,resources,folder,runtime) {
+  const profile=path.join(folder,'wechat-v15-profile');fs.mkdirSync(profile);
+  const database=path.join(profile,'subscribe-flow.sqlite3');
+  // Only fixture generation uses source Python. Upgrade and all RPC assertions
+  // below run the actual frozen binary copied out of the new package.
+  const seed=spawnSync(runtime.python,['-c',`import json,pathlib,sys
+sys.path[:0]=[sys.argv[2],str(pathlib.Path(sys.argv[2])/'src')]
+from tests.test_wechat_identity_migration import WechatIdentityMigrationTests,FIRST,LATER,insert
+case=WechatIdentityMigrationTests();case.path=pathlib.Path(sys.argv[1]);case.db=case.legacy(15)
+case.seed('wxrank');case.seed('wechat',stamp=LATER);case.seed_subscription()
+insert(case.db,'app_settings',id=1,version=1,updated_at=FIRST,payload=json.dumps({'channels':{'wxrank':{'credentialRef':'packaged-fixture-reference','revision':11,'enabled':True}}}))
+for content_id,stamp,summary in [('wxrank:article:MzI4NTEyMzQ1Ng==_1000000001_1',FIRST,'旧列表笔记'),('wechat:article:MzI4NTEyMzQ1Ng==_1000000001_1',LATER,'人工笔记保留')]:
+    insert(case.db,'content_notes',content_id=content_id,template='general',summary=summary,summary_origin='manual',takeaway='',version=stamp,created_at=stamp,updated_at=stamp)
+case.db.commit();case.db.close()
+`,database,path.join(root,'python')],{encoding:'utf8'});
+  assert.equal(seed.status,0,seed.stderr);
+  const biz='MzI4NTEyMzQ1Ng==',first=`wechat:article:${biz}_1000000001_1`;
+  const articleUrl=mid=>`https://mp.weixin.qq.com/s?__biz=${encodeURIComponent(biz)}&mid=${mid}&idx=1`;
+  let visits=0;
+  const options={coreExecutable:executable,root:path.join(resources,'app.asar'),dataDir:profile,
+    schedulePolicy:{resource_gap:0},acquisition:async params=>{
+      assert.equal(params.channel,'wechat');assert.ok(['resolve','read'].includes(params.operation));visits++;
+      const mid=new URL(params.url).searchParams.get('mid');
+      return {article:{id:`${biz}_${mid}_1`,url:articleUrl(mid),title:'包内微信人工收录',
+        content:'包内隔离文章完整正文。',images:[],account:{id:biz,name:'同一个公众号',url:articleUrl(mid)},
+        published:{value:'2026-10-20T09:00:00+08:00',precision:'second',provenance:'fixture'},acquisition_complete:true}};
+    }};
+  const core=new CoreClient(options);
+  try {
+    await core.start();
+    const descriptors=(await core.call('channel.list')).filter(d=>['wechat','wxrank'].includes(d.channel));
+    assert.equal(descriptors.length,1);assert.equal(descriptors[0].backend,'electron-session');
+    for(const op of ['resolve_source','list_items','match_item_url','resolve_item','read_item'])assert.equal(descriptors[0].operations[op].supported,true,op);
+    const connections=(await core.call('connection.list')).filter(c=>['wechat','wxrank'].includes(c.channel));
+    assert.deepEqual(connections.map(c=>c.id),['wechat:default']);
+    assert.equal((await core.call('content.list')).total,1);
+    const item=await core.call('content.get',{item_id:first});
+    assert.equal(item.summary,'已有完整正文');assert.equal(item.body_state,'full');
+    assert.equal(item.intake_method,'subscription');assert.equal(item.source.external_id,biz);
+    assert.equal((await core.call('source.list')).items.length,1);
+    assert.equal((await core.call('note.get',{item_id:first})).summary,'人工笔记保留');
+    const status=await core.call('wxrank.status');
+    assert.equal(status.configured,false);assert.equal(status.usage.calls,1);assert.equal(status.usage.unknownCount,1);
+    assert.equal(status.sources[0].backfill.checkpoint.state,'resume');
+    const duplicate=await core.call('intake.start',{url:articleUrl('1000000001')});
+    assert.equal((await until(async()=>{const t=await core.call('intake.get',{task_id:duplicate.task_id});return t.state!=='queued'&&t.state!=='running'&&t;})).state,'exists');
+    const added=await core.call('intake.start',{url:articleUrl('1000000002')});
+    const preview=await until(async()=>{const t=await core.call('intake.get',{task_id:added.task_id});return t.state!=='queued'&&t.state!=='running'&&t;});
+    assert.equal(preview.state,'preview',JSON.stringify(preview.error));
+    assert.equal((await core.call('intake.save',{preview_id:preview.preview_id})).status,'created');
+    assert.equal((await core.call('content.list')).total,2);assert.equal((await core.call('subscription.list')).length,1);
+    await core.call('wxrank.cache_clear');
+    await core.restart();
+    assert.equal((await core.call('content.list')).total,2);
+    const restarted=await core.call('wxrank.status');
+    assert.equal(restarted.sources[0].backfill.checkpoint.state,'resume');assert.equal(restarted.usage.calls,1);
+    assert.equal((await core.call('schedule.list'))[0].state,'blocked');
+  } finally {await core.stop();}
+  const audit=spawnSync(runtime.python,['-c',`import json,sqlite3,sys
+with sqlite3.connect(sys.argv[1]) as db:
+    assert db.execute('PRAGMA user_version').fetchone()[0]==16
+    assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
+    assert db.execute('SELECT upstream_id FROM wechat_backend_identities').fetchone()[0]=='gh_demo0001'
+    assert db.execute('SELECT count(*) FROM wechat_identity_migration_archive').fetchone()[0]>0
+    assert db.execute('SELECT count(*) FROM paid_channel_sources').fetchone()[0]==0
+    assert db.execute('SELECT count(*) FROM paid_channel_attempts').fetchone()[0]==1
+print(json.dumps({'schema':16,'foreignKeys':True,'bindingAfterCacheClear':True,'conflictArchive':True}))
+`,database],{encoding:'utf8'});assert.equal(audit.status,0,audit.stderr);
+  assert.ok(fs.existsSync(database.replace(/\.sqlite3$/,'.before-v16.backup')));
+  return {passed:true,fromSchema:15,toSchema:16,oneAdapter:true,oneConnection:true,oneSource:true,
+    duplicatesMerged:true,fullBodyAndNotePreserved:true,manualWithoutPaidKey:true,
+    duplicateIntake:true,restartPersisted:true,cursor:'resume',unknownChargeBlocked:true,
+    paidAttempts:1,manualPageReads:visits,...JSON.parse(audit.stdout)};
+}
 async function launch(bundle,dataDir,work,expected='ready') {
   const number=await port();
   const args=['-n',...(process.env.SUBSCRIBE_FLOW_PACKAGED_FOREGROUND==='1'?[]:['-g']),'-W','-a',bundle,'--stdout',path.join(work,'stdout.log'),'--stderr',path.join(work,'stderr.log')];
@@ -79,6 +154,8 @@ async function main() {
   let app,core;
   const result={packagedSmoke:'pending',version:expectedVersion,schema,platform:'macOS x64',launchServices:true,minimalPath:true,externalPythonIgnored:true,productionIgnoresTestFlags:true};
   try {
+    const runtime=JSON.parse(fs.readFileSync(path.join(root,'.runtime-paths.json'),'utf8'));
+    result.wechatUnified=await verifyWechatUpgrade(executable,resources,folder,runtime);
     // Seed through the actual frozen RPC server, using a clearly labelled test adapter response.
     let pendingRequest,entered;
     const coreOptions={coreExecutable:executable,root:path.join(resources,'app.asar'),dataDir,schedulePolicy:{resource_gap:0},acquisition:async(p,signal)=>{
@@ -121,7 +198,6 @@ async function main() {
     assert.equal((await core.call('content.get',{item_id:'xiaohongshu:note:'+xhsId})).thumbnail,cover);
     await core.stop();core=null;result.xiaohongshuLocalCover=true;
     // Make a v2 database so the real installed binary, not test code, performs the upgrade.
-    const runtime=JSON.parse(fs.readFileSync(path.join(root,'.runtime-paths.json'),'utf8'));
     // Build the historical schema from its migrations. Removing selected new
     // tables left newer priority/paid tables behind and made this a false v2.
     const legacy=spawnSync(runtime.python,['-c',`import pathlib,sqlite3,sys
