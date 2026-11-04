@@ -229,9 +229,33 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     await app.evaluate(`document.documentElement.dataset.theme='light'`);
     result.whiteBrandLogo=true;
     const selected=await app.evaluate('SF.app.state.selectedId');
-    await app.evaluate(`Array.from(document.querySelectorAll('.detail .state-btn')).find(b=>b.textContent.trim()==='稍后').click()`);
+    assert.deepEqual((await call('getSettings',[])).general.readingStateNames,{read:'还会再看',archived:'看完了'});
+    assert.equal(await app.evaluate(`document.querySelector('[data-quick="deferred"] .side-row__label').textContent`),'稍后阅读');
+    await app.evaluate(`document.querySelector('.user-chip').click()`);
+    await until(()=>app.evaluate(`document.querySelector('.settings__title')?.textContent==='通用' && document.querySelectorAll('[data-reading-state-name]').length===2`));
+    assert.equal(await app.evaluate(`document.querySelector('[data-reading-state-name="read"]').value`),'还会再看');
+    assert.equal(await app.evaluate(`document.querySelector('[data-reading-state-name="archived"]').value`),'看完了');
+    assert.equal(await app.evaluate(`Array.from(document.querySelectorAll('input')).some(i=>i.value==='稍后阅读')`),false);
+    await app.page.send('Page.enable');
+    fs.writeFileSync(path.join(output,'packaged-general.png'),Buffer.from((await app.page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await app.evaluate(`(() => {
+      for(const [id,value] of [['read','值得重温'],['archived','已结束']]) {
+        const input=document.querySelector('[data-reading-state-name="'+id+'"]');
+        input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));
+      }
+      Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='保存设置').click();
+    })()`);
+    await until(()=>app.evaluate(`SF.catalog.readingState('read')==='值得重温' && SF.catalog.readingState('archived')==='已结束' && !SF.views.settings.isDirty('general')`));
+    assert.deepEqual((await call('getSettings',[])).general.readingStateNames,{read:'值得重温',archived:'已结束'});
+    assert.equal((await call('content.get',{item_id:items[0].id})).state.archived,true);
+    await app.evaluate(`document.querySelector('[aria-label="关闭设置"]').click()`);
+    await until(()=>app.evaluate(`document.querySelector('[data-quick="read"] .side-row__label')?.textContent==='值得重温' && document.querySelector('[data-quick="archived"] .side-row__label')?.textContent==='已结束'`));
+    assert.equal(await app.evaluate('SF.app.state.selectedId'),selected);
+    assert.deepEqual(await app.evaluate(`Array.from(document.querySelectorAll('.detail .state-btn')).map(b=>b.textContent.trim())`),['值得重温','稍后阅读','已结束']);
+    await app.evaluate(`document.querySelector('.detail .state-btn[data-state-field="deferred"]').click()`);
     await until(()=>app.evaluate('SF.app.state.counts.unread===1 && document.querySelectorAll(".content-card").length===1'));
     assert.equal((await call('content.get',{item_id:selected})).state.deferred,true);
+    result.readingState={defaults:true,settingsUI:true,fixedDeferred:true,renamedGlobally:true,legacyStatePreserved:true};
     await call('subscription.update',{subscription_id:sub.id,sync_mode:'automatic',interval_seconds:518400});
     assert.equal((await call('subscription.list'))[0].interval_seconds,518400);
     await assert.rejects(call('subscription.update',{subscription_id:sub.id,interval_seconds:518401}));
@@ -332,6 +356,8 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     await until(async()=>(await call('core.status')).state!=='ready');
     await until(async()=>(await call('core.status')).state==='ready',20000);
     assert.equal((await call('content.get',{item_id:selected})).state.deferred,true);
+    assert.deepEqual((await call('getSettings',[])).general.readingStateNames,{read:'值得重温',archived:'已结束'});
+    result.readingState.coreRestart=true;
     result.upgradeBackup=true;result.exclusiveState=true;result.modeSwitch=true;result.automaticCrashRecovery=true;
     await app.close();app=null;
     // Real app restart, same persisted database.
@@ -347,6 +373,9 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     assert.equal((await call('tag.list')).items[0].name,tag.name);
     assert.equal((await call('note.get',{item_id:selected})).verdict,'using');
     assert.equal((await call('getSettings',[])).summarization.length,'detailed');
+    assert.deepEqual((await call('getSettings',[])).general.readingStateNames,{read:'值得重温',archived:'已结束'});
+    await until(()=>app.evaluate(`document.querySelector('[data-quick="read"] .side-row__label')?.textContent==='值得重温' && document.querySelector('[data-quick="archived"] .side-row__label')?.textContent==='已结束'`));
+    result.readingState.appRestart=true;
     result.notesRestart=true;
     result.priorityRestart=true;result.appRestart=true;
     await app.close();app=null;
