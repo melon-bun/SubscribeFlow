@@ -1,0 +1,9 @@
+{
+  "status": "passed",
+  "version": "0.5.3.5",
+  "baseRevision": "81606678c185338a5dcc6e63173ece80d16c0cad",
+  "sourceFilesMatched": 62,
+  "originalLogoMatched": true,
+  "appIconMatched": true,
+  "packageAllowlist": true
+}

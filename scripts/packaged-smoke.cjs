@@ -32,10 +32,14 @@ async function verifyWechatUpgrade(executable,resources,folder,runtime) {
   // Only fixture generation uses source Python. Upgrade and all RPC assertions
   // below run the actual frozen binary copied out of the new package.
   const seed=spawnSync(runtime.python,['-c',`import json,pathlib,sys
+from datetime import datetime,timezone
 sys.path[:0]=[sys.argv[2],str(pathlib.Path(sys.argv[2])/'src')]
 from tests.test_wechat_identity_migration import WechatIdentityMigrationTests,FIRST,LATER,insert
 case=WechatIdentityMigrationTests();case.path=pathlib.Path(sys.argv[1]);case.db=case.legacy(15)
 case.seed('wxrank');case.seed('wechat',stamp=LATER);case.seed_subscription()
+# Status reports the current calendar month. Keep the unknown-charge fixture
+# in that month even when this acceptance runs after the original sample dates.
+case.db.execute("UPDATE paid_channel_attempts SET started_at=? WHERE id='attempt'",(datetime.now(timezone.utc).isoformat(),))
 insert(case.db,'app_settings',id=1,version=1,updated_at=FIRST,payload=json.dumps({'channels':{'wxrank':{'credentialRef':'packaged-fixture-reference','revision':11,'enabled':True}}}))
 for content_id,stamp,summary in [('wxrank:article:MzI4NTEyMzQ1Ng==_1000000001_1',FIRST,'旧列表笔记'),('wechat:article:MzI4NTEyMzQ1Ng==_1000000001_1',LATER,'人工笔记保留')]:
     insert(case.db,'content_notes',content_id=content_id,template='general',summary=summary,summary_origin='manual',takeaway='',version=stamp,created_at=stamp,updated_at=stamp)
