@@ -1,0 +1,12 @@
+test_renaming_reading_states_during_request_keeps_the_result (tests.test_m16_tagging.M16Round2RegressionTests.test_renaming_reading_states_during_request_keeps_the_result)
+Changing display names must not invalidate or restart an in-flight AI task. ... /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/tests/test_m16_tagging.py:105: DeprecationWarning: 'asyncio.get_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  asyncio.get_event_loop_policy()
+ok
+test_defaults_partial_save_restart_and_unrelated_revisions (tests.test_reading_state_settings.ReadingStateSettingsTests.test_defaults_partial_save_restart_and_unrelated_revisions) ... ok
+test_legacy_or_invalid_saved_names_fall_back_without_writing (tests.test_reading_state_settings.ReadingStateSettingsTests.test_legacy_or_invalid_saved_names_fall_back_without_writing) ... ok
+test_validation_is_atomic_and_cannot_rename_fixed_states (tests.test_reading_state_settings.ReadingStateSettingsTests.test_validation_is_atomic_and_cannot_rename_fixed_states) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.174s
+
+OK

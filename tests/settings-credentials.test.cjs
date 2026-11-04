@@ -106,6 +106,10 @@ function fakeCore(initial) {
             savedVersion: settings.version + 1,
             tagging: { ...settings.tagging, ...(params.patch || {}) },
           };
+        } else if (params.section === 'general') {
+          settings = {...settings, general: {readingStateNames: {
+            ...settings.general.readingStateNames, ...params.patch.readingStateNames,
+          }}};
         } else if (params.section === 'priority') {
           // 显示型分区：只换名称，配置版本不动（与 Core 的真实行为一致）。
           settings = {
@@ -424,4 +428,17 @@ test('M20：优先级名称原样透传给界面，改名不动配置版本', as
     () => bridge.write({section: 'priority', patch: {names: {high: '今天看'}}, credentials: {'provider-jev': 'x'}}),
     /当前分区不接受这些密钥参数/,
   );
+});
+
+test('通用设置名称经设置桥接读取和保存，不包含固定状态的可编辑项', async () => {
+  const dir = await tempDir();
+  const credentials = new CredentialService({dir, storage: fakeStorage()});
+  const initial = {...BASE_SETTINGS, general: {readingStateNames: {read: '还会再看', archived: '看完了'}}};
+  const core = fakeCore(initial);
+  const bridge = new SettingsBridge({core, credentials});
+  const saved = await bridge.write({section: 'general', patch: {readingStateNames: {read: '值得重温', archived: '已结束'}}});
+  assert.deepEqual(saved.general.readingStateNames, {read: '值得重温', archived: '已结束'});
+  assert.deepEqual((await bridge.read()).general, saved.general);
+  await assert.rejects(() => bridge.write({section: 'general', patch: {readingStateNames: {read: '新名称'}},
+    credentials: {'provider-jev': 'x'}}), /当前分区不接受这些密钥参数/);
 });

@@ -348,6 +348,14 @@ padding: 26px 26px 0; display: flex; flex-direction: column; min-height: 0;
 display: flex; align-items: flex-start; gap: 16px;
 }
 
+.view[data-view="inbox"] .view__head {
+flex-wrap: wrap;
+}
+
+.view[data-view="inbox"] .view__head-text {
+flex: 1 1 240px; min-width: min(240px, 100%);
+}
+
 .view__title h1 {
 margin: 0; font-size: 26px; font-weight: 650; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px;
 }
@@ -362,6 +370,10 @@ margin: 6px 0 0; color: var(--c-text-3); font-size: 13px;
 
 .view__actions {
 margin-left: auto; display: flex; gap: 8px; align-items: center;
+}
+
+.view[data-view="inbox"] .view__actions {
+flex-wrap: wrap; max-width: 100%;
 }
 
 /* 按钮 */
@@ -428,6 +440,14 @@ outline: none; box-shadow: 0 0 0 1px var(--c-brand), 0 0 0 4px var(--c-brand-rin
 /* 筛选条：平台用分段胶囊，下拉用无框按钮 */
 .inbox__toolbar {
 display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 20px 0 16px;
+}
+
+.view[data-view="inbox"] .inbox__toolbar > .seg {
+max-width: 100%; overflow-x: auto;
+}
+
+.view[data-view="inbox"] .inbox__toolbar > .seg button {
+flex: 0 0 auto; white-space: nowrap;
 }
 
 .seg {
@@ -744,13 +764,17 @@ border-top: 1px solid var(--c-divider); padding: 12px 16px 14px; display: grid; 
 }
 
 .state-group {
-display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
 }
 
 .state-btn {
 height: 38px; border: 0; border-radius: var(--r-md); background: var(--c-surface); box-shadow: var(--sh-card);
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 13px; font-weight: 560; color: var(--c-text-2);
+  display: inline-flex; min-width: 0; align-items: center; justify-content: center; gap: 7px; font-size: 13px; font-weight: 560; color: var(--c-text-2);
   transition: all var(--dur-1) var(--ease);
+}
+
+.state-btn > span:not(.kbd) {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .state-btn:hover {

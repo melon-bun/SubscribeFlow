@@ -67,6 +67,23 @@
   var PRIORITY_NONE_NAME = "未设置";
   var PRIORITY_NAME_MAX = 12;
 
+  var READING_STATE_DEFAULT_NAMES = {read: "还会再看", archived: "看完了"};
+  var READING_STATE_FIXED_NAMES = ["稍后阅读", "稍后处理", "稍后", "未处理", "未读", "收件箱"];
+  var readingStateNames = Object.assign({}, READING_STATE_DEFAULT_NAMES);
+
+  function setReadingStateNames(names) {
+    ["read", "archived"].forEach(function (id) {
+      var value = names && typeof names[id] === "string" ? names[id].trim() : "";
+      readingStateNames[id] = value || READING_STATE_DEFAULT_NAMES[id];
+    });
+    return Object.assign({}, readingStateNames);
+  }
+
+  function readingState(id) {
+    if (id === "deferred") return "稍后阅读";
+    return readingStateNames[id] || "未处理";
+  }
+
   /** 应用新的显示名；缺项或空值退回默认名，等级本身不受影响。 */
   function setPriorityNames(names) {
     PRIORITY_ORDER.forEach(function (id) {
@@ -117,6 +134,10 @@
     PRIORITY_NONE_NAME: PRIORITY_NONE_NAME,
     PRIORITY_NAME_MAX: PRIORITY_NAME_MAX,
     PRIORITY_ORIGIN_TEXT: PRIORITY_ORIGIN_TEXT,
+    READING_STATE_DEFAULT_NAMES: READING_STATE_DEFAULT_NAMES,
+    READING_STATE_FIXED_NAMES: READING_STATE_FIXED_NAMES,
+    readingState: readingState,
+    setReadingStateNames: setReadingStateNames,
     platform: platform,
     priority: priority,
     priorityNames: priorityNames,

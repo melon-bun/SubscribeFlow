@@ -32,14 +32,14 @@ async function verifyRendererRaces({evaluate, until, core}) {
     await evaluate(`(() => {
       window.raceRefresh = SF.app.refreshData;
       SF.app.refreshData = () => new Promise(resolve => {window.raceReleaseWrite = () => resolve(window.raceRefresh(true));});
-      Array.from(document.querySelectorAll('.detail .state-btn')).find(b => b.textContent.trim() === '已读').click();
+      Array.from(document.querySelectorAll('.detail .state-btn')).find(b => b.textContent.trim() === '还会再看').click();
     })()`);
-    await until(`!!window.raceReleaseWrite && document.querySelector('.detail .state-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
+    await until(`!!window.raceReleaseWrite && document.querySelector('.detail .state-btn[aria-pressed="true"]')?.textContent.trim() === '还会再看'`);
     assert.equal(await evaluate(`Array.from(document.querySelectorAll('.detail .state-btn')).every(b => b.disabled)`), true,
       '写入结果先显示时，尚未结束的操作必须显式锁定控件');
     await evaluate(`SF.app.refreshData = window.raceRefresh; window.raceReleaseWrite(); void 0`);
     await evaluate(`SF.app.act(${JSON.stringify('content:' + id)}, () => {}).then(() => undefined)`);
-    await until(`(() => { const b = Array.from(document.querySelectorAll('.detail .state-btn')).find(b => b.textContent.trim() === '稍后'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    await until(`(() => { const b = Array.from(document.querySelectorAll('.detail .state-btn')).find(b => b.textContent.trim() === '稍后阅读'); if (!b || b.disabled) return false; b.click(); return true; })()`);
     await evaluate(`SF.app.act(${JSON.stringify('content:' + id)}, () => {}).then(() => undefined)`);
     assert.equal((await core.call('content.get', {item_id: id})).state.deferred, true,
       '解除锁定后的下一次整理操作必须真正写入');

@@ -431,7 +431,7 @@ class Repository:
             raise ChannelError("INVALID_INPUT", "content.update", "处理状态必须为布尔值")
         chosen = [field for field, value in states.items() if value]
         if len(chosen) > 1:
-            raise ChannelError("INVALID_INPUT", "content.update", "已读、稍后处理和归档只能选择一项")
+            raise ChannelError("INVALID_INPUT", "content.update", "阅读状态只能选择一项")
         if chosen:
             states = {field: field == chosen[0] for field in ("read", "archived", "deferred")}
         values = {key: int(value) for key, value in states.items()}

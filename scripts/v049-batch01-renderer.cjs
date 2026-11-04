@@ -264,10 +264,10 @@ async function verify({window, core, root}) {
   const viewChip = await evaluate(`(async () => {
     SF.app.openReminderView(SF.app.state, 'high_unarchived');
     await new Promise(r => setTimeout(r, 400));
-    const chip = Array.from(document.querySelectorAll('.chips--views button')).find(b => b.textContent.includes('未归档'));
+    const chip = Array.from(document.querySelectorAll('.chips--views button')).find(b => b.textContent.includes('不在「看完了」中'));
     return chip ? chip.textContent.trim() : '';
   })()`);
-  assert.equal(viewChip, '今天看未归档', '提醒口径视图要用新名字，实际：' + viewChip);
+  assert.equal(viewChip, '不在「看完了」中的今天看', '提醒口径视图要用新名字，实际：' + viewChip);
 
   // 重启核心服务后名称仍在：重启持久。
   await evaluate(`(async () => { await SF.app.state.client.restartCore(); })()`);

@@ -658,7 +658,7 @@
       var lines = [];
       if (draft.template === "none") {
         lines.push("这条内容可以不写笔记。");
-        lines.push("照常阅读、稍后处理或归档。想记点什么时，再选择笔记类型。");
+        lines.push("照常阅读和整理内容。想记点什么时，再选择笔记类型。");
         if (String(item.platform || "").toLowerCase() === "github") {
           // 只给建议，不替用户选，也不预选「观望」。
           lines.push("这条内容来自 GitHub，通常是工具或项目，可以考虑记一条项目笔记。");

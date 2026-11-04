@@ -1,0 +1,3 @@
+npm notice run subscribe-flow@0.5.3.4 smoke:settings
+npm notice run node scripts/settings-renderer.cjs
+{"settingsSmoke":"passed","sections":["通用","AI API 配置","提醒设置","优先级设置","AI 总结","外观"],"reminder":{"enabled":true,"intervalMinutes":90,"preset":"custom"},"credentialEncrypted":true,"keyHiddenInUi":true,"survivesRestart":true,"connectionTestNotInvoked":true}

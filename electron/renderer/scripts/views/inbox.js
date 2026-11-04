@@ -218,16 +218,21 @@
        那会让进行中的点击落空，也让读屏焦点丢失。 */
     if (!tagCache.loaded || tagCache.stale) ensureTags(app);
     var isInbox = app.filters.quick === 'unread';
-    var titles = {unread:'收件箱',all:'全部更新',read:'已读',deferred:'稍后处理',archived:'已归档'};
-    var descriptions = {unread:'待处理的创作者更新；标记已读、稍后处理或归档后会移出收件箱。',
-      all:'查看所有已保存的内容，包括已读、稍后处理和已归档。',read:'已标记为已读的内容。',deferred:'已留待稍后处理的内容。',archived:'已归档的内容。'};
+    var readName = SF.catalog.readingState('read'), deferredName = SF.catalog.readingState('deferred');
+    var archivedName = SF.catalog.readingState('archived');
+    var titles = {unread:'收件箱',all:'全部更新',read:readName,deferred:deferredName,archived:archivedName};
+    var descriptions = {unread:'选择「' + readName + '」「' + deferredName + '」或「' + archivedName + '」后，会移出收件箱。',
+      all:'查看所有已保存的内容。',read:'已经看过，之后还准备再次查看的内容。',deferred:'留待之后阅读的内容。',archived:'阅读已结束，暂时收起的内容。'};
     /* 提醒口径切换：两个集合与通知里的数字同源，可以直接对照。 */
     var view = reminderView(app);
     /* M20：提醒口径里点名的「高」按当前显示名走，改名后口径名称跟着变。 */
     var highName = SF.catalog.priority('high').name;
+    var highViewName = '不在「' + archivedName + '」中的' + highName;
+    var pendingHint = '收件箱与「' + deferredName + '」的并集，不包含「' + readName + '」和「' + archivedName + '」。';
+    var highHint = '最终优先级为「' + highName + '」且不在「' + archivedName + '」中，包含「' + readName + '」内容。';
     var viewToggle = h('div.chips.chips--views', {role:'group', 'aria-label':'提醒口径'}, [
-      {id:'pending', label:'未处理', hint:'收件箱与稍后处理的并集，不含已读与已归档'},
-      {id:'high_unarchived', label:highName + '未归档', hint:'最终优先级为「' + highName + '」且未归档，包含已读内容'},
+      {id:'pending', label:'未处理', hint:pendingHint},
+      {id:'high_unarchived', label:highViewName, hint:highHint},
     ].map(function (item) {
       var active = view === item.id;
       return ui.btn(item.label, {
@@ -243,11 +248,11 @@
     var head = h('div.view__head', {'data-refresh-key':'inbox-head'},
       h('div.view__head-text', null,
         h('div.view__title', null,
-          h('h1.t-h1', {text: view ? (view === 'pending' ? '未处理' : highName + '未归档') : (titles[app.filters.quick] || '内容')}),
+          h('h1.t-h1', {text: view ? (view === 'pending' ? '未处理' : highViewName) : (titles[app.filters.quick] || '内容')}),
           ui.countPill(cache.total == null ? '—' : cache.total, 'brand')),
         h('p.view__desc', {text: view
-          ? (view === 'pending' ? '收件箱与稍后处理的并集；已读与已归档不计入。与提醒里的「未处理」数字同源。'
-                                : '最终优先级为「' + highName + '」且尚未归档的内容，包含已读内容。与提醒里的「' + highName + '未归档」数字同源。')
+          ? (view === 'pending' ? pendingHint + '与提醒里的「未处理」数字同源。'
+                                : highHint + '与提醒里的「' + highViewName + '」数字同源。')
           : (descriptions[app.filters.quick] || '按日期查看收录的内容。')}),
         viewToggle),
       /* 「静流」§主界面：动作按「信息 → 次级操作 → 主操作」排，
@@ -322,13 +327,13 @@
         withTags(ui.contentCard(item, {selected:isCurrent, now:app.now,
           onSelect:function () { app.selectedId = item.id; SF.app.renderContent(); },
           onMenu:function (e) { e.stopPropagation(); ui.menu([
-            {label:item.state.read ? '标记为未读' : '标记为已读', onClick:function () { update(app, item.id, {read:!item.state.read}); }},
+            {label:item.state.read ? '移回收件箱' : '移至「' + readName + '」', onClick:function () { update(app, item.id, {read:!item.state.read}); }},
             {label:'打开原文', onClick:function () { SF.app.act('open:' + item.id, function () { return app.client.openContent(item.id); }); }}
           ], e.currentTarget); }}), item));
     }));
     var bulk = selected.size ? h('div.inbox__toolbar', {'data-refresh-key':'inbox-bulk'}, h('span', {text:'已选 ' + selected.size + ' 条'}),
-      ['已读', '稍后处理', '归档'].map(function (label, i) { return ui.btn(label, {onClick:function () {
-        var ids = Array.from(selected), state = {}; state[['read','deferred','archived'][i]] = true;
+      ['read', 'deferred', 'archived'].map(function (id) { return ui.btn(SF.catalog.readingState(id), {onClick:function () {
+        var ids = Array.from(selected), state = {}; state[id] = true;
         SF.app.act('bulk', async function () { await app.client.bulkUpdate(ids, {state:state}); selected.clear(); await SF.app.refreshData(true, ['content']); });
       }}); }), ui.select([{value:'',label:'批量设置优先级'},{value:'inherit',label:'恢复自动判断'}].concat(SF.catalog.PRIORITY_ORDER.map(function(id) { return {value:id,label:SF.catalog.priority(id).name}; })), '', function(value) { if (!value) return; var ids=Array.from(selected); SF.app.act('bulk',async function() { await app.client.bulkUpdate(ids,{priority:value==='inherit' ? null : value}); selected.clear(); await SF.app.refreshData(true, ['content']); }); },{ariaLabel:'批量设置优先级'}), bulkTagControl(app), ui.btn('取消选择', {onClick:function () { selected.clear(); SF.app.renderContent(); }})) : null;
     var pager = cache.loaded && !cache.error ? h('div.pager', {'data-refresh-key':'inbox-pager'},
@@ -857,7 +862,7 @@
       h('div.detail__byline', null, ui.avatar(item.channelName, null, 'md'), h('div.detail__byline-text', null,
         h('b.detail__byline-name', null, h('span', {text:item.channelName}), ui.platformTag(item.platform)),
         h('small.detail__byline-time.num', {text:publicationLine(item)+' · '+(item.intakeMethod==='manual'?'手动收录':'自动采集')}),
-        item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间归档）'}) : null)),
+        item.intakeMethod==='manual' ? h('div.detail__byline-time',{text:fmt.intakeTime(item)+'（本地时间，日历按此时间展示）'}) : null)),
       readoutBar(item),
       bodySection(item, whole),
       priorityControls(app,item,repaint),
@@ -883,7 +888,7 @@
    */
   function detailFoot(app, item, repaint) {
     var canDetail = item.canFetchDetail === true && !!item.channelId;
-    var states = [['read','已读','check'],['deferred','稍后','clock'],['archived','归档','archive']];
+    var states = [['read',SF.catalog.readingState('read'),'check'],['deferred',SF.catalog.readingState('deferred'),'clock'],['archived',SF.catalog.readingState('archived'),'archive']];
     var shownState = previewState(item);
     return h('div.action-bar', {role:'group','aria-label':'内容操作'},
       h('div.state-group', {'data-content-actions':item.id}, states.map(function (entry) {
@@ -891,6 +896,8 @@
           type:'button',
           disabled: contentPending(item.id),
           'aria-pressed': String(!!shownState[entry[0]]), 'data-state-field':entry[0],
+          'aria-label': shownState[entry[0]] ? '「' + entry[1] + '」，移回收件箱' : '移至「' + entry[1] + '」',
+          title: shownState[entry[0]] ? '「' + entry[1] + '」，移回收件箱' : '移至「' + entry[1] + '」',
           onclick: function () {
             var state = {}; state[entry[0]] = !item.state[entry[0]];
             saveContent(app, item, {state:state}, repaint);

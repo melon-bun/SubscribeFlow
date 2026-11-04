@@ -15,6 +15,7 @@
  */
 const DEFAULT_SETTLE_MS = 5000;
 const {DEFAULT_PRIORITY_NAMES} = require('./priority-labels.cjs');
+const {DEFAULT_READING_STATE_NAMES} = require('./reading-state-labels.cjs');
 
 class ReminderNotification {
   /**
@@ -23,7 +24,7 @@ class ReminderNotification {
    * @param {number} [deps.settleMs]
    * @param {Function} [deps.priorityLabel] 返回高优先级显示名（用户改名后文案跟着改）
    */
-  constructor({NotificationCtor, ctorProvider, settleMs = DEFAULT_SETTLE_MS, setTimer, clearTimer, now, priorityLabel}) {
+  constructor({NotificationCtor, ctorProvider, settleMs = DEFAULT_SETTLE_MS, setTimer, clearTimer, now, priorityLabel, archivedLabel}) {
     this.Notification = NotificationCtor;
     // ctorProvider 让构造器延迟解析：隔离测试可在应用启动之后再替换 OS 边界，
     // 在启动时捕获的话，后注入的替身根本不会被用到。
@@ -34,6 +35,7 @@ class ReminderNotification {
     this.now = now || (() => Date.now());
     // 显示名可注入；统计口径不变，改名只影响文案。
     this.priorityLabel = typeof priorityLabel === 'function' ? priorityLabel : () => DEFAULT_PRIORITY_NAMES.high;
+    this.archivedLabel = typeof archivedLabel === 'function' ? archivedLabel : () => DEFAULT_READING_STATE_NAMES.archived;
     /** 当前汇总通知与其目标（点击要用当前值，不是创建时的快照）。 */
     this.current = null;
     this.lastResult = {status: 'idle'};
@@ -153,7 +155,7 @@ class ReminderNotification {
   format({pendingCount, highUnarchivedCount}) {
     const parts = [];
     if (pendingCount) parts.push(`${pendingCount} 条内容未处理`);
-    if (highUnarchivedCount) parts.push(`${highUnarchivedCount} 条${this.priorityLabel()}内容尚未归档`);
+    if (highUnarchivedCount) parts.push(`${highUnarchivedCount} 条「${this.priorityLabel()}」内容不在「${this.archivedLabel()}」中`);
     if (!parts.length) return '';
     return `你有 ${parts.join('；')}。`;
   }

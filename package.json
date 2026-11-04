@@ -39,6 +39,7 @@
     "verify:real-llm": "cd python && .venv/bin/python ../docs/verification/priority-minimax/batch-04/real-llm-check.py",
     "smoke:uishot": "node scripts/ui-shot-renderer.cjs",
     "smoke:settings": "node scripts/settings-renderer.cjs",
+    "smoke:reading-state": "node scripts/reading-state-renderer.cjs",
     "smoke:reminder": "node scripts/reminder-persistence-renderer.cjs",
     "smoke:rejudge": "node scripts/priority-rejudge-probe.cjs",
     "smoke:spacing": "node scripts/ui-followup-spacing.cjs"

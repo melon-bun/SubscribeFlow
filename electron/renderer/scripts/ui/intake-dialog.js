@@ -439,7 +439,7 @@
               "span.intake-preview__calendar",
               null,
               icon("calendar-sm", 13),
-              h("span", { text: "日历将按保存成功的时间归档" })
+              h("span", { text: "日历将按保存成功的时间展示" })
             )
           )
         )

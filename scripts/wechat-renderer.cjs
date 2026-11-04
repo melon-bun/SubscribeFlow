@@ -54,7 +54,7 @@ async function verify({window,core,root,fixture}) {
   const text=await evaluate(`document.querySelector('.intake-preview').textContent`);
   assert.ok(text.includes('M14 隔离公众号')&&text.includes('M14 隔离验收文章')&&text.includes('第二段完整正文'));
   assert.ok(text.includes('2026-06-05'),'展示原始发布时间');
-  assert.ok(text.includes('日历将按保存成功的时间归档'));
+  assert.ok(text.includes('日历将按保存成功的时间展示'));
   assert.equal(await evaluate(`!!document.querySelector('.intake-preview__cover img')`),true,'封面可用');
   assert.equal(await evaluate(`!!document.querySelector('.intake-preview__unsubscribed')`),false,'不可订阅的渠道不显示未订阅');
   await evaluate(`document.querySelector('[data-intake-priority="high"]').click()`);

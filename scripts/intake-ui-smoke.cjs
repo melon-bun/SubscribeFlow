@@ -129,7 +129,7 @@ async function run() {
     '预览必须显示平台原始发布时间');
   assert.equal(await evaluate(`document.querySelector('.intake-preview__published').textContent.includes('仅日期')`), true,
     '日期精度必须如实标注，不能补出精确时刻');
-  assert.equal(await evaluate(`document.querySelector('.intake-preview__calendar').textContent.includes('按保存成功的时间归档')`), true,
+  assert.equal(await evaluate(`document.querySelector('.intake-preview__calendar').textContent.includes('按保存成功的时间展示')`), true,
     '手动收录按添加时间进日历，必须在保存前说明');
   assert.equal(await evaluate(`!!document.querySelector('.intake__url.is-locked')`), true, '识别后链接应只读');
   assert.equal(await evaluate(`!!Array.from(document.querySelectorAll('.dialog button')).find(b => b.textContent.trim() === '更换链接')`), true);

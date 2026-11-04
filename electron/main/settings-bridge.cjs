@@ -80,6 +80,7 @@ class SettingsBridge {
       version: settings.version,
       savedVersion: settings.savedVersion,
       updatedAt: settings.updatedAt,
+      general: settings.general,
       ai,
       tagging: {
         enabled: settings.tagging.enabled,

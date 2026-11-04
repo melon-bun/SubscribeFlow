@@ -1,8 +1,7 @@
 /* ==========================================================================
-   视图：设置（M15）
+   视图：设置
    --------------------------------------------------------------------------
    布局沿用参考图：大面板 + 左侧导航 + 右侧分区表单 + 底部操作区。
-   本期左栏只有「AI 模型配置」「提醒设置」两项，图片里的其他导航不进入本期。
 
    交互按开发方案 §2：
    - 编辑只改草稿，保存成功才生效；失败保留输入并把原因落到对应输入框下面；
@@ -10,7 +9,6 @@
    - 离开有未保存修改的页面时先问保存还是放弃；
    - 密钥明文只在输入框和提交那一刻存在，保存后草稿里立刻清掉，界面永不回显。
 
-   连接测试在 M15 不可用：真实识别调用属于 M16，这里如实说明，不用模拟结果充数。
    ========================================================================== */
 (function (global) {
   "use strict";
@@ -32,6 +30,13 @@
   ];
 
   var SECTIONS = [
+    {
+      id: "general",
+      label: "通用",
+      icon: "sliders",
+      title: "通用",
+      desc: "只修改显示名称，不改变内容的阅读状态。",
+    },
     {
       id: "ai",
       label: "AI API 配置",
@@ -118,7 +123,7 @@
     errors: {}, // 字段路径 -> 原因，例如 jev.endpoint
     notice: null,
     saving: null,
-    section: "ai",
+    section: "general",
     editing: { jev: false, llm: false }, // 是否正在替换密钥
     cleared: { jev: false, llm: false }, // 是否已勾选清除
     notification: null,
@@ -173,6 +178,7 @@
 
   function emptyDraft() {
     return {
+      general: { readingStateNames: Object.assign({}, SF.catalog.READING_STATE_DEFAULT_NAMES) },
       // M25：连接按稳定 ID 组织，页面按 ID 遍历。识别策略在标签管理页，不在这里。
       ai: { providers: {}, removed: [] },
       reminder: { enabled: false, preset: "60", interval: 60 },
@@ -191,6 +197,11 @@
   /** 草稿必须与保存基线一致；官方默认值由 Core 的初始设置提供。 */
   function draftFrom(settings) {
     var draft = emptyDraft();
+    var readingNames = (settings.general && settings.general.readingStateNames) || {};
+    ["read", "archived"].forEach(function (id) {
+      draft.general.readingStateNames[id] = typeof readingNames[id] === "string"
+        ? readingNames[id] : SF.catalog.READING_STATE_DEFAULT_NAMES[id];
+    });
     var providers = (settings.ai && settings.ai.providers) || {};
     Object.keys(providers).forEach(function (providerId) {
       var saved = providers[providerId] || {};
@@ -290,6 +301,7 @@
   /* ---------------- 草稿与脏检查 ---------------- */
 
   function currentSection() {
+    if (cache.section === "general") return "general";
     if (cache.section === "reminder") return "reminder";
     if (cache.section === "priority") return "priority";
     if (cache.section === "summarization") return "summarization";
@@ -309,6 +321,12 @@
     /* M32：外观分区是纯前端设置，没有草稿，永远不是「已修改」。
        不显式排除的话会掉到下面的 AI 分支去比较连接，得出错误的脏标记。 */
     if (target === "appearance") return false;
+    if (target === "general") {
+      var readingSaved = (cache.saved.general && cache.saved.general.readingStateNames) || SF.catalog.READING_STATE_DEFAULT_NAMES;
+      return ["read", "archived"].some(function (id) {
+        return cache.draft.general.readingStateNames[id].trim() !== readingSaved[id];
+      });
+    }
     if (target === "priority") {
       var names = cache.draft.priority.names;
       var savedNames = (cache.saved.priority && cache.saved.priority.names) || {};
@@ -370,6 +388,9 @@
   /* ---------------- 保存 ---------------- */
 
   function buildSaveParams(section) {
+    if (section === "general") {
+      return { section: "general", patch: { readingStateNames: Object.assign({}, cache.draft.general.readingStateNames) } };
+    }
     if (section === "reminder") {
       var r = cache.draft.reminder;
       var minutes = r.preset === "custom" ? Number(r.interval) : Number(r.preset);
@@ -447,9 +468,37 @@
     return errors;
   }
 
+  function validateReadingStateNames(names) {
+    var errors = {}, seen = {};
+    ["read", "archived"].forEach(function (id) {
+      var value = names[id];
+      var name = typeof value === "string" ? value.trim() : "";
+      var message = null;
+      if (typeof value !== "string") message = "阅读状态名称必须是文本";
+      else if (/[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(value)) message = "阅读状态名称不能包含换行或控制字符";
+      else if (!name) message = "阅读状态名称不能为空";
+      else if (Array.from(name).length > 12) message = "阅读状态名称不能超过 12 个字符";
+      else if (SF.catalog.READING_STATE_FIXED_NAMES.indexOf(name) !== -1) message = "「" + name + "」是固定状态名称，不能使用";
+      var key = name.replace(/[A-Z]/g, function (letter) { return letter.toLowerCase(); });
+      if (!message && seen[key]) message = "两个阅读状态名称不能相同";
+      if (message) errors["readingStateNames." + id] = message;
+      else seen[key] = id;
+    });
+    return errors;
+  }
+
   function saveSection(app, section) {
     if (savePromise) return savePromise;
     var epoch = generation;
+    if (section === "general") {
+      var readingErrors = validateReadingStateNames(cache.draft.general.readingStateNames);
+      if (Object.keys(readingErrors).length) {
+        cache.errors = readingErrors;
+        cache.notice = { tone: "danger", text: "请按提示修改阅读状态名称。" };
+        paint(app);
+        return Promise.resolve(false);
+      }
+    }
     if (section === "priority") {
       var errors = validatePriorityNames(cache.draft.priority.names);
       var smart = cache.draft.priority.smart;
@@ -476,10 +525,21 @@
         if (epoch !== generation) return false;
         cache.saved = settings;
         cache.loaded = true;
+        var warnings = (settings.warnings || []).slice();
         // 来源默认值在草稿之外：先记下刚写进去的值，丢弃草稿时才有基线可铺。
         var savedSources = section === "priority" ? copySources(cache.draft.priority.sources) : null;
         // 只重建刚提交的分区，清除其中的密钥明文，并使用服务端规范化后的值。
         discardSection(section);
+        if (section === "general") {
+          try {
+            SF.app.applyReadingStateNames(settings.general && settings.general.readingStateNames, settings.version);
+          } catch (_) {
+            // The Core commit already succeeded. Keep that baseline and retry the display sync.
+            warnings.push("设置已保存，显示名称暂未同步，请重新打开设置或重启应用。");
+            app.priorityNamesLoaded = false;
+            Promise.resolve().then(function () { return SF.app.refreshData(true); }).catch(function () {});
+          }
+        }
         if (section === "priority") {
           // 立即生效：公共目录换名后，看板／卡片／筛选／提醒文案一起变。
           SF.app.applyPriorityNames(settings.priority && settings.priority.names);
@@ -493,8 +553,8 @@
           // 总结策略变了：编辑区下次打开时重新读，不再拿旧的判断来决定要不要显示入口。
           SF.noteUi.invalidateConfig();
         }
-        cache.notice = settings.warnings && settings.warnings.length
-          ? { tone: "warn", text: settings.warnings.join(" ") }
+        cache.notice = warnings.length
+          ? { tone: "warn", text: warnings.join(" ") }
           : { tone: "success", text: "设置已保存。" };
         return true;
       })
@@ -656,6 +716,8 @@
       placeholder: opts.placeholder || null,
       autocomplete: "off",
       spellcheck: "false",
+      "aria-label": opts.ariaLabel || null,
+      "data-reading-state-name": opts.readingState || null,
       oninput: function (e) {
         onInput(e.target.value);
       },
@@ -1061,6 +1123,8 @@
     var r = cache.draft.reminder;
     var saved = cache.saved.reminder;
     var notice = cache.notification;
+    var readName = SF.catalog.readingState("read"), archivedName = SF.catalog.readingState("archived");
+    var highName = SF.catalog.priority("high").name;
     var children = [
       h(
         "section.setting-block",
@@ -1124,13 +1188,13 @@
           null,
           h("li.settings-list__item", null,
             h("span.settings-list__name", { text: "未处理" }),
-            h("span.settings-list__desc", { text: "收件箱与稍后处理的并集，排除已读和已归档。" })),
+            h("span.settings-list__desc", { text: "收件箱与「稍后阅读」的并集，不包含「" + readName + "」和「" + archivedName + "」。" })),
           h("li.settings-list__item", null,
-            h("span.settings-list__name", { text: SF.catalog.priority("high").name + "未归档" }),
-            h("span.settings-list__desc", { text: "最终优先级为「" + SF.catalog.priority("high").name + "」且尚未归档的内容，包含已读内容。" })),
+            h("span.settings-list__name", { text: "不在「" + archivedName + "」中的" + highName }),
+            h("span.settings-list__desc", { text: "最终优先级为「" + highName + "」且不在「" + archivedName + "」中，包含「" + readName + "」内容。" })),
           h("li.settings-list__item", null,
             h("span.settings-list__name", { text: "提醒措辞" }),
-            h("span.settings-list__desc", { text: "「你有 23 条内容未处理；5 条" + SF.catalog.priority("high").name + "内容尚未归档。」两个数字不会相加。" }))
+            h("span.settings-list__desc", { text: "你有 23 条内容未处理；5 条「" + highName + "」内容不在「" + archivedName + "」中。两个数字可能重叠。" }))
         )
       ),
       buildNotificationBlock(app, notice),
@@ -1323,6 +1387,32 @@
       title: cache.notice.tone === "danger" ? "没有保存" : cache.notice.tone === "warn" ? "已保存，仍需处理" : "已保存",
       text: cache.notice.text,
     });
+  }
+
+  function buildGeneral(app) {
+    var names = cache.draft.general.readingStateNames;
+    var rows = ["read", "archived"].map(function (id) {
+      var label = SF.catalog.READING_STATE_DEFAULT_NAMES[id];
+      var key = "readingStateNames." + id;
+      return field(label, textInput(names[id], function (value) {
+        names[id] = value;
+        ["read", "archived"].forEach(function (other) { clearFieldError("readingStateNames." + other); });
+        refreshFoot(app);
+      }, {placeholder: label, ariaLabel: label, readingState: id}), {error: cache.errors[key], errorKey: key});
+    });
+    return h("div.setting-group", null,
+      h("section.setting-block", null,
+        h("div.setting-block__head", null, h("h3.setting-block__title", {text: "阅读状态名称"})),
+        h("div.setting-fields", null, rows,
+          h("div.field", null, h("span.field__label", {text: "稍后阅读"}),
+            h("span", {text: "稍后阅读（固定名称）"}))),
+        h("div.setting-block__foot", null, ui.btn("恢复默认名称", {size: "sm", onClick: function () {
+          ["read", "archived"].forEach(function (id) {
+            names[id] = SF.catalog.READING_STATE_DEFAULT_NAMES[id];
+            clearFieldError("readingStateNames." + id);
+          });
+          paint(app);
+        }}))));
   }
 
   /* ---------------- 优先级名称 ---------------- */
@@ -1713,7 +1803,9 @@
         desc: "正在从本地核心服务读取当前设置。",
       });
     }
-    var content = currentSection() === "reminder"
+    var content = currentSection() === "general"
+      ? buildGeneral(app)
+      : currentSection() === "reminder"
       ? buildReminder(app)
       : currentSection() === "priority"
       ? buildPriority(app)
@@ -1744,8 +1836,8 @@
 
   /** 路由带 ?section= 时同步左栏选中项：直接改哈希进来也要落到对应分区。 */
   function setSection(section) {
-    cache.section = section === "reminder" ? "reminder" : section === "priority" ? "priority"
-      : section === "summarization" ? "summarization" : section === "appearance" ? "appearance" : "ai";
+    cache.section = section === "ai" ? "ai" : section === "reminder" ? "reminder" : section === "priority" ? "priority"
+      : section === "summarization" ? "summarization" : section === "appearance" ? "appearance" : "general";
   }
 
   SF.views = SF.views || {};

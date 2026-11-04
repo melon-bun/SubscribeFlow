@@ -59,7 +59,7 @@ F1 的收件箱与“未处理”使用 `listContents({state:"unread"})`，映�
 这是界面的待处理范围，Core 单独传 `read:false` 仍只代表未读。
 三项状态互斥，最多一项为真。content.update / content.bulk_update 传入一个 true 时，原子清除另外两项；
 一次传入多个 true 返回 INVALID_INPUT。仅传 false 时取消指定状态；全部为 false 即回到未处理。
-“全部更新”不限制处理状态，已读、稍后处理、已归档三个筛选不再重叠。
+“全部更新”不限制处理状态，「还会再看」「稍后阅读」「看完了」三个筛选互不重叠；前后两项为可自定义的显示名称。
 此规则按 2026-10-05 用户确认调整，见 [BUG-005](BUG_FIXES.md#bug-005整理内容状态未互斥)。
 
 `content.stats({})` 返回 `{counts, platforms}`：一次分组读取返回全库九项侧栏计数及按平台计数，
@@ -106,7 +106,7 @@ M11 已统一为收录方式决定日期依据，按展示时区归类并按实�
 - `tag.list({query?, enabled?, sort?})` → `{items: Tag[], total}`；`query` 同时匹配名称与别名。
   - `sort` 是可选的显示层参数（M23），取值只有三个：`name`（默认，按名称）、`usage_desc`（使用次数从多到少）、`usage_asc`（从少到多）。不传就是按名称排，旧调用不受影响；传其它值报 `INVALID_INPUT`。
   - 排序是白名单映射，存储层不接受任意 `ORDER BY`；同次数按名称再按稳定 ID 打破平局，零次标签照常参与排序。
-  - 使用次数沿用 `contentCount`：当前挂载该标签的内容条数。人工打标与自动打标都写进 `content_tags`，同一内容同一标签只有一条关联（主键约束），因此一条内容只计一次；已读、已归档、稍后处理都不影响这个数。
+  - 使用次数沿用 `contentCount`：当前挂载该标签的内容条数。人工打标与自动打标都写进 `content_tags`，同一内容同一标签只有一条关联（主键约束），因此一条内容只计一次；阅读状态不影响这个数。
 - `tag.get({tag_id})` → `Tag`。
 - `tag.create({name, description?, color?, enabled?, synonyms?})` → `Tag`。颜色限 11 档枚举，未提供时取 slate。名称大小写不敏感唯一，重名抛 `CONFLICT`。
 - `tag.update({tag_id, name?, description?, color?, synonyms?})` → `Tag`。改名只改显示名，稳定 ID 与内容关联不变。
@@ -247,6 +247,7 @@ content DTO 新增 kind（平台内容类型），供详情将想法显示为正
 
 ```
 {version, updatedAt, savedVersion,
+ general: {readingStateNames: {read, archived}},
  ai: {providers: {jev|llm: {endpoint, model, credentialRef, configured, missing[], officialDefaults}}},
  tagging: {enabled, mode, enabledSince},
  reminder: {enabled, intervalMinutes, preset},
@@ -257,7 +258,9 @@ content DTO 新增 kind（平台内容类型），供详情将想法显示为正
 
 ### settings.update
 
-按分区提交：`{section, patch, credential_refs?}`。`section` 取 `ai`／`tagging`／`reminder`／`priority`。
+按分区提交：`{section, patch, credential_refs?}`。`section` 取 `general`／`ai`／`tagging`／`reminder`／`priority`／`summarization`／`channels`。
+
+- `general` 的 patch 为 `{readingStateNames: {read?, archived?}}`；默认分别为「还会再看」和「看完了」，支持只提交一项并与已保存的另一项合并校验。名称去首尾空白后为 1–12 个 Unicode 码点，不能含控制字符或换行、不能同名或与固定状态名冲突。`deferred` 固定显示「稍后阅读」，不能提交或重命名。该分区不接受凭据引用；字段错误使用 `readingStateNames.read`／`readingStateNames.archived`。旧配置缺项时读取默认值；显示名只改变展示，不改变 `content_states`、筛选键、提醒统计或 AI 任务版本。
 
 - `ai` 的 patch 为 `{providers: {jev|llm: {endpoint?, model?}}}`；密钥只能经 `credential_refs` 提交（值为引用或 null 表示清除），不接受明文。
 - `tagging` 的 patch 为 `{enabled?, mode?}`，不接受凭据引用。启用或切换方式时，目标方式的 API 必须完整（接口地址、模型标识、凭据引用齐备），否则拒绝并说清缺哪几项。

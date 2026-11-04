@@ -85,7 +85,7 @@ async function verify({window, core, root}) {
   // M29 增加了独立的「AI 总结」分区：总结策略不与 AI API 配置混在一起。
   // M32 增加了「外观」分区：轻科幻层开关，是纯前端设置。
   // M42：来源默认优先级并进设置页后，这一分区改名「优先级设置」。
-  assert.deepEqual(navLabels, ['AI API 配置', '提醒设置', '优先级设置', 'AI 总结', '外观']);
+  assert.deepEqual(navLabels, ['通用', 'AI API 配置', '提醒设置', '优先级设置', 'AI 总结', '外观']);
   assert.equal(await evaluate(`!!document.querySelector('.settings__foot')`), true, '底部操作区必须存在');
   assert.ok(await evaluate(`document.querySelector('[aria-label="关闭设置"]')`), '必须有可聚焦的关闭入口');
   await screenshot('m15-settings-tagging.png');
@@ -317,7 +317,7 @@ async function verify({window, core, root}) {
   await until(`!!document.querySelector('.dialog')`);
   await click('放弃修改');
   await until(`!!document.querySelector('.sidebar')`);
-  await evaluate(`location.hash = '#/settings'`);
+  await evaluate(`location.hash = '#/settings?section=ai'`);
   await until(`document.body.innerText.includes('已保存（不回显）')`);
   assert.deepEqual(await evaluate(`SF.views.settings.dirtySections()`), [], '放弃密钥清除后应没有残留修改');
   assert.equal(await setField('接口地址', '  https://api.typesafe.ai/v1/systemone  ', 'Jev'), true);
@@ -336,7 +336,7 @@ async function verify({window, core, root}) {
       settings.credentials.providers['provider-jev'].usable = false;
       return settings;
     };
-    location.hash = '#/settings';
+    location.hash = '#/settings?section=ai';
   })()`);
   await until(`document.body.innerText.includes('已保存的密钥无法解密')`);
   await click('重新输入');
@@ -352,7 +352,7 @@ async function verify({window, core, root}) {
   await evaluate(`(() => {
     window.__getCalls = 0;
     SF.app.state.client.getSettings = async () => {window.__getCalls++; throw new Error('模拟暂时离线');};
-    location.hash = '#/settings';
+    location.hash = '#/settings?section=ai';
   })()`);
   await until(`document.body.innerText.includes('无法读取设置')`);
   await evaluate(`SF.app.refreshData(true); SF.app.renderContent(); SF.app.renderContent()`);

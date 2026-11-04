@@ -623,9 +623,9 @@
     }
     if (content.state && (content.state.read || content.state.deferred || content.state.archived)) {
       var marks = [];
-      if (content.state.read) marks.push('已读');
-      if (content.state.deferred) marks.push('稍后处理');
-      if (content.state.archived) marks.push('归档');
+      if (content.state.read) marks.push(SF.catalog.readingState('read'));
+      if (content.state.deferred) marks.push(SF.catalog.readingState('deferred'));
+      if (content.state.archived) marks.push(SF.catalog.readingState('archived'));
       children.push(h('p.notes-modal__state', {text:'处理状态：' + marks.join('、')}));
     }
     if (content.url) {

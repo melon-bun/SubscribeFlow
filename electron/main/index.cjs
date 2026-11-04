@@ -17,6 +17,7 @@ const {SettingsBridge} = require('./settings-bridge.cjs');
 const {ReminderScheduler} = require('./reminders.cjs');
 const {ReminderNotification} = require('./reminder-notification.cjs');
 const {PriorityLabels} = require('./priority-labels.cjs');
+const {ReadingStateLabels} = require('./reading-state-labels.cjs');
 const {TrayController} = require('./tray.cjs');
 const {WindowLifecycle} = require('./lifecycle.cjs');
 const {classifyStartupFailure, startupFailureRecord} = require('./startup-errors.cjs');
@@ -67,11 +68,18 @@ const resources = {core: null, channels: null, scheduler: null, tray: null, life
  * 否则用户改完名字看到的仍是旧名称。只影响文案，不影响统计口径与提醒周期。
  */
 const priorityLabels = new PriorityLabels();
+const readingStateLabels = new ReadingStateLabels();
+let labelsVersion = -1;
 
-/** 把设置里的优先级名称应用到主进程；拿不到就用默认名，不阻断提醒。 */
+/** 应用设置中的显示名称；拿不到就用默认名，不阻断提醒。 */
 function applyPriorityNames(settings) {
-  if (!settings || !settings.priority) return false;
-  priorityLabels.apply(settings.priority.names);
+  if (!settings) return false;
+  // A delayed startup/recovery read must not overwrite a newer saved name.
+  if (Number.isInteger(settings.version) && settings.version < labelsVersion) return false;
+  if (Number.isInteger(settings.version)) labelsVersion = settings.version;
+  if (settings.priority) priorityLabels.apply(settings.priority.names);
+  if (settings.general) readingStateLabels.apply(settings.general.readingStateNames);
+  if (resources.tray) resources.tray.safeRefreshMenu();
   return true;
 }
 let suspended = false, powerUpdate = Promise.resolve();
@@ -279,6 +287,7 @@ async function start() {
     // 延迟解析：隔离测试可在应用启动之后再替换 OS 通知边界。
     ctorProvider: () => (typeof resources.testNotificationCtor === 'function' ? resources.testNotificationCtor : Notification),
     priorityLabel: () => priorityLabels.high,
+    archivedLabel: () => readingStateLabels.label('archived'),
   });
   notifier.onClick = (view) => { void lifecycleRef.navigate({view}); };
   resources.notifier = notifier;
@@ -318,6 +327,7 @@ async function start() {
         iconPath: path.join(__dirname, '../../assets/logo.png'),
         template: process.platform === 'darwin',
         priorityLabel: () => priorityLabels.high,
+        archivedLabel: () => readingStateLabels.label('archived'),
         now: () => Date.now(),
       });
       trayRef = tray;
@@ -399,10 +409,18 @@ async function start() {
       if (UI_METHODS.has(name)) {
         const value = await callUI(core, name, params, {settings: settingsBridge});
         // 保存成功后才响应提醒配置变化（BUG-074）。
+        if (name === 'getSettings' || name === 'saveSettings') {
+          try {
+            applyPriorityNames(value);
+          } catch (error) {
+            diagnostic('settings.labels.failed', {name: error.name || null, message: String(error.message || error).slice(0, 300)});
+            value.warnings = (value.warnings || []).concat(name === 'saveSettings'
+              ? '设置已保存，提醒名称暂未同步，请重新打开设置或重启应用。'
+              : '提醒名称暂未同步，请重新打开设置或重启应用。');
+          }
+        }
         if (name === 'saveSettings') {
           applyReminderSettings(value);
-          // 优先级改名同样在保存成功后生效：提醒与托盘文案跟着换名。
-          applyPriorityNames(value);
         }
         return {ok: true, value};
       }
@@ -453,6 +471,7 @@ async function start() {
       else if (rendererSmoke === 'window') await require('../../scripts/window-lifecycle-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'm17') await require('../../scripts/m17-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'settings') await require('../../scripts/settings-renderer.cjs').verify({window,core,root});
+      else if (rendererSmoke === 'reading-state') await require('../../scripts/reading-state-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'v049') await require('../../scripts/v049-batch01-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'v049b2') await require('../../scripts/v049-batch02-renderer.cjs').verify({window,core,root});
       else if (rendererSmoke === 'v049b3') await require('../../scripts/v049-batch03-renderer.cjs').verify({window,core,root});

@@ -188,6 +188,14 @@ async function verify({window, core, root}) {
   assert.equal(afterIrrelevant.generation, genBefore, '无关 AI 保存不得推进提醒代际');
   results.steps.push({irrelevantSave: {generation: afterIrrelevant.generation, unchanged: true}});
 
+  await evaluate(`SF.app.state.client.saveSettings({section:'general', patch:{readingStateNames:{read:'值得重温', archived:'已结束'}}})`);
+  const afterNames = scheduler.snapshot();
+  assert.equal(afterNames.nextCheckAt, dueBefore, '状态改名不得重置提醒周期');
+  assert.equal(afterNames.generation, genBefore, '状态改名不得推进提醒代际');
+  await evaluate(`SF.app.state.client.saveSettings({section:'general', patch:{readingStateNames:{read:'还会再看', archived:'看完了'}}})`);
+  assert.equal(scheduler.snapshot().nextCheckAt, dueBefore, '恢复状态名称也不得重置提醒周期');
+  results.steps.push({readingNamesSave: {generation: afterNames.generation, unchanged: true}});
+
   /* ---------- 6. 改间隔：从保存成功重算，并换身份 ---------- */
   await evaluate(`location.hash = '#/settings?section=reminder'`);
   await until(`document.querySelector('.settings__title').textContent === '提醒设置'`);
@@ -282,7 +290,7 @@ async function verify({window, core, root}) {
   await until(`!!document.querySelector('.chips--views')`);
   const toggled = await evaluate(`(() => {
     const target = Array.from(document.querySelectorAll('.chips--views button'))
-      .find(b => b.textContent.trim() === '高优先级未归档');
+      .find(b => b.textContent.trim() === '不在「看完了」中的高优先级');
     if (!target) return false;
     target.click();
     return true;

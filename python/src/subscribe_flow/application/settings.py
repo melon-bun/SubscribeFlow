@@ -3,7 +3,7 @@
 职责边界：
 - 只处理非敏感配置。密钥由 Main 的凭据服务保管，这里只保存凭据引用，
   因此这个类无论被谁调用都不可能返回或保存明文密钥。
-- 按页保存：一次只提交一个分区（AI API 配置 / 识别策略 / 提醒设置 / 优先级名称），
+- 按页保存：一次只提交一个分区（通用 / AI API / 识别策略 / 提醒 / 优先级等），
   避免修改提醒参数时顺手把另一页没填完的 API 配置一起存进去（§2.1）。
 - M21 起配置职责分开：
   ``ai.providers`` 只放连接参数（接口地址、模型标识、凭据引用），
@@ -32,7 +32,14 @@ from subscribe_flow.storage.repositories import now
 # 打标的两种识别方式：这是打标业务的策略，不是连接的固定槽位。
 # 同一个连接可以被多种方式之外的业务引用，连接数量不受这里限制。
 MODES = ("jev", "llm")
-SECTIONS = ("ai", "tagging", "reminder", "priority", "summarization", "channels")
+SECTIONS = ("general", "ai", "tagging", "reminder", "priority", "summarization", "channels")
+
+READING_STATE_KEYS = ("read", "archived")
+DEFAULT_READING_STATE_NAMES = {"read": "还会再看", "archived": "看完了"}
+READING_STATE_FIXED_NAMES = {"稍后阅读", "稍后处理", "稍后", "未处理", "未读", "收件箱"}
+READING_STATE_NAME_MAX = 12
+# ECMAScript String.trim whitespace, shared with the renderer.
+READING_STATE_TRIM_CHARS = "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
 
 # M45：付费渠道。只有 wxrank 一条；协议细节在 channels/wxrank/protocol.py，
 # 这里只管「这个渠道配置了没有、引用的是哪一把密钥、这是第几代」。
@@ -90,6 +97,7 @@ DEFAULT_PROVIDERS = {
 }
 
 DEFAULTS = {
+    "general": {"readingStateNames": dict(DEFAULT_READING_STATE_NAMES)},
     # M25：连接是独立资源，按稳定 ID 组织；同一协议可以配多条。
     "ai": {"formatVersion": AI_FORMAT_VERSION, "providers": copy.deepcopy(DEFAULT_PROVIDERS)},
     # 识别策略独立成区：只放“用不用、怎么识别、用哪条连接”。
@@ -118,6 +126,39 @@ DEFAULTS = {
 
 def _fail(message, scope="operation", scope_key=None):
     raise ChannelError("INVALID_INPUT", "settings.update", message, scope=scope, scope_key=scope_key)
+
+
+def _reading_name_key(name):
+    """Only ASCII case is insignificant; preserve all other characters."""
+    return name.translate(str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"))
+
+
+def _reading_name_error(value):
+    if not isinstance(value, str):
+        return "阅读状态名称必须是文本"
+    if any(ord(c) < 32 or 127 <= ord(c) <= 159 or c in "\u2028\u2029" for c in value):
+        return "阅读状态名称不能包含换行或控制字符"
+    name = value.strip(READING_STATE_TRIM_CHARS)
+    if not name:
+        return "阅读状态名称不能为空"
+    if len(name) > READING_STATE_NAME_MAX:
+        return "阅读状态名称不能超过 %d 个字符" % READING_STATE_NAME_MAX
+    if name in READING_STATE_FIXED_NAMES:
+        return "「%s」是固定状态名称，不能使用" % name
+    return None
+
+
+def _readable_reading_names(section):
+    names = section.get("readingStateNames") if isinstance(section, dict) else None
+    names = names if isinstance(names, dict) else {}
+    result = dict(DEFAULT_READING_STATE_NAMES)
+    for key in READING_STATE_KEYS:
+        value = names.get(key)
+        if _reading_name_error(value) is None:
+            result[key] = value.strip(READING_STATE_TRIM_CHARS)
+    if _reading_name_key(result["read"]) == _reading_name_key(result["archived"]):
+        return dict(DEFAULT_READING_STATE_NAMES)
+    return result
 
 
 def _validate_endpoint(value, scope_key):
@@ -269,9 +310,11 @@ class SettingsService:
             if not isinstance(stored_section, dict):
                 continue
             for key, value in stored_section.items():
-                if key not in payload[section] or key in ("providers", "names", "providerIds", "smart", "wxrank"):
+                if key not in payload[section] or key in ("providers", "names", "providerIds", "smart", "wxrank", "readingStateNames"):
                     continue
                 payload[section][key] = value
+            if section == "general":
+                payload["general"]["readingStateNames"] = _readable_reading_names(stored_section)
             if section == "priority":
                 # 逐级回落：旧配置没有这一项、或某一档写坏了，都用默认名补齐。
                 names = stored_section.get("names") or {}
@@ -389,6 +432,7 @@ class SettingsService:
             # 配置版本：只在影响识别结果的配置变化时递增（见 _recognition_fingerprint）。
             "version": version,
             "updatedAt": updated_at,
+            "general": copy.deepcopy(payload["general"]),
             "ai": {"formatVersion": AI_FORMAT_VERSION, "providers": providers},
             "tagging": {"enabled": payload["tagging"]["enabled"], "mode": payload["tagging"]["mode"],
                         "enabledSince": payload["tagging"]["enabledSince"],
@@ -437,7 +481,11 @@ class SettingsService:
         # 来源默认优先级（M42）：只有「优先级设置」分区会带上来源默认值，
         # 它和设置在同一个事务里落库。
         source_priorities = None
-        if section == "ai":
+        if section == "general":
+            if credential_refs is not None:
+                _fail("通用设置不接受凭据引用")
+            merged = self._merge_general(payload["general"], patch)
+        elif section == "ai":
             # 凭据引用要在完整性校验之前落进草稿：一次提交里同时给出地址、模型和
             # 新密钥是正常流程，先校验再合并会把这次提交误判成「缺 API Key」。
             merged = self._merge_ai(payload, patch, credential_refs)
@@ -487,6 +535,22 @@ class SettingsService:
         result = self.snapshot()
         result["savedVersion"] = record["version"]
         return result
+
+    def _merge_general(self, current, patch):
+        if set(patch) != {"readingStateNames"}:
+            _fail("包含不支持的通用设置字段")
+        submitted = patch["readingStateNames"]
+        if not isinstance(submitted, dict) or not submitted or set(submitted) - set(READING_STATE_KEYS):
+            _fail("阅读状态名称格式无效", "field", "readingStateNames")
+        names = dict(current["readingStateNames"])
+        for key, value in submitted.items():
+            error = _reading_name_error(value)
+            if error:
+                _fail(error, "field", "readingStateNames." + key)
+            names[key] = value.strip(READING_STATE_TRIM_CHARS)
+        if _reading_name_key(names["read"]) == _reading_name_key(names["archived"]):
+            _fail("两个阅读状态名称不能相同", "field", "readingStateNames.archived")
+        return {"readingStateNames": names}
 
     def _merge_ai(self, payload, patch, credential_refs=None):
         """只合并连接：名称、协议、地址、模型、启用状态与凭据引用。

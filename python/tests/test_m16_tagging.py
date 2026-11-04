@@ -595,6 +595,33 @@ class GatedProvider(StubProvider):
 class M16Round2RegressionTests(_M16Fixture, unittest.TestCase):
     """第二轮：Codex 复现的四个主流程阻断各自的回归验证。"""
 
+    def test_renaming_reading_states_during_request_keeps_the_result(self):
+        """Changing display names must not invalidate or restart an in-flight AI task."""
+        item_id = 'fixture:feed:reading-name-inflight'
+        provider = GatedProvider({item_id: ['科技']})
+        self.enable(mode='llm')
+        self._patch_provider(provider)
+        saved = self.repo.save_manual(make_item('fixture', 'reading-name-inflight', '阅读名称测试',
+                                                '用于验证修改阅读状态名称不会影响正在运行的识别任务。'))
+        before = self.core.settings.snapshot()['tagging']['revision']
+
+        async def scenario():
+            work = asyncio.ensure_future(self.tagging._run_once())
+            try:
+                entered = await asyncio.wait_for(asyncio.to_thread(provider.entered.wait, 5), 6)
+                self.assertTrue(entered, '识别任务必须先进入请求阶段')
+                self.core.settings.update('general', {'readingStateNames': {
+                    'read': '值得重温', 'archived': '已结束'}})
+            finally:
+                provider.release.set()
+            await work
+
+        self.loop.run_until_complete(scenario())
+        self.assertEqual(self.core.settings.snapshot()['tagging']['revision'], before)
+        self.assertEqual(provider.calls, 1)
+        self.assertEqual(self.tasks.list_tasks(limit=1)['items'][0]['state'], 'succeeded')
+        self.assertEqual(self.tags_of(saved['item_id']), ['科技'])
+
     def test_llm_empty_directory_creates_first_tags(self):
         """BUG-090：LLM 空目录仍调用 Provider 并创建第一批标签（Jev 才跳过）。"""
         self.enable(mode='llm', picks={'fixture:feed:first-1': ['自动打标']})

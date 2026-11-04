@@ -232,14 +232,14 @@ async function verify({window, core, root, mode}) {
   const absent=id=>`!document.querySelector(${JSON.stringify(card(id))})`;
   const title=()=>evaluate(`document.querySelector('.view__title h1').textContent`);
   assert.equal(await evaluate('SF.app.state.filters.quick'),'unread');
-  await contentAction('已读');
+  await contentAction('还会再看');
   await until(`SF.app.state.counts.unread === ${total-1} && document.querySelectorAll('.content-card').length > 0 && ${absent(firstId)}`);
   assert.equal(await evaluate(`document.querySelector('[data-nav="inbox"] .count-pill').textContent`),String(total-1));
   assert.equal((await core.call('content.get',{item_id:firstId})).state.read,true);
   // Invalidations and server-side filters must update the actual list, not just counts.
   await evaluate(`document.querySelector('[data-quick="read"]').click()`);
   await until(`document.querySelectorAll('.content-card').length === 1`);
-  assert.equal(await title(),'已读');
+  assert.equal(await title(),'还会再看');
   assert.equal(await evaluate(`!!document.querySelector('[data-nav="inbox"].is-active')`),false);
   // Same hash, different scope: the inbox nav must actively reset the filter.
   await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
@@ -247,7 +247,7 @@ async function verify({window, core, root, mode}) {
   assert.equal(await title(),'收件箱');
   if(mode === 'offline') {
     // Each independent processing action leaves inbox, and undo returns it.
-    for(const [field,label,heading] of [['deferred','稍后','稍后处理'],['archived','归档','已归档']]) {
+    for(const [field,label,heading] of [['deferred','稍后阅读','稍后阅读'],['archived','看完了','看完了']]) {
       const id=await evaluate('SF.app.state.selectedId');
       await contentAction(label, id);
       await until(`SF.app.state.counts.unread === 23 && document.querySelectorAll('.content-card').length > 0 && ${absent(id)}`);
@@ -262,12 +262,12 @@ async function verify({window, core, root, mode}) {
     }
     const menuId=await evaluate('SF.app.state.selectedId');
     await evaluate(`document.querySelector(${JSON.stringify(card(menuId) + ' [aria-label="更多操作"]')}).click()`);
-    await click('标记为已读');
+    await click('移至「还会再看」');
     await until(`SF.app.state.counts.unread === 23 && document.querySelectorAll('.content-card').length > 0 && ${absent(menuId)}`);
     await evaluate(`document.querySelector('[data-quick="read"]').click()`);
     await until(`document.querySelectorAll('.content-card').length === 2`);
     await evaluate(`document.querySelector(${JSON.stringify(card(menuId) + ' [aria-label="更多操作"]')}).click()`);
-    await click('标记为未读');
+    await click('移回收件箱');
     await until(`SF.app.state.counts.unread === 24 && document.querySelectorAll('.content-card').length === 1`);
     await evaluate(`document.querySelector('[data-nav="inbox"]').click()`);
     await until(`document.querySelectorAll('.content-card').length === 20`);
@@ -279,7 +279,7 @@ async function verify({window, core, root, mode}) {
       await checkContent(lastPage[i]);
       await until(`document.querySelectorAll('.content-selection > [role="checkbox"][aria-checked="true"]').length===${i+1}`);
     }
-    await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='归档').click()`);
+    await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='看完了').click()`);
     await until(`SF.app.state.counts.unread === 20 && document.querySelectorAll('.content-card').length === 20 && document.body.innerText.includes('第 1 页')`);
     for(const id of lastPage) {
       assert.ok(await evaluate(absent(id)));
@@ -301,7 +301,7 @@ async function verify({window, core, root, mode}) {
   if(mode === 'offline') {
     // BUG-005: processing choices replace one another on the same note.
     await selectContent(firstId);
-    for(const [field,label] of [['deferred','稍后'],['archived','归档']]) {
+    for(const [field,label] of [['deferred','稍后阅读'],['archived','看完了']]) {
       await contentAction(label, firstId);
       await until(`SF.app.state.selectedId === ${JSON.stringify(firstId)} && document.querySelectorAll('.detail .state-btn[aria-pressed="true"]').length === 1 && document.querySelector('.detail .state-btn[aria-pressed="true"]')?.textContent.trim() === ${JSON.stringify(label)}`);
       assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:false,archived:field==='archived',deferred:field==='deferred'});
@@ -309,14 +309,14 @@ async function verify({window, core, root, mode}) {
     await screenshot('bug-005-single-processing-state.png');
     // The card menu must use the same exclusive write path as the detail panel.
     await evaluate(`document.querySelector(${JSON.stringify(card(firstId) + ' [aria-label="更多操作"]')}).click()`);
-    await click('标记为已读');
-    await until(`SF.app.state.counts.read === 1 && SF.app.state.counts.archived === 4 && document.querySelector('.detail .state-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
+    await click('移至「还会再看」');
+    await until(`SF.app.state.counts.read === 1 && SF.app.state.counts.archived === 4 && document.querySelector('.detail .state-btn[aria-pressed="true"]')?.textContent.trim() === '还会再看'`);
     assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:true,archived:false,deferred:false});
-    await contentAction('已读', firstId);
+    await contentAction('还会再看', firstId);
     await until(`SF.app.state.counts.unread === 21 && document.querySelectorAll('.detail .state-btn[aria-pressed="true"]').length === 0`);
     assert.deepEqual((await core.call('content.get',{item_id:firstId})).state,{read:false,archived:false,deferred:false});
-    await contentAction('已读', firstId);
-    await until(`SF.app.state.counts.unread === 20 && SF.app.state.counts.read === 1 && document.querySelector('.detail .state-btn[aria-pressed="true"]')?.textContent.trim() === '已读'`);
+    await contentAction('还会再看', firstId);
+    await until(`SF.app.state.counts.unread === 20 && SF.app.state.counts.read === 1 && document.querySelector('.detail .state-btn[aria-pressed="true"]')?.textContent.trim() === '还会再看'`);
     assert.equal(await evaluate(`document.querySelectorAll('.content-card').length`),20);
     await click('下一页');
     await until(`document.querySelectorAll('.content-card').length === 5`);

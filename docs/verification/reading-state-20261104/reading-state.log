@@ -1,0 +1,4 @@
+npm notice run subscribe-flow@0.5.3.4 smoke:reading-state
+npm notice run node scripts/reading-state-renderer.cjs
+{"readingStateUi":"passed","drafts":true,"labels":true,"tray":true,"layout":"light/dark 900/1100","coreRestart":true}
+{"readingStateRestart":"passed","persisted":true,"restoreDefaults":true}

@@ -46,13 +46,13 @@ async function verifyListState({evaluate, until, click, screenshot, core, window
 
     const failedId=await evaluate('SF.app.state.selectedId');
     await evaluate(`window.updateOriginal=SF.app.state.client.updateContent; SF.app.state.client.updateContent=()=>Promise.reject(new Error('列表状态验收失败')); void 0`);
-    await arrange('已读');
+    await arrange('还会再看');
     await until(`document.body.textContent.includes('列表状态验收失败')`);
     assert.equal(await evaluate('SF.app.state.selectedId'),failedId);
     assert.equal(await scroll(list),350);
     await evaluate(`SF.app.state.client.updateContent=window.updateOriginal; delete window.updateOriginal; void 0`);
 
-    for (const label of ['已读','稍后','归档']) {
+    for (const label of ['还会再看','稍后阅读','看完了']) {
       const before=await ids();
       await select(before[5]);
       await setScroll(list);
@@ -64,7 +64,7 @@ async function verifyListState({evaluate, until, click, screenshot, core, window
     const batch=await ids();
     await select(batch[5]);
     for (const id of [batch[5],batch[6]]) await checkContent(id);
-    await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='已读').click()`);
+    await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='还会再看').click()`);
     await until(`SF.app.state.selectedId===${JSON.stringify(batch[7])} && ${absent(batch[5])} && ${absent(batch[6])}`);
     await screenshot('bug-043-044-list-after-processing.png');
 
@@ -72,18 +72,18 @@ async function verifyListState({evaluate, until, click, screenshot, core, window
     const page=await ids();
     const nextPage=(await core.call('content.list', {read:false,archived:false,deferred:false,limit:1,offset:20})).items[0].id;
     await select(page[19]);
-    await arrange('已读');
+    await arrange('还会再看');
     await until(`SF.app.state.selectedId===${JSON.stringify(nextPage)} && document.querySelectorAll('.content-card').length===20 && ${absent(page[19])}`);
     await click('下一页');
     await loaded(4);
     assert.equal(await scroll(list),0,'A new page starts at the top');
     const tail=await ids();
     await select(tail[3]);
-    await arrange('归档');
+    await arrange('看完了');
     await until(`SF.app.state.selectedId===${JSON.stringify(tail[2])} && document.querySelectorAll('.content-card').length===3`);
     for (const id of tail.slice(0,3)) await checkContent(id);
     const preceding=(await core.call('content.list', {read:false,archived:false,deferred:false,limit:20})).items[19].id;
-    await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='归档').click()`);
+    await evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='看完了').click()`);
     await until(`document.querySelectorAll('.content-card').length===20 && SF.app.state.selectedId===${JSON.stringify(preceding)} && document.body.innerText.includes('第 1 页')`);
 
     // Shared content partitions use the same scroll policy; processing in all keeps selection.
@@ -93,7 +93,7 @@ async function verifyListState({evaluate, until, click, screenshot, core, window
     const keep=(await ids())[5];
     await select(keep);
     await setScroll(list);
-    await arrange('已读');
+    await arrange('还会再看');
     await until(`SF.app.state.counts.read===1 && SF.app.state.selectedId===${JSON.stringify(keep)} && !!document.querySelector('.detail .state-btn[aria-pressed="true"]')`);
     assert.equal(await scroll(list),350);
     await core.call('content.bulk_update',{item_ids:allIds,patch:{deferred:true}});

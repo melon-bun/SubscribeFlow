@@ -24,9 +24,9 @@
     { id: "high", name: null, icon: "priority-set", countKey: "high" },
     { id: "medium", name: null, icon: "priority-set", countKey: "medium" },
     { id: "low", name: null, icon: "priority-set", countKey: "low" },
-    { id: "deferred", name: "稍后处理", icon: "flag", countKey: "deferred" },
-    { id: "read", name: "已读", icon: "check", countKey: "read" },
-    { id: "archived", name: "已归档", icon: "archive", countKey: "archived" },
+    { id: "deferred", icon: "flag", countKey: "deferred" },
+    { id: "read", icon: "check", countKey: "read" },
+    { id: "archived", icon: "archive", countKey: "archived" },
   ];
 
   var NAV = [
@@ -49,6 +49,7 @@
     coreStatus: { state: "starting" },
     notice: null,
     priorityNamesLoaded: false,
+    readingNamesVersion: -1,
     dismissedStatus: null, // 已被手动关闭的状态栏签名；状态一变即失效
     counts: {},
     runs: [],
@@ -141,12 +142,12 @@
       : null;
     if (name === "settings") {
       // 分区始终带回路由参数：直接改哈希进来时左栏与正文必须对得上。
-      // 分区白名单：ai／reminder／priority／summarization／appearance（M32 新增外观），
-      // 未知值回落到 ai。
-      var section = params.section === "reminder" ? "reminder"
+      // 直接进入或未知分区回落到通用，其它分区仍可通过参数直达。
+      var section = params.section === "ai" ? "ai"
+        : params.section === "reminder" ? "reminder"
         : params.section === "priority" ? "priority"
         : params.section === "summarization" ? "summarization"
-        : params.section === "appearance" ? "appearance" : "ai";
+        : params.section === "appearance" ? "appearance" : "general";
       return { name: name, params: { section: section } };
     }
     if (!NAV.some(function (n) { return n.id === name; })) name = "inbox";
@@ -258,8 +259,9 @@
       null,
       h("div.side-group__title", { text: "快捷筛选" }),
       QUICK_FILTERS.filter(function (f) { return !["high", "medium", "low"].includes(f.id) || app.session.capabilities.canManagePriorities; }).map(function (f) {
-        // 优先级三行用当前显示名；其余筛选项名称固定。
-        var label = f.name || catalog.priority(f.id).name;
+        // 优先级与阅读状态使用当前显示名，查询仍按稳定 ID。
+        var label = f.name || (["read", "deferred", "archived"].includes(f.id)
+          ? catalog.readingState(f.id) : catalog.priority(f.id).name);
         return h(
           "button.side-row" + (quickActive(f.id) ? ".is-active" : ""),
           {
@@ -562,11 +564,24 @@
     return before.high !== after.high || before.medium !== after.medium || before.low !== after.low;
   }
 
+  function applyReadingStateNames(names, version) {
+    if (!names) return false;
+    // A delayed startup read must not replace a name saved more recently.
+    if (Number.isInteger(version) && version < app.readingNamesVersion) return false;
+    if (Number.isInteger(version)) app.readingNamesVersion = version;
+    var beforeRead = catalog.readingState("read"), beforeArchived = catalog.readingState("archived");
+    catalog.setReadingStateNames(names);
+    var changed = beforeRead !== catalog.readingState("read") || beforeArchived !== catalog.readingState("archived");
+    return changed;
+  }
+
   function loadPriorityNames() {
     if (!app.client) return Promise.resolve(false);
     return app.client.getSettings().then(function (settings) {
+      var priorityChanged = applyPriorityNames(settings && settings.priority && settings.priority.names);
+      var readingChanged = applyReadingStateNames(settings && settings.general && settings.general.readingStateNames, settings && settings.version);
       app.priorityNamesLoaded = true;
-      return applyPriorityNames(settings && settings.priority && settings.priority.names);
+      return priorityChanged || readingChanged;
     }).catch(function () {
       // 读不到就先沿用默认名，下一轮刷新再试。
       return false;
@@ -611,8 +626,8 @@
             app.session = results[0]; app.counts = results[1]; app.platforms = results[2]; app.runs = results[3];
             app.now = Date.now(); app.notice = null;
             if (!app.selectedDate) app.selectedDate = fmt.ymd(app.now);
-            // 优先级显示名：首次装载后固定，设置页改名会直接应用并触发重绘。
-            if (!app.priorityNamesLoaded) await loadPriorityNames();
+            // 启动或核心服务恢复后读取显示名；设置页保存时直接应用。
+            if (!app.priorityNamesLoaded && await loadPriorityNames()) sidebarChanged = true;
             // The periodic fallback also repairs missed invalidations, even when totals match.
             if (batch.has('poll')) ['content','tags','channels','runs','tagging'].forEach(function (reason) { batch.add(reason); });
             if (!app.session) continue;
@@ -837,7 +852,7 @@
     }));
     app.unsubscribe.push(app.client.on("core.status", function (status) {
       app.coreStatus = status;
-      if (status.state === "ready") refreshData(true);
+      if (status.state === "ready") { app.priorityNamesLoaded = false; refreshData(true); }
       else if (app.session) patchStatusBar();
       else showStartup("核心服务" + (status.state === "starting" ? "正在启动…" : "不可用"), status.message || "请重新查询或重启服务。");
     }));
@@ -865,7 +880,7 @@
           if (proceed) {
             SF.views.settings.reset();
             refreshRoute();
-            app.selectedId = null;
+            if (app.route.name !== app.settingsReturn) app.selectedId = null;
             if (app.session) render();
           } else {
             // 留在设置页：把哈希拉回来，用户继续编辑刚才的草稿。
@@ -935,7 +950,7 @@
         }
       }
       refreshRoute();
-      app.selectedId = null;
+      if (app.route.name !== "settings") app.selectedId = null;
       if (app.session) render();
     });
     global.addEventListener("keydown", function (e) {
@@ -954,6 +969,8 @@
 
   function refreshRoute() {
     var previous = app.route.name;
+    // Menus live under document.body; leaving their page must not leave stale choices onscreen.
+    ui.closeMenu();
     app.route = parseHash();
     if (app.route.name === "settings") {
       if (previous !== "settings") {
@@ -1014,6 +1031,7 @@
     refreshSidebarCounts: refreshSidebarCounts,
     // M20：设置页保存后立即把新名称应用到公共目录并重绘。
     applyPriorityNames: applyPriorityNames,
+    applyReadingStateNames: applyReadingStateNames,
   };
 
   if (document.readyState === "loading") {
