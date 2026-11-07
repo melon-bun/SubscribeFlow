@@ -2305,9 +2305,9 @@ textarea.input {
 .tag-filter {
   display: flex;
   flex-direction: column;
-  flex: 0 1 auto;
+  flex: none;
   min-height: 0;
-  max-height: min(55%, 420px);
+  max-height: min(420px, max(180px, 55%));
   margin-top: var(--s-4);
   padding: var(--s-5);
   border: 1px solid var(--c-border);

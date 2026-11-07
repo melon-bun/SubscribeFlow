@@ -357,7 +357,7 @@
         ui.iconBtn('chevron-left', '上一条', function () { step(-1); }, {disabled: listIndex <= 0}),
         ui.iconBtn('chevron-right', '下一条', function () { step(1); }, {disabled: listIndex < 0 || listIndex >= listItems.length - 1}),
         ui.iconBtn('close', '关闭详情', function () { closeDetail(app); })));
-    return {main:h('div.view', {'data-view':'inbox','data-refresh-key':'inbox','aria-busy':String(!!cache.loading)}, head, h('div.view__body.inbox' + (tagPanelOpen ? '.inbox--tag-filter-open' : ''), {'data-refresh-key':'inbox-body'}, chips, tagPanel, bulk,
+    return {main:h('div.view', {'data-view':'inbox','data-refresh-key':'inbox','aria-busy':String(!!cache.loading)}, head, h('div.view__body.inbox' + (tagPanelOpen ? '.inbox--tag-filter-open.scroll-y' : ''), {'data-refresh-key':'inbox-body'}, chips, tagPanel, bulk,
       cache.refreshError ? h('div.field__error', {role:'status','data-refresh-key':'inbox-refresh-error'},
         (cache.switching ? '筛选失败，正在显示上次结果：' : '更新失败，正在显示已加载内容：') + cache.refreshError.message,
         cache.switching ? ui.btn('重试筛选', {size:'sm',onClick:function () {cache.stale=true;renderView();}}) : null) : null, body, pager)),

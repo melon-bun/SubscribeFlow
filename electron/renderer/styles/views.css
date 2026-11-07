@@ -66,6 +66,17 @@
   overflow: visible;
 }
 
+/* 窗口窄且详情展开时，筛选行可能换行。让整个区域也能滚动，
+   避免面板和分页器挤出窗口；标签列表本身仍独立滚动。 */
+.view__body.inbox--tag-filter-open {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.inbox--tag-filter-open > .inbox__grid {
+  min-height: 100px;
+}
+
 /* 筛选面板展开时，空状态不能用固定最小高度挤没标签列表。 */
 .inbox--tag-filter-open > .state {
   flex: 1 1 0;

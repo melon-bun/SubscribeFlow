@@ -391,8 +391,9 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     await until(()=>app.evaluate(`!!Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='标签')`));
     await app.evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='标签').click()`);
     await until(()=>app.evaluate(`document.querySelectorAll('.tag-filter__tags [data-tag-filter]').length===61`));
+    await app.evaluate(`document.querySelector('.tag-filter__tags').scrollIntoView({block:'nearest'})`);
     const tagPoint=await app.evaluate(`(() => {const p=document.querySelector('.tag-filter__tags'),r=p.getBoundingClientRect(),b=document.querySelector('.inbox').getBoundingClientRect();p.scrollTop=0;return {x:r.left+20,y:r.top+Math.min(30,r.height/2),client:p.clientHeight,scroll:p.scrollHeight,visible:r.bottom<=b.bottom,overflow:getComputedStyle(p).overflowY};})()`);
-    assert.ok(tagPoint.client>0&&tagPoint.scroll>tagPoint.client&&tagPoint.visible&&tagPoint.overflow==='auto');
+    assert.ok(tagPoint.client>0&&tagPoint.scroll>tagPoint.client&&tagPoint.visible&&tagPoint.overflow==='auto',JSON.stringify(tagPoint));
     const tagAtBottom=`(() => {const p=document.querySelector('.tag-filter__tags');return p.scrollTop+p.clientHeight>=p.scrollHeight-1;})()`;
     for(let i=0;i<20&&!(await app.evaluate(tagAtBottom));i++) {
       await app.page.send('Input.dispatchMouseEvent',{type:'mouseWheel',x:tagPoint.x,y:tagPoint.y,deltaX:0,deltaY:500});
