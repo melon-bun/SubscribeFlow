@@ -1,0 +1,19 @@
+{
+  "status": "passed",
+  "version": "0.5.3.6",
+  "buildRevision": "bd1ed85df2cba05ec6fe125643aee712e07fdcce",
+  "sourceFilesMatched": 62,
+  "logoMatched": true,
+  "archiveAllowlist": true,
+  "size": 146162705,
+  "sha256": "642e986e172dc5a0f80b31bd89ad5f0b8ec3fd011c61a58c3eabd6b5a8ccb420",
+  "hashSidecarMatched": true,
+  "relativeLinks": 18,
+  "coreRelativeLinks": 4,
+  "coreArchitecture": "x86_64",
+  "iconPresent": true,
+  "signatureVerified": true,
+  "zipVerified": true,
+  "bundle": "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.3.6/Subscribe Flow-darwin-x64/Subscribe Flow.app",
+  "archive": "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe-Flow-0.5.3.6-mac-x64.zip"
+}

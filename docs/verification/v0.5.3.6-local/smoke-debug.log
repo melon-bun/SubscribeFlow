@@ -1,0 +1,11 @@
+npm notice run subscribe-flow@0.5.3.6 smoke:packaged
+npm notice run node scripts/packaged-smoke.cjs
+AssertionError [ERR_ASSERTION]: {"x":323,"y":550,"client":0,"scroll":2432,"visible":true,"overflow":"auto"}
+    at main (/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/scripts/packaged-smoke.cjs:395:12) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}

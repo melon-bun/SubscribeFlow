@@ -405,7 +405,10 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     await app.evaluate(`document.querySelector('.tag-filter__tags [data-tag-filter]:last-child').click()`);
     await app.evaluate(`SF.views.inbox.whenIdle()`);
     assert.ok(await app.evaluate(`document.querySelector('.tag-filter__tags [data-tag-filter]:last-child').getAttribute('aria-pressed')==='true'`));
-    assert.ok(await app.evaluate(`Math.abs(document.querySelector('.tag-filter__tags').scrollTop-${tagScroll})<2`));
+    // A filtered-out detail panel can close, widening the list and reducing its
+    // maximum scroll position. Accept the clamped bottom as well as the same offset.
+    const afterTagSelection=await app.evaluate(`(() => {const p=document.querySelector('.tag-filter__tags'),last=p.lastElementChild.getBoundingClientRect(),r=p.getBoundingClientRect();return {top:p.scrollTop,max:p.scrollHeight-p.clientHeight,selectedVisible:last.bottom<=r.bottom+1&&last.top>=r.top-1};})()`);
+    assert.ok((Math.abs(afterTagSelection.top-tagScroll)<2 || Math.abs(afterTagSelection.top-afterTagSelection.max)<2) && afterTagSelection.selectedVisible,JSON.stringify({tagScroll,afterTagSelection}));
     await app.evaluate(`document.querySelector('.tag-filter__tags [data-tag-filter]:nth-last-child(2)').click()`);
     await app.evaluate(`SF.views.inbox.whenIdle()`);
     await app.evaluate(`Array.from(document.querySelectorAll('.tag-filter__mode button')).find(b=>b.textContent.trim()==='全部符合').click()`);
