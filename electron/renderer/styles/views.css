@@ -66,6 +66,13 @@
   overflow: visible;
 }
 
+/* 筛选面板展开时，空状态不能用固定最小高度挤没标签列表。 */
+.inbox--tag-filter-open > .state {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .inbox__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

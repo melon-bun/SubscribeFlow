@@ -2303,6 +2303,11 @@ textarea.input {
 /* ---------------- 标签筛选面板 ---------------- */
 
 .tag-filter {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(55%, 420px);
   margin-top: var(--s-4);
   padding: var(--s-5);
   border: 1px solid var(--c-border);
@@ -2312,6 +2317,7 @@ textarea.input {
 
 .tag-filter__head {
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--s-3);
   margin-bottom: var(--s-4);
@@ -2325,6 +2331,8 @@ textarea.input {
 .tag-filter__tags {
   display: flex;
   flex-wrap: wrap;
+  flex: 0 1 auto;
+  min-height: 0;
   gap: var(--s-3);
 }
 
@@ -2334,6 +2342,9 @@ textarea.input {
 
 .tag-filter__mode {
   display: flex;
+  flex: none;
+  max-height: 35%;
+  overflow-y: auto;
   align-items: center;
   gap: var(--s-4);
   margin-top: var(--s-5);

@@ -357,7 +357,7 @@
         ui.iconBtn('chevron-left', '上一条', function () { step(-1); }, {disabled: listIndex <= 0}),
         ui.iconBtn('chevron-right', '下一条', function () { step(1); }, {disabled: listIndex < 0 || listIndex >= listItems.length - 1}),
         ui.iconBtn('close', '关闭详情', function () { closeDetail(app); })));
-    return {main:h('div.view', {'data-view':'inbox','data-refresh-key':'inbox','aria-busy':String(!!cache.loading)}, head, h('div.view__body.inbox', {'data-refresh-key':'inbox-body'}, chips, tagPanel, bulk,
+    return {main:h('div.view', {'data-view':'inbox','data-refresh-key':'inbox','aria-busy':String(!!cache.loading)}, head, h('div.view__body.inbox' + (tagPanelOpen ? '.inbox--tag-filter-open' : ''), {'data-refresh-key':'inbox-body'}, chips, tagPanel, bulk,
       cache.refreshError ? h('div.field__error', {role:'status','data-refresh-key':'inbox-refresh-error'},
         (cache.switching ? '筛选失败，正在显示上次结果：' : '更新失败，正在显示已加载内容：') + cache.refreshError.message,
         cache.switching ? ui.btn('重试筛选', {size:'sm',onClick:function () {cache.stale=true;renderView();}}) : null) : null, body, pager)),
@@ -673,7 +673,7 @@
         ui.btn('清除标签筛选', {size:'sm', disabled:!picked.length, onClick:function () { app.filters.tags = []; app.filters.tagMode = 'any'; renderView(); }})),
       tagCache.error ? h('p.field__hint.field__error', {text:'标签目录读取失败：' + tagCache.error.message}) : null,
       !list.length && !tagCache.loading ? h('p.field__hint', {text:'还没有任何标签，先到标签管理里创建后再回来筛选。'}) : null,
-      list.length ? h('div.tag-filter__tags', null, list.map(function (t) {
+      list.length ? h('div.tag-filter__tags.scroll-y', {role:'region', 'aria-label':'可筛选的标签', tabindex:'0'}, list.map(function (t) {
         var on = (app.filters.tags || []).indexOf(t.id) >= 0;
         return h('button.chip.chip--tag' + (on ? '.is-active' : ''), {type:'button', 'aria-pressed':String(on), 'data-tag-filter':t.id,
           title:t.name + (t.unavailable ? '（点击移除筛选）' : t.enabled === false ? '（已停用）' : ''),

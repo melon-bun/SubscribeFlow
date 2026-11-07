@@ -21,6 +21,7 @@
     "smoke:intake": "node scripts/renderer-smoke.cjs --intake",
     "smoke:intake:ui": "electron scripts/intake-ui-smoke.cjs",
     "smoke:tags:ai:ui": "electron scripts/tags-ai-ui-smoke.cjs",
+    "smoke:tags:filter": "electron scripts/tag-filter-scroll-smoke.cjs",
     "smoke:renderer:live": "node scripts/renderer-smoke.cjs --live",
     "smoke:xiaohongshu": "node scripts/renderer-smoke.cjs --xhs",
     "smoke:xiaohongshu:session": "node scripts/xiaohongshu-session-smoke.cjs",
