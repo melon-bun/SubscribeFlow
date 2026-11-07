@@ -382,6 +382,40 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     result.readingState.appRestart=true;
     result.notesRestart=true;
     result.priorityRestart=true;result.appRestart=true;
+    // BUG-150: exercise the actual shipped renderer and frozen Core with a
+    // large catalog in this disposable profile, including native wheel input.
+    for(let i=0;i<60;i++) await call('tag.create',{name:'滚动验收 '+String(i).padStart(2,'0'),color:'blue'});
+    await app.page.send('Emulation.setDeviceMetricsOverride',{width:1000,height:700,deviceScaleFactor:1,mobile:false});
+    await app.evaluate(`SF.views.inbox.invalidate(new Set(['tags'])); SF.app.state.filters={quick:'all',platform:null,channelId:null}; SF.app.navigate('inbox')`);
+    await app.evaluate(`SF.views.inbox.whenIdle()`);
+    await until(()=>app.evaluate(`!!Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='标签')`));
+    await app.evaluate(`Array.from(document.querySelectorAll('.inbox__toolbar button')).find(b=>b.textContent.trim()==='标签').click()`);
+    await until(()=>app.evaluate(`document.querySelectorAll('.tag-filter__tags [data-tag-filter]').length===61`));
+    const tagPoint=await app.evaluate(`(() => {const p=document.querySelector('.tag-filter__tags'),r=p.getBoundingClientRect(),b=document.querySelector('.inbox').getBoundingClientRect();p.scrollTop=0;return {x:r.left+20,y:r.top+Math.min(30,r.height/2),client:p.clientHeight,scroll:p.scrollHeight,visible:r.bottom<=b.bottom,overflow:getComputedStyle(p).overflowY};})()`);
+    assert.ok(tagPoint.client>0&&tagPoint.scroll>tagPoint.client&&tagPoint.visible&&tagPoint.overflow==='auto');
+    const tagAtBottom=`(() => {const p=document.querySelector('.tag-filter__tags');return p.scrollTop+p.clientHeight>=p.scrollHeight-1;})()`;
+    for(let i=0;i<20&&!(await app.evaluate(tagAtBottom));i++) {
+      await app.page.send('Input.dispatchMouseEvent',{type:'mouseWheel',x:tagPoint.x,y:tagPoint.y,deltaX:0,deltaY:500});
+      await delay(160);
+    }
+    await until(()=>app.evaluate(tagAtBottom));
+    await delay(350);
+    const tagScroll=await app.evaluate(`document.querySelector('.tag-filter__tags').scrollTop`);
+    await app.evaluate(`document.querySelector('.tag-filter__tags [data-tag-filter]:last-child').click()`);
+    await app.evaluate(`SF.views.inbox.whenIdle()`);
+    assert.ok(await app.evaluate(`document.querySelector('.tag-filter__tags [data-tag-filter]:last-child').getAttribute('aria-pressed')==='true'`));
+    assert.ok(await app.evaluate(`Math.abs(document.querySelector('.tag-filter__tags').scrollTop-${tagScroll})<2`));
+    await app.evaluate(`document.querySelector('.tag-filter__tags [data-tag-filter]:nth-last-child(2)').click()`);
+    await app.evaluate(`SF.views.inbox.whenIdle()`);
+    await app.evaluate(`Array.from(document.querySelectorAll('.tag-filter__mode button')).find(b=>b.textContent.trim()==='全部符合').click()`);
+    await app.evaluate(`SF.views.inbox.whenIdle()`);
+    assert.ok(await app.evaluate(`SF.app.state.filters.tags.length===2 && SF.app.state.filters.tagMode==='all'`));
+    fs.writeFileSync(path.join(output,'packaged-tag-filter.png'),Buffer.from((await app.page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await app.evaluate(`Array.from(document.querySelectorAll('.tag-filter__head button')).find(b=>b.textContent.trim()==='清除标签筛选').click()`);
+    await app.evaluate(`SF.views.inbox.whenIdle()`);
+    assert.ok(await app.evaluate(`SF.app.state.filters.tags.length===0 && SF.app.state.filters.tagMode==='any'`));
+    await app.page.send('Emulation.clearDeviceMetricsOverride');
+    result.tagFilterScroll={nativeWheel:true,bottomReachable:true,selectionPositionPreserved:true,multipleTagsAndMode:true,clear:true};
     await app.close();app=null;
     // Fault injection only alters this disposable copy of the package.
     fs.renameSync(executable,executable+'.removed');
