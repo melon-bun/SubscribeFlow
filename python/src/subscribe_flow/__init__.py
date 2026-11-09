@@ -1,3 +1,3 @@
 """Subscribe Flow application core."""
 
-__version__ = "0.5.3.6"
+__version__ = "0.5.3.7"

@@ -278,6 +278,32 @@ old.close();db.close()`,path.join(dataDir,'subscribe-flow.sqlite3'),items[0].id,
     await until(()=>app.evaluate(`document.querySelector('[data-priority-column="high"] .count-pill')?.textContent==='2' && document.querySelector('[data-priority-column="low"] .count-pill')?.textContent==='1'`));
     fs.writeFileSync(path.join(output,'packaged-priorities.png'),Buffer.from((await app.page.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
     result.priorityBoard=true;result.priorityInheritance=true;
+    // BUG-151: use the shipped sidebar and both overview modes against the
+    // frozen Core, checking that applying filters preserves the current view.
+    await app.evaluate(`SF.app.navigate('overview',{mode:'calendar'})`);
+    await until(()=>app.evaluate(`document.querySelector('[data-view="overview"][data-mode="calendar"]')`));
+    await app.evaluate(`SF.views.overview.whenIdle()`);
+    const calendarContext=await app.evaluate(`({hash:location.hash,month:SF.app.state.calendarMonth,date:SF.app.state.selectedDate})`);
+    for(const id of ['read','high','archived']) {
+      await app.evaluate(`document.querySelector('[data-quick="${id}"]').click()`);
+      await delay(100);
+      assert.ok(await app.evaluate(`SF.app.state.route.name==='overview' && SF.app.state.overviewMode==='calendar' && location.hash===${JSON.stringify(calendarContext.hash)} && SF.app.state.calendarMonth===${JSON.stringify(calendarContext.month)} && SF.app.state.selectedDate===${JSON.stringify(calendarContext.date)}`),id+' calendar position');
+      await app.evaluate(`SF.views.overview.whenIdle()`);
+      assert.ok(await app.evaluate(`document.querySelector('[data-quick="${id}"]').classList.contains('is-active')`),id+' calendar selection');
+      assert.equal(await app.evaluate(`SF.app.state.filters.${id==='high'?'priority':'quick'}`),id);
+    }
+    await app.evaluate(`SF.app.navigate('overview',{mode:'priority'})`);
+    await until(()=>app.evaluate(`document.querySelector('[data-view="overview"][data-mode="priority"]')`));
+    await app.evaluate(`SF.views.overview.whenIdle()`);
+    for(const id of ['read','high','all']) {
+      await app.evaluate(`document.querySelector('[data-quick="${id}"]').click()`);
+      await delay(100);
+      assert.ok(await app.evaluate(`SF.app.state.route.name==='overview' && SF.app.state.overviewMode==='priority' && location.hash==='#/overview?mode=priority'`),id+' board position');
+      await app.evaluate(`SF.views.overview.whenIdle()`);
+      assert.ok(await app.evaluate(`document.querySelector('[data-quick="${id}"]').classList.contains('is-active')`));
+      assert.deepEqual(await app.evaluate(`Array.from(document.querySelectorAll('[data-priority-column]')).map(n=>n.dataset.priorityColumn)`),id==='high'?['high']:['high','medium','low']);
+    }
+    result.overviewQuickFilters={calendar:true,selectedDatePreserved:true,priorityBoard:true,selectedIndicator:true};
     // M9 data and M10 channel capabilities must survive the shipped Core boundary.
     const tag=await call('tag.create',{name:'0.2.0 安装包验收',color:'blue'});
     await call('content.set_tags',{item_id:selected,tag_ids:[tag.id]});
