@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-09T06:43:17.957Z",
+  "status": "passed",
+  "retainedVersion": "0.5.3.7",
+  "retainedApp": "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app",
+  "retired": [
+    {
+      "version": "0.5.3.6",
+      "bundle": "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.3.6/Subscribe Flow-darwin-x64/Subscribe Flow.app",
+      "backup": {
+        "archive": "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe-Flow-0.5.3.6-mac-x64.zip",
+        "sha256": "642e986e172dc5a0f80b31bd89ad5f0b8ec3fd011c61a58c3eabd6b5a8ccb420"
+      },
+      "oldWasNotRunning": true,
+      "movedToTrash": true,
+      "unregistered": true
+    }
+  ],
+  "skippedRunning": [],
+  "dailyDataTouched": false,
+  "indexedApps": [
+    "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app"
+  ]
+}

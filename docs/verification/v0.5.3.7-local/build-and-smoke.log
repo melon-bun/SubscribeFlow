@@ -1,0 +1,90 @@
+npm notice run subscribe-flow@0.5.3.7 package:mac
+npm notice run node scripts/package-macos.cjs && node scripts/verify-release-package.cjs && node scripts/packaged-smoke.cjs
+Using Python 3.12.5 environment at: build/packaging-venv
+Resolved 6 packages in 912ms
+Checked 6 packages in 1ms
+151 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.8
+152 INFO: Python: 3.12.5
+172 INFO: Platform: macOS-26.4.1-x86_64-i386-64bit
+173 INFO: Python environment: /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv
+174 INFO: wrote /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/subscribe-flow-core.spec
+182 INFO: Removing temporary files and cleaning cache in /Users/xor/Library/Application Support/pyinstaller
+207 INFO: Module search paths (PYTHONPATH):
+['/Users/xor/Documents/Subscribe_Call/Subscribe_Flow',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python312.zip',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/lib-dynload',
+ '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages',
+ '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/packaging',
+ '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/python/src']
+448 INFO: Appending 'datas' from .spec
+450 INFO: checking Analysis
+450 INFO: Building Analysis because Analysis-00.toc is non existent
+450 INFO: Looking for Python shared library...
+459 INFO: Using Python shared library: /Library/Frameworks/Python.framework/Versions/3.12/Python
+459 INFO: Running Analysis Analysis-00.toc
+459 INFO: Target bytecode optimization level: 0
+460 INFO: Initializing module dependency graph...
+462 INFO: Initializing module graph hook caches...
+486 INFO: Analyzing modules for base_library.zip ...
+1407 INFO: Processing standard module hook 'hook-heapq.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+1513 INFO: Processing standard module hook 'hook-encodings.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+3071 INFO: Processing standard module hook 'hook-math.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+3506 INFO: Processing standard module hook 'hook-pickle.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+5231 INFO: Caching module dependency graph...
+5282 INFO: Analyzing /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/packaging/core-entry.py
+5473 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+5652 INFO: Processing standard module hook 'hook-xml.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+6276 INFO: Processing standard module hook 'hook-_ctypes.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+7411 INFO: Processing standard module hook 'hook-platform.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+7544 INFO: Processing standard module hook 'hook-sqlite3.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+7933 INFO: Processing standard module hook 'hook-zoneinfo.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+7987 INFO: Processing standard module hook 'hook-sysconfig.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+8010 INFO: Processing standard module hook 'hook-_osx_support.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+8498 INFO: Processing module hooks (post-graph stage)...
+8607 INFO: Performing binary vs. data reclassification (19 entries)
+8628 INFO: Looking for ctypes DLLs
+8636 INFO: Analyzing run-time hooks ...
+8639 INFO: Including run-time hook 'pyi_rth_inspect.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+8642 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+8644 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from '/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+8654 INFO: Creating base_library.zip...
+8683 INFO: Looking for dynamic libraries
+9124 INFO: Warnings written to /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/pyinstaller/subscribe-flow-core/warn-subscribe-flow-core.txt
+9149 INFO: Graph cross-reference written to /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/pyinstaller/subscribe-flow-core/xref-subscribe-flow-core.html
+9304 INFO: checking PYZ
+9304 INFO: Building PYZ because PYZ-00.toc is non existent
+9304 INFO: Building PYZ (ZlibArchive) /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/pyinstaller/subscribe-flow-core/PYZ-00.pyz
+9588 INFO: Building PYZ (ZlibArchive) /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/pyinstaller/subscribe-flow-core/PYZ-00.pyz completed successfully.
+9593 INFO: EXE target arch: x86_64
+9593 INFO: Code signing identity: None
+9597 INFO: checking PKG
+9597 INFO: Building PKG because PKG-00.toc is non existent
+9597 INFO: Building PKG (CArchive) subscribe-flow-core.pkg
+9611 INFO: Building PKG (CArchive) subscribe-flow-core.pkg completed successfully.
+9611 INFO: Bootloader /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/bootloader/Darwin-64bit/run
+9611 INFO: checking EXE
+9612 INFO: Building EXE because EXE-00.toc is non existent
+9612 INFO: Building EXE from EXE-00.toc
+9612 INFO: Copying bootloader EXE to /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/pyinstaller/subscribe-flow-core/subscribe-flow-core
+9613 INFO: Converting EXE to target arch (x86_64)
+9649 INFO: Removing signature(s) from EXE
+9682 INFO: Modifying Mach-O image UUID(s) in EXE
+9690 INFO: Appending PKG archive to EXE
+9692 INFO: Fixing EXE headers for code signing
+9709 INFO: Rewriting the executable's macOS SDK version (26.2.0) to match the SDK version of the Python library (12.1.0) in order to avoid inconsistent behavior and potential UI issues in the frozen application.
+9710 INFO: Re-signing the EXE
+9755 INFO: Building EXE from EXE-00.toc completed successfully.
+9758 INFO: checking COLLECT
+9758 INFO: Building COLLECT because COLLECT-00.toc is non existent
+9758 INFO: Removing dir /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/sidecar/subscribe-flow-core
+9775 INFO: Building COLLECT COLLECT-00.toc
+15363 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+15367 INFO: Build complete! The results are available in: /Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/sidecar
+Packaging app for platform darwin x64 using electron v44.5.1
+WARNING: Could not find icon "/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/build/macos/SubscribeFlow.icns" with extension ".icon", skipping this app icon format
+{"bundle":"/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app","archive":"/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe-Flow-0.5.3.7-mac-x64.zip","sha256":"7454f14ddbf467e771e5f7bbd9d6c9e279681734e33d930383e0e65c3f0a9f85"}
+{"status":"passed","version":"0.5.3.7","baseRevision":"780db7eccafab7934d43ec0405b186004f5c4377","sourceFilesMatched":62,"originalLogoMatched":true,"appIconMatched":true,"packageAllowlist":true}
+{"status":"passed","version":"0.5.3.7","buildRevision":"780db7eccafab7934d43ec0405b186004f5c4377","sourceFilesMatched":62,"logoMatched":true,"archiveAllowlist":true,"size":146162604,"sha256":"7454f14ddbf467e771e5f7bbd9d6c9e279681734e33d930383e0e65c3f0a9f85","hashSidecarMatched":true,"relativeLinks":18,"coreRelativeLinks":4,"coreArchitecture":"x86_64","iconPresent":true,"signatureVerified":true,"zipVerified":true,"bundle":"/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app","archive":"/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe-Flow-0.5.3.7-mac-x64.zip"}
+{"packagedSmoke":"passed","version":"0.5.3.7","baseRevision":"780db7eccafab7934d43ec0405b186004f5c4377","sha256":"7454f14ddbf467e771e5f7bbd9d6c9e279681734e33d930383e0e65c3f0a9f85","schema":16,"platform":"macOS x64","launchServices":true,"minimalPath":true,"externalPythonIgnored":true,"productionIgnoresTestFlags":true,"wechatUnified":{"passed":true,"fromSchema":15,"toSchema":16,"oneAdapter":true,"oneConnection":true,"oneSource":true,"duplicatesMerged":true,"fullBodyAndNotePreserved":true,"manualWithoutPaidKey":true,"duplicateIntake":true,"restartPersisted":true,"cursor":"resume","unknownChargeBlocked":true,"paidAttempts":1,"manualPageReads":3,"schema":16,"foreignKeys":true,"bindingAfterCacheClear":true,"conflictArchive":true},"frozenCore":{"deduplication":true,"cancellation":true,"contents":3},"xiaohongshuLocalCover":true,"whiteBrandLogo":true,"readingState":{"defaults":true,"settingsUI":true,"fixedDeferred":true,"renamedGlobally":true,"legacyStatePreserved":true,"coreRestart":true,"appRestart":true},"priorityBoard":true,"priorityInheritance":true,"overviewQuickFilters":{"calendar":true,"selectedDatePreserved":true,"priorityBoard":true,"selectedIndicator":true},"noteFooter":{"savedThroughUI":true,"samples":[{"theme":"light","width":280,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]},{"theme":"light","width":360,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]},{"theme":"light","width":640,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]},{"theme":"dark","width":280,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]},{"theme":"dark","width":360,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]},{"theme":"dark","width":640,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]}]},"notes":true,"summarySettingsSeparate":true,"tags":true,"xiaohongshuChannel":true,"wxrankGrouped":true,"wxrankPaidWarning":true,"tagsToolbar":true,"recognitionUnselectRemoved":true,"tagsAiWheelScroll":true,"tagsAiBottomReachable":true,"upgradeBackup":true,"exclusiveState":true,"modeSwitch":true,"automaticCrashRecovery":true,"interval144Hours":{"seconds":518400,"overLimitRejected":true,"restartPersisted":true},"notesRestart":true,"priorityRestart":true,"appRestart":true,"tagFilterScroll":{"nativeWheel":true,"bottomReachable":true,"selectionPositionPreserved":true,"multipleTagsAndMode":true,"clear":true},"missingCoreHint":true,"redactedDiagnostics":true}
+{"date":"2026-11-09T06:43:17.957Z","status":"passed","retainedVersion":"0.5.3.7","retainedApp":"/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app","retired":[{"version":"0.5.3.6","bundle":"/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.3.6/Subscribe Flow-darwin-x64/Subscribe Flow.app","backup":{"archive":"/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/Subscribe-Flow-0.5.3.6-mac-x64.zip","sha256":"642e986e172dc5a0f80b31bd89ad5f0b8ec3fd011c61a58c3eabd6b5a8ccb420"},"oldWasNotRunning":true,"movedToTrash":true,"unregistered":true}],"skippedRunning":[],"dailyDataTouched":false,"indexedApps":["/Users/xor/Documents/Subscribe_Call/Subscribe_Flow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app"]}
