@@ -32,6 +32,11 @@ jobs:
           python3 -m pip install uv
           npm ci
           npm run configure
+          node -e "require('electron')"
+          electron_zip="$(find "$HOME/Library/Caches/electron" -name 'electron-v44.5.1-darwin-x64.zip' -print -quit)"
+          test -n "$electron_zip"
+          node -e 'const fs=require("fs"),c=require("crypto"),p=process.argv[1],h=c.createHash("sha256").update(fs.readFileSync(p)).digest("hex");if(h!==require("./node_modules/electron/checksums.json")[require("path").basename(p)])throw Error("Electron checksum mismatch")' "$electron_zip"
+          echo "SUBSCRIBE_FLOW_ELECTRON_ZIP_DIR=$(dirname "$electron_zip")" >> "$GITHUB_ENV"
       - name: Build and verify the actual package
         run: npm run package:mac
       - name: Upload verified package to the draft release
