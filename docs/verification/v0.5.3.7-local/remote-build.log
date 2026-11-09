@@ -1,0 +1,595 @@
+package	Set up job	﻿2026-11-09T07:26:14.8496120Z Current runner version: '2.338.2'
+package	Set up job	2026-11-09T07:26:14.8523880Z ##[group]Runner Image Provisioner
+package	Set up job	2026-11-09T07:26:14.8524820Z Hosted Compute Agent
+package	Set up job	2026-11-09T07:26:14.8525470Z Version: 20260819.586
+package	Set up job	2026-11-09T07:26:14.8526560Z Commit: 3cc4a88dfa507ef76119ad1bb3eccc6378bb2b76
+package	Set up job	2026-11-09T07:26:14.8527440Z Build Date: 2026-08-18T23:20:18Z
+package	Set up job	2026-11-09T07:26:14.8528220Z Worker ID: {df1e9523-dcbd-4ccb-91b9-12eef952ce29}
+package	Set up job	2026-11-09T07:26:14.8529070Z Azure Region: westus
+package	Set up job	2026-11-09T07:26:14.8529700Z ##[endgroup]
+package	Set up job	2026-11-09T07:26:14.8531560Z ##[group]Operating System
+package	Set up job	2026-11-09T07:26:14.8532520Z macOS
+package	Set up job	2026-11-09T07:26:14.8533080Z 15.7.9
+package	Set up job	2026-11-09T07:26:14.8533630Z 24G830
+package	Set up job	2026-11-09T07:26:14.8534190Z ##[endgroup]
+package	Set up job	2026-11-09T07:26:14.8534800Z ##[group]Runner Image
+package	Set up job	2026-11-09T07:26:14.8535440Z Image: macos-15
+package	Set up job	2026-11-09T07:26:14.8536040Z Version: 20260824.0482.1
+package	Set up job	2026-11-09T07:26:14.8537410Z Included Software: https://github.com/actions/runner-images/blob/macos-15/20260824.0482/images/macos/macos-15-Readme.md
+package	Set up job	2026-11-09T07:26:14.8539670Z Image Release: https://github.com/actions/runner-images/releases/tag/macos-15%2F20260824.0482
+package	Set up job	2026-11-09T07:26:14.8540960Z ##[endgroup]
+package	Set up job	2026-11-09T07:26:14.8542300Z ##[group]GITHUB_TOKEN Permissions
+package	Set up job	2026-11-09T07:26:14.8544670Z Contents: write
+package	Set up job	2026-11-09T07:26:14.8545330Z Metadata: read
+package	Set up job	2026-11-09T07:26:14.8545980Z ##[endgroup]
+package	Set up job	2026-11-09T07:26:14.8548250Z Secret source: Actions
+package	Set up job	2026-11-09T07:26:14.8549280Z Cache mode: write
+package	Set up job	2026-11-09T07:26:14.8550950Z Prepare workflow directory
+package	Set up job	2026-11-09T07:26:14.8957460Z Prepare all required actions
+package	Set up job	2026-11-09T07:26:14.9015280Z Getting action download info
+package	Set up job	2026-11-09T07:26:15.0893350Z Download action repository 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+package	Set up job	2026-11-09T07:26:15.3918990Z Download action repository 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+package	Set up job	2026-11-09T07:26:15.5914740Z Download action repository 'actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+package	Set up job	2026-11-09T07:26:15.8234220Z Complete job name: package
+package	Check out the release tag	﻿2026-11-09T07:26:15.9161230Z ##[group]Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+package	Check out the release tag	2026-11-09T07:26:15.9162730Z with:
+package	Check out the release tag	2026-11-09T07:26:15.9163320Z   ref: v0.5.3.7
+package	Check out the release tag	2026-11-09T07:26:15.9163960Z   persist-credentials: false
+package	Check out the release tag	2026-11-09T07:26:15.9164730Z   repository: melon-bun/SubscribeFlow
+package	Check out the release tag	2026-11-09T07:26:15.9170580Z   token: ***
+package	Check out the release tag	2026-11-09T07:26:15.9171180Z   ssh-strict: true
+package	Check out the release tag	2026-11-09T07:26:15.9171790Z   ssh-user: git
+package	Check out the release tag	2026-11-09T07:26:15.9172490Z   clean: true
+package	Check out the release tag	2026-11-09T07:26:15.9173170Z   sparse-checkout-cone-mode: true
+package	Check out the release tag	2026-11-09T07:26:15.9173920Z   fetch-depth: 1
+package	Check out the release tag	2026-11-09T07:26:15.9174540Z   fetch-tags: false
+package	Check out the release tag	2026-11-09T07:26:15.9175170Z   show-progress: true
+package	Check out the release tag	2026-11-09T07:26:15.9175810Z   lfs: false
+package	Check out the release tag	2026-11-09T07:26:15.9176400Z   submodules: false
+package	Check out the release tag	2026-11-09T07:26:15.9177040Z   set-safe-directory: true
+package	Check out the release tag	2026-11-09T07:26:15.9177760Z   allow-unsafe-pr-checkout: false
+package	Check out the release tag	2026-11-09T07:26:15.9179060Z ##[endgroup]
+package	Check out the release tag	2026-11-09T07:26:16.5788790Z Syncing repository: melon-bun/SubscribeFlow
+package	Check out the release tag	2026-11-09T07:26:16.5792020Z ##[group]Getting Git version info
+package	Check out the release tag	2026-11-09T07:26:16.5793470Z Working directory is '/Users/runner/work/SubscribeFlow/SubscribeFlow'
+package	Check out the release tag	2026-11-09T07:26:16.5795290Z [command]/usr/local/bin/git version
+package	Check out the release tag	2026-11-09T07:26:16.6018650Z git version 2.55.0
+package	Check out the release tag	2026-11-09T07:26:16.6042980Z ##[endgroup]
+package	Check out the release tag	2026-11-09T07:26:16.6055940Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/00583299-7955-4e4c-89fa-61d09b27f2c8/.gitconfig'
+package	Check out the release tag	2026-11-09T07:26:16.6071720Z Temporarily overriding HOME='/Users/runner/work/_temp/00583299-7955-4e4c-89fa-61d09b27f2c8' before making global git config changes
+package	Check out the release tag	2026-11-09T07:26:16.6074170Z Adding repository directory to the temporary git global config as a safe directory
+package	Check out the release tag	2026-11-09T07:26:16.6076550Z [command]/usr/local/bin/git config --global --add safe.directory /Users/runner/work/SubscribeFlow/SubscribeFlow
+package	Check out the release tag	2026-11-09T07:26:16.6205230Z Deleting the contents of '/Users/runner/work/SubscribeFlow/SubscribeFlow'
+package	Check out the release tag	2026-11-09T07:26:16.6211410Z ##[group]Initializing the repository
+package	Check out the release tag	2026-11-09T07:26:16.6218060Z [command]/usr/local/bin/git init /Users/runner/work/SubscribeFlow/SubscribeFlow
+package	Check out the release tag	2026-11-09T07:26:16.6553820Z hint: Using 'master' as the name for the initial branch. This default branch name
+package	Check out the release tag	2026-11-09T07:26:16.6557440Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+package	Check out the release tag	2026-11-09T07:26:16.6560510Z hint: to use in all of your new repositories, which will suppress this warning,
+package	Check out the release tag	2026-11-09T07:26:16.6561840Z hint: call:
+package	Check out the release tag	2026-11-09T07:26:16.6562840Z hint:
+package	Check out the release tag	2026-11-09T07:26:16.6564200Z hint: 	git config --global init.defaultBranch <name>
+package	Check out the release tag	2026-11-09T07:26:16.6565380Z hint:
+package	Check out the release tag	2026-11-09T07:26:16.6566660Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+package	Check out the release tag	2026-11-09T07:26:16.6568660Z hint: 'development'. The just-created branch can be renamed via this command:
+package	Check out the release tag	2026-11-09T07:26:16.6569970Z hint:
+package	Check out the release tag	2026-11-09T07:26:16.6570760Z hint: 	git branch -m <name>
+package	Check out the release tag	2026-11-09T07:26:16.6571670Z hint:
+package	Check out the release tag	2026-11-09T07:26:16.6572850Z hint: Disable this message with "git config set advice.defaultBranchName false"
+package	Check out the release tag	2026-11-09T07:26:16.6575560Z Initialized empty Git repository in /Users/runner/work/SubscribeFlow/SubscribeFlow/.git/
+package	Check out the release tag	2026-11-09T07:26:16.6579920Z [command]/usr/local/bin/git remote add origin https://github.com/melon-bun/SubscribeFlow
+package	Check out the release tag	2026-11-09T07:26:16.6692350Z ##[endgroup]
+package	Check out the release tag	2026-11-09T07:26:16.6694010Z ##[group]Disabling automatic garbage collection
+package	Check out the release tag	2026-11-09T07:26:16.6696550Z [command]/usr/local/bin/git config --local gc.auto 0
+package	Check out the release tag	2026-11-09T07:26:16.6794870Z ##[endgroup]
+package	Check out the release tag	2026-11-09T07:26:16.6796260Z ##[group]Setting up auth
+package	Check out the release tag	2026-11-09T07:26:16.6806220Z [command]/usr/local/bin/git config --local --name-only --get-regexp core\.sshCommand
+package	Check out the release tag	2026-11-09T07:26:16.6907440Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+package	Check out the release tag	2026-11-09T07:26:16.8671430Z [command]/usr/local/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+package	Check out the release tag	2026-11-09T07:26:16.8807420Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+package	Check out the release tag	2026-11-09T07:26:17.1336220Z [command]/usr/local/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+package	Check out the release tag	2026-11-09T07:26:17.1447500Z [command]/usr/local/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+package	Check out the release tag	2026-11-09T07:26:17.3031750Z [command]/usr/local/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+package	Check out the release tag	2026-11-09T07:26:17.3150120Z ##[endgroup]
+package	Check out the release tag	2026-11-09T07:26:17.3151500Z ##[group]Fetching the repository
+package	Check out the release tag	2026-11-09T07:26:17.3159580Z [command]/usr/local/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +refs/heads/v0.5.3.7*:refs/remotes/origin/v0.5.3.7* +refs/tags/v0.5.3.7*:refs/tags/v0.5.3.7*
+package	Check out the release tag	2026-11-09T07:26:20.0942120Z From https://github.com/melon-bun/SubscribeFlow
+package	Check out the release tag	2026-11-09T07:26:20.0944430Z  * [new tag]         v0.5.3.7   -> v0.5.3.7
+package	Check out the release tag	2026-11-09T07:26:20.0949660Z ##[endgroup]
+package	Check out the release tag	2026-11-09T07:26:20.0951260Z ##[group]Determining the checkout info
+package	Check out the release tag	2026-11-09T07:26:20.0952610Z [command]/usr/local/bin/git branch --list --remote origin/v0.5.3.7
+package	Check out the release tag	2026-11-09T07:26:20.1058590Z [command]/usr/local/bin/git tag --list v0.5.3.7
+package	Check out the release tag	2026-11-09T07:26:20.1147500Z v0.5.3.7
+package	Check out the release tag	2026-11-09T07:26:20.1152070Z ##[endgroup]
+package	Check out the release tag	2026-11-09T07:26:20.1161610Z [command]/usr/local/bin/git sparse-checkout disable
+package	Check out the release tag	2026-11-09T07:26:20.1270850Z [command]/usr/local/bin/git config --local --unset-all extensions.worktreeConfig
+package	Check out the release tag	2026-11-09T07:26:20.1361270Z ##[group]Checking out the ref
+package	Check out the release tag	2026-11-09T07:26:20.1365230Z [command]/usr/local/bin/git checkout --progress --force refs/tags/v0.5.3.7
+package	Check out the release tag	2026-11-09T07:26:20.9157440Z HEAD is now at 780db7e chore: prepare 0.5.3.7 release
+package	Check out the release tag	2026-11-09T07:26:20.9181880Z ##[endgroup]
+package	Check out the release tag	2026-11-09T07:26:20.9306230Z [command]/usr/local/bin/git log -1 --format=%H
+package	Check out the release tag	2026-11-09T07:26:20.9413160Z 780db7eccafab7934d43ec0405b186004f5c4377
+package	Check out the release tag	2026-11-09T07:26:20.9424350Z ##[group]Removing auth
+package	Check out the release tag	2026-11-09T07:26:20.9429930Z [command]/usr/local/bin/git config --local --name-only --get-regexp core\.sshCommand
+package	Check out the release tag	2026-11-09T07:26:20.9527560Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+package	Check out the release tag	2026-11-09T07:26:21.0769150Z [command]/usr/local/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+package	Check out the release tag	2026-11-09T07:26:21.0849760Z http.https://github.com/.extraheader
+package	Check out the release tag	2026-11-09T07:26:21.0860590Z [command]/usr/local/bin/git config --local --unset-all http.https://github.com/.extraheader
+package	Check out the release tag	2026-11-09T07:26:21.0957680Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+package	Check out the release tag	2026-11-09T07:26:21.2161610Z [command]/usr/local/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+package	Check out the release tag	2026-11-09T07:26:21.2251290Z [command]/usr/local/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+package	Check out the release tag	2026-11-09T07:26:21.3638510Z ##[endgroup]
+package	Set up Node	﻿2026-11-09T07:26:21.3975150Z ##[group]Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+package	Set up Node	2026-11-09T07:26:21.3975850Z with:
+package	Set up Node	2026-11-09T07:26:21.3976150Z   node-version: 24
+package	Set up Node	2026-11-09T07:26:21.3976510Z   always-auth: false
+package	Set up Node	2026-11-09T07:26:21.3976870Z   check-latest: false
+package	Set up Node	2026-11-09T07:26:21.3981260Z   token: ***
+package	Set up Node	2026-11-09T07:26:21.3981580Z ##[endgroup]
+package	Set up Node	2026-11-09T07:26:21.5875120Z Found in cache @ /Users/runner/hostedtoolcache/node/24.19.0/x64
+package	Set up Node	2026-11-09T07:26:21.5880960Z (node:3849) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+package	Set up Node	2026-11-09T07:26:21.5882240Z (Use `node --trace-deprecation ...` to show where the warning was created)
+package	Set up Node	2026-11-09T07:26:21.5883650Z ##[group]Environment details
+package	Set up Node	2026-11-09T07:26:22.4852470Z node: v24.19.0
+package	Set up Node	2026-11-09T07:26:22.4856130Z npm: 11.17.0
+package	Set up Node	2026-11-09T07:26:22.4858150Z yarn: 1.22.22
+package	Set up Node	2026-11-09T07:26:22.4860160Z ##[endgroup]
+package	Set up Python	﻿2026-11-09T07:26:22.5122150Z ##[group]Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+package	Set up Python	2026-11-09T07:26:22.5123060Z with:
+package	Set up Python	2026-11-09T07:26:22.5123440Z   python-version: 3.12
+package	Set up Python	2026-11-09T07:26:22.5123860Z   architecture: x64
+package	Set up Python	2026-11-09T07:26:22.5124440Z   check-latest: false
+package	Set up Python	2026-11-09T07:26:22.5129210Z   token: ***
+package	Set up Python	2026-11-09T07:26:22.5129630Z   update-environment: true
+package	Set up Python	2026-11-09T07:26:22.5130070Z   allow-prereleases: false
+package	Set up Python	2026-11-09T07:26:22.5130630Z   freethreaded: false
+package	Set up Python	2026-11-09T07:26:22.5131060Z ##[endgroup]
+package	Set up Python	2026-11-09T07:26:22.7948730Z (node:3868) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+package	Set up Python	2026-11-09T07:26:22.7952800Z (Use `node --trace-deprecation ...` to show where the warning was created)
+package	Set up Python	2026-11-09T07:26:22.7953860Z ##[group]Installed versions
+package	Set up Python	2026-11-09T07:26:22.7976020Z Successfully set up CPython (3.12.10)
+package	Set up Python	2026-11-09T07:26:22.7977690Z ##[endgroup]
+package	Prepare dependencies	﻿2026-11-09T07:26:22.8108880Z ##[group]Run python3 -m pip install uv
+package	Prepare dependencies	2026-11-09T07:26:22.8109680Z ^[[36;1mpython3 -m pip install uv^[[0m
+package	Prepare dependencies	2026-11-09T07:26:22.8110190Z ^[[36;1mnpm ci^[[0m
+package	Prepare dependencies	2026-11-09T07:26:22.8110580Z ^[[36;1mnpm run configure^[[0m
+package	Prepare dependencies	2026-11-09T07:26:22.8111580Z ^[[36;1mELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_CUSTOM_DIR=44.5.1 node -e "require('electron')"^[[0m
+package	Prepare dependencies	2026-11-09T07:26:22.8113150Z ^[[36;1melectron_zip="$(find "$HOME/Library/Caches/electron" -name 'electron-v44.5.1-darwin-x64.zip' -print -quit)"^[[0m
+package	Prepare dependencies	2026-11-09T07:26:22.8114140Z ^[[36;1mtest -n "$electron_zip"^[[0m
+package	Prepare dependencies	2026-11-09T07:26:22.8117060Z ^[[36;1mnode -e 'const fs=require("fs"),c=require("crypto"),p=process.argv[1],h=c.createHash("sha256").update(fs.readFileSync(p)).digest("hex");if(h!==require("./node_modules/electron/checksums.json")[require("path").basename(p)])throw Error("Electron checksum mismatch")' "$electron_zip"^[[0m
+package	Prepare dependencies	2026-11-09T07:26:22.8119400Z ^[[36;1mecho "SUBSCRIBE_FLOW_ELECTRON_ZIP_DIR=$(dirname "$electron_zip")" >> "$GITHUB_ENV"^[[0m
+package	Prepare dependencies	2026-11-09T07:26:22.8232710Z shell: /bin/bash -e {0}
+package	Prepare dependencies	2026-11-09T07:26:22.8233170Z env:
+package	Prepare dependencies	2026-11-09T07:26:22.8233710Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Prepare dependencies	2026-11-09T07:26:22.8234680Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.12.10/x64/lib/pkgconfig
+package	Prepare dependencies	2026-11-09T07:26:22.8235730Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Prepare dependencies	2026-11-09T07:26:22.8236520Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Prepare dependencies	2026-11-09T07:26:22.8237310Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Prepare dependencies	2026-11-09T07:26:22.8237970Z ##[endgroup]
+package	Prepare dependencies	2026-11-09T07:26:25.2496160Z Collecting uv
+package	Prepare dependencies	2026-11-09T07:26:25.3179170Z   Downloading uv-0.13.7-py3-none-macosx_10_12_x86_64.whl.metadata (11 kB)
+package	Prepare dependencies	2026-11-09T07:26:25.3417040Z Downloading uv-0.13.7-py3-none-macosx_10_12_x86_64.whl (17.2 MB)
+package	Prepare dependencies	2026-11-09T07:26:25.5579240Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 17.2/17.2 MB 87.9 MB/s  0:00:00
+package	Prepare dependencies	2026-11-09T07:26:25.6375840Z Installing collected packages: uv
+package	Prepare dependencies	2026-11-09T07:26:25.7805660Z Successfully installed uv-0.13.7
+package	Prepare dependencies	2026-11-09T07:26:25.7817300Z
+package	Prepare dependencies	2026-11-09T07:26:25.7827110Z [notice] A new release of pip is available: 26.2.1 -> 26.3
+package	Prepare dependencies	2026-11-09T07:26:25.7828250Z [notice] To update, run: python3 -m pip install --upgrade pip
+package	Prepare dependencies	2026-11-09T07:26:28.9998830Z
+package	Prepare dependencies	2026-11-09T07:26:29.0843200Z added 51 packages, and audited 52 packages in 3s
+package	Prepare dependencies	2026-11-09T07:26:29.0897980Z
+package	Prepare dependencies	2026-11-09T07:26:29.0922840Z 13 packages are looking for funding
+package	Prepare dependencies	2026-11-09T07:26:29.0933190Z   run `npm fund` for details
+package	Prepare dependencies	2026-11-09T07:26:29.0967110Z
+package	Prepare dependencies	2026-11-09T07:26:29.0976680Z 7 vulnerabilities (5 moderate, 2 high)
+package	Prepare dependencies	2026-11-09T07:26:29.0990280Z
+package	Prepare dependencies	2026-11-09T07:26:29.0997140Z To address issues that do not require attention, run:
+package	Prepare dependencies	2026-11-09T07:26:29.1011350Z   npm audit fix
+package	Prepare dependencies	2026-11-09T07:26:29.1053480Z
+package	Prepare dependencies	2026-11-09T07:26:29.1069870Z To address all issues (including breaking changes), run:
+package	Prepare dependencies	2026-11-09T07:26:29.1088480Z   npm audit fix --force
+package	Prepare dependencies	2026-11-09T07:26:29.1117380Z
+package	Prepare dependencies	2026-11-09T07:26:29.1142970Z Run `npm audit` for details.
+package	Prepare dependencies	2026-11-09T07:26:29.5164140Z
+package	Prepare dependencies	2026-11-09T07:26:29.5165500Z > subscribe-flow@0.5.3.7 configure
+package	Prepare dependencies	2026-11-09T07:26:29.5167070Z > node scripts/configure-runtime.cjs
+package	Prepare dependencies	2026-11-09T07:26:29.5168100Z
+package	Prepare dependencies	2026-11-09T07:26:29.6029450Z 已保存本机 Python 与 Node 路径；B站由应用内会话采集，无需 OpenCLI 或外部 Chrome。
+package	Prepare dependencies	2026-11-09T07:26:29.6930290Z Downloading Electron binary...
+package	Build and verify the actual package	﻿2026-11-09T07:26:41.3877780Z ##[group]Run npm run package:mac
+package	Build and verify the actual package	2026-11-09T07:26:41.3878320Z ^[[36;1mnpm run package:mac^[[0m
+package	Build and verify the actual package	2026-11-09T07:26:41.3940800Z shell: /bin/bash -e {0}
+package	Build and verify the actual package	2026-11-09T07:26:41.3941240Z env:
+package	Build and verify the actual package	2026-11-09T07:26:41.3941810Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Build and verify the actual package	2026-11-09T07:26:41.3942720Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.12.10/x64/lib/pkgconfig
+package	Build and verify the actual package	2026-11-09T07:26:41.3943630Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Build and verify the actual package	2026-11-09T07:26:41.3944450Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Build and verify the actual package	2026-11-09T07:26:41.3945280Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Build and verify the actual package	2026-11-09T07:26:41.3946680Z   SUBSCRIBE_FLOW_ELECTRON_ZIP_DIR: /Users/runner/Library/Caches/electron/7a2fc593f2286587ea1878f12a1b3ceae003e5ac2752bb660ff426a13de1604e
+package	Build and verify the actual package	2026-11-09T07:26:41.3947830Z ##[endgroup]
+package	Build and verify the actual package	2026-11-09T07:26:41.7128520Z
+package	Build and verify the actual package	2026-11-09T07:26:41.7154080Z > subscribe-flow@0.5.3.7 package:mac
+package	Build and verify the actual package	2026-11-09T07:26:41.7171630Z > node scripts/package-macos.cjs && node scripts/verify-release-package.cjs && node scripts/packaged-smoke.cjs
+package	Build and verify the actual package	2026-11-09T07:26:41.7175040Z
+package	Build and verify the actual package	2026-11-09T07:26:41.9237340Z Using CPython 3.12.10 interpreter at: /Library/Frameworks/Python.framework/Versions/3.12/bin/python3
+package	Build and verify the actual package	2026-11-09T07:26:41.9239440Z Creating virtual environment at: build/packaging-venv
+package	Build and verify the actual package	2026-11-09T07:26:41.9281810Z Activate with: source build/packaging-venv/bin/activate
+package	Build and verify the actual package	2026-11-09T07:26:42.0648490Z Using Python 3.12.10 environment at: build/packaging-venv
+package	Build and verify the actual package	2026-11-09T07:26:42.1698700Z Resolved 6 packages in 95ms
+package	Build and verify the actual package	2026-11-09T07:26:42.2568540Z Downloading pyinstaller (1.0MiB)
+package	Build and verify the actual package	2026-11-09T07:26:42.5768760Z  Downloaded pyinstaller
+package	Build and verify the actual package	2026-11-09T07:26:42.5896110Z Prepared 6 packages in 401ms
+package	Build and verify the actual package	2026-11-09T07:26:42.6395840Z Installed 6 packages in 67ms
+package	Build and verify the actual package	2026-11-09T07:26:42.6480760Z  + altgraph==0.17.5
+package	Build and verify the actual package	2026-11-09T07:26:42.6502640Z  + macholib==1.16.4
+package	Build and verify the actual package	2026-11-09T07:26:42.6519010Z  + packaging==26.3
+package	Build and verify the actual package	2026-11-09T07:26:42.6583040Z  + pyinstaller==6.22.3
+package	Build and verify the actual package	2026-11-09T07:26:42.6592070Z  + pyinstaller-hooks-contrib==2026.8
+package	Build and verify the actual package	2026-11-09T07:26:42.6638600Z  + setuptools==84.0.0
+package	Build and verify the actual package	2026-11-09T07:26:45.1830370Z 2010 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.8
+package	Build and verify the actual package	2026-11-09T07:26:45.1858360Z 2015 INFO: Python: 3.12.10
+package	Build and verify the actual package	2026-11-09T07:26:45.4610840Z 2248 INFO: Platform: macOS-15.7.9-x86_64-i386-64bit
+package	Build and verify the actual package	2026-11-09T07:26:45.4612850Z 2248 INFO: Python environment: /Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv
+package	Build and verify the actual package	2026-11-09T07:26:45.4616180Z 2250 INFO: wrote /Users/runner/work/SubscribeFlow/SubscribeFlow/build/macos/subscribe-flow-core.spec
+package	Build and verify the actual package	2026-11-09T07:26:45.4909490Z 2295 INFO: Removing temporary files and cleaning cache in /Users/runner/Library/Application Support/pyinstaller
+package	Build and verify the actual package	2026-11-09T07:26:45.4925680Z 2297 INFO: Module search paths (PYTHONPATH):
+package	Build and verify the actual package	2026-11-09T07:26:45.5672940Z ['/Users/runner/work/SubscribeFlow/SubscribeFlow',
+package	Build and verify the actual package	2026-11-09T07:26:45.5717030Z  '/Library/Frameworks/Python.framework/Versions/3.12/lib/python312.zip',
+package	Build and verify the actual package	2026-11-09T07:26:45.5772170Z  '/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12',
+package	Build and verify the actual package	2026-11-09T07:26:45.5827060Z  '/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/lib-dynload',
+package	Build and verify the actual package	2026-11-09T07:26:45.5859530Z  '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages',
+package	Build and verify the actual package	2026-11-09T07:26:45.5895490Z  '/Users/runner/work/SubscribeFlow/SubscribeFlow/packaging',
+package	Build and verify the actual package	2026-11-09T07:26:45.5959020Z  '/Users/runner/work/SubscribeFlow/SubscribeFlow/python/src']
+package	Build and verify the actual package	2026-11-09T07:26:45.8717130Z 2702 INFO: Appending 'datas' from .spec
+package	Build and verify the actual package	2026-11-09T07:26:45.8750110Z 2703 INFO: checking Analysis
+package	Build and verify the actual package	2026-11-09T07:26:45.8794290Z 2703 INFO: Building Analysis because Analysis-00.toc is non existent
+package	Build and verify the actual package	2026-11-09T07:26:45.8795300Z 2703 INFO: Looking for Python shared library...
+package	Build and verify the actual package	2026-11-09T07:26:45.8868130Z 2718 INFO: Using Python shared library: /Library/Frameworks/Python.framework/Versions/3.12/Python
+package	Build and verify the actual package	2026-11-09T07:26:45.8896450Z 2719 INFO: Running Analysis Analysis-00.toc
+package	Build and verify the actual package	2026-11-09T07:26:45.8911350Z 2719 INFO: Target bytecode optimization level: 0
+package	Build and verify the actual package	2026-11-09T07:26:45.8925430Z 2719 INFO: Initializing module dependency graph...
+package	Build and verify the actual package	2026-11-09T07:26:45.8952930Z 2721 INFO: Initializing module graph hook caches...
+package	Build and verify the actual package	2026-11-09T07:26:45.9114650Z 2742 INFO: Analyzing modules for base_library.zip ...
+package	Build and verify the actual package	2026-11-09T07:26:49.2659480Z 6096 INFO: Processing standard module hook 'hook-heapq.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+package	Build and verify the actual package	2026-11-09T07:26:49.6292440Z 6460 INFO: Processing standard module hook 'hook-encodings.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+package	Build and verify the actual package	2026-11-09T07:26:53.5718660Z 10403 INFO: Processing standard module hook 'hook-math.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+package	Build and verify the actual package	2026-11-09T07:26:54.0762030Z 10908 INFO: Processing standard module hook 'hook-pickle.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+package	Build and verify the actual package	2026-11-09T07:26:56.4452730Z 13247 INFO: Caching module dependency graph...
+package	Build and verify the actual package	2026-11-09T07:26:56.4830470Z 13315 INFO: Analyzing /Users/runner/work/SubscribeFlow/SubscribeFlow/packaging/core-entry.py
+package	Build and verify the actual package	2026-11-09T07:26:56.7218160Z 13553 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+package	Build and verify the actual package	2026-11-09T07:26:56.9744610Z 13799 INFO: Processing standard module hook 'hook-xml.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+package	Build and verify the actual package	2026-11-09T07:26:57.7115940Z 14543 INFO: Processing standard module hook 'hook-_ctypes.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+package	Build and verify the actual package	2026-11-09T07:26:59.2181540Z 16050 INFO: Processing standard module hook 'hook-platform.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+package	Build and verify the actual package	2026-11-09T07:26:59.3607870Z 16192 INFO: Processing standard module hook 'hook-sqlite3.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+package	Build and verify the actual package	2026-11-09T07:26:59.6188670Z 16450 INFO: Processing standard module hook 'hook-zoneinfo.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+package	Build and verify the actual package	2026-11-09T07:26:59.6941350Z 16497 INFO: Processing standard module hook 'hook-sysconfig.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+package	Build and verify the actual package	2026-11-09T07:26:59.6947030Z 16520 INFO: Processing standard module hook 'hook-_osx_support.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks'
+package	Build and verify the actual package	2026-11-09T07:27:00.3843930Z 17216 INFO: Processing module hooks (post-graph stage)...
+package	Build and verify the actual package	2026-11-09T07:27:00.5303710Z 17362 INFO: Performing binary vs. data reclassification (18 entries)
+package	Build and verify the actual package	2026-11-09T07:27:00.5520930Z 17384 INFO: Looking for ctypes DLLs
+package	Build and verify the actual package	2026-11-09T07:27:00.5635890Z 17395 INFO: Analyzing run-time hooks ...
+package	Build and verify the actual package	2026-11-09T07:27:00.6540340Z 17398 INFO: Including run-time hook 'pyi_rth_inspect.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+package	Build and verify the actual package	2026-11-09T07:27:00.7005470Z 17402 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+package	Build and verify the actual package	2026-11-09T07:27:00.7072420Z 17405 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from '/Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+package	Build and verify the actual package	2026-11-09T07:27:00.7075140Z 17420 INFO: Creating base_library.zip...
+package	Build and verify the actual package	2026-11-09T07:27:00.7077110Z 17463 INFO: Looking for dynamic libraries
+package	Build and verify the actual package	2026-11-09T07:27:01.3821910Z 18214 INFO: Warnings written to /Users/runner/work/SubscribeFlow/SubscribeFlow/build/macos/pyinstaller/subscribe-flow-core/warn-subscribe-flow-core.txt
+package	Build and verify the actual package	2026-11-09T07:27:01.4118810Z 18243 INFO: Graph cross-reference written to /Users/runner/work/SubscribeFlow/SubscribeFlow/build/macos/pyinstaller/subscribe-flow-core/xref-subscribe-flow-core.html
+package	Build and verify the actual package	2026-11-09T07:27:01.6893040Z 18519 INFO: checking PYZ
+package	Build and verify the actual package	2026-11-09T07:27:01.6896210Z 18520 INFO: Building PYZ because PYZ-00.toc is non existent
+package	Build and verify the actual package	2026-11-09T07:27:01.6903410Z 18520 INFO: Building PYZ (ZlibArchive) /Users/runner/work/SubscribeFlow/SubscribeFlow/build/macos/pyinstaller/subscribe-flow-core/PYZ-00.pyz
+package	Build and verify the actual package	2026-11-09T07:27:01.9876240Z 18809 INFO: Building PYZ (ZlibArchive) /Users/runner/work/SubscribeFlow/SubscribeFlow/build/macos/pyinstaller/subscribe-flow-core/PYZ-00.pyz completed successfully.
+package	Build and verify the actual package	2026-11-09T07:27:01.9947070Z 18820 INFO: EXE target arch: x86_64
+package	Build and verify the actual package	2026-11-09T07:27:02.0004880Z 18820 INFO: Code signing identity: None
+package	Build and verify the actual package	2026-11-09T07:27:02.0020620Z 18826 INFO: checking PKG
+package	Build and verify the actual package	2026-11-09T07:27:02.0146990Z 18826 INFO: Building PKG because PKG-00.toc is non existent
+package	Build and verify the actual package	2026-11-09T07:27:02.0149960Z 18826 INFO: Building PKG (CArchive) subscribe-flow-core.pkg
+package	Build and verify the actual package	2026-11-09T07:27:02.0181520Z 18840 INFO: Building PKG (CArchive) subscribe-flow-core.pkg completed successfully.
+package	Build and verify the actual package	2026-11-09T07:27:02.0498290Z 18842 INFO: Bootloader /Users/runner/work/SubscribeFlow/SubscribeFlow/build/packaging-venv/lib/python3.12/site-packages/PyInstaller/bootloader/Darwin-64bit/run
+package	Build and verify the actual package	2026-11-09T07:27:02.0540400Z 18842 INFO: checking EXE
+package	Build and verify the actual package	2026-11-09T07:27:02.0541490Z 18842 INFO: Building EXE because EXE-00.toc is non existent
+package	Build and verify the actual package	2026-11-09T07:27:02.0542620Z 18842 INFO: Building EXE from EXE-00.toc
+package	Build and verify the actual package	2026-11-09T07:27:02.0544940Z 18842 INFO: Copying bootloader EXE to /Users/runner/work/SubscribeFlow/SubscribeFlow/build/macos/pyinstaller/subscribe-flow-core/subscribe-flow-core
+package	Build and verify the actual package	2026-11-09T07:27:02.0557640Z 18844 INFO: Converting EXE to target arch (x86_64)
+package	Build and verify the actual package	2026-11-09T07:27:03.5855500Z 20417 INFO: Removing signature(s) from EXE
+package	Build and verify the actual package	2026-11-09T07:27:03.6232180Z 20454 INFO: Modifying Mach-O image UUID(s) in EXE
+package	Build and verify the actual package	2026-11-09T07:27:03.6304490Z 20461 INFO: Appending PKG archive to EXE
+package	Build and verify the actual package	2026-11-09T07:27:03.6318760Z 20463 INFO: Fixing EXE headers for code signing
+package	Build and verify the actual package	2026-11-09T07:27:03.6499810Z 20477 INFO: Rewriting the executable's macOS SDK version (26.2.0) to match the SDK version of the Python library (12.1.0) in order to avoid inconsistent behavior and potential UI issues in the frozen application.
+package	Build and verify the actual package	2026-11-09T07:27:03.6516860Z 20479 INFO: Re-signing the EXE
+package	Build and verify the actual package	2026-11-09T07:27:03.7297180Z 20522 INFO: Building EXE from EXE-00.toc completed successfully.
+package	Build and verify the actual package	2026-11-09T07:27:03.7521550Z 20525 INFO: checking COLLECT
+package	Build and verify the actual package	2026-11-09T07:27:03.7532140Z 20525 INFO: Building COLLECT because COLLECT-00.toc is non existent
+package	Build and verify the actual package	2026-11-09T07:27:03.7536290Z 20525 INFO: Building COLLECT COLLECT-00.toc
+package	Build and verify the actual package	2026-11-09T07:27:10.0415600Z 26873 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+package	Build and verify the actual package	2026-11-09T07:27:10.0710940Z 26876 INFO: Build complete! The results are available in: /Users/runner/work/SubscribeFlow/SubscribeFlow/build/macos/sidecar
+package	Build and verify the actual package	2026-11-09T07:27:11.6692610Z [4718:1109/072711.648963:ERROR:ui/gl/gl_display.cc:665] Initialization of all (1) EGL display types failed.
+package	Build and verify the actual package	2026-11-09T07:27:11.7702020Z [4718:1109/072711.649963:ERROR:ui/gl/init/gl_initializer_mac.cc:127] GLDisplayEGL::Initialize failed.
+package	Build and verify the actual package	2026-11-09T07:27:11.8705840Z [4718:1109/072711.649982:ERROR:ui/gl/gl_display.cc:665] Initialization of all (1) EGL display types failed.
+package	Build and verify the actual package	2026-11-09T07:27:11.9245500Z [4718:1109/072711.649987:ERROR:ui/gl/init/gl_initializer_mac.cc:127] GLDisplayEGL::Initialize failed.
+package	Build and verify the actual package	2026-11-09T07:27:11.9293160Z [4718:1109/072711.862486:ERROR:components/viz/service/main/viz_main_impl.cc:190] Exiting GPU process due to errors during initialization
+package	Build and verify the actual package	2026-11-09T07:27:12.9448730Z 2026-11-09 07:27:12.932 Electron Helper[4722:19430] XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid
+package	Build and verify the actual package	2026-11-09T07:27:12.9496790Z 2026-11-09 07:27:12.932 Electron Helper[4722:19428] XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid
+package	Build and verify the actual package	2026-11-09T07:27:12.9589670Z 2026-11-09 07:27:12.935 Electron Helper[4722:19428] XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid
+package	Build and verify the actual package	2026-11-09T07:27:13.0465800Z [4729:1109/072713.045685:ERROR:ui/gl/gl_display.cc:665] Initialization of all (1) EGL display types failed.
+package	Build and verify the actual package	2026-11-09T07:27:13.0483790Z [4729:1109/072713.046139:ERROR:ui/gl/init/gl_initializer_mac.cc:127] GLDisplayEGL::Initialize failed.
+package	Build and verify the actual package	2026-11-09T07:27:13.0490570Z [4729:1109/072713.046153:ERROR:ui/gl/gl_display.cc:665] Initialization of all (1) EGL display types failed.
+package	Build and verify the actual package	2026-11-09T07:27:13.1007910Z [4729:1109/072713.046175:ERROR:ui/gl/init/gl_initializer_mac.cc:127] GLDisplayEGL::Initialize failed.
+package	Build and verify the actual package	2026-11-09T07:27:13.1036220Z [4729:1109/072713.103193:ERROR:components/viz/service/main/viz_main_impl.cc:190] Exiting GPU process due to errors during initialization
+package	Build and verify the actual package	2026-11-09T07:27:13.2244350Z [4730:1109/072713.223813:ERROR:ui/gl/gl_display.cc:665] Initialization of all (1) EGL display types failed.
+package	Build and verify the actual package	2026-11-09T07:27:13.2776030Z [4730:1109/072713.224165:ERROR:ui/gl/init/gl_initializer_mac.cc:127] GLDisplayEGL::Initialize failed.
+package	Build and verify the actual package	2026-11-09T07:27:13.2799080Z [4730:1109/072713.224178:ERROR:ui/gl/gl_display.cc:665] Initialization of all (1) EGL display types failed.
+package	Build and verify the actual package	2026-11-09T07:27:13.2818480Z [4730:1109/072713.224182:ERROR:ui/gl/init/gl_initializer_mac.cc:127] GLDisplayEGL::Initialize failed.
+package	Build and verify the actual package	2026-11-09T07:27:13.2823670Z [4730:1109/072713.265001:ERROR:components/viz/service/main/viz_main_impl.cc:190] Exiting GPU process due to errors during initialization
+package	Build and verify the actual package	2026-11-09T07:27:14.4959890Z Packaging app for platform darwin x64 using electron v44.5.1
+package	Build and verify the actual package	2026-11-09T07:27:15.7493770Z WARNING: Could not find icon "/Users/runner/work/SubscribeFlow/SubscribeFlow/build/macos/SubscribeFlow.icns" with extension ".icon", skipping this app icon format
+package	Build and verify the actual package	2026-11-09T07:27:35.0152580Z {"bundle":"/Users/runner/work/SubscribeFlow/SubscribeFlow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app","archive":"/Users/runner/work/SubscribeFlow/SubscribeFlow/dist/Subscribe-Flow-0.5.3.7-mac-x64.zip","sha256":"ba33b641fe1eaa912122b3256633870bb39ade49f1a34506cafc1a283939e9fd"}
+package	Build and verify the actual package	2026-11-09T07:27:35.1316780Z {"status":"passed","version":"0.5.3.7","baseRevision":"780db7eccafab7934d43ec0405b186004f5c4377","sourceFilesMatched":62,"originalLogoMatched":true,"appIconMatched":true,"packageAllowlist":true}
+package	Build and verify the actual package	2026-11-09T07:27:38.7745770Z {"status":"passed","version":"0.5.3.7","buildRevision":"780db7eccafab7934d43ec0405b186004f5c4377","sourceFilesMatched":62,"logoMatched":true,"archiveAllowlist":true,"size":145669247,"sha256":"ba33b641fe1eaa912122b3256633870bb39ade49f1a34506cafc1a283939e9fd","hashSidecarMatched":true,"relativeLinks":18,"coreRelativeLinks":4,"coreArchitecture":"x86_64","iconPresent":true,"signatureVerified":true,"zipVerified":true,"bundle":"/Users/runner/work/SubscribeFlow/SubscribeFlow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app","archive":"/Users/runner/work/SubscribeFlow/SubscribeFlow/dist/Subscribe-Flow-0.5.3.7-mac-x64.zip"}
+package	Build and verify the actual package	2026-11-09T07:28:01.1089970Z {"packagedSmoke":"passed","version":"0.5.3.7","baseRevision":"780db7eccafab7934d43ec0405b186004f5c4377","sha256":"ba33b641fe1eaa912122b3256633870bb39ade49f1a34506cafc1a283939e9fd","schema":16,"platform":"macOS x64","launchServices":true,"minimalPath":true,"externalPythonIgnored":true,"productionIgnoresTestFlags":true,"wechatUnified":{"passed":true,"fromSchema":15,"toSchema":16,"oneAdapter":true,"oneConnection":true,"oneSource":true,"duplicatesMerged":true,"fullBodyAndNotePreserved":true,"manualWithoutPaidKey":true,"duplicateIntake":true,"restartPersisted":true,"cursor":"resume","unknownChargeBlocked":true,"paidAttempts":1,"manualPageReads":3,"schema":16,"foreignKeys":true,"bindingAfterCacheClear":true,"conflictArchive":true},"frozenCore":{"deduplication":true,"cancellation":true,"contents":3},"xiaohongshuLocalCover":true,"whiteBrandLogo":true,"readingState":{"defaults":true,"settingsUI":true,"fixedDeferred":true,"renamedGlobally":true,"legacyStatePreserved":true,"coreRestart":true,"appRestart":true},"priorityBoard":true,"priorityInheritance":true,"overviewQuickFilters":{"calendar":true,"selectedDatePreserved":true,"priorityBoard":true,"selectedIndicator":true},"noteFooter":{"savedThroughUI":true,"samples":[{"theme":"light","width":280,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]},{"theme":"light","width":360,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]},{"theme":"light","width":640,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]},{"theme":"dark","width":280,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]},{"theme":"dark","width":360,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]},{"theme":"dark","width":640,"overflow":0,"buttons":[{"text":"删除这条笔记","deficit":0,"centerError":0},{"text":"保存笔记","deficit":0,"centerError":0}]}]},"notes":true,"summarySettingsSeparate":true,"tags":true,"xiaohongshuChannel":true,"wxrankGrouped":true,"wxrankPaidWarning":true,"tagsToolbar":true,"recognitionUnselectRemoved":true,"tagsAiWheelScroll":true,"tagsAiBottomReachable":true,"upgradeBackup":true,"exclusiveState":true,"modeSwitch":true,"automaticCrashRecovery":true,"interval144Hours":{"seconds":518400,"overLimitRejected":true,"restartPersisted":true},"notesRestart":true,"priorityRestart":true,"appRestart":true,"tagFilterScroll":{"nativeWheel":true,"bottomReachable":true,"selectionPositionPreserved":true,"multipleTagsAndMode":true,"clear":true},"missingCoreHint":true,"redactedDiagnostics":true}
+package	Build and verify the actual package	2026-11-09T07:28:04.0682450Z {"date":"2026-11-09T07:28:03.669Z","status":"passed","retainedVersion":"0.5.3.7","retainedApp":"/Users/runner/work/SubscribeFlow/SubscribeFlow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app","retired":[],"skippedRunning":[],"dailyDataTouched":false,"indexedApps":["/Users/runner/work/SubscribeFlow/SubscribeFlow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app"]}
+package	Upload verified package to the draft release	﻿2026-11-09T07:28:04.1119140Z ##[group]Run gh release upload v0.5.3.7 \
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1120710Z ^[[36;1mgh release upload v0.5.3.7 \^[[0m
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1121390Z ^[[36;1m  dist/Subscribe-Flow-0.5.3.7-mac-x64.zip \^[[0m
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1122570Z ^[[36;1m  dist/Subscribe-Flow-0.5.3.7-mac-x64.zip.sha256 --clobber^[[0m
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1123560Z ^[[36;1mcat dist/build-info.json^[[0m
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1124510Z ^[[36;1mcat docs/verification/v0.5.3.7-local/audit.json^[[0m
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1125500Z ^[[36;1mcat docs/verification/v0.5.3.7-local/result.json^[[0m
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1202660Z shell: /bin/bash -e {0}
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1203390Z env:
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1204160Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1205090Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.12.10/x64/lib/pkgconfig
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1206160Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1207540Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1208460Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.12.10/x64
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1209760Z   SUBSCRIBE_FLOW_ELECTRON_ZIP_DIR: /Users/runner/Library/Caches/electron/7a2fc593f2286587ea1878f12a1b3ceae003e5ac2752bb660ff426a13de1604e
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1215190Z   GH_TOKEN: ***
+package	Upload verified package to the draft release	2026-11-09T07:28:04.1215580Z ##[endgroup]
+package	Upload verified package to the draft release	2026-11-09T07:28:11.6978490Z {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.6986380Z   "version": "0.5.3.7",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.6988300Z   "platform": "darwin",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.6989200Z   "arch": "x64",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.6990620Z   "electron": "44.5.1",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.6993180Z   "python": "Python 3.12.10",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.6994780Z   "pyinstaller": "6.22.3",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.6996560Z   "baseRevision": "780db7eccafab7934d43ec0405b186004f5c4377",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.6998390Z   "builtAt": "2026-11-09T07:27:14.315Z",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7000060Z   "signing": "local-ad-hoc",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7002430Z   "bundle": "/Users/runner/work/SubscribeFlow/SubscribeFlow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7005150Z   "archive": "/Users/runner/work/SubscribeFlow/SubscribeFlow/dist/Subscribe-Flow-0.5.3.7-mac-x64.zip",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7007760Z   "sha256": "ba33b641fe1eaa912122b3256633870bb39ade49f1a34506cafc1a283939e9fd"
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7009630Z }
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7020300Z {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7034100Z   "status": "passed",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7042420Z   "version": "0.5.3.7",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7044100Z   "buildRevision": "780db7eccafab7934d43ec0405b186004f5c4377",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7045710Z   "sourceFilesMatched": 62,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7047020Z   "logoMatched": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7048280Z   "archiveAllowlist": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7049570Z   "size": 145669247,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7051130Z   "sha256": "ba33b641fe1eaa912122b3256633870bb39ade49f1a34506cafc1a283939e9fd",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7062050Z   "hashSidecarMatched": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7063270Z   "relativeLinks": 18,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7065660Z   "coreRelativeLinks": 4,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7067570Z   "coreArchitecture": "x86_64",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7069420Z   "iconPresent": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7071440Z   "signatureVerified": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7073320Z   "zipVerified": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7075790Z   "bundle": "/Users/runner/work/SubscribeFlow/SubscribeFlow/dist/0.5.3.7/Subscribe Flow-darwin-x64/Subscribe Flow.app",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7078740Z   "archive": "/Users/runner/work/SubscribeFlow/SubscribeFlow/dist/Subscribe-Flow-0.5.3.7-mac-x64.zip"
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7081090Z }
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7082890Z {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7084710Z   "packagedSmoke": "passed",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7086540Z   "version": "0.5.3.7",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7088520Z   "baseRevision": "780db7eccafab7934d43ec0405b186004f5c4377",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7090980Z   "sha256": "ba33b641fe1eaa912122b3256633870bb39ade49f1a34506cafc1a283939e9fd",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7093180Z   "schema": 16,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7094930Z   "platform": "macOS x64",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7096760Z   "launchServices": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7100560Z   "minimalPath": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7102550Z   "externalPythonIgnored": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7104650Z   "productionIgnoresTestFlags": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7106970Z   "wechatUnified": {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7108250Z     "passed": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7109560Z     "fromSchema": 15,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7110890Z     "toSchema": 16,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7112140Z     "oneAdapter": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7113450Z     "oneConnection": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7114730Z     "oneSource": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7116000Z     "duplicatesMerged": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7117600Z     "fullBodyAndNotePreserved": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7119440Z     "manualWithoutPaidKey": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7120860Z     "duplicateIntake": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7122170Z     "restartPersisted": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7123960Z     "cursor": "resume",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7128710Z     "unknownChargeBlocked": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7135790Z     "paidAttempts": 1,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7137000Z     "manualPageReads": 3,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7139000Z     "schema": 16,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7140250Z     "foreignKeys": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7174610Z     "bindingAfterCacheClear": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7183700Z     "conflictArchive": true
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7192880Z   },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7209160Z   "frozenCore": {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7210490Z     "deduplication": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7211080Z     "cancellation": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7211560Z     "contents": 3
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7212210Z   },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7212880Z   "xiaohongshuLocalCover": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7213450Z   "whiteBrandLogo": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7214170Z   "readingState": {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7215010Z     "defaults": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7216320Z     "settingsUI": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7218410Z     "fixedDeferred": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7221800Z     "renamedGlobally": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7223760Z     "legacyStatePreserved": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7224340Z     "coreRestart": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7224790Z     "appRestart": true
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7225410Z   },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7225880Z   "priorityBoard": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7226390Z   "priorityInheritance": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7226890Z   "overviewQuickFilters": {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7227360Z     "calendar": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7227850Z     "selectedDatePreserved": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7237360Z     "priorityBoard": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7238250Z     "selectedIndicator": true
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7239230Z   },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7239630Z   "noteFooter": {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7240380Z     "savedThroughUI": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7240970Z     "samples": [
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7241350Z       {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7241740Z         "theme": "light",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7242400Z         "width": 280,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7243980Z         "overflow": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7245720Z         "buttons": [
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7246440Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7247320Z             "text": "删除这条笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7247820Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7249730Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7252450Z           },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7253030Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7253550Z             "text": "保存笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7254020Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7254490Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7255260Z           }
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7256300Z         ]
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7274480Z       },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7275260Z       {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7276350Z         "theme": "light",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7276930Z         "width": 360,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7277600Z         "overflow": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7278160Z         "buttons": [
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7278580Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7279320Z             "text": "删除这条笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7280000Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7281060Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7282160Z           },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7283520Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7284040Z             "text": "保存笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7284490Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7284930Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7285420Z           }
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7285770Z         ]
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7286130Z       },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7286480Z       {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7286840Z         "theme": "light",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7287810Z         "width": 640,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7289050Z         "overflow": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7290570Z         "buttons": [
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7291290Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7291800Z             "text": "删除这条笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7292260Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7293170Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7293640Z           },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7294280Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7294790Z             "text": "保存笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7295270Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7295710Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7296300Z           }
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7296640Z         ]
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7297000Z       },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7297340Z       {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7297710Z         "theme": "dark",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7298130Z         "width": 280,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7298530Z         "overflow": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7298930Z         "buttons": [
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7299300Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7299760Z             "text": "删除这条笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7300890Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7301390Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7301830Z           },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7302190Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7302780Z             "text": "保存笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7303250Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7304370Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7305750Z           }
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7306160Z         ]
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7306560Z       },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7306900Z       {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7307320Z         "theme": "dark",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7307910Z         "width": 360,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7308330Z         "overflow": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7308740Z         "buttons": [
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7309130Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7314280Z             "text": "删除这条笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7314800Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7315250Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7315680Z           },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7316040Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7316450Z             "text": "保存笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7316890Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7317360Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7317770Z           }
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7323440Z         ]
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7324280Z       },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7324780Z       {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7325210Z         "theme": "dark",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7325710Z         "width": 640,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7327350Z         "overflow": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7327950Z         "buttons": [
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7328840Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7329970Z             "text": "删除这条笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7330500Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7331030Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7331520Z           },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7332130Z           {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7333380Z             "text": "保存笔记",
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7334190Z             "deficit": 0,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7334760Z             "centerError": 0
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7335540Z           }
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7336230Z         ]
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7336990Z       }
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7337470Z     ]
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7338030Z   },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7338400Z   "notes": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7338980Z   "summarySettingsSeparate": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7339520Z   "tags": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7340280Z   "xiaohongshuChannel": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7340900Z   "wxrankGrouped": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7341430Z   "wxrankPaidWarning": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7342920Z   "tagsToolbar": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7345770Z   "recognitionUnselectRemoved": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7347030Z   "tagsAiWheelScroll": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7347830Z   "tagsAiBottomReachable": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7348420Z   "upgradeBackup": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7348930Z   "exclusiveState": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7349600Z   "modeSwitch": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7350640Z   "automaticCrashRecovery": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7351850Z   "interval144Hours": {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7352320Z     "seconds": 518400,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7352830Z     "overLimitRejected": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7353310Z     "restartPersisted": true
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7353730Z   },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7354050Z   "notesRestart": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7354480Z   "priorityRestart": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7354950Z   "appRestart": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7355380Z   "tagFilterScroll": {
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7355880Z     "nativeWheel": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7356380Z     "bottomReachable": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7357010Z     "selectionPositionPreserved": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7357720Z     "multipleTagsAndMode": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7383180Z     "clear": true
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7383700Z   },
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7384120Z   "missingCoreHint": true,
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7384960Z   "redactedDiagnostics": true
+package	Upload verified package to the draft release	2026-11-09T07:28:11.7385470Z }
+package	Post Set up Python	﻿2026-11-09T07:28:11.7846950Z Post job cleanup.
+package	Post Set up Python	2026-11-09T07:28:12.1540870Z (node:5578) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+package	Post Set up Python	2026-11-09T07:28:12.1542880Z (Use `node --trace-deprecation ...` to show where the warning was created)
+package	Post Set up Node	﻿2026-11-09T07:28:12.1840490Z Post job cleanup.
+package	Post Set up Node	2026-11-09T07:28:12.3823260Z (node:5607) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+package	Post Set up Node	2026-11-09T07:28:12.3825160Z (Use `node --trace-deprecation ...` to show where the warning was created)
+package	Post Check out the release tag	﻿2026-11-09T07:28:12.4084350Z Post job cleanup.
+package	Post Check out the release tag	2026-11-09T07:28:12.5527410Z [command]/usr/local/bin/git version
+package	Post Check out the release tag	2026-11-09T07:28:12.5637570Z git version 2.55.0
+package	Post Check out the release tag	2026-11-09T07:28:12.5676900Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/95b7a406-bfd5-45f8-8b95-d9dcc1f9aca3/.gitconfig'
+package	Post Check out the release tag	2026-11-09T07:28:12.5693790Z Temporarily overriding HOME='/Users/runner/work/_temp/95b7a406-bfd5-45f8-8b95-d9dcc1f9aca3' before making global git config changes
+package	Post Check out the release tag	2026-11-09T07:28:12.5695940Z Adding repository directory to the temporary git global config as a safe directory
+package	Post Check out the release tag	2026-11-09T07:28:12.5701410Z [command]/usr/local/bin/git config --global --add safe.directory /Users/runner/work/SubscribeFlow/SubscribeFlow
+package	Post Check out the release tag	2026-11-09T07:28:12.5814810Z [command]/usr/local/bin/git config --local --name-only --get-regexp core\.sshCommand
+package	Post Check out the release tag	2026-11-09T07:28:12.5910310Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+package	Post Check out the release tag	2026-11-09T07:28:12.7277400Z [command]/usr/local/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+package	Post Check out the release tag	2026-11-09T07:28:12.7396100Z [command]/usr/local/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+package	Post Check out the release tag	2026-11-09T07:28:12.8727160Z [command]/usr/local/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+package	Post Check out the release tag	2026-11-09T07:28:12.8832330Z [command]/usr/local/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+package	Complete job	﻿2026-11-09T07:28:13.0280040Z Cleaning up orphan processes
+package	Complete job	2026-11-09T07:28:13.2335490Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@11d5960a326750d5838078e36cf38b85af677262, actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020, actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

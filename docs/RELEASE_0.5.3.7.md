@@ -17,3 +17,9 @@
 旧版 0.5.3.6 已退出；核对旧 ZIP 后，将项目中的旧应用入口移入废纸篓并注销，旧 ZIP 与校验文件保留。[清理记录](verification/v0.5.3.7-local/app-cleanup.json)。未操作日常数据。
 
 公开更新说明见 [RELEASE_NOTES_0.5.3.7.md](RELEASE_NOTES_0.5.3.7.md)。
+
+## 远端发布
+
+[GitHub 0.5.3.7 发布页](https://github.com/melon-bun/SubscribeFlow/releases/tag/v0.5.3.7)已公开并设为最新版本；`main` 和 `v0.5.3.7` 标签已推送，标签指向上述构建源码。
+
+由于本机上传反复中断，最终公开安装包由 [GitHub Actions 构建](https://github.com/melon-bun/SubscribeFlow/actions/runs/42579330165)，使用同一标签源码独立构建并通过完整包内验收。它与上文已验收的本机包是两次构建，文件不同：公开 ZIP 为 145,669,247 字节，SHA-256 为 `ba33b641fe1eaa912122b3256633870bb39ade49f1a34506cafc1a283939e9fd`。公开 ZIP 及其 SHA-256 文件均已核对 GitHub 的文件摘要、大小与上传状态。[远端构建日志](verification/v0.5.3.7-local/remote-build.log) · [发布收据](verification/v0.5.3.7-local/release-receipt.json)。
