@@ -195,7 +195,7 @@
     return id === app.route.name && (id !== "inbox" || app.filters.quick === "unread");
   }
   function quickActive(id) {
-    return app.route.name === "inbox" && id === (app.filters.priority || app.filters.quick) && !app.filters.platform;
+    return (app.route.name === "inbox" || app.route.name === "overview") && id === (app.filters.priority || app.filters.quick) && !app.filters.platform;
   }
   function platformActive(id) { return id === app.filters.platform; }
 
@@ -272,6 +272,10 @@
               app.filters.quick = ['high','medium','low'].includes(f.id) ? 'all' : f.id;
               app.filters.priority = ['high','medium','low'].includes(f.id) ? f.id : null;
               app.filters.channelId = null; delete app.filters.day;
+              if (app.route.name === "overview") {
+                renderView("overview");
+                return;
+              }
               if (app.route.name !== "inbox") app.selectedId = null;
               navigate("inbox");
               if (app.route.name === "inbox") renderView("inbox");

@@ -194,6 +194,55 @@ async function verify({window, core, root}) {
 
   await evaluate(`document.querySelector('[data-nav="overview"]').click()`);
   await until(`document.querySelector('[aria-label="日历处理状态"]')`);
+  // Quick filters are filters in overview, not navigation away from it.
+  // Exercise the production sidebar, both modes, real Core queries and the
+  // selected calendar date; the earlier inbox assertions cover its behavior.
+  await evaluate(`SF.app.state.calendarMonth=${JSON.stringify(day.slice(0,7))}; SF.app.state.selectedDate=${JSON.stringify(day)}; SF.app.renderView('overview'); void 0`);
+  await evaluate(`SF.views.overview.whenIdle()`);
+  await evaluate(`window.quickQueryLog=[]; window.quickCalendarOriginal=SF.app.state.client.getCalendar; window.quickContentsOriginal=SF.app.state.client.listContents;
+    SF.app.state.client.getCalendar=function(q){quickQueryLog.push({kind:'calendar',q:JSON.parse(JSON.stringify(q))});return quickCalendarOriginal.call(this,q)};
+    SF.app.state.client.listContents=function(q){quickQueryLog.push({kind:'contents',q:JSON.parse(JSON.stringify(q))});return quickContentsOriginal.call(this,q)}; void 0`);
+  const quickIds = ['all', 'unread', 'high', 'medium', 'low', 'deferred', 'read', 'archived'];
+  async function checkQuickFilters(mode) {
+    const initialHash = await evaluate('location.hash');
+    for (const id of quickIds) {
+      await evaluate(`quickQueryLog.length=0; document.querySelector('[data-quick="${id}"]').click(); void 0`);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      assert.equal(await evaluate(`SF.app.state.route.name`), 'overview', `${mode}/${id} 应停留在内容总览`);
+      assert.equal(await evaluate(`location.hash`), initialHash, `${mode}/${id} 应保留当前地址和模式`);
+      assert.equal(await evaluate(`document.querySelector('[data-view="overview"]')?.dataset.mode`), mode);
+      await evaluate(`SF.views.overview.whenIdle()`);
+      const priority = ['high', 'medium', 'low'].includes(id) ? id : null;
+      assert.deepEqual(await evaluate(`({quick:SF.app.state.filters.quick,priority:SF.app.state.filters.priority||null})`), {quick: priority ? 'all' : id, priority});
+      assert.ok(await evaluate(`document.querySelector('[data-quick="${id}"]').classList.contains('is-active')`), `${mode}/${id} 应显示选中态`);
+      if (mode === 'calendar') {
+        assert.equal(await evaluate(`SF.app.state.selectedDate`), day, `${id} 不应改变选中日期`);
+        const q = await evaluate(`quickQueryLog.filter(x=>x.kind==='calendar').at(-1)?.q`);
+        assert.ok(q, `${id} 应重新查询日历`);
+        assert.equal(q.month, day.slice(0,7));
+        assert.equal(q.state || 'all', priority ? 'all' : id);
+        assert.equal(q.priority || null, priority);
+        const expectedTotal = await evaluate(`quickCalendarOriginal.call(SF.app.state.client, ${JSON.stringify(q)}).then(r=>r.total)`);
+        assert.equal(await evaluate(`Number(document.querySelector('[data-calendar-stats] .stat__num').textContent)`), expectedTotal, `${id} 日历统计应反映筛选结果`);
+      } else {
+        const columns = await evaluate(`Array.from(document.querySelectorAll('[data-priority-column]')).map(n=>n.dataset.priorityColumn)`);
+        assert.deepEqual(columns, priority ? [priority] : ['high', 'medium', 'low']);
+        const queries = await evaluate(`quickQueryLog.filter(x=>x.kind==='contents').map(x=>x.q)`);
+        if (queries.length) assert.ok(queries.every(q => (q.state || 'all') === (priority ? 'all' : id)), `${id} 看板查询应使用选中的状态`);
+      }
+    }
+  }
+  await checkQuickFilters('calendar');
+  await evaluate(`SF.app.navigate('overview', {mode:'priority'})`);
+  await until(`document.querySelector('[data-view="overview"][data-mode="priority"]')`);
+  await evaluate(`SF.views.overview.whenIdle()`);
+  await checkQuickFilters('priority');
+  await evaluate(`SF.app.navigate('tags',{tab:'list'})`);
+  await until(`SF.app.state.route.name==='tags'`);
+  await evaluate(`document.querySelector('[data-quick="read"]').click()`);
+  await until(`SF.app.state.route.name==='inbox' && SF.app.state.filters.quick==='read'`);
+  await evaluate(`SF.app.state.client.getCalendar=quickCalendarOriginal; SF.app.state.client.listContents=quickContentsOriginal; SF.app.navigate('overview',{mode:'calendar'}); void 0`);
+  await until(`document.querySelector('[aria-label="日历处理状态"]')`);
   await evaluate(`document.querySelector('[aria-label="日历处理状态"]').click()`);
   await until(`Array.from(document.querySelectorAll('.menu__item')).some(n => n.textContent.includes(${JSON.stringify(read)}))`);
   assert.ok(await evaluate(`Array.from(document.querySelectorAll('.menu__item')).some(n => n.textContent.includes(${JSON.stringify(archived)}))`));
