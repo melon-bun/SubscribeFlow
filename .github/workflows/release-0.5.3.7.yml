@@ -32,7 +32,7 @@ jobs:
           python3 -m pip install uv
           npm ci
           npm run configure
-          node -e "require('electron')"
+          ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_CUSTOM_DIR=44.5.1 node -e "require('electron')"
           electron_zip="$(find "$HOME/Library/Caches/electron" -name 'electron-v44.5.1-darwin-x64.zip' -print -quit)"
           test -n "$electron_zip"
           node -e 'const fs=require("fs"),c=require("crypto"),p=process.argv[1],h=c.createHash("sha256").update(fs.readFileSync(p)).digest("hex");if(h!==require("./node_modules/electron/checksums.json")[require("path").basename(p)])throw Error("Electron checksum mismatch")' "$electron_zip"
